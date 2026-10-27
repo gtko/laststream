@@ -17,6 +17,10 @@ export interface Evening {
   tmdbId: number;
   startsAt: number;
   going?: readonly string[];
+  /** Habillage de la carte « Ensemble, ce soir » ; absents, la carte reste neutre. */
+  title?: string;
+  poster?: string;
+  host?: string;
 }
 
 let eveningSource: () => readonly Evening[] = () => [];
@@ -33,6 +37,10 @@ export function setEveningJoin(fn: (id: string) => Promise<boolean> | boolean): 
 }
 
 export const joinEvening = (id: string): Promise<boolean> => Promise.resolve(eveningJoin(id));
+
+/** Soirées à venir (pas encore commencées), la plus proche d'abord. */
+export const upcomingEvenings = (now: number = Date.now()): Evening[] =>
+  eveningSource().filter((e) => e.startsAt >= now).sort((a, b) => a.startsAt - b.startsAt);
 
 /** Prochaine soirée proposée sur ce titre (pas encore commencée), ou null. */
 export function eveningFor(type: MediaKind, tmdbId: number, now: number = Date.now()): Evening | null {

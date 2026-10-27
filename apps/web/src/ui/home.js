@@ -33,6 +33,7 @@ import { mainNavHTML, syncTopbar, topActionsHTML } from './topnav.js';
 import { socialAvailable } from './socialButton.js';
 import { mountRail, railSlotHTML } from './friendRailSlot.js';
 import { watchHeroSocial } from './heroSocial.js';
+import { homeSocialSlotHTML, mountHomeSocial } from './homeSocialSlot.js';
 import { getState as socialState } from '../data/socialStore';
 import { state } from './state.js';
 import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
@@ -287,6 +288,7 @@ export function viewA(d) {
   return '<main id="main" class="page-a' + (socialEnabled() ? ' has-rail' : '') + '">' + headerA() + heroCarousel(d.heroes) +
     '<div class="rows">' +
     '<div id="cont-slot">' + continueSection() + '</div>' +
+    homeSocialSlotHTML() +
     '<div id="follow-slot"></div>' +
     '<div id="ai-slot"></div>' +
     section('top10', 'Top 10 aujourd’hui', r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
@@ -380,7 +382,7 @@ export function renderHome() {
   if (!state.data.kids) { renderFollowRow(); renderTvRows(); }
   observeTiles(app);
   setupPreviews();
-  if (!state.data.kids) { mountRail(); watchHeroSocial(() => (state.data && state.data.heroes) || []); } // social : rail d'amis et ligne du héros
+  if (!state.data.kids) { mountRail(); mountHomeSocial(); watchHeroSocial(() => (state.data && state.data.heroes) || []); } // social : rail d'amis et ligne du héros
   if (state.data.kids) {
     prepareSingle(d.hero); // mise en avant simple (profil enfant) : détail à l'affichage, notes MDBList au survol
     renderLibrary();
