@@ -12,7 +12,7 @@ import { mountPartyPanel } from '../ui/partypanel.js';
 import { getState as getSocialState, sendMessage as sendSocialMessage, subscribe as subscribeSocial } from '../data/socialStore';
 import { onAction, onKey, panelData, playEpisode, seekTo, sendSegment, togglePlay } from './sessionActions.js';
 import { closePlayer } from './sessionClose.js';
-import { failover } from './sessionFailover.js';
+import { failover, retryOnLibvlc } from './sessionFailover.js';
 import { externalAfterError } from './externalScreen.js';
 import { onNativeSource, onNativeTrack, syncNative } from './sessionNative.js';
 import { ensureEpisodes } from './sessionOpen.js';
@@ -220,10 +220,11 @@ export function bindEngine(e) {
     if (!S.P || S.P.engine !== e) return;
     const msg = err && err.message ? err.message : 'inconnue';
     if (externalAfterError(S.P, msg)) return; // iPhone et iPad : format ou décodage refusé par le lecteur intégré → lecteur externe, sans changer de source
+    if (retryOnLibvlc(S.P, e)) return; // mode auto : mpv a échoué avant la première image → libVLC, une seule fois
     failover('Erreur de lecture (' + msg + ')');
   });
   e.on('tracks', () => { if (S.P && S.P.engine === e) onTracks(); });
-  e.on('ready', () => { if (S.P && S.P.engine === e) onReady(); });
+  e.on('ready', () => { if (S.P && S.P.engine === e) { S.P.videoReady = true; onReady(); } });
   // Lecteur natif Android : fermeture par l'utilisateur, bouton « Épisode suivant », changement de piste dans le panneau natif.
   e.on('closed', () => { if (S.P && S.P.engine === e) closePlayer(); });
   e.on('next', () => { if (S.P && S.P.engine === e) onAction('next'); });
