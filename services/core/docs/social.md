@@ -9,7 +9,7 @@ Deux générations coexistent :
 
 ## Conventions
 
-- Base : `https://lastaddon-core.gtux-prog.workers.dev` (ou le serveur Node). Toutes les routes `/user/*` et `/party/*` sont en JSON, jamais en cache (`Cache-Control: no-store`), avec CORS limité aux origines de l'application.
+- Base : `https://core.laststream.app` (ou le serveur Node). Toutes les routes `/user/*` et `/party/*` sont en JSON, jamais en cache (`Cache-Control: no-store`), avec CORS limité aux origines de l'application.
 - Authentification : `Authorization: Bearer <jeton de session>` (celui de `POST /user/login`). Sans session : `401 {"error":"unauthorized"}`.
 - Profils : les routes `/user/profiles/:id/...` exigent que le profil appartienne au compte et, s'il a un PIN, l'en-tête `X-Profile-Token` (comme le reste de l'API).
 - Erreurs : `{ "error": "<code stable>", "issues"?: [...] }`. Limites de débit : `429 rate_limited` avec `Retry-After`.
