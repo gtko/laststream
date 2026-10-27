@@ -7,7 +7,7 @@ import { setEveningJoin, setEveningSource } from '../src/data/homeSocial';
 
 const h = vi.hoisted(() => {
   const subs = new Set<(s: any) => void>();
-  const st: any = { friends: [], activity: [], listDetails: {}, badge: 0 };
+  const st: any = { friends: [], household: [], activity: [], listDetails: {}, badge: 0 };
   return { st, subs, emit: () => subs.forEach((f) => f(st)) };
 });
 
@@ -65,6 +65,7 @@ function mountHome(): void {
 beforeEach(() => {
   setAccount(ADULT);
   h.st.friends = [];
+  h.st.household = [];
   h.st.activity = [];
   h.st.listDetails = {};
   sidebar.openSidebar.mockClear();
@@ -112,6 +113,26 @@ describe('rail d’amis', () => {
     expect(rail().querySelector('[data-fr-pid="p1"] .ss-pdot')?.classList.contains('is-offline')).toBe(true);
     expect(rail().querySelector('[data-fr-pid="p2"]')?.getAttribute('aria-label')).toBe('Tom, regarde Dune');
     expect(rail().querySelector('[data-fr-pid="p1"]')?.getAttribute('aria-label')).toBe('Zoé, hors ligne');
+  });
+
+  it('range les profils du foyer comme des amis, une seule fois, et un clic ouvre leur fiche (LAST-508)', async () => {
+    const home = (pid: string, name: string, extra: Record<string, unknown> = {}) => friend(pid, name, { household: true, ...extra });
+    h.st.friends = [friend('p1', 'Léa'), friend('p2', 'Zoé', { status: 'offline' })];
+    h.st.household = [
+      home('h1', 'Stick'), home('h2', 'Olivier', { status: 'away' }), home('h3', 'Jessica', { status: 'offline' }),
+      home('h4', 'Ana', { watching: playing }), home('p1', 'Léa'),
+    ];
+    mountHome();
+    await tick();
+    expect(names('En train de regarder')).toEqual(['Ana']);
+    expect(names('En ligne')).toEqual(['Léa', 'Olivier', 'Stick']);
+    expect(names('Hors ligne')).toEqual(['Jessica', 'Zoé']);
+    expect(rail().querySelectorAll('[data-fr-pid="p1"]')).toHaveLength(1);
+    expect(rail().querySelector('[data-fr-pid="h1"]')?.getAttribute('aria-label')).toBe('Stick (foyer), en ligne');
+    expect(rail().querySelector('[data-fr-pid="p2"]')?.getAttribute('aria-label')).toBe('Zoé, hors ligne');
+    rail().querySelector<HTMLElement>('[data-fr-pid="h3"]')!.click();
+    await tick();
+    expect(sidebar.openFriendCard).toHaveBeenCalledWith('h3');
   });
 
   it('suit la présence en temps réel (abonnement au store) sans redessiner à vide', async () => {
