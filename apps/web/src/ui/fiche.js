@@ -143,7 +143,8 @@ const fsec = (name, title, inner) =>
   '<section class="f-sec" id="f-p-' + name + '" aria-labelledby="f-p-' + name + '-h"><h2 class="f-sec-title" id="f-p-' + name + '-h">' + title + '</h2>' + inner + '</section>';
 
 /** « Watch party » du menu « … » : compte connecté, titre sorti. 'with' : feuille « Regarder avec… » (adulte : amis en salon, à inviter, soirée) ;
- * 'party' : boîte « Watch party » (les profils enfants n'y créent que des salons privés) ; null : indisponible. */
+ * 'party' : boîte « Watch party » (les profils enfants n'y créent que des salons privés) ; null : hors compte, au cinéma ou pas encore sorti
+ * (le menu garde alors l'entrée de socialItems, qui répond par un message pour un titre indisponible). */
 export const partyKind = (m) => {
   if (!isServerMode() || isUnreleased(m) || m.cinemaSince) return null;
   return eveningsAvailable() ? 'with' : 'party';

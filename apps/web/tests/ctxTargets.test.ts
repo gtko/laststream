@@ -2,7 +2,7 @@
 // le menu natif du navigateur ne s'affiche plus sur un visuel, et reste disponible hors des éléments de l'app.
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let ctx: typeof import('../src/ui/ctxmenu.js');
 let stateMod: typeof import('../src/ui/state.js');
@@ -153,6 +153,17 @@ describe('entrées « Partager » et « Proposer une watch party »', () => {
     mount('<div class="f-bg"><img src="/bg.jpg" alt=""></div>');
     rightClick(pick('.f-bg img'));
     expect(labels()).toEqual(expect.arrayContaining(['Partager', 'Regarder avec…', 'Ne plus proposer sur l’accueil']));
+  });
+
+  it('fiche, compte adulte : « Regarder avec… » ouvre la feuille chargée au clic', async () => {
+    const ww = await import('../src/ui/watchWith.js');
+    const spy = vi.spyOn(ww, 'openWatchWith').mockReturnValue({} as ReturnType<typeof ww.openWatchWith>);
+    onFiche(MODEL);
+    mount('<div class="f-bg"><img src="/bg.jpg" alt=""></div>');
+    rightClick(pick('.f-bg img'));
+    (menu()!.querySelector('[data-ctx="party"]') as HTMLElement).click();
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledWith(expect.anything(), MODEL));
+    spy.mockRestore();
   });
 
   it('fiche, profil enfant : seule la watch party (pas de « Partager », pas de « Ne plus proposer »)', () => {
