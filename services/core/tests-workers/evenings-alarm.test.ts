@@ -74,15 +74,19 @@ describe('alarme des soirées (Durable Object)', () => {
 
   it('l alarme marque le rappel une seule fois : un réveil rejoué ne le répète pas, et l alarme est reposée', async () => {
     const { stub, call } = await seeded();
-    const startsAt = Date.now() + 10 * MIN;
+    // Début dans 15 min + 2 s : l'alarme future tombe dans ~2 s. Un rappel déjà dû poserait l'alarme à l'instant même, et workerd
+    // la jouerait seul avant le test (runDurableObjectAlarm renverrait false) : on attend donc l'alarme naturelle.
+    const startsAt = Date.now() + 15 * MIN + 2000;
     await call('create', HOST, { title: 'Bientôt', startsAt, tz: 'Europe/Paris', guests: [GUEST] }, Date.now());
-    // Début dans 10 minutes : le rappel est déjà dû, l'alarme est posée tout de suite.
     expect(await remindedAt(stub)).toEqual([null]);
-    expect(await runDurableObjectAlarm(stub)).toBe(true);
-    const [first] = await remindedAt(stub);
+    let first: number | null | undefined = null;
+    for (let attempt = 0; attempt < 40 && first === null; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      [first] = await remindedAt(stub);
+    }
     expect(first).toEqual(expect.any(Number));
-    // Réveil rejoué : le rappel n'est pas marqué une seconde fois.
-    await runDurableObjectAlarm(stub);
+    // Réveil rejoué de force : le rappel n'est pas marqué une seconde fois.
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
     expect(await remindedAt(stub)).toEqual([first]);
     // Prochain réveil : le début de la soirée (renouvellement de la fenêtre des séries).
     expect(await alarmOf(stub)).toBe(startsAt);
