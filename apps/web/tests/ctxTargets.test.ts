@@ -2,7 +2,7 @@
 // le menu natif du navigateur ne s'affiche plus sur un visuel, et reste disponible hors des éléments de l'app.
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let ctx: typeof import('../src/ui/ctxmenu.js');
 let stateMod: typeof import('../src/ui/state.js');
@@ -148,11 +148,22 @@ describe('entrées « Partager » et « Proposer une watch party »', () => {
     expect(labels()).not.toContain('Proposer une watch party');
   });
 
-  it('fiche, compte adulte : partager et watch party à côté de « Ne plus proposer »', () => {
+  it('fiche, compte adulte : partager et « Regarder avec… » à côté de « Ne plus proposer »', () => {
     onFiche(MODEL);
     mount('<div class="f-bg"><img src="/bg.jpg" alt=""></div>');
     rightClick(pick('.f-bg img'));
-    expect(labels()).toEqual(expect.arrayContaining(['Partager', 'Proposer une watch party', 'Ne plus proposer sur l’accueil']));
+    expect(labels()).toEqual(expect.arrayContaining(['Partager', 'Regarder avec…', 'Ne plus proposer sur l’accueil']));
+  });
+
+  it('fiche, compte adulte : « Regarder avec… » ouvre la feuille chargée au clic', async () => {
+    const ww = await import('../src/ui/watchWith.js');
+    const spy = vi.spyOn(ww, 'openWatchWith').mockReturnValue({} as ReturnType<typeof ww.openWatchWith>);
+    onFiche(MODEL);
+    mount('<div class="f-bg"><img src="/bg.jpg" alt=""></div>');
+    rightClick(pick('.f-bg img'));
+    (menu()!.querySelector('[data-ctx="party"]') as HTMLElement).click();
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledWith(expect.anything(), MODEL));
+    spy.mockRestore();
   });
 
   it('fiche, profil enfant : seule la watch party (pas de « Partager », pas de « Ne plus proposer »)', () => {
@@ -160,7 +171,9 @@ describe('entrées « Partager » et « Proposer une watch party »', () => {
     onFiche(MODEL);
     mount('<div class="f-bg"><img src="/bg.jpg" alt=""></div>');
     rightClick(pick('.f-bg img'));
-    expect(labels()).toEqual(['Proposer une watch party']);
+    expect(labels()).toContain('Proposer une watch party');
+    expect(labels()).not.toContain('Partager');
+    expect(labels()).not.toContain('Ne plus proposer sur l’accueil');
   });
 
   it('titre pas encore sorti : la watch party répond par un message, sans fenêtre', () => {
@@ -172,7 +185,8 @@ describe('entrées « Partager » et « Proposer une watch party »', () => {
     expect(document.querySelector('.pld')).toBeNull();
   });
 
-  it('titre disponible : la fenêtre de lancement porte le titre de la fiche', () => {
+  it('titre disponible (profil enfant) : la fenêtre de lancement porte le titre de la fiche', () => {
+    asKid();
     onFiche(MODEL);
     mount('<div class="f-bg"><img src="/bg.jpg" alt=""></div>');
     rightClick(pick('.f-bg img'));

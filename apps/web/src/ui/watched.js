@@ -73,16 +73,6 @@ export function refreshWatchedUI() {
       nc.textContent = n === 1 ? '1 nouvel épisode' : n + ' nouveaux épisodes';
     }
   }
-  if (m && m.type === 'movie') {
-    const b = detailEl.querySelector('[data-watch-movie]');
-    if (b) {
-      const on = userStore.isWatched(m.key);
-      b.setAttribute('aria-pressed', String(on));
-      b.classList.toggle('is-on', on);
-      b.dataset.tip = on ? 'Vu (cliquer pour retirer)' : 'Marquer comme vu';
-      b.setAttribute('aria-label', on ? 'Marqué comme vu (retirer)' : 'Marquer comme vu');
-    }
-  }
   refreshRatingUI();
   refreshNewBadges();
   notifyHomeChange(); // l'accueil retire les titres devenus vus
@@ -175,11 +165,6 @@ document.addEventListener('click', async (e) => {
       toast('Marqué comme vu jusqu’à É' + ep);
     });
     return;
-  }
-  const movieBtn = t.closest('[data-watch-movie]');
-  if (movieBtn) {
-    e.preventDefault();
-    await once('movie:' + m.key, movieBtn, () => mark(m.key, null, !userStore.isWatched(m.key)));
   }
 });
 

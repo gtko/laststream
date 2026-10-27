@@ -19,7 +19,6 @@ import { heroVideoSetup, heroVideoStop } from './heroVideo.js';
 import { ICON } from './icons.js';
 import { ficheDownloadHTML, hydrateDownloads, seasonDownloadHTML } from './downloadBtn.js';
 import { autoPlayOn, createTrailerPlay } from './trailerPlay.js';
-import { inLib } from './library.js';
 import { fillProviders } from './providers.js';
 import { ratingList } from './ratings.js';
 import { applyRestore } from './router.js';
@@ -97,7 +96,7 @@ function remindBtn(m, cls, extra) {
     '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span></button>';
 }
 function primaryBtn(m) {
-  if (m.cinemaSince) return followBtn(m.key, 'btn btn-primary btn-pill is-cinema', '', 'Me prévenir de la sortie en VOD');
+  if (m.cinemaSince) return followBtn(m.key, 'btn btn-primary btn-pill is-cinema', '', 'Me prévenir');
   return isUnreleased(m)
     ? remindBtn(m, 'btn btn-primary btn-pill')
     : '<button type="button" class="btn btn-primary btn-pill" data-play>' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>';
@@ -143,29 +142,19 @@ export function ficheSkeleton(it) {
 const fsec = (name, title, inner) =>
   '<section class="f-sec" id="f-p-' + name + '" aria-labelledby="f-p-' + name + '-h"><h2 class="f-sec-title" id="f-p-' + name + '-h">' + title + '</h2>' + inner + '</section>';
 
-/** « Watch party » : compte connecté, titre sorti (les profils enfants ne créent que des salons privés, dans la boîte de dialogue). */
-export const partyBtn = (m) => {
-  if (!isServerMode() || isUnreleased(m) || m.cinemaSince) return '';
-  // Compte connecté, profil adulte : la feuille « Regarder avec… » (amis en salon, amis à inviter, soirée, salon). Sinon la boîte « Watch party ».
-  if (eveningsAvailable()) return '<button type="button" class="btn-round" data-watch-with aria-haspopup="dialog" data-tip="Regarder avec…" aria-label="Regarder avec…">' + ICON.users + '</button>';
-  return '<button type="button" class="btn-round" data-wparty data-tip="Regarder en watch party" aria-label="Regarder en watch party">' + ICON.users + '</button>';
+/** « Watch party » du menu « … » : compte connecté, titre sorti. 'with' : feuille « Regarder avec… » (adulte : amis en salon, à inviter, soirée) ;
+ * 'party' : boîte « Watch party » (les profils enfants n'y créent que des salons privés) ; null : hors compte, au cinéma ou pas encore sorti
+ * (le menu garde alors l'entrée de socialItems, qui répond par un message pour un titre indisponible). */
+export const partyKind = (m) => {
+  if (!isServerMode() || isUnreleased(m) || m.cinemaSince) return null;
+  return eveningsAvailable() ? 'with' : 'party';
 };
 
-const libBtn = (m) => {
-  const on = inLib(m.key);
-  return '<button type="button" class="btn-round' + (on ? ' is-on' : '') + '" data-lib aria-pressed="' + on + '" data-tip="' + (on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream') +
-    '" aria-label="' + (on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream') + '">' + (on ? ICON.check : ICON.list) + '</button>';
-};
 
-/** Menu « … » de la fiche : « Ne plus proposer sur l'accueil » y est rangé (menu contextuel de l'app, voir ctxmenu.js). Absent du profil enfant, dont l'accueil est déjà filtré. */
-const moreBtn = () => (isKidProfile() ? ''
-  : '<button type="button" class="btn-round f-more" data-fiche-more aria-haspopup="menu" aria-expanded="false" data-tip="Plus d’actions" aria-label="Plus d’actions">' + ICON.dots + '</button>');
+/** Menu « … » de la fiche : bande-annonce, bibliothèque, vu, sources, suivre, partage, watch party, « Ne plus proposer » (menu contextuel de l'app, voir ctxmenu.js). Les boutons ronds y sont rangés pour libérer la place. */
+const moreBtn = () =>
+  '<button type="button" class="btn-round f-more" data-fiche-more aria-haspopup="menu" aria-expanded="false" data-tip="Plus d’actions" aria-label="Plus d’actions">' + ICON.dots + '</button>';
 
-const watchBtn = (m) => {
-  const on = userStore.isWatched(m.key);
-  return '<button type="button" class="btn-round' + (on ? ' is-on' : '') + '" data-watch-movie aria-pressed="' + on + '" data-tip="' + (on ? 'Vu (cliquer pour retirer)' : 'Marquer comme vu') +
-    '" aria-label="' + (on ? 'Marqué comme vu (retirer)' : 'Marquer comme vu') + '">' + ICON.check + '</button>';
-};
 
 function ficheHTML(m) {
   const tabs = tabsFor(m);
@@ -187,15 +176,6 @@ function ficheHTML(m) {
     '<div class="f-actions" id="f-actions" data-nav>' +
     primaryBtn(m) +
     ficheDownloadHTML(m, nextToWatch(m), m.cinemaSince ? 'Pas encore disponible en streaming' : isUnreleased(m) ? 'Pas encore sorti' : '') +
-    (m.trailer
-      ? '<button type="button" class="btn-round" data-vid="' + esc(m.trailer) + '"' + (m.trailerVO ? ' data-vo="1"' : '') + ' data-vtitle="Bande-annonce" data-tip="Bande-annonce" aria-label="Bande-annonce">' + ICON.film + '</button>'
-      : '') +
-    libBtn(m) +
-    partyBtn(m) +
-    (m.type === 'movie' ? watchBtn(m) : '') +
-    (m.cinemaSince
-      ? '<button type="button" class="btn-round" data-sources-open data-tip="Voir les sources" aria-label="Voir les sources">' + ICON.list + '</button>' // sur demande seulement : aucune vérification automatique
-      : followBtn(m.key, 'btn-round')) +
     moreBtn() +
     '</div><div class="f-rate" id="f-rate" data-nav>' + ficheRateHTML(m) + '</div></div>';
 
@@ -237,7 +217,7 @@ function ficheHTML(m) {
     '<section class="f-first" aria-label="Présentation">' + info + '</section>' +
     '<div class="f-panels">' + panels.join('') + '</div></article>' +
     '<div class="f-sticky" id="f-sticky" aria-hidden="true"><span class="f-sticky-title">' + esc(m.name) + '</span>' +
-    (m.cinemaSince ? followBtn(m.key, 'btn btn-primary', ' tabindex="-1"', 'Me prévenir de la sortie en VOD') : isUnreleased(m) ? remindBtn(m, 'btn btn-primary', ' tabindex="-1"') : '<button type="button" class="btn btn-primary" data-play tabindex="-1">' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>') + '</div>';
+    (m.cinemaSince ? followBtn(m.key, 'btn btn-primary', ' tabindex="-1"', 'Me prévenir') : isUnreleased(m) ? remindBtn(m, 'btn btn-primary', ' tabindex="-1"') : '<button type="button" class="btn btn-primary" data-play tabindex="-1">' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>') + '</div>';
 }
 
 function infosHTML(m) {

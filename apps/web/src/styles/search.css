@@ -102,7 +102,8 @@
   .search-root .search-body { padding-bottom: 110px; }
 }
 @media (max-width: 640px) {
-  .search-topbar .wordmark { display: none; }
+  /* La barre basse donne accès aux rubriques : le champ de recherche prend la place du menu Explorer. */
+  .search-topbar .nav { display: none; }
   .search-topbar .top-actions { flex: 1 1 auto; min-width: 0; }
   .search-topbar .search-form { flex: 1 1 auto; width: auto; min-width: 0; }
   .search-input { font-size: 16px; }

@@ -68,7 +68,8 @@
 .dl-libcard-go { font-size: 24px; color: var(--dim); }
 
 /* ---------- Écran #/downloads ---------- */
-.dl-page { padding: 24px var(--gutter, 40px) 56px; max-width: 1200px; display: flex; flex-direction: column; gap: 20px; }
+/* Le haut laisse la place aux boutons ronds de la barre fixe (.f-top : retour, amis). */
+.dl-page { padding: 96px var(--gutter, 40px) 56px; max-width: 1200px; display: flex; flex-direction: column; gap: 20px; }
 .dl-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .dl-h1 { font-family: var(--ff-title); font-size: 32px; font-weight: 700; line-height: 1.1; }
 .dl-h1:focus { outline: none; }
@@ -145,7 +146,7 @@
 
 /* Mobile : lignes sans carte, séparées par un filet (maquette mobile-telechargements). */
 @media (max-width: 760px) {
-  .dl-page { padding: 12px 16px 120px; gap: 14px; }
+  .dl-page { padding: 72px 16px 120px; gap: 14px; }
   .dl-h1 { font-size: 28px; }
   .dl-head-acts .btn { min-height: 44px; padding: 0 12px; }
   .dl-list { gap: 0; }
@@ -255,3 +256,6 @@
 .dl-season:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .dl-season.is-done, .dl-season.is-done:disabled { color: var(--ok); opacity: 1; cursor: default; }
 .dl-season-sum { font-size: 18px; font-weight: 700; color: var(--text); }
+
+/* Film au cinéma : « Indisponible » ferait doublon avec la ligne « pas encore disponible en streaming ». */
+.f-actions:has(> .is-cinema) > .dl-wrap { display: none; }
