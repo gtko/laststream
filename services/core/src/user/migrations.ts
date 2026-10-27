@@ -953,7 +953,9 @@ export const MIGRATIONS: readonly Migration[] = [
 
       -- Soirée (ou occurrence d'une série). starts_at en ms UTC ; tz : fuseau IANA de la soirée (copié de la série pour une
       -- occurrence). overridden = 1 : occurrence modifiée à la main, que la série ne réécrit plus. reminded_at : rappel T-15 min
-      -- envoyé (un seul par soirée).
+      -- envoyé (un seul par soirée). slot_at : instant prévu par la règle de la série (jamais modifié, même si l'occurrence est
+      -- déplacée) ; il garde la génération idempotente : un créneau d'origine libéré par un déplacement n'est pas recréé.
+      -- NULL pour une soirée ponctuelle (l'unicité ne s'y applique pas).
       CREATE TABLE evenings (
         id TEXT PRIMARY KEY,
         series_id TEXT REFERENCES evening_series (id) ON DELETE CASCADE,
@@ -965,10 +967,10 @@ export const MIGRATIONS: readonly Migration[] = [
         overridden INTEGER NOT NULL DEFAULT 0 CHECK (overridden IN (0, 1)),
         party_id TEXT,
         reminded_at INTEGER,
-        opened_at INTEGER,
+        slot_at INTEGER,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
-        UNIQUE (series_id, starts_at)
+        UNIQUE (series_id, slot_at)
       );
       CREATE INDEX evenings_status_starts ON evenings (status, starts_at);
       CREATE INDEX evenings_host ON evenings (host_pid, status);

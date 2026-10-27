@@ -204,11 +204,14 @@ describe('trames : modification, annulation, réponse', () => {
     expect(frames().some((entry) => (entry.event as { response?: string }).response === 'pending')).toBe(false);
   });
 
-  it('retirer un invité l en prévient (« cancelled ») sans toucher aux autres', async () => {
+  it('retirer un invité l en prévient (« cancelled »), et l hôte et les invités restants voient la liste changer (« updated »)', async () => {
     const created = await createEvening([cast.bob, cast.carol]);
     emitted.length = 0;
     expect((await as(app, cast.alice, 'DELETE', `${evening(created.id)}/guests/${cast.bob.pid}`)).status).toBe(204);
-    expect(frames('evening_update')).toEqual([{ pids: [cast.bob.pid], event: { type: 'evening_update', eveningId: created.id, change: 'cancelled' } }]);
+    expect(frames('evening_update')).toEqual([
+      { pids: [cast.bob.pid], event: { type: 'evening_update', eveningId: created.id, change: 'cancelled' } },
+      { pids: [cast.alice.pid, cast.carol.pid].sort(), event: { type: 'evening_update', eveningId: created.id, change: 'updated' } },
+    ]);
   });
 });
 

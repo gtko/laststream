@@ -331,3 +331,47 @@ describe('même foyer', () => {
     expect(frames('evening_invite')).toEqual([{ pids: [cast.carol.pid], event: expect.objectContaining({ type: 'evening_invite', eveningId: created.id }) }]);
   });
 });
+
+describe('diffusion des retraits (LAST-198, corrections de review)', () => {
+  it('retrait d un invité : il apprend la disparition (cancelled), l hôte et les invités restants voient la liste changer (updated)', async () => {
+    await befriend(app, cast.alice, cast.carol);
+    const created = await createEvening([cast.bob, cast.carol]);
+    emitted.length = 0;
+    expect(await as(app, cast.alice, 'DELETE', `${evening(created.id)}/guests/${cast.bob.pid}`)).toMatchObject({ status: 204 });
+    expect(frames('evening_update')).toEqual(
+      expect.arrayContaining([
+        { pids: [cast.bob.pid], event: { type: 'evening_update', eveningId: created.id, change: 'cancelled' } },
+        { pids: sorted(cast.alice, cast.carol), event: { type: 'evening_update', eveningId: created.id, change: 'updated' } },
+      ]),
+    );
+    expect(frames('evening_update')).toHaveLength(2);
+  });
+
+  it('série dont la règle change : les occurrences remplacées sont annoncées annulées à l hôte et aux invités ; un invité qui a dit non n est pas prévenu', async () => {
+    const anchor = Date.parse('2026-05-05T18:00:00.000Z');
+    await befriend(app, cast.alice, cast.carol);
+    const first = await as<EveningReply>(app, cast.alice, 'POST', EVENINGS, {
+      body: draft({ startsAt: anchor, recurrence: { freq: 'weekly', interval: 1 }, guests: [cast.bob.pid, cast.carol.pid] }),
+    });
+    expect(first.status).toBe(201);
+    const before = await as<EveningPage>(app, cast.bob, 'GET', `${EVENINGS}?limit=50`);
+    const oldIds = before.body.items.map((item) => item.id).sort();
+    expect(oldIds).toHaveLength(4);
+    expect(await as(app, cast.carol, 'PUT', `${evening(first.body.id)}/response`, { body: { response: 'no' } })).toMatchObject({ status: 204 });
+    emitted.length = 0;
+
+    // Passage au mercredi : les quatre occurrences du mardi n'existent plus.
+    const patch = await as(app, cast.alice, 'PATCH', evening(first.body.id), { body: { scope: 'series', startsAt: anchor + 24 * HOUR } });
+    expect(patch).toMatchObject({ status: 204 });
+    const cancelled = frames('evening_update').filter((frame) => frame.event.type === 'evening_update' && frame.event.change === 'cancelled');
+    expect(cancelled.map((frame) => (frame.event as { eveningId: string }).eveningId).sort()).toEqual(oldIds);
+    // Bob a gardé « en attente » sur toutes ; Carol a dit non sur la première seulement.
+    const carolFree = cancelled.filter((frame) => frame.pids.includes(cast.carol.pid)).length;
+    expect(cancelled.every((frame) => frame.pids.includes(cast.alice.pid) && frame.pids.includes(cast.bob.pid))).toBe(true);
+    expect(carolFree).toBe(3);
+    // Témoin : les nouvelles occurrences existent bien (mercredi).
+    const after = await as<EveningPage>(app, cast.bob, 'GET', `${EVENINGS}?limit=50`);
+    expect(after.body.items.map((item) => item.id).some((id) => oldIds.includes(id))).toBe(false);
+    expect(after.body.items).toHaveLength(4);
+  });
+});

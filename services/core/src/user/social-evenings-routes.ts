@@ -278,8 +278,11 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
     const body = parseWith(eveningUpdateSchema, c.get('body'));
     const outcome = await evenings().update(me.pid, id, await changeOf(me.pid, id, body), Date.now());
     if (outcome.result !== 'ok') throw failureOf(outcome);
-    // Une modification de série qui remplace l'occurrence visée (evening null) ne prévient personne : les clients relisent la liste.
     if (outcome.evening !== null) emit(await audienceOf(outcome.evening, me.pid), { type: 'evening_update', eveningId: id, change: 'updated' });
+    // Occurrences retirées par une modification de série : leurs participants les perdent, comme à l'annulation.
+    for (const gone of outcome.removed ?? []) {
+      emit(await unblocked(me.pid, [gone.hostPid, ...gone.pids]), { type: 'evening_update', eveningId: gone.eveningId, change: 'cancelled' });
+    }
     return sendEmpty(c);
   });
 
@@ -329,7 +332,11 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
     const outcome = await evenings().removeGuest(me.pid, id, pid, Date.now());
     if (outcome.result !== 'ok') throw failureOf(outcome);
     // Le profil retiré perd la soirée : même trame que pour une annulation.
-    if (before?.guests.some((guest) => guest.pid === pid) === true) emit(await unblocked(me.pid, [pid]), { type: 'evening_update', eveningId: id, change: 'cancelled' });
+    if (before?.guests.some((guest) => guest.pid === pid) === true) {
+      emit(await unblocked(me.pid, [pid]), { type: 'evening_update', eveningId: id, change: 'cancelled' });
+      // Les autres participants voient la liste des invités changer.
+      emit(await audienceOf(before, me.pid, pid), { type: 'evening_update', eveningId: id, change: 'updated' });
+    }
     return sendEmpty(c);
   });
 

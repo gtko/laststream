@@ -445,20 +445,23 @@ describe('soirées : rappels (tick)', () => {
 });
 
 describe('soirées : détachement, purge et cascade', () => {
-  it('détachement : chacun est retiré des soirées futures de l autre, séries comprises ; le passé reste', () => {
+  it('détachement : chacun est retiré des soirées de l autre, séries comprises, futures comme passées non purgées', () => {
     const { store } = seeded();
     const aliceEvening = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Chez Alice', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
     const bobEvening = evOf(store.create(BOB, { tz: 'Europe/Paris', title: 'Chez Bob', startsAt: NOW + 3 * HOUR, guests: [ALICE] }, NOW));
     const bobSeries = evOf(store.create(BOB, { tz: 'Europe/Paris', title: 'Série Bob', startsAt: ANCHOR, guests: [ALICE], series: PARIS_TUESDAY }, NOW));
     const earlier = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Hier', startsAt: NOW + HOUR, guests: [BOB] }, NOW));
 
-    // Détachement à 1 h 30 : la soirée de 1 h est passée, celles de 2 h et 3 h sont à venir.
-    store.detach(ALICE, BOB, NOW + 90 * MIN);
+    // Détachement à 1 h 30 : la soirée de 1 h est commencée, celles de 2 h et 3 h sont à venir.
+    const removed = store.detach(ALICE, BOB, NOW + 90 * MIN);
+    expect(removed.map((gone) => gone.eveningId)).toContain(earlier.id);
 
     expect(store.get(BOB, aliceEvening.id)).toEqual({ result: 'evening_not_found' });
     expect(store.get(ALICE, bobEvening.id)).toEqual({ result: 'evening_not_found' });
     expect(store.get(ALICE, bobSeries.id)).toEqual({ result: 'evening_not_found' });
-    expect(store.get(BOB, earlier.id)).toMatchObject({ result: 'ok' });
+    // Une soirée déjà commencée n'est plus un accès toléré : le bloqué ne la voit plus non plus.
+    expect(store.get(BOB, earlier.id)).toEqual({ result: 'evening_not_found' });
+    expect(store.get(ALICE, earlier.id)).toMatchObject({ result: 'ok' });
   });
 
   it('purgeProfile : supprime les soirées et séries hébergées, retire le profil des autres soirées', () => {
@@ -552,5 +555,115 @@ describe('soirées : trames de rappel et minuterie Node', () => {
     startEveningTicker(deps as never, { hasData: () => false, socialEvenings: () => ((opened = true), repo) } as unknown as UserBackend, idle.scheduler);
     await idle.run();
     expect(opened).toBe(false);
+  });
+});
+
+describe('soirées : corrections de review (LAST-198)', () => {
+  const upcoming = (store: EveningStore, who: string, now: number): EveningView[] => {
+    const listed = store.list(who, { scope: 'upcoming', limit: 50 }, now);
+    if (listed.result !== 'ok') throw new Error('liste refusée');
+    return listed.items;
+  };
+  const rowsAt = (db: Db, startsAt: number): number =>
+    (db.prepare('SELECT COUNT(*) AS n FROM evenings WHERE series_id IS NOT NULL AND starts_at = ?').get(startsAt) as { n: number }).n;
+
+  it('occurrence déplacée : son créneau d origine n est pas recréé au tick, un seul rappel, pas d invitation en double', () => {
+    const { store, db } = seeded();
+    evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
+    const second = upcoming(store, ALICE, NOW)[1];
+    if (second === undefined) throw new Error('deuxième occurrence absente');
+    const origin = second.startsAt;
+    const movedAt = origin + HOUR;
+    evOf(store.update(ALICE, second.id, { scope: 'occurrence', startsAt: movedAt }, NOW));
+
+    store.tick(NOW + 1000);
+    store.tick(NOW + 2000);
+
+    // Une seule soirée par créneau : rien à l'heure d'origine, la déplacée à sa nouvelle heure, trois autres inchangées.
+    expect(rowsAt(db, origin)).toBe(0);
+    expect(rowsAt(db, movedAt)).toBe(1);
+    expect(upcoming(store, BOB, NOW + 2000).map((item) => item.startsAt)).toEqual([ANCHOR, movedAt, ANCHOR + 14 * DAY, ANCHOR + 21 * DAY]);
+    expect(upcoming(store, BOB, NOW + 2000).filter((item) => item.id === second.id)).toHaveLength(1);
+
+    // Un seul rappel pour le créneau : aucun à l'heure d'origine, un seul à la nouvelle, jamais un second.
+    expect(store.tick(origin - 10 * MIN).effects.map((effect) => effect.event.startsAt)).toEqual([]);
+    const reminders = store.tick(movedAt - 10 * MIN).effects;
+    expect(reminders.map((effect) => effect.event.eveningId)).toEqual([second.id]);
+    expect(store.tick(movedAt - 9 * MIN).effects).toEqual([]);
+    // Le créneau d'origine reste réservé même une fois la soirée passée.
+    expect(rowsAt(db, origin)).toBe(0);
+  });
+
+  it('occurrence déplacée sur l heure d un créneau pas encore généré : pas de doublon à la même heure', () => {
+    const { store, db } = seeded();
+    evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [], series: PARIS_TUESDAY }, NOW));
+    const first = upcoming(store, ALICE, NOW)[0];
+    if (first === undefined) throw new Error('première occurrence absente');
+    const fifth = ANCHOR + 4 * 7 * DAY;
+    evOf(store.update(ALICE, first.id, { scope: 'occurrence', startsAt: fifth }, NOW));
+    store.tick(ANCHOR - DAY);
+    store.tick(ANCHOR + 7 * DAY + HOUR);
+    expect(rowsAt(db, fifth)).toBe(1);
+  });
+
+  it('nextWake : une série active dont toutes les occurrences sont annulées réveille encore la génération', () => {
+    const { store } = seeded();
+    evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [], series: PARIS_TUESDAY }, NOW));
+    for (const item of upcoming(store, ALICE, NOW)) expect(store.cancel(ALICE, item.id, 'occurrence', NOW)).toEqual({ result: 'ok' });
+    // Toutes annulées : plus de rappel, mais la fenêtre doit se refaire quand la première passera.
+    expect(store.tick(NOW + 1000).nextWake).toBe(ANCHOR);
+    expect(store.wakeAt(NOW + 1000)).toBe(ANCHOR);
+    // Témoin : une série arrêtée n'attend plus rien.
+    const { store: other } = seeded();
+    const created = evOf(other.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [], series: PARIS_TUESDAY }, NOW));
+    expect(other.stop(ALICE, created.id, NOW)).toEqual({ result: 'ok' });
+    expect(other.tick(NOW + 1000).nextWake).toBeNull();
+  });
+
+  it('changement de règle : une occurrence dont le salon est ouvert n est pas supprimée ; les autres hors règle partent', () => {
+    const { store, db } = seeded();
+    const first = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
+    const items = upcoming(store, ALICE, NOW);
+    const opened = items[1];
+    const plain = items[2];
+    if (opened === undefined || plain === undefined) throw new Error('occurrences absentes');
+    expect(store.attachParty(opened.id, 'PARTY-OPEN')).toBe('PARTY-OPEN');
+
+    const updated = store.update(ALICE, first.id, { scope: 'series', localTime: '21:00' }, NOW);
+    expect(updated).toMatchObject({ result: 'ok' });
+
+    const ids = (db.prepare('SELECT id FROM evenings WHERE series_id IS NOT NULL').all() as { id: string }[]).map((row) => row.id);
+    expect(ids).toContain(opened.id);
+    expect(ids).not.toContain(plain.id);
+    expect(ids).not.toContain(first.id);
+    // Les occurrences retirées sont signalées pour prévenir leurs invités (l'hôte et Bob, pas l'occurrence au salon ouvert).
+    const removed = updated.result === 'ok' ? (updated.removed ?? []) : [];
+    expect(removed.map((gone) => gone.eveningId).sort()).toEqual([first.id, plain.id, items[3]?.id ?? ''].sort());
+    expect(removed[0]?.pids.sort()).toEqual([ALICE, BOB].sort());
+  });
+
+  it('blocage : un invité bloqué ne garde ni soirée en cours ni soirée passée, ni liste ; l autre invité les garde', () => {
+    const { store, social } = seeded();
+    const live = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'En cours', startsAt: NOW + 2 * HOUR, guests: [FRANK, BOB] }, NOW));
+    const past = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Passée', startsAt: NOW + HOUR, guests: [FRANK, BOB] }, NOW));
+    expect(store.attachParty(live.id, 'PARTY-LIVE')).toBe('PARTY-LIVE');
+    expect(social.blockProfile(ALICE, FRANK, NOW + 3 * HOUR)).toMatchObject({ result: 'ok' });
+
+    // Défense en profondeur : même avant tout detach, le bloqué ne lit plus la soirée de l'hôte ni ne la liste.
+    const now = NOW + 3 * HOUR;
+    expect(store.get(FRANK, live.id)).toEqual({ result: 'evening_not_found' });
+    expect(store.list(FRANK, { scope: 'past', limit: 50 }, now)).toMatchObject({ result: 'ok', items: [] });
+    expect(store.get(BOB, live.id)).toMatchObject({ result: 'ok', evening: { partyId: 'PARTY-LIVE' } });
+
+    const removed = store.detach(ALICE, FRANK, now);
+    // La soirée commencée depuis moins de 2 h est signalée ; la passée de 2 h (hors fenêtre) est retirée sans trame.
+    expect(removed.map((gone) => gone.eveningId)).toEqual([live.id]);
+    expect(store.get(FRANK, live.id)).toEqual({ result: 'evening_not_found' });
+    expect(store.get(FRANK, past.id)).toEqual({ result: 'evening_not_found' });
+    expect(guestPids(evOf(store.get(ALICE, live.id)))).not.toContain(FRANK);
+    expect(guestPids(evOf(store.get(ALICE, past.id)))).not.toContain(FRANK);
+    // Témoin : Bob garde les deux soirées, salon compris.
+    expect(store.get(BOB, past.id)).toMatchObject({ result: 'ok' });
+    expect(store.list(BOB, { scope: 'past', limit: 50 }, now)).toMatchObject({ result: 'ok', items: expect.arrayContaining([expect.objectContaining({ id: past.id })]) });
   });
 });

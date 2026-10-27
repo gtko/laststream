@@ -33,6 +33,8 @@ const MAX_SERIES = 5;
 const REMINDER_LEAD_MS = 15 * MINUTE_MS;
 const PURGE_AFTER_MS = 30 * DAY_MS;
 const TICK_BATCH = 200;
+/** Une soirée commencée depuis moins de 2 h est encore « en cours » (fenêtre d'ouverture du salon). */
+const LIVE_GRACE_MS = 2 * 60 * MINUTE_MS;
 /** Soirées renvoyées au plus par page de liste. */
 export const MAX_EVENING_PAGE = 50;
 
@@ -121,7 +123,14 @@ export type EveningCreateOutcome = EveningFailure | { result: 'ok'; evening: Eve
 export type EveningGetOutcome = { result: 'evening_not_found' } | { result: 'ok'; evening: EveningView };
 export type EveningListOutcome = { result: 'invalid_body' } | { result: 'ok'; items: EveningView[]; nextCursor: string | null };
 /** `evening` vaut `null` quand une modification de série a remplacé l'occurrence visée par la nouvelle règle. */
-export type EveningUpdateOutcome = EveningFailure | { result: 'ok'; evening: EveningView | null };
+export type EveningUpdateOutcome = EveningFailure | { result: 'ok'; evening: EveningView | null; removed?: RemovedEvening[] };
+
+/** Occurrence supprimée par une modification de série : `pids` = hôte et invités qui n'avaient pas dit non (à prévenir). */
+interface RemovedEvening {
+  eveningId: string;
+  hostPid: string;
+  pids: string[];
+}
 export type EveningOutcome = EveningFailure | { result: 'ok' };
 
 interface EveningReminder {
@@ -320,7 +329,7 @@ export class EveningStore {
         const id = randomUUID();
         this.db
           .prepare(
-            "INSERT INTO evenings (id, series_id, host_pid, title, tz, starts_at, status, overridden, party_id, reminded_at, opened_at, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, ?, 'scheduled', 0, NULL, NULL, NULL, ?, ?)",
+            "INSERT INTO evenings (id, series_id, host_pid, title, tz, starts_at, status, overridden, party_id, reminded_at, slot_at, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, ?, 'scheduled', 0, NULL, NULL, NULL, ?, ?)",
           )
           .run(id, hostPid, title, input.tz, input.startsAt, now, now);
         this.insertGuests(id, hostPid, guests, now);
@@ -365,8 +374,10 @@ export class EveningStore {
     const cursor = options.cursor === undefined ? undefined : parseCursor(options.cursor);
     if (options.cursor !== undefined && cursor === undefined) return INVALID;
 
-    const clauses = ['(e.host_pid = ? OR EXISTS (SELECT 1 FROM evening_guests g WHERE g.evening_id = e.id AND g.pid = ?))'];
-    const params: SqlParam[] = [viewer, viewer];
+    const clauses = [
+      '(e.host_pid = ? OR (EXISTS (SELECT 1 FROM evening_guests g WHERE g.evening_id = e.id AND g.pid = ?) AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.blocker_pid = ? AND b.blocked_pid = e.host_pid) OR (b.blocker_pid = e.host_pid AND b.blocked_pid = ?))))',
+    ];
+    const params: SqlParam[] = [viewer, viewer, viewer, viewer];
     if (scope === 'past') {
       clauses.push('e.starts_at < ?');
     } else {
@@ -528,7 +539,7 @@ export class EveningStore {
   }
 
   /**
-   * Après un blocage ou la fin d'une amitié : chacun des deux profils est retiré des soirées futures de l'autre, séries
+   * Après un blocage ou la fin d'une amitié : chacun des deux profils est retiré des soirées de l'autre (futures, en cours ou passées non purgées), séries
    * comprises (la série ne le génère plus). Renvoie les invitations retirées, pour prévenir les profils concernés.
    */
   detach(a: string, b: string, now: number): DetachedGuest[] {
@@ -540,12 +551,14 @@ export class EveningStore {
       ] as const) {
         const rows = this.db
           .prepare(
-            'SELECT g.evening_id AS id FROM evening_guests g JOIN evenings e ON e.id = g.evening_id WHERE g.pid = ? AND e.host_pid = ? AND e.starts_at > ? ORDER BY e.starts_at, e.id',
+            'SELECT g.evening_id AS id, e.starts_at AS starts_at FROM evening_guests g JOIN evenings e ON e.id = g.evening_id WHERE g.pid = ? AND e.host_pid = ? ORDER BY e.starts_at, e.id',
           )
-          .all(guest, host, now) as unknown as { id: string }[];
+          .all(guest, host) as unknown as { id: string; starts_at: number }[];
+        // Soirées futures, en cours ou passées non purgées : un invité bloqué ne garde ni le profil de l'hôte ni le salon (un salon
+        // privé se rejoint avec son seul identifiant). Seules les soirées futures ou en cours donnent lieu à une trame.
         for (const row of rows) {
           this.db.prepare('DELETE FROM evening_guests WHERE evening_id = ? AND pid = ?').run(row.id, guest);
-          removed.push({ eveningId: row.id, hostPid: host, guestPid: guest });
+          if (row.starts_at > now - LIVE_GRACE_MS) removed.push({ eveningId: row.id, hostPid: host, guestPid: guest });
         }
         this.db.prepare('DELETE FROM evening_series_guests WHERE pid = ? AND series_id IN (SELECT id FROM evening_series WHERE host_pid = ?)').run(guest, host);
       }
@@ -664,18 +677,25 @@ export class EveningStore {
     // Occurrences futures non modifiées à la main : celles qui ne tombent plus sur la règle partent, les autres suivent le titre.
     const keep = nextOccurrences(ruleOf(updated), now, WINDOW_SIZE);
     const futureUnlocked = "series_id = ? AND overridden = 0 AND status = 'scheduled' AND starts_at > ?";
-    if (keep.length === 0) {
-      this.db.prepare(`DELETE FROM evenings WHERE ${futureUnlocked}`).run(series.id, now);
-    } else {
-      this.db
-        .prepare(`DELETE FROM evenings WHERE ${futureUnlocked} AND starts_at NOT IN (${keep.map(() => '?').join(', ')})`)
-        .run(series.id, now, ...keep);
-    }
+    // Seules partent les occurrences sans salon ouvert dont le créneau d'origine (slot_at) n'est plus sur la règle.
+    const droppable = `${futureUnlocked} AND party_id IS NULL${keep.length === 0 ? '' : ` AND slot_at NOT IN (${keep.map(() => '?').join(', ')})`}`;
+    const dropped = this.db.prepare(`SELECT id, host_pid FROM evenings WHERE ${droppable}`).all(series.id, now, ...keep) as unknown as {
+      id: string;
+      host_pid: string;
+    }[];
+    const removed: RemovedEvening[] = dropped.map((gone) => ({
+      eveningId: gone.id,
+      hostPid: gone.host_pid,
+      pids: (
+        this.db.prepare("SELECT pid FROM evening_guests WHERE evening_id = ? AND response <> 'no' ORDER BY pid").all(gone.id) as unknown as { pid: string }[]
+      ).map((guest) => guest.pid),
+    }));
+    this.db.prepare(`DELETE FROM evenings WHERE ${droppable}`).run(series.id, now, ...keep);
     this.db.prepare(`UPDATE evenings SET title = ?, tz = ?, updated_at = ? WHERE ${futureUnlocked}`).run(title, rule.tz, now, series.id, now);
     this.materialize(updated, now);
 
     const kept = this.participantRow(row.id, viewer);
-    return { result: 'ok', evening: kept === undefined ? null : this.viewOf(kept, viewer) };
+    return { result: 'ok', evening: kept === undefined ? null : this.viewOf(kept, viewer), removed };
   }
 
   // Génération des occurrences
@@ -692,13 +712,15 @@ export class EveningStore {
       }[]
     ).map((guest) => guest.pid);
     for (const startsAt of starts) {
+      // Une occurrence déplacée à l'heure de ce créneau l'occupe déjà : pas de doublon à la même heure.
+      if (this.startTaken(series.id, startsAt)) continue;
       const id = randomUUID();
       const inserted = Number(
         this.db
           .prepare(
-            "INSERT OR IGNORE INTO evenings (id, series_id, host_pid, title, tz, starts_at, status, overridden, party_id, reminded_at, opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', 0, NULL, NULL, NULL, ?, ?)",
+            "INSERT OR IGNORE INTO evenings (id, series_id, host_pid, title, tz, starts_at, status, overridden, party_id, reminded_at, slot_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', 0, NULL, NULL, ?, ?, ?)",
           )
-          .run(id, series.id, series.host_pid, series.title, series.tz, startsAt, now, now).changes,
+          .run(id, series.id, series.host_pid, series.title, series.tz, startsAt, startsAt, now, now).changes,
       );
       if (inserted === 1) this.insertGuests(id, series.host_pid, guests, now);
     }
@@ -712,7 +734,13 @@ export class EveningStore {
       .prepare("SELECT MIN(starts_at) AS t FROM evenings WHERE status = 'scheduled' AND reminded_at IS NULL AND starts_at > ?")
       .get(now) as unknown as { t: number | null };
     if (reminder.t !== null) wakes.push(Math.max(now, reminder.t - REMINDER_LEAD_MS));
-    const start = this.db.prepare("SELECT MIN(starts_at) AS t FROM evenings WHERE status = 'scheduled' AND starts_at > ?").get(now) as unknown as {
+    // Début de la prochaine soirée prévue, ou de la prochaine occurrence, même annulée, d'une série active : son passage fait
+    // glisser la fenêtre, donc doit réveiller la génération.
+    const start = this.db
+      .prepare(
+        "SELECT MIN(starts_at) AS t FROM evenings WHERE starts_at > ? AND (status = 'scheduled' OR series_id IN (SELECT id FROM evening_series WHERE status = 'active'))",
+      )
+      .get(now) as unknown as {
       t: number | null;
     };
     if (start.t !== null) wakes.push(start.t);
@@ -724,7 +752,17 @@ export class EveningStore {
   private participantRow(id: string, viewer: string): EveningRow | undefined {
     const row = this.rowOf(id);
     if (row === undefined) return undefined;
-    return row.host_pid === viewer || this.isGuestRow(id, viewer) ? row : undefined;
+    if (row.host_pid === viewer) return row;
+    // Garde en profondeur : un hôte bloqué avec le consultant (dans un sens ou l'autre) est invisible, même si une ligne subsiste.
+    return this.isGuestRow(id, viewer) && !this.isBlockedEither(viewer, row.host_pid) ? row : undefined;
+  }
+
+  private isBlockedEither(a: string, b: string): boolean {
+    return (
+      this.db
+        .prepare('SELECT 1 AS x FROM blocks WHERE (blocker_pid = ? AND blocked_pid = ?) OR (blocker_pid = ? AND blocked_pid = ?) LIMIT 1')
+        .get(a, b, b, a) !== undefined
+    );
   }
 
   private rowOf(id: string): EveningRow | undefined {
@@ -795,6 +833,10 @@ export class EveningStore {
 
   private isGuestRow(eveningId: string, pid: string): boolean {
     return this.db.prepare('SELECT 1 AS x FROM evening_guests WHERE evening_id = ? AND pid = ?').get(eveningId, pid) !== undefined;
+  }
+
+  private startTaken(seriesId: string, startsAt: number): boolean {
+    return this.db.prepare('SELECT 1 AS x FROM evenings WHERE series_id = ? AND starts_at = ?').get(seriesId, startsAt) !== undefined;
   }
 
   private occupied(seriesId: string, startsAt: number, exceptId: string): boolean {
