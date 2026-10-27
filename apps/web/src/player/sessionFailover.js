@@ -71,7 +71,7 @@ export function streamInstead(opts = { force: true }) {
 }
 
 /**
- * Mode auto : un échec de mpv avant la première image relance la même source une seule fois avec libVLC, à la même position.
+ * Mode auto : un échec de mpv avant que la vidéo soit prête (`ready`) relance la même source une seule fois avec libVLC, à la même position.
  * Vrai si la relance a eu lieu (l'échec ne passe alors pas par le repli).
  */
 export function retryOnLibvlc(p, engine) {
@@ -84,6 +84,8 @@ export function retryOnLibvlc(p, engine) {
   });
   if (!retry) return false;
   p.libvlcTried.add(key);
+  // La relance libVLC n'est pas un nouvel essai de source : playView va compter une tentative, on la rend ici.
+  p.attempts = Math.max(0, (p.attempts || 0) - 1);
   const time = engine.state().time;
   playView(p.view, time > 5 ? time : p.startAt || 0, { shellBackend: 'libvlc' });
   return true;

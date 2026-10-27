@@ -119,14 +119,14 @@ interface LibvlcRetryInput {
   mode: DesktopEngine;
   /** Moteur de la coque qui vient d'échouer. */
   backend?: ShellBackend;
-  /** La première image est affichée : l'échec n'est plus un démarrage. */
+  /** La vidéo est prête (durée connue, événement `ready`) : l'échec n'est plus un démarrage. */
   videoReady: boolean;
   libvlcAvailable: boolean;
   /** Cette source a déjà été relancée avec libVLC : jamais deux fois (pas de boucle). */
   alreadyRetried: boolean;
 }
 
-/** Mode auto : un échec de mpv avant la première image relance la même source une seule fois avec libVLC. */
+/** Mode auto : un échec de mpv avant que la vidéo soit prête (`ready`) relance la même source une seule fois avec libVLC. */
 export function shouldRetryOnLibvlc(i: LibvlcRetryInput): boolean {
   return i.mode === 'auto' && i.backend === 'mpv' && !i.videoReady && i.libvlcAvailable && !i.alreadyRetried;
 }

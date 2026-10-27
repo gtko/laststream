@@ -370,9 +370,10 @@ export class MpvEngine extends Emitter {
     // Pas de transparence ici : elle arrive avec la première image (showVideo).
     // La syntaxe de loadfile dépend de la version de mpv, annoncée juste après l'observation de `mpv-version`.
     if (!this.version) await new Promise((r) => setTimeout(r, 400));
+    // Ordre : stop, moteur, puis props de tampon (elles visent le moteur choisi, pas l'ancien), puis loadfile.
+    this.setBackend(backend);
     // Mémoire tampon (réglage « Mémoire tampon ») : mpv la lit à l'ouverture du fichier, donc elle part avant le loadfile.
     mpvBufferProps(getBufferLevel()).forEach(([name, value]) => this.ipc.send('mpv-set-prop', [name, value]));
-    this.setBackend(backend);
     this.ipc.send('mpv-command', ['loadfile', ...loadfileArgs(url, startAt || 0, mpvVersionAtLeast(this.version || '0.0', '0.39'))]);
     this.ipc.send('mpv-set-prop', ['sid', 'no']);
     this.ipc.send('mpv-set-prop', ['secondary-sid', 'no']);

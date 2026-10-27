@@ -138,6 +138,20 @@ describe('player-set-backend (MpvEngine)', () => {
     expect(idxSet).toBeLessThan(idxLoad);
   });
 
+  it('ordre au chargement : stop, player-set-backend, props de cache, loadfile', async () => {
+    recordPlayerCapabilities({ backends: ['mpv', 'libvlc'] });
+    const { sent, engine } = setup();
+    await engine.load({ url: 'http://127.0.0.1:11470/abc/1', startAt: 0, backend: 'libvlc' });
+    const idxStop = sent.findIndex(([e, a]) => e === 'mpv-command' && (a as string[])[0] === 'stop');
+    const idxSet = sent.findIndex(([e]) => e === 'player-set-backend');
+    const idxCache = sent.findIndex(([e, a]) => e === 'mpv-set-prop' && /cache|demuxer/.test(String((a as unknown[])[0])));
+    const idxLoad = sent.findIndex(([e, a]) => e === 'mpv-command' && (a as string[])[0] === 'loadfile');
+    expect(idxCache).toBeGreaterThanOrEqual(0);
+    expect(idxStop).toBeLessThan(idxSet);
+    expect(idxSet).toBeLessThan(idxCache);
+    expect(idxCache).toBeLessThan(idxLoad);
+  });
+
   it('après libVLC, un retour à mpv est aussi envoyé', async () => {
     recordPlayerCapabilities({ backends: ['mpv', 'libvlc'] });
     const { sent, engine } = setup();

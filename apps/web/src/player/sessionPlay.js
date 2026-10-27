@@ -162,7 +162,7 @@ export async function playView(view, startAt, opts = {}) {
   clearTimeout(p.learnShowTimer);
   clearTimeout(p.learnNativeTimer);
   p.failing = false;
-  p.videoReady = false; // remis à zéro à chaque tentative : tant que la première image n'est pas là, un échec peut relancer avec libVLC
+  p.videoReady = false; // remis à zéro à chaque tentative : tant que la vidéo n'est pas prête (`ready`), un échec peut relancer avec libVLC
   p.localFailed = false;
   p.autoNexting = false;
   p.analyzed = false;

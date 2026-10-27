@@ -102,6 +102,7 @@ export function createWebviewTransport(win: ShellWindow, timeoutMs = 2500): Prom
       if (!m) return;
       if (m.kind === 'init') {
         transport.info = m.info;
+        recordInfoCapabilities(m.info);
         if (m.info.streamingServerUrl) setShellServerAddress(m.info.streamingServerUrl);
         finish(true);
       } else {
@@ -144,7 +145,10 @@ async function createQtTransport(win: ShellWindow): Promise<ShellTransport | nul
       bus.emit(ev, a);
     });
     if (typeof t.serverAddress === 'string') setShellServerAddress(t.serverAddress);
-    const transport: ShellTransport = { kind: 'qt', info: {}, send: (event, args) => t.onEvent(event, args), on: bus.on };
+    const rawInfo = (t as { info?: unknown }).info;
+    const info: Record<string, string> = rawInfo && typeof rawInfo === 'object' ? (rawInfo as Record<string, string>) : {};
+    recordInfoCapabilities(info);
+    const transport: ShellTransport = { kind: 'qt', info, send: (event, args) => t.onEvent(event, args), on: bus.on };
     transport.on('server-address', (a) => { if (typeof a === 'string') setShellServerAddress(a); });
     return transport;
   } catch {
@@ -166,6 +170,18 @@ export function recordPlayerCapabilities(payload: unknown): void {
   const list = (payload as { backends?: unknown } | null | undefined)?.backends;
   if (!Array.isArray(list)) return;
   backends = SHELL_BACKENDS.filter((b) => list.includes(b));
+}
+
+/**
+ * Capacités aussi annoncées dans la réponse `init` : propriété `playerBackends`, une chaîne contenant un tableau JSON
+ * (`["mpv","libvlc"]`). Même validation que `player-capabilities` ; une chaîne illisible ne change rien.
+ */
+export function recordInfoCapabilities(info: Record<string, unknown> | null | undefined): void {
+  const raw = info?.playerBackends;
+  if (typeof raw !== 'string') return;
+  let list: unknown;
+  try { list = JSON.parse(raw); } catch { return; }
+  recordPlayerCapabilities({ backends: list });
 }
 
 /** La coque sait lire avec libVLC intégré. Faux tant que rien n'est annoncé : l'ancienne coque n'est pas sollicitée. */
