@@ -280,6 +280,20 @@ describe('gestionnaire multi-fournisseurs', () => {
     expect((await m.resolve([{ infoHash: H3 }])).provider).toBe('torbox');
   });
 
+  it('reconnexion : deux résolutions de la même source appellent le fournisseur une fois (mémo), deux fois avec skipShared (fresh)', async () => {
+    const memo = fake('alldebrid', {});
+    const m1 = manager({ alldebrid: memo }, ['alldebrid']);
+    await m1.resolve([{ infoHash: H1 }], {});
+    await m1.resolve([{ infoHash: H1 }], {});
+    expect(memo.resolveCalls).toBe(1);
+
+    const fresh = fake('alldebrid', {});
+    const m2 = manager({ alldebrid: fresh }, ['alldebrid']);
+    await m2.resolve([{ infoHash: H1 }], {}, undefined, { skipShared: true });
+    await m2.resolve([{ infoHash: H1 }], {}, undefined, { skipShared: true });
+    expect(fresh.resolveCalls).toBe(2);
+  });
+
   it('compte suspendu : fournisseur indisponible jusqu à l heure indiquée, bascule automatique et notification', async () => {
     const until = t + 3 * 3600_000;
     const ad = fake('alldebrid', { resolve: () => Promise.reject(new DebridError('AUTH_BLOCKED', 'account', { state: 'suspended', until })) });
