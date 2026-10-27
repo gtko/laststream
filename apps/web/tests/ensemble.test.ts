@@ -4,6 +4,9 @@ import path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { auth } from '../src/data/auth';
 
+// Les onglets de soirées lisent le client REST (voir evenings.test.ts) : ici, aucune soirée.
+vi.mock('../src/data/socialV3Api', async (orig) => ({ ...(await orig<typeof import('../src/data/socialV3Api')>()), listEvenings: vi.fn(async () => ({ items: [], nextCursor: null })) }));
+
 let parseRoute: () => any;
 let route: () => void;
 let tabbar: (current?: string) => string;
@@ -43,7 +46,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   setAccount(ADULT);
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ rooms: [], nextCursor: null }), { status: 200 })));
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ rooms: [], items: [], nextCursor: null }), { status: 200 })));
 });
 
 afterEach(() => {
@@ -158,7 +161,7 @@ describe('page Ensemble', () => {
     const d = detail();
     expect(d.querySelector('h1')!.textContent).toBe('Ensemble');
     expect(d.querySelector('.ens-sub')!.textContent).toContain('à plusieurs');
-    expect(Array.from(d.querySelectorAll('.ens-acts .btn')).map((b) => b.textContent)).toEqual(['Amis', 'Rejoindre avec un code', 'Créer un salon']);
+    expect(Array.from(d.querySelectorAll('.ens-acts .btn')).map((b) => b.textContent)).toEqual(['Amis', 'Rejoindre avec un code', 'Planifier une soirée', 'Créer un salon']);
     expect(d.querySelector('.ens-acts a[href="#/friends"]')).not.toBeNull();
     expect(Array.from(d.querySelectorAll('.ens-tabs a')).map((a) => a.textContent)).toEqual(['Maintenant', 'Ce soir', 'À venir', 'Salons publics', 'Passées']);
     expect(Array.from(d.querySelectorAll('.ens-tabs a[aria-current="page"]')).map((a) => a.textContent)).toEqual(['Maintenant']);

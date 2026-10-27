@@ -5,6 +5,7 @@ import type {
   MessageV3, MissedSummary, MomentRef, MyShareLink, NotifyPrefs, Poll, PartyRef, ProfileBanner, ProfileFavorite,
   Reaction, ShareLinkCreated, ShareLinkView, SocialPrefs, SocialProfile, TitleRef,
   HomeProgressResponse, HomeRecommendationsResponse, HomeWatchingResponse, RecommendationInput,
+  CreateEveningBody, Evening, EveningPage, EveningResponse, UpdateEveningBody,
 } from '@laststream/protocol/social';
 
 /* Client typé de l'API sociale v3 (`/user/social/*`, contrat docs/social-v3-contract.md, sections S1 à S6) : profil étendu,
@@ -19,6 +20,7 @@ export type {
   ActivityItem, ConversationV3, GroupConversation, ListDetail, ListSummary, MessageV3, MissedSummary, MyShareLink, Poll, PlaybackSocial, Reaction,
   ShareLinkCreated, ShareLinkView, SocialPrefs, SocialProfile,
   HomeProgressResponse, HomeRecommendationsResponse, HomeWatchingResponse, RecommendationInput,
+  CreateEveningBody, Evening, EveningEvent, EveningPage, EveningResponse, UpdateEveningBody,
 } from '@laststream/protocol/social';
 
 // ---- S1 : profil ----
@@ -203,3 +205,34 @@ export const homeRecommendations = (o: { before?: number; limit?: number } = {})
 export const recommend = (input: RecommendationInput) => social<void>('PUT', '/recommendations', input);
 /** `DELETE /recommendations/:type/:tmdbId` : retire mon coup de cœur sur ce titre. */
 export const unrecommend = (type: MediaKind, tmdbId: number) => social<void>('DELETE', `/recommendations/${type}/${tmdbId}`);
+
+// ---- Soirées planifiées (LAST-198, docs/social.md côté serveur) ----
+/** Liste des soirées : `upcoming` (à venir, annulées comprises), `past` (commencées, récentes d'abord), `invites` (à venir, sans réponse de ma part). */
+export type EveningScope = 'upcoming' | 'past' | 'invites';
+/** Portée d'une modification, d'une annulation ou d'une sortie : l'occurrence seule, ou toute la série. */
+export type EveningSpan = 'occurrence' | 'series';
+const eveningPath = (id: string, tail = ''): string => `/evenings/${encodeURIComponent(id)}${tail}`;
+
+/** `GET /evenings?scope=&cursor=&limit=` : une page (`limit` 1 à 50, 20 par défaut) ; `nextCursor` `null` en fin de liste. */
+export const listEvenings = (scope: EveningScope, o: { cursor?: string; limit?: number } = {}) =>
+  social<EveningPage>('GET', withQuery('/evenings', { scope, cursor: o.cursor, limit: o.limit }));
+/** `GET /evenings/:id` : le détail ; 404 `evening_not_found` pour un non-participant. */
+export const getEvening = (id: string) => social<Evening>('GET', eveningPath(id));
+/** `POST /evenings` (201) : crée une soirée, ou une série avec `recurrence`. */
+export const createEvening = (body: CreateEveningBody) => social<Evening>('POST', '/evenings', body);
+/** `PATCH /evenings/:id` (204) : titre ou début, sur l'occurrence ou la série ; hôte seul. */
+export const updateEvening = (id: string, body: UpdateEveningBody) => social<void>('PATCH', eveningPath(id), body);
+/** `DELETE /evenings/:id?scope=` (204) : `occurrence` annule la soirée, `series` arrête la série ; hôte seul. */
+export const cancelEvening = (id: string, scope: EveningSpan = 'occurrence') => social<void>('DELETE', withQuery(eveningPath(id), { scope }));
+/** `POST /evenings/:id/guests` (204) : invite des amis (1 à 19 pid) ; hôte seul. */
+export const inviteToEvening = (id: string, pids: string[]) => social<void>('POST', eveningPath(id, '/guests'), { pids });
+/** `DELETE /evenings/:id/guests/:pid` (204) : retire un invité ; hôte seul. */
+export const removeEveningGuest = (id: string, pid: string) => social<void>('DELETE', eveningPath(id, `/guests/${encodeURIComponent(pid)}`));
+/** `PUT /evenings/:id/response` (204) : ma réponse. */
+export const respondToEvening = (id: string, response: Exclude<EveningResponse, 'pending'>) => social<void>('PUT', eveningPath(id, '/response'), { response });
+/** `POST /evenings/:id/leave` (204) : je quitte l'occurrence (réponse « non ») ou la série. */
+export const leaveEvening = (id: string, scope: EveningSpan = 'occurrence') => social<void>('POST', eveningPath(id, '/leave'), { scope });
+/** `POST /evenings/:id/stop` (204) : l'hôte arrête la série (occurrences futures annulées). */
+export const stopEveningSeries = (id: string) => social<void>('POST', eveningPath(id, '/stop'));
+/** `POST /evenings/:id/open` (200) : l'hôte ouvre le salon de visionnage, de T-15 min à T+2 h ; la soirée rendue porte `party`. */
+export const openEvening = (id: string) => social<Evening>('POST', eveningPath(id, '/open'));

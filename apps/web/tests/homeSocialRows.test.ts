@@ -99,7 +99,7 @@ describe('sections sociales de l’accueil', () => {
     expect(join).toHaveLength(1);
     expect(join[0].getAttribute('href')).toBe('#/party/r%2F1');
     expect(slot.textContent).toContain('En direct · 2 spectateurs');
-    expect(slot.querySelector('a[href="#/ensemble"].hsr-btn')?.textContent).toBe('Proposer une soirée');
+    expect(slot.querySelector('button[data-evening-new].hsr-btn')?.textContent).toBe('Proposer une soirée');
   });
 
   it('ami en sourdine : son salon n’apparaît pas', async () => {
@@ -118,6 +118,14 @@ describe('sections sociales de l’accueil', () => {
     slot.querySelector<HTMLElement>('[data-hsr-evening="e1"]')!.click();
     await flush();
     expect(join).toHaveBeenCalledWith('e1');
+  });
+
+  it('soirée planifiée sans titre de film, déjà acceptée ou organisée par moi (joinable faux) : la carte reste, sans bouton « Je viens »', async () => {
+    setEveningJoin(vi.fn().mockResolvedValue(true));
+    setEveningSource(() => [{ id: 'e9', startsAt: Date.now() + 3600_000, title: 'Soirée Dune 2', joinable: false }]);
+    const slot = await mountWith();
+    expect(slot.textContent).toContain('Soirée Dune 2');
+    expect(slot.querySelector('[data-hsr-evening]')).toBeNull();
   });
 
   it('soirée proposée sans action « Je viens » branchée : aucun bouton, la carte reste', async () => {

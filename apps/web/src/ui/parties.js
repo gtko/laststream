@@ -67,7 +67,7 @@ function allFriends() {
 
 /** Ami hôte du salon `host` (même rapprochement par nom que friendRooms), ou null.
  * Limite : le salon n'expose que le nom libre de l'hôte (non unique), donc un homonyme non ami peut être classé chez les amis. */
-const hostFriend = (host, friends) => friends.find((f) => !f.muted && (norm(f.handle.name) === norm(host) || norm(f.handle.full) === norm(host))) || null;
+export const hostFriend = (host, friends) => friends.find((f) => !f.muted && (norm(f.handle.name) === norm(host) || norm(f.handle.full) === norm(host))) || null;
 
 const openedText = (r) => {
   const t = ago(Date.parse(r.createdAt));
