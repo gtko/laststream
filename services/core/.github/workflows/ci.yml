@@ -22,37 +22,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Runner persistant : node_modules est conservé entre les runs. git clean l'épargne, ci-install.mjs ne relance npm ci
-# que si package-lock.json ou la plateforme changent, et typecheck / lint / vitest --changed sont incrémentaux.
+# Runner persistant : node_modules est conservé entre les runs. git clean l'épargne, ci-install.mjs ne relance npm ci que
+# si package.json, package-lock.json ou la plateforme changent. Typecheck et lint sont incrémentaux (caches dans node_modules).
 # PR : seuls les tests des fichiers modifiés depuis origin/main (--changed). Push sur main : suites complètes.
 jobs:
-  static:
-    name: Typecheck, lint, knip
-    runs-on: [self-hosted, laststream-local]
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          clean: false
-          persist-credentials: false
-
-      - run: git clean -ffdx -e node_modules
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: node scripts/ci-install.mjs
-
-      - run: npm run typecheck
-
-      - run: npm run lint
-
-      - run: npm run knip
-
   test:
-    name: Tests Node
+    name: Typecheck, lint, knip, tests Node
     runs-on: [self-hosted, laststream-local]
     timeout-minutes: 30
     steps:
@@ -67,9 +42,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - run: node scripts/ci-install.mjs
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm run knip
 
       - name: Tests des fichiers modifiés (PR)
         if: github.event_name == 'pull_request'
@@ -95,7 +75,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - run: node scripts/ci-install.mjs
 
