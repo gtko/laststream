@@ -94,7 +94,7 @@ export function ficheDownloadHTML(m, ep, off) {
   return '<span class="dl-wrap">' +
     '<button type="button" class="btn btn-pill dl-btn" data-dl-ctl="btn"' + targetAttrs(t) + (off ? ' data-dl-off="' + esc(off) + '"' : '') + ' aria-describedby="' + whyId + '">' +
     '<span class="dl-fill" aria-hidden="true"></span><span class="dl-lbl"><span class="dl-ic">' + DL_ICON.dl + '</span><span class="dl-txt">Télécharger</span>' +
-    '<span class="dl-sub">' + (m.type === 'tv' ? esc(epCode(t.season, t.episode)) : '') + '</span></span></button>' +
+    ' <span class="dl-sub">' + (m.type === 'tv' ? esc(epCode(t.season, t.episode)) : '') + '</span></span></button>' +
     '<span class="dl-why" id="' + whyId + '" hidden></span></span>';
 }
 
@@ -110,8 +110,8 @@ export function ficheDownloadMenuItems(m, ep, opener) {
   if (item.state === 'running') out.push({ id: 'dl-pause', label: 'Mettre en pause le téléchargement', icon: DL_ICON.pause, run: () => pauseItem(id) });
   if (item.state === 'paused') out.push({ id: 'dl-resume', label: 'Reprendre le téléchargement', icon: DL_ICON.play, run: () => resumeItem(id) });
   if (item.state === 'error') out.push({ id: 'dl-retry', label: 'Réessayer le téléchargement', icon: DL_ICON.retry, run: () => retryItem(id) });
-  const done = item.state === 'done';
-  out.push({ id: 'dl-remove', label: done ? 'Supprimer le téléchargement' : 'Annuler le téléchargement', icon: done ? DL_ICON.trash : DL_ICON.x, run: () => confirmRemove(item, opener) });
+  // Toujours « Supprimer » : la confirmation dit « Supprimer » et son « Annuler » veut dire garder.
+  out.push({ id: 'dl-remove', label: 'Supprimer le téléchargement', icon: DL_ICON.trash, run: () => confirmRemove(item, opener) });
   return out.map((x) => ({ ...x, group: 'dl' }));
 }
 
@@ -225,6 +225,16 @@ function paintControl(el, item, av) {
   if (txt && txt.textContent !== v.label) txt.textContent = v.label;
   const sub = el.querySelector('.dl-sub');
   if (sub && sub.textContent !== v.sub) sub.textContent = v.sub;
+  // En cours ou en pause, le libellé dit l'état : le nom accessible et l'infobulle disent ce que fait l'appui.
+  const act = v.state === 'running' ? 'mettre en pause' : v.state === 'paused' ? 'reprendre' : '';
+  if (act) {
+    const name = v.label + (v.sub ? ' ' + v.sub : '') + ', ' + act;
+    if (el.getAttribute('aria-label') !== name) el.setAttribute('aria-label', name);
+    el.title = act.charAt(0).toUpperCase() + act.slice(1);
+  } else if (el.hasAttribute('aria-label')) {
+    el.removeAttribute('aria-label');
+    el.removeAttribute('title');
+  }
   const why = el.parentElement && el.parentElement.querySelector('.dl-why');
   if (why) {
     const reason = v.state === 'unavailable' || v.state === 'error' ? v.reason || '' : '';

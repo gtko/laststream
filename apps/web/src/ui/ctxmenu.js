@@ -369,6 +369,7 @@ export function openCtx(t, x, y) {
   menu._opener = t.el;
   if (sheet) {
     menu.classList.add('is-sheet');
+    menu.setAttribute('aria-label', 'Actions : ' + (t.model.name || ''));
     const scrim = document.createElement('div');
     scrim.className = 'ctx-scrim';
     scrim.setAttribute('aria-hidden', 'true');

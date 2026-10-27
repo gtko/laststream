@@ -93,3 +93,24 @@ describe('fiche : menu « … »', () => {
     expect(document.activeElement).toBe(btn);
   });
 });
+
+describe('fiche : menu « … » en feuille basse sur téléphone (LAST-500)', () => {
+  it('feuille nommée, voile, groupes séparés ; fermée avec son voile', () => {
+    const real = window.matchMedia;
+    window.matchMedia = ((q: string) => ({ matches: q.includes('640'), media: q })) as unknown as typeof window.matchMedia;
+    try {
+      moreButton().click();
+      const m = menu()!;
+      expect(m.classList.contains('is-sheet')).toBe(true);
+      expect(m.getAttribute('aria-label')).toBe('Actions : Alien');
+      expect(document.querySelector('.ctx-scrim')).not.toBeNull();
+      expect(m.querySelectorAll('[role="separator"]').length).toBeGreaterThan(0);
+      expect(document.activeElement).toBe(m.querySelector('[role="menuitem"]'));
+      ctx.closeCtx(false);
+      expect(menu()).toBeNull();
+      expect(document.querySelector('.ctx-scrim')).toBeNull();
+    } finally {
+      window.matchMedia = real;
+    }
+  });
+});

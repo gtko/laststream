@@ -395,6 +395,25 @@ describe('interface portée', () => {
     await settle(50);
   });
 
+  it('fiche : reprise sous l’action principale, mise à jour quand la progression change (LAST-500)', async () => {
+    const { userStore } = await import('../src/data/userStore');
+    const { updatePlayLabel } = await import('../src/ui/fiche.js');
+    const { state } = await import('../src/ui/state.js');
+    userStore.setProgress({ key: 'movie:100', type: 'movie', id: 100, title: 'Film', poster: '', position: 1200, duration: 6000 });
+    location.hash = '#/movie/100';
+    await settle(300);
+    const resume = () => document.querySelector('#detail .f-actions .f-resume');
+    expect(resume()!.textContent).toMatch(/^reste 1 h 20/);
+    userStore.setProgress({ key: 'movie:100', type: 'movie', id: 100, title: 'Film', poster: '', position: 5400, duration: 6000 });
+    updatePlayLabel(state.model);
+    expect(resume()!.textContent).toBe('reste 10 min');
+    userStore.setProgress({ key: 'movie:100', type: 'movie', id: 100, title: 'Film', poster: '', position: 6000, duration: 6000, finished: true });
+    updatePlayLabel(state.model);
+    expect(resume()).toBeNull();
+    location.hash = '#/';
+    await settle(50);
+  });
+
   it('fiche : les actions secondaires sont rangées dans le menu « … »', async () => {
     location.hash = '#/movie/100';
     await settle(300);

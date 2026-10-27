@@ -61,7 +61,6 @@ export function refreshWatchedUI() {
       const refs = seasonAired();
       const all = allWatched(m.key, refs);
       const long = all ? 'Marquer la saison comme non vue' : 'Marquer la saison comme vue';
-      sb.setAttribute('aria-label', long);
       const l = sb.querySelector('.sw-l');
       const sh = sb.querySelector('.sw-s');
       if (l) l.textContent = long; else sb.textContent = long;

@@ -117,6 +117,14 @@ function resumeBarHTML(m) {
 export function updatePlayLabel(m) {
   if (isUnreleased(m)) return;
   detailEl.querySelectorAll('.f-play-label').forEach((el) => { el.textContent = playText(m); });
+  // Lecteur refermé ou épisode fini : la reprise suit (LAST-500).
+  const actions = detailEl.querySelector('#f-actions');
+  if (!actions || m.cinemaSince) return;
+  const old = actions.querySelector('.f-resume');
+  const html = resumeBarHTML(m);
+  if (old) { if (html) old.outerHTML = html; else old.remove(); return; }
+  const primary = actions.querySelector(':scope > .btn-pill');
+  if (html && primary) primary.insertAdjacentHTML('afterend', html);
 }
 
 export function markNext(m) {
@@ -200,7 +208,7 @@ function ficheHTML(m) {
         '<button type="button" class="pill" data-season="' + s.season_number + '" aria-pressed="' + (s.season_number === seasonN) + '">' +
         esc(s.season_number === 0 ? 'Bonus' : 'Saison ' + s.season_number) + '</button>').join('') + '</div>' +
       seasonDownloadHTML() +
-      '<button type="button" class="btn btn-ghost btn-sm" data-season-watch aria-label="Marquer la saison comme vue">' + ICON.check + '<span class="sw-l">Marquer la saison comme vue</span><span class="sw-s">Saison vue</span></button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-season-watch>' + ICON.check + '<span class="sw-l">Marquer la saison comme vue</span><span class="sw-s">Saison vue</span></button>' +
       '<span class="ep-menu-wrap"><button type="button" class="btn btn-ghost btn-sm ep-more" data-eps-menu aria-haspopup="menu" aria-expanded="false" aria-label="Plus d’actions sur la série">…</button>' +
       '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-series-watch="1">Marquer toute la série comme vue</button>' +
       '<button type="button" role="menuitem" data-series-watch="0">Marquer toute la série comme non vue</button></span></span>' +

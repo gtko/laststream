@@ -245,6 +245,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 /* Menu « … » : groupes séparés ; sur téléphone, feuille basse sur un voile (LAST-500). */
 .ctx-sep { height: 1px; margin: 4px 10px; background: var(--line-2); flex: none; }
 .ctx-scrim { position: fixed; inset: 0; z-index: 399; background: rgba(6, 5, 9, 0.7); }
+body.lp-open .ctx-scrim { z-index: 699; } /* le menu passe à 700 au-dessus du mini-lecteur (player-mini.css) */
 .ctxmenu.is-sheet { left: 0; right: 0; bottom: 0; top: auto; width: auto; min-width: 0; max-width: none; max-height: 82vh; overflow-y: auto;
   border-radius: 22px 22px 0 0; padding: 8px 8px calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--surface); box-shadow: 0 -1px 0 var(--line-2); }
 .ctxmenu.is-sheet button { min-height: 52px; font-size: 15px; }
