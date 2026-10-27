@@ -145,22 +145,55 @@ export const getMissed = (q: MediaQuery & { since: number }) =>
 // ---- S6 : accueil social (`/user/social/home/*` et `/user/social/recommendations`) ----
 /** Taille maximale d'une requête `/home/progress` : au-delà, le client envoie plusieurs requêtes. */
 const HOME_PROGRESS_BATCH = 20;
+/** Requêtes `/home/progress` simultanées au plus. */
+const HOME_PROGRESS_CONCURRENCY = 3;
+/** Borne haute d'un `tmdbId` accepté par `/home/progress` (la borne basse est 1) ; un id hors bornes est écarté côté client. */
+const TMDB_ID_MAX = 999_999_999;
 /** Titre interrogé par `/home/progress`. */
 export type HomeTitleRef = { type: MediaKind; tmdbId: number };
+
+/** Applique `fn` à chaque élément avec au plus `limit` appels en cours ; le résultat garde l'ordre des éléments. Un échec cesse les lancements. */
+const mapPool = async <T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> => {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  let failed = false;
+  const worker = async (): Promise<void> => {
+    while (!failed && next < items.length) {
+      const i = next++;
+      try {
+        out[i] = await fn(items[i]);
+      } catch (e) {
+        failed = true;
+        throw e;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+};
 
 /** `GET /home/watching` : une entrée par ami, sa dernière progression des 30 derniers jours. */
 export const homeWatching = (limit?: number) => social<HomeWatchingResponse>('GET', withQuery('/home/watching', { limit }));
 
 /**
- * `GET /home/progress?titles=series:123,movie:456` : progression la plus avancée de chaque ami par titre. Le serveur accepte au
- * plus 20 titres par requête : les titres partent par lots de 20 (en parallèle) et les items sont fusionnés dans l'ordre des lots.
- * Aucun titre, aucune requête.
+ * `GET /home/progress?titles=series:123,movie:456` : progression la plus avancée de chaque ami par titre. Les titres sont filtrés
+ * (id non entier ou hors 1..999999999 écarté), dédoublonnés sur `type:tmdbId`, puis envoyés par lots de 20 (au plus 3 requêtes
+ * simultanées) ; les items sont fusionnés dans l'ordre des lots. Aucun titre valide, aucune requête.
  */
 export const homeProgress = async (titles: HomeTitleRef[]): Promise<HomeProgressResponse> => {
+  const seen = new Set<string>();
+  const valid: HomeTitleRef[] = [];
+  for (const t of titles) {
+    if (!Number.isInteger(t.tmdbId) || t.tmdbId < 1 || t.tmdbId > TMDB_ID_MAX) continue;
+    const key = `${t.type}:${t.tmdbId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    valid.push(t);
+  }
   const batches: HomeTitleRef[][] = [];
-  for (let i = 0; i < titles.length; i += HOME_PROGRESS_BATCH) batches.push(titles.slice(i, i + HOME_PROGRESS_BATCH));
-  const pages = await Promise.all(batches.map((b) =>
-    social<HomeProgressResponse>('GET', withQuery('/home/progress', { titles: b.map((t) => `${t.type}:${t.tmdbId}`).join(',') }))));
+  for (let i = 0; i < valid.length; i += HOME_PROGRESS_BATCH) batches.push(valid.slice(i, i + HOME_PROGRESS_BATCH));
+  const pages = await mapPool(batches, HOME_PROGRESS_CONCURRENCY, (b) =>
+    social<HomeProgressResponse>('GET', withQuery('/home/progress', { titles: b.map((t) => `${t.type}:${t.tmdbId}`).join(',') })));
   return { items: pages.flatMap((p) => p.items) };
 };
 

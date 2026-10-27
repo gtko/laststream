@@ -342,3 +342,73 @@ describe('S6 — accueil social', () => {
     await expect(v3.unrecommend('series', 1)).rejects.toMatchObject({ status: 404, code: 'not_found' });
   });
 });
+
+/** Titres demandés à `/home/progress`, à plat, dans l'ordre d'envoi. */
+const progressTitles = () => sent.flatMap((s) => new URL(s.url).searchParams.get('titles')!.split(','));
+/** Réponse de `/home/progress` : un item par titre demandé. */
+const echoProgress = (url: string) => json({
+  items: new URL(url).searchParams.get('titles')!.split(',').map((t) => ({
+    friend: { pid: 'f1' }, type: t.split(':')[0], tmdbId: Number(t.split(':')[1]), pos: 1, finished: false, updatedAt: 1,
+  })),
+});
+const movies = (ids: number[]) => ids.map((tmdbId) => ({ type: 'movie' as const, tmdbId }));
+
+describe('S6 — accueil social : homeProgress (dédoublonnage, ids valides, concurrence)', () => {
+  it('doublon entre deux lots : chaque titre n’est demandé qu’une fois, lots recalculés après dédoublonnage', async () => {
+    reply = (s) => echoProgress(s.url);
+    // 24 titres distincts puis un doublon de movie:1, qui tomberait dans le second lot (24 + 1 = 25 entrées).
+    const ids = Array.from({ length: 24 }, (_, i) => i + 1);
+    const r = await v3.homeProgress([...movies(ids), ...movies([1])]);
+    expect(sent).toHaveLength(2);
+    expect(sent.map((s) => new URL(s.url).searchParams.get('titles')!.split(',').length).sort((a, b) => a - b)).toEqual([4, 20]);
+    expect(progressTitles()).toHaveLength(new Set(progressTitles()).size);
+    expect(r.items.map((i) => i.tmdbId)).toEqual(ids);
+  });
+
+  it('doublon dans un même lot : une seule occurrence ; type et id forment la clé', async () => {
+    reply = () => json({ items: [] });
+    await v3.homeProgress([...movies([5, 5]), { type: 'series', tmdbId: 5 }]);
+    expect(progressTitles()).toEqual(['movie:5', 'series:5']);
+  });
+
+  it('ids non valides écartés avant l’appel : un seul id invalide ne fait pas échouer la requête', async () => {
+    reply = (s) => echoProgress(s.url);
+    const r = await v3.homeProgress([
+      { type: 'movie', tmdbId: 0 }, { type: 'series', tmdbId: 1.5 }, { type: 'movie', tmdbId: -3 },
+      { type: 'series', tmdbId: 1_000_000_000 }, { type: 'movie', tmdbId: Number.NaN }, { type: 'series', tmdbId: 123 },
+    ]);
+    expect(sent).toHaveLength(1);
+    expect(progressTitles()).toEqual(['series:123']);
+    expect(r.items.map((i) => i.tmdbId)).toEqual([123]);
+  });
+
+  it('bornes 1 et 999999999 acceptées ; liste entièrement invalide : aucune requête', async () => {
+    reply = (s) => echoProgress(s.url);
+    await v3.homeProgress([{ type: 'movie', tmdbId: 1 }, { type: 'movie', tmdbId: 999_999_999 }]);
+    expect(progressTitles()).toEqual(['movie:1', 'movie:999999999']);
+
+    sent = [];
+    await expect(v3.homeProgress([{ type: 'movie', tmdbId: 0 }, { type: 'series', tmdbId: Number.POSITIVE_INFINITY }])).resolves.toEqual({ items: [] });
+    expect(sent).toHaveLength(0);
+  });
+
+  it('au plus 3 requêtes simultanées ; items fusionnés dans l’ordre des lots même si les réponses arrivent dans un autre ordre', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      sent.push({ method: 'GET', url: String(url), headers: {}, body: undefined });
+      // Lot k (titres 20k+1 à 20k+20) : les lots tardifs répondent en premier.
+      const k = Math.floor((Number(new URL(String(url)).searchParams.get('titles')!.split(',')[0].split(':')[1]) - 1) / 20);
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, (5 - k) * 4));
+      inFlight--;
+      return echoProgress(String(url));
+    }));
+    const all = movies(Array.from({ length: 100 }, (_, i) => i + 1));
+    const r = await v3.homeProgress(all);
+    expect(sent).toHaveLength(5);
+    expect(maxInFlight).toBe(3);
+    expect(r.items.map((i) => i.tmdbId)).toEqual(all.map((t) => t.tmdbId));
+  });
+});
