@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QUIET_GAP_PX, ficheQuietSetup, ficheQuietStop } from '../src/ui/ficheQuiet.js';
+import { HERO_QUIET, QUIET_GAP_PX, ficheQuietSetup, ficheQuietStop, quietGlide } from '../src/ui/ficheQuiet.js';
 
 // jsdom n'a pas de mise en page : offsetLeft/offsetTop/offsetHeight sont simulés (les rects, eux, ne servent plus).
 const offs = (el: HTMLElement, o: { left: number; top: number; height: number }) => {
@@ -113,5 +113,52 @@ describe('fiche : logo vers le bouton Lecture (bande-annonce en grand)', () => {
     const zone = document.createElement('div');
     zone.innerHTML = '<div class="f-info"><h1 class="f-title">T</h1></div>';
     expect(() => ficheQuietSetup(zone)).not.toThrow();
+  });
+});
+
+describe('accueil : logo de la mise en avant vers Lecture', () => {
+  beforeEach(() => mm(false));
+  afterEach(() => { document.body.innerHTML = ''; vi.unstubAllGlobals(); });
+
+  const slide = () => {
+    const zone = document.createElement('div');
+    zone.className = 'hero-slide';
+    zone.innerHTML = '<div class="hero-content"><h1 class="hero-title">T</h1><p class="hero-desc">D</p>' +
+      '<div class="hero-actions"><button class="btn btn-primary">Lecture</button></div></div>';
+    document.body.appendChild(zone);
+    const set = () => {
+      offs(zone.querySelector('.hero-title') as HTMLElement, { left: 64, top: 200, height: 150 });
+      offs(zone.querySelector('.btn-primary') as HTMLElement, { left: 64, top: 600, height: 48 });
+    };
+    set();
+    return { zone, set };
+  };
+
+  it('pose le décalage sur le titre et le retire à l’arrêt', () => {
+    const { zone } = slide();
+    const stop = quietGlide(zone, HERO_QUIET);
+    const title = zone.querySelector('.hero-title') as HTMLElement;
+    expect(title.style.getPropertyValue('--f-qx')).toBe('0px');
+    expect(title.style.getPropertyValue('--f-qy')).toBe(600 - QUIET_GAP_PX - 350 + 'px');
+    stop!();
+    expect(title.style.getPropertyValue('--f-qy')).toBe('');
+  });
+
+  it('contenu réécrit (diapositive rafraîchie) : le nouveau titre est mesuré', async () => {
+    const { zone, set } = slide();
+    const stop = quietGlide(zone, HERO_QUIET);
+    const box = zone.querySelector('.hero-content') as HTMLElement;
+    box.innerHTML = '<h1 class="hero-title">T2</h1><div class="hero-actions"><button class="btn btn-primary">Lecture</button></div>';
+    set();
+    await flush();
+    const title = zone.querySelector('.hero-title') as HTMLElement;
+    expect(title.style.getPropertyValue('--f-qy')).toBe(600 - QUIET_GAP_PX - 350 + 'px');
+    stop!();
+  });
+
+  it('sans bouton principal : rien à brancher', () => {
+    const zone = document.createElement('div');
+    zone.innerHTML = '<div class="hero-content"><h1 class="hero-title">T</h1></div>';
+    expect(quietGlide(zone, HERO_QUIET)).toBeNull();
   });
 });

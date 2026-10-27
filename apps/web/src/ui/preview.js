@@ -5,6 +5,7 @@ import { DWELL_MS, REDUCE, STILL, YT_ORIGIN } from './constants.js';
 import { ICON } from './icons.js';
 import { app } from './dom.js';
 import { textFade } from './playback.js';
+import { quietGlide, HERO_QUIET } from './ficheQuiet.js';
 import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
 import { trailersAllowed } from '../player/playerState';
 import { state } from './state.js';
@@ -131,6 +132,7 @@ export function stopPreview() {
   setCinema(p.iframe, false);
   if (p.ro) p.ro.disconnect();
   if (p.unfade) p.unfade();
+  if (p.unglide) p.unglide();
   if (p.unend) p.unend();
   if (p.unguard) p.unguard();
   p.wrap.remove();
@@ -158,7 +160,7 @@ export async function startPreview(media) {
   media.appendChild(wrap);
   media.appendChild(btn);
   const iframe = wrap.querySelector('iframe');
-  const p = { media, wrap, btn, iframe, muted: true, vo: !!d.trailerVO, ro: null, unfade: null, unend: null, unguard: null };
+  const p = { media, wrap, btn, iframe, muted: true, vo: !!d.trailerVO, ro: null, unfade: null, unglide: null, unend: null, unguard: null };
   state.preview = p;
   p.ro = new ResizeObserver(() => fitPreview(p));
   p.ro.observe(media);
@@ -169,6 +171,8 @@ export async function startPreview(media) {
     postYT(iframe, 'playVideo');
     // Accueil : les textes de la diapositive s'estompent pendant la lecture effective (grille : rien à estomper).
     p.unfade = textFade(media.closest('.hero-slide'), iframe);
+    // Texte estompé : le logo rejoint « Lecture » (mêmes règles que la fiche).
+    if (media.closest('.hero-slide')) p.unglide = quietGlide(media.closest('.hero-slide'), HERO_QUIET);
     if (carousel) {
       p.unend = whenEnded(iframe, () => {
         if (state.preview === p) media.dispatchEvent(new CustomEvent('trailerend', { bubbles: true }));

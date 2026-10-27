@@ -105,7 +105,8 @@ body.modal-open { overflow: hidden; }
 .hero-slide .hero-content > :not(.hero-title):not(.hero-actions) { transition: opacity 0.6s ease; }
 .hero-slide.is-quiet .hero-content > :not(.hero-title):not(.hero-actions) { opacity: 0; }
 .hero-slide .hero-title { transform-origin: left bottom; transition: transform 0.6s ease; }
-.hero-slide.is-quiet .hero-title { transform: scale(0.72); }
+/* Le titre rejoint Lecture : décalage FLIP (--f-qx, --f-qy) calculé par ficheQuiet.js (quietGlide), comme sur la fiche. */
+.hero-slide.is-quiet .hero-title { transform: translate(var(--f-qx, 0px), var(--f-qy, 0px)) scale(0.72); }
 .hero-slide .hero-actions > * { transition: opacity 0.6s ease, background-color 0.2s, transform 0.15s; }
 .hero-slide.is-quiet .hero-actions > :not(.btn-primary) { opacity: 0; }
 .hero-slide.is-quiet .hero-actions > .btn-primary { opacity: 0.6; }
@@ -280,7 +281,7 @@ body.modal-open { overflow: hidden; }
 .s-a .hero.is-cinema .hero-slide.is-current .hero-content { z-index: 3; }
 .s-a .hero.is-cinema .hero-slide.is-current .hero-content > :not(.hero-title):not(.hero-actions),
 .s-a .hero.is-cinema .hero-slide.is-current .hero-actions > :not(.btn-primary) { opacity: 0; visibility: hidden; pointer-events: none; }
-.s-a .hero.is-cinema .hero-slide.is-current .hero-title { transform: scale(0.5); }
+.s-a .hero.is-cinema .hero-slide.is-current .hero-title { transform: translate(var(--f-qx, 0px), var(--f-qy, 0px)) scale(0.5); }
 .s-a .hero.is-cinema .hero-dots, .s-a .hero.is-cinema .hero-arrow { opacity: 0; visibility: hidden; pointer-events: none; }
 .s-a .hero.is-cinema .scrim { z-index: 2; background: linear-gradient(0deg, rgba(12, 11, 17, 0.45) 0%, rgba(12, 11, 17, 0) 26%); }
 .s-a .hero-cinema .rows { opacity: 0; visibility: hidden; pointer-events: none; }
