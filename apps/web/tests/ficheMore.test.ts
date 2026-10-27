@@ -87,7 +87,7 @@ describe('fiche : menu « … »', () => {
     const btn = moreButton();
     btn.focus();
     btn.click();
-    expect(document.activeElement).toBe(hideItem());
+    expect(document.activeElement).toBe(menu()!.querySelector('[role="menuitem"]'));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(menu()).toBeNull();
     expect(document.activeElement).toBe(btn);

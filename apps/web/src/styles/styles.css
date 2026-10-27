@@ -345,6 +345,8 @@ body.modal-open { overflow: hidden; }
 @media (max-width: 640px) {
   .s-a { --gutter: 16px; --title-size: 30px; --logo-h: 40px; --topbar-h: 60px; }
   .s-a .topbar { padding: 14px 16px; }
+  /* Le logo seul suffit : le mot « laststream » poussait Explorer sous la recherche. */
+  .topbar .brand .wordmark { display: none; }
   /* Mise en avant mobile : l'image (ou la bande-annonce) en bandeau 16:9 en haut, le texte compact en dessous. Une vidéo
      16:9 qui couvrait tout le bloc n'en montrait qu'un tiers, recadré trop haut. */
   .s-a { --hero-media-h: 56.25vw; }
@@ -378,6 +380,8 @@ body.modal-open { overflow: hidden; }
   .s-a .hero-slide.is-quiet .hero-title, .s-a .hero.is-cinema .hero-slide.is-current .hero-title { transform: none; }
   .s-a .hero.is-cinema .hero-slide.is-current { padding-bottom: 20px; }
   .s-a .hero-dots { display: none; }
+  /* Seule la diapositive affichée donne sa hauteur : une autre plus haute (titre sur deux lignes) laissait un grand vide sous les boutons. */
+  .s-a .hero-slide:not(.is-current) { position: absolute; inset: 0 0 auto; }
   .s-a .hero .preview-sound { top: 10px; right: 10px; }
   .sk-hero { height: calc(var(--hero-media-h, 56.25vw) + 190px); }
   .s-a .rows { margin-top: 20px; padding: 0 16px 110px; gap: 32px; }
@@ -745,6 +749,11 @@ a.prov:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--foc
   .services-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .services-grid .svc { height: 90px; }
   .svc-head { min-height: 34vh; padding: 84px var(--gutter) 24px; gap: 16px; }
+  /* Bibliothèque : en-tête compact, filtres plus petits, grille à deux colonnes. */
+  .svc-head-plain { min-height: 0; padding: 76px var(--gutter) 12px; }
+  .lib-controls { gap: 4px 12px; }
+  .lib-controls .pill { min-height: 34px; padding: 0 13px; font-size: 13px; }
+  .lib-grid { gap: 18px 12px; padding: 12px var(--gutter) 110px; }
   .svc-logo { width: 72px; height: 72px; border-radius: 16px; }
 }
 
@@ -891,7 +900,8 @@ a.prov:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--foc
 
 /* ---------- Bibliothèque ---------- */
 .lib-controls { display: flex; flex-wrap: wrap; gap: 12px 28px; margin-top: 6px; }
-.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 24px 18px; padding: 24px var(--gutter) 96px; }
+/* Toujours au moins deux colonnes, même sur un petit téléphone. */
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, calc(50% - 9px)), 1fr)); gap: 24px 18px; padding: 24px var(--gutter) 96px; }
 .lib-grid .card { width: 100%; flex: none; }
 .lib-grid .row-msg { grid-column: 1 / -1; }
 

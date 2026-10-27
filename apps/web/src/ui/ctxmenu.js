@@ -14,10 +14,10 @@ import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { toast } from './dom.js';
 import { downloadsAllowed, startDownload } from './downloadBtn.js';
 import { platformAvailability } from '../downloads/service';
-import { nextToWatch } from './fiche.js';
+import { nextToWatch, partyKind } from './fiche.js';
 import { ICON } from './icons.js';
 import { inLib, renderLibrary, toggleLib } from './library.js';
-import { openTrailer } from './modal.js';
+import { openTrailer, openVideo } from './modal.js';
 import { hv } from './hover.js';
 import { go } from './router.js';
 import { openPartyDialog } from './partylaunch.js';
@@ -293,11 +293,31 @@ function personItems(t) {
   return items;
 }
 
-/** Menu de la fiche (« … » et affiche) : « Partager », « Proposer une watch party » et « Ne plus proposer sur l'accueil » (ou « Proposer à nouveau » quand le titre est masqué). Profil enfant : pas de « Partager » ni de « Ne plus proposer ». */
+/** Menu de la fiche (« … » et affiche) : bande-annonce, bibliothèque, vu (film), sources (au cinéma), « Partager », watch party, suivre,
+ * « Ne plus proposer sur l'accueil » (ou « Proposer à nouveau » quand le titre est masqué). Profil enfant : pas de « Partager » ni de « Ne plus proposer ». */
 function ficheItems(t) {
   const m = t.model;
   if (!m) return [];
-  const items = socialItems(t.el, () => m);
+  const items = [];
+  if (m.trailer) items.push({ id: 'trailer', label: 'Bande-annonce', icon: ICON.film, run: () => openVideo(m.trailer, 'Bande-annonce', t.el, !!m.trailerVO) });
+  const on = inLib(m.key);
+  items.push({
+    id: 'lib', label: on ? 'Retirer de ma bibliothèque' : 'Ajouter à ma bibliothèque', icon: on ? ICON.check : ICON.list,
+    run: () => { const now = toggleLib({ type: m.type, id: Number(m.id), name: m.name, posterPath: m.posterPath }); toast(now ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque'); renderLibrary(); },
+  });
+  if (m.type === 'movie') {
+    const seen = userStore.isWatched(m.key);
+    items.push({ id: 'seen', label: seen ? 'Marquer comme non vu' : 'Marquer comme vu', icon: ICON.check, run: () => mark(m.key, null, !seen) });
+  }
+  // Sur demande seulement : aucune vérification automatique des sources d'un film au cinéma.
+  if (m.cinemaSince) items.push({ id: 'sources', label: 'Voir les sources', icon: ICON.list, run: () => openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, t.el) });
+  // Adulte connecté, titre sorti : « Regarder avec… » (feuille chargée au clic, hors du premier chargement) à la place de la watch party simple.
+  const withSheet = partyKind(m) === 'with';
+  socialItems(t.el, () => m).forEach((x) => {
+    if (x.id !== 'party' || !withSheet) { items.push(x); return; }
+    items.push({ id: 'party', label: 'Regarder avec…', icon: ICON.users, run: () => import('./watchWith.js').then((w) => { if (!w.openWatchWith(t.el, m)) openPartyDialog(t.el); }, () => openPartyDialog(t.el)) });
+  });
+  extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   if (!isKidProfile()) {
     const hidden = isHiddenKey(m.key);
     items.push({ id: 'hide', label: hidden ? 'Proposer à nouveau sur l’accueil' : 'Ne plus proposer sur l’accueil', icon: ICON.close, run: () => toggleHidden(m.key, m.name, m.posterPath) });

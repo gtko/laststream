@@ -587,16 +587,14 @@ describe('revue : magasin', () => {
   });
 });
 
-describe('revue : bouton de la fiche', () => {
-  it('adulte connecté : « Regarder avec… » ; enfant ou hors compte : boîte « Watch party »', async () => {
-    const { partyBtn } = await import('../src/ui/fiche.js');
+describe('revue : menu « … » de la fiche', () => {
+  it('adulte connecté : « Regarder avec… » ; enfant : boîte « Watch party » ; hors compte : rien', async () => {
+    const { partyKind } = await import('../src/ui/fiche.js');
     const m = { key: 'movie:1', type: 'movie', name: 'Alien' };
-    expect(partyBtn(m)).toContain('data-watch-with');
-    expect(partyBtn(m)).not.toContain('data-wparty');
+    expect(partyKind(m)).toBe('with');
     setAccount(KID);
-    expect(partyBtn(m)).toContain('data-wparty');
-    expect(partyBtn(m)).not.toContain('data-watch-with');
+    expect(partyKind(m)).toBe('party');
     setAccount(null);
-    expect(partyBtn(m)).not.toContain('data-watch-with');
+    expect(partyKind(m)).toBe(null);
   });
 });

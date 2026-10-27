@@ -277,16 +277,24 @@ describe('interface portée', () => {
     // Plus de bloc IA « Pourquoi tu vas aimer » : ni encart, ni appel de génération à l'ouverture de la fiche.
     expect(detail.querySelector('#f-why')).toBeNull();
     expect(calls.some((url) => url.includes('/lt/why'))).toBe(false);
-    const follow = detail.querySelector('[data-follow="movie:100"]') as HTMLElement;
-    expect(follow.getAttribute('aria-pressed')).toBe('false');
+    // Suivre et Marquer comme vu sont rangés dans le menu « … » de la fiche.
+    const menuItem = (id: string) => {
+      (detail.querySelector('[data-fiche-more]') as HTMLElement).click();
+      return document.querySelector('.ctxmenu [data-ctx="' + id + '"]') as HTMLElement;
+    };
+    const follow = menuItem('follow');
+    expect(follow.textContent).toBe('Suivre');
     follow.click();
-    expect(follow.getAttribute('aria-pressed')).toBe('true');
+    await settle(50);
+    expect(menuItem('follow').textContent).toBe('Ne plus suivre');
+    document.body.click();
     expect(JSON.parse(localStorage.getItem('laststream.follows')!)[0]).toMatchObject({ id: 100, type: 'movie' });
     // Pas encore vu : la note est désactivée.
     expect(detail.querySelector('#f-rate button[disabled]')).not.toBeNull();
-    (detail.querySelector('[data-watch-movie]') as HTMLElement).click();
+    menuItem('seen').click();
     await settle(50);
-    expect(detail.querySelector('[data-watch-movie]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(menuItem('seen').textContent).toBe('Marquer comme non vu');
+    document.body.click();
     expect(detail.querySelector('#f-rate .stars')).not.toBeNull();
     expect(document.querySelector('.rate-pop')).not.toBeNull(); // « Tu as aimé ? »
     (detail.querySelector('#f-rate [data-rate="4.5"]') as HTMLElement).click();
@@ -386,13 +394,15 @@ describe('interface portée', () => {
     await settle(50);
   });
 
-  it('Suivre : bouton rond sans libellé, comme les autres boutons de la fiche', async () => {
+  it('fiche : les actions secondaires sont rangées dans le menu « … »', async () => {
     location.hash = '#/movie/100';
     await settle(300);
-    const f = document.querySelector('#detail .f-actions [data-follow="movie:100"]') as HTMLElement;
-    expect(f.classList.contains('btn-round')).toBe(true);
-    expect(f.querySelector('.f-follow-label')).toBeNull();
-    expect(f.getAttribute('data-tip')).toMatch(/Suivre|Suivi/);
+    const d = document.getElementById('detail')!;
+    expect(d.querySelector('.f-actions .btn-round:not(.f-more)')).toBeNull();
+    (d.querySelector('[data-fiche-more]') as HTMLElement).click();
+    const ids = Array.from(document.querySelectorAll('.ctxmenu [data-ctx]')).map((b) => b.getAttribute('data-ctx'));
+    expect(ids).toEqual(expect.arrayContaining(['lib', 'seen', 'follow']));
+    document.body.click();
     location.hash = '#/';
     await settle(50);
   });
@@ -453,17 +463,18 @@ describe('interface portée', () => {
     await settle(400);
     const d = document.getElementById('detail')!;
     expect(d.querySelector('.f-actions [data-play]')).toBeNull();
-    // Bouton rond « Sources » : présent, mais rien n'est vérifié tant qu'on ne clique pas.
-    const srcBtn = d.querySelector('.f-actions [data-sources-open]') as HTMLElement;
-    expect(srcBtn.classList.contains('btn-round')).toBe(true);
-    expect(srcBtn.getAttribute('data-tip')).toBe('Voir les sources');
+    // « Voir les sources » dans le menu « … », mais rien n'est vérifié tant qu'on ne clique pas.
+    (d.querySelector('[data-fiche-more]') as HTMLElement).click();
+    expect(document.querySelector('.ctxmenu [data-ctx="sources"]')).not.toBeNull();
+    expect(document.querySelector('.ctxmenu [data-ctx="follow"]')).toBeNull();
+    document.body.click();
     expect(calls.filter((c) => c.includes('/stream/')).length).toBe(streamCallsBefore);
     // Le « Suivre » est la pastille principale : pas de cloche en double.
     expect(d.querySelectorAll('.f-actions [data-follow="movie:505"]')).toHaveLength(1);
     expect(d.querySelector('.f-actions .btn-pill.is-cinema')).not.toBeNull();
     expect(d.querySelector('.f-release')!.textContent).toMatch(/Au cinéma depuis le/);
     const be = d.querySelector('.f-actions [data-follow="movie:505"]') as HTMLElement;
-    expect(be.textContent).toBe('Me prévenir de la sortie en VOD');
+    expect(be.textContent).toBe('Me prévenir');
     be.click();
     expect(JSON.parse(localStorage.getItem('laststream.follows')!).some((f: { id: number }) => f.id === 505)).toBe(true);
     location.hash = '#/';

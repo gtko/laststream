@@ -148,11 +148,11 @@ describe('entrées « Partager » et « Proposer une watch party »', () => {
     expect(labels()).not.toContain('Proposer une watch party');
   });
 
-  it('fiche, compte adulte : partager et watch party à côté de « Ne plus proposer »', () => {
+  it('fiche, compte adulte : partager et « Regarder avec… » à côté de « Ne plus proposer »', () => {
     onFiche(MODEL);
     mount('<div class="f-bg"><img src="/bg.jpg" alt=""></div>');
     rightClick(pick('.f-bg img'));
-    expect(labels()).toEqual(expect.arrayContaining(['Partager', 'Proposer une watch party', 'Ne plus proposer sur l’accueil']));
+    expect(labels()).toEqual(expect.arrayContaining(['Partager', 'Regarder avec…', 'Ne plus proposer sur l’accueil']));
   });
 
   it('fiche, profil enfant : seule la watch party (pas de « Partager », pas de « Ne plus proposer »)', () => {
@@ -160,7 +160,9 @@ describe('entrées « Partager » et « Proposer une watch party »', () => {
     onFiche(MODEL);
     mount('<div class="f-bg"><img src="/bg.jpg" alt=""></div>');
     rightClick(pick('.f-bg img'));
-    expect(labels()).toEqual(['Proposer une watch party']);
+    expect(labels()).toContain('Proposer une watch party');
+    expect(labels()).not.toContain('Partager');
+    expect(labels()).not.toContain('Ne plus proposer sur l’accueil');
   });
 
   it('titre pas encore sorti : la watch party répond par un message, sans fenêtre', () => {
@@ -172,7 +174,8 @@ describe('entrées « Partager » et « Proposer une watch party »', () => {
     expect(document.querySelector('.pld')).toBeNull();
   });
 
-  it('titre disponible : la fenêtre de lancement porte le titre de la fiche', () => {
+  it('titre disponible (profil enfant) : la fenêtre de lancement porte le titre de la fiche', () => {
+    asKid();
     onFiche(MODEL);
     mount('<div class="f-bg"><img src="/bg.jpg" alt=""></div>');
     rightClick(pick('.f-bg img'));

@@ -65,8 +65,10 @@ document.addEventListener('click', (e) => {
 
 // Menu contextuel : titres et personnes.
 registerCtxItems((t) => {
-  if (t.kind !== 'title' && t.kind !== 'show' && t.kind !== 'person') return [];
-  const key = t.kind === 'person' ? 'person:' + t.id : t.key;
+  if (t.kind !== 'title' && t.kind !== 'show' && t.kind !== 'person' && t.kind !== 'fiche') return [];
+  // Fiche au cinéma : « Me prévenir » est déjà le bouton principal.
+  if (t.kind === 'fiche' && (!t.model || t.model.cinemaSince)) return [];
+  const key = t.kind === 'person' ? 'person:' + t.id : t.kind === 'fiche' ? t.model.key : t.key;
   const on = userStore.isFollowing(key);
   return [{ id: 'follow', label: on ? 'Ne plus suivre' : 'Suivre', icon: on ? ICON.bellOn : ICON.bell, run: () => toggleFollow(key, t.el) }];
 });
