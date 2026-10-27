@@ -12,8 +12,8 @@ const streamingServer = {
 // celle du serveur. Il ne transmet que POST /_edge/config/encode ; tout le reste répond 404.
 const demoConfigRelay = {
   '/_edge': {
-    target: 'https://laststream.gtux-prog.workers.dev', changeOrigin: true,
-    rewrite: (p: string) => p.replace(/^\/_edge/, ''), headers: { origin: 'https://laststream.gtux-prog.workers.dev' },
+    target: 'https://app.laststream.app', changeOrigin: true,
+    rewrite: (p: string) => p.replace(/^\/_edge/, ''), headers: { origin: 'https://app.laststream.app' },
     bypass: (req: { method?: string; url?: string }) => (req.method === 'POST' && req.url === '/_edge/config/encode' ? undefined : (false as const)),
   },
 };

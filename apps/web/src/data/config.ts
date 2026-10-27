@@ -9,9 +9,9 @@ import { cleartextAllowed } from './lan';
 export const SETTINGS_STORAGE_KEY = 'laststream.lastaddon';
 export const DEFAULT_BASE = 'http://localhost:7000';
 /** Serveur public de lastAddon : adresse par défaut de l'application Android (une seule modification à faire ici). */
-export const PUBLIC_BASE = 'https://laststream.gtux-prog.workers.dev';
-/** Adresses du serveur Laststream officiel : le public et son alias lastaddon-core. */
-const OFFICIAL_BASES = [PUBLIC_BASE, 'https://lastaddon-core.gtux-prog.workers.dev'];
+export const PUBLIC_BASE = 'https://app.laststream.app';
+/** Adresses du serveur Laststream officiel : le public, son alias core et l'ancien alias lastaddon-core. */
+const OFFICIAL_BASES = [PUBLIC_BASE, 'https://core.laststream.app', 'https://lastaddon-core.gtux-prog.workers.dev'];
 
 /** Vrai pour le serveur Laststream officiel : une de ses adresses, racine seulement (sans chemin). */
 export function isOfficialBase(base: string): boolean {

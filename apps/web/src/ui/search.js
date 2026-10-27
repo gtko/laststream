@@ -54,7 +54,7 @@ function topbarHTML(q) {
   const server = isServerMode();
   const nav = kid
     ? '<a href="#/library" data-libnav>Mes favoris</a>' + (kidSection('tv') ? '<a href="#/tv-live" data-tvlive>TV jeunesse</a>' : '')
-    : mainNavHTML({ idSuffix: BAR_ID });
+    : mainNavHTML({ idSuffix: BAR_ID, social: server });
   return '<header class="topbar search-topbar">' + brand() +
     '<nav class="nav" aria-label="Principale">' + nav + '</nav>' +
     topActionsHTML({ kid, social: server && !kid, server, owner: canAdmin(), search: searchFieldHTML(q), idSuffix: BAR_ID }) + '</header>';

@@ -55,7 +55,7 @@ describe('liens de parrainage', () => {
   });
   it('accepte un code seul ou un lien collé', () => {
     expect(normalizeInviteCode('  Kq3abcd ')).toBe('Kq3abcd');
-    expect(normalizeInviteCode('https://laststream.gtux-prog.workers.dev/?invite=Kq3abcd')).toBe('Kq3abcd');
+    expect(normalizeInviteCode('https://app.laststream.app/?invite=Kq3abcd')).toBe('Kq3abcd');
     expect(normalizeInviteCode('https://x.fr/#/join/Zp9abcd')).toBe('Zp9abcd');
     expect(normalizeInviteCode('n’importe quoi !')).toBe('');
   });
@@ -79,11 +79,12 @@ describe('serveur officiel', () => {
     expect(isOfficialBase(`${PUBLIC_BASE}/`)).toBe(true);
     expect(isOfficialBase('  https://lastaddon-core.gtux-prog.workers.dev//  ')).toBe(true);
     expect(isOfficialBase('https://LASTADDON-CORE.gtux-prog.workers.dev')).toBe(true);
+    expect(isOfficialBase('https://core.laststream.app')).toBe(true);
     expect(isOfficialBase('https://localhost')).toBe(false);
     expect(isOfficialBase('http://localhost:7000')).toBe(false);
-    expect(isOfficialBase('http://laststream.gtux-prog.workers.dev')).toBe(false);
-    expect(isOfficialBase('https://laststream.gtux-prog.workers.dev.evil.example')).toBe(false);
-    expect(isOfficialBase('https://laststream.gtux-prog.workers.dev/perso')).toBe(false);
+    expect(isOfficialBase('http://app.laststream.app')).toBe(false);
+    expect(isOfficialBase('https://app.laststream.app.evil.example')).toBe(false);
+    expect(isOfficialBase('https://app.laststream.app/perso')).toBe(false);
     expect(isOfficialBase('')).toBe(false);
     expect(isOfficialBase('n’importe quoi')).toBe(false);
   });

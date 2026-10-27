@@ -9,7 +9,7 @@ import { userStore } from '../src/data/userStore';
 let headerA: () => string;
 let headerKids: () => string;
 let syncTopbar: () => void;
-let mainNavHTML: (opts?: { current?: string; idSuffix?: string }) => string;
+let mainNavHTML: (opts?: { current?: string; idSuffix?: string; social?: boolean }) => string;
 beforeAll(async () => {
   const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
   document.body.innerHTML = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[\s\S]*?<\/script>/g, '');
@@ -76,11 +76,25 @@ describe('barre du haut : liens', () => {
     expect(labels('.nav-pop-compact a[aria-current="page"]')).toEqual(['Films']);
   });
 
-  it('Watch parties seulement pour un compte connecté hors profil enfant', () => {
+  it('Ensemble (point d’accent) seulement pour un compte connecté hors profil enfant, après Documentaires et avant Explorer ; plus de lien Watch parties', () => {
+    expect($('.nav-ens')).toBeNull();
     expect($('.nav-party')).toBeNull();
     setAccount(ADULT);
     mount(headerA());
-    expect($('.nav-party')!.getAttribute('href')).toBe('#/parties');
+    expect(labels('.topbar .nav > a')).toEqual(['Séries', 'Films', 'Direct', 'Émissions TV', 'Documentaires', 'Ensemble']);
+    expect($('.nav-ens').getAttribute('href')).toBe('#/ensemble');
+    expect($('.nav-ens .nav-dot')).not.toBeNull();
+    expect($('.nav-ens').nextElementSibling!.classList.contains('nav-drop')).toBe(true); // Explorer vient juste après
+    expect($('.nav-party')).toBeNull();
+    expect($('.top-actions [href="#/parties"]')).toBeNull();
+    expect(labels('#nav-explore .nav-pop-compact a')).toContain('Ensemble');
+  });
+
+  it('sur la page Ensemble, l’entrée est marquée (aria-current) dans la barre et dans Explorer', () => {
+    mount('<header class="topbar"><nav class="nav">' + mainNavHTML({ current: 'ensemble', social: true }) + '</nav></header>');
+    expect(labels('.nav > a.is-current')).toEqual(['Ensemble']);
+    expect($('.nav-ens').getAttribute('aria-current')).toBe('page');
+    expect(labels('.nav-pop-compact a[aria-current="page"]')).toEqual(['Ensemble']);
   });
 });
 
@@ -189,11 +203,11 @@ describe('menu du profil', () => {
 });
 
 describe('profil enfant', () => {
-  it('barre enfant : pas d’Amis, de Watch parties, d’Administration ni de Statistiques ; seulement Changer de profil', () => {
+  it('barre enfant : pas d’Amis, d’Ensemble, d’Administration ni de Statistiques ; seulement Changer de profil', () => {
     setAccount(KID, true);
     mount(headerKids());
     expect($('.topbar .nav > a.is-current').textContent).toBe('Accueil');
-    expect($('.nav-party')).toBeNull();
+    expect($('.nav-ens')).toBeNull();
     expect($('.nav-drop-btn')).toBeNull(); // pas de menu Explorer pour un enfant
     expect(labels('#nav-profile a, #nav-profile button')).toEqual(['Changer de profil']);
     expect($('#nav-profile .nav-pop-sub')!.textContent).toBe('Profil enfant');

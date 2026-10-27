@@ -7,6 +7,7 @@ import { canAdmin, isKidProfile, kidSection } from '../data/auth';
 import { browseAllowed, showBrowse } from './registry.js';
 import { app, detailEl, toast } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
+import { ensembleTabOf } from './ensembleTabs.js';
 import { ficheHash, parseFicheHash } from './ficheRoute.js';
 import { closeHover } from './hover.js';
 import { renderContinue, startHomeLive, stopHomeLive } from './home.js';
@@ -32,6 +33,7 @@ const lazy = {
   sharedList: lazyView('sharedList', () => import('./sharedList.js')),
   publicTitle: lazyView('publicTitle', () => import('./publicTitle.js')),
   parties: lazyView('parties', () => import('./parties.js')),
+  ensemble: lazyView('ensemble', () => import('./ensemble.js')),
   socialProfile: lazyView('socialProfile', () => import('./socialProfile.js')),
   partyjoin: lazyView('partyjoin', () => import('./partyjoin.js')),
   admin: lazyView('admin', () => import('./admin.js')),
@@ -102,7 +104,7 @@ export function showView(r) {
   else if (r.kind === 'friends') openSidebar();
   else if (r.kind === 'friend') open(lazy.friendLibrary, (m) => m.showFriendLibrary(r.id));
   else if (r.kind === 'socialprofile') open(lazy.socialProfile, (m) => m.showSocialProfile());
-  else if (r.kind === 'parties') open(lazy.parties, (m) => m.showParties());
+  else if (r.kind === 'ensemble') open(lazy.ensemble, (m) => m.showEnsemble(r.tab));
   else if (r.kind === 'list') open(lazy.sharedList, (m) => m.showSharedList(r.id));
   else if (r.kind === 'sharelink') open(lazy.publicTitle, (m) => m.showShareLink(r.code));
   else if (r.kind === 'party') open(lazy.parties, (m) => m.showParty(r.id));
@@ -137,7 +139,7 @@ export function parseRoute() {
     return null;
   }
   // Profil enfant : ni réglages ni TV en direct, ni amis ni salons publics (un salon privé s'ouvre par son lien).
-  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover' || r.kind === 'downloads' || r.kind === 'hub')) return null;
+  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'ensemble' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover' || r.kind === 'downloads' || r.kind === 'hub')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   // Pages d'addon (catalogue, fiche) : refusées sur le profil enfant, comme le navigateur.
   if (r && (r.kind === 'addonCatalog' || r.kind === 'addonFiche') && isKidProfile()) return null;
@@ -178,7 +180,10 @@ function parseRouteRaw() {
   // Lien public d'un titre recommandé : #/t/<code> (ou /t/<code> servi par le Worker), sans session.
   const shareCode = shareCodeFrom(h, '');
   if (shareCode) return { kind: 'sharelink', code: shareCode };
-  if (h === '#/parties') return { kind: 'parties' };
+  // Ensemble : #/ensemble[/<onglet>]. L'ancienne adresse #/parties y mène (route() la remplace dans la barre d'adresse).
+  if (h === '#/parties') return { kind: 'ensemble', tab: 'maintenant', redirect: '#/ensemble' };
+  r = /^#\/ensemble(?:\/([a-z-]{1,20}))?$/.exec(h);
+  if (r && (!r[1] || ensembleTabOf(r[1]))) return { kind: 'ensemble', tab: r[1] || 'maintenant' };
   r = /^#\/party\/([A-Za-z0-9_-]{1,64})$/.exec(h);
   if (r) return { kind: 'party', id: r[1] };
   // Invitation d'un invité (sans compte) : #/party/join/<id>?t=<jeton>.
@@ -208,6 +213,11 @@ export function route() {
   state.curHash = location.hash || '';
   state.restoreY = pop && state.scrolls.has(state.curHash) ? state.scrolls.get(state.curHash) : null;
   const r = parseRoute();
+  // #/parties est devenue #/ensemble : l'adresse est remplacée (pas d'entrée d'historique en plus) puis la route rejouée.
+  if (r && r.redirect) {
+    location.replace(r.redirect);
+    return;
+  }
   if (!r || r.kind !== 'partyjoin') teardownPartyJoin();
   // Amis (#/friends) : la barre latérale s'ouvre par-dessus la page en cours, qui reste affichée.
   if (r && r.kind === 'friends') {

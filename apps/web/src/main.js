@@ -1,5 +1,5 @@
 /* Laststream : point d'entrée. Interface du prototype portée en modules ES, backend lastAddon.
- * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/films, #/series, #/documentaires, #/collections[/{catégorie}], #/collection/{id}, #/discover, #/library, #/hidden, #/stats, #/friends, #/friend/{pseudo}, #/parties, #/party/{id}, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings, #/admin (propriétaire), #/reset/{jeton} (public), #/foyer/{jeton} (invitation au foyer, sans compte).
+ * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/films, #/series, #/documentaires, #/collections[/{catégorie}], #/collection/{id}, #/discover, #/library, #/hidden, #/stats, #/friends, #/friend/{pseudo}, #/ensemble[/{onglet}] (#/parties y redirige), #/party/{id}, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings, #/admin (propriétaire), #/reset/{jeton} (public), #/foyer/{jeton} (invitation au foyer, sans compte).
  * ?still désactive les aperçus vidéo. */
 import './demoBoot'; // premier module : en démo, stockage du navigateur remplacé par la mémoire avant toute lecture
 import { initSentry } from './observability/sentry';
@@ -14,6 +14,10 @@ import './styles/settings-nav.css';
 import './styles/settings-appearance.css';
 import './styles/homeprefs.css';
 import './styles/social.css';
+import './styles/friendRail.css';
+import './styles/ensemble.css';
+import './styles/evenings.css';
+import './styles/homeSocial.css';
 import './styles/friendLibrary.css';
 import './styles/chat.css';
 import './styles/convwin.css';

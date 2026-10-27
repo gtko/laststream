@@ -85,7 +85,7 @@ async function login(name: string): Promise<void> {
 
 beforeEach(async () => {
   localStorage.clear();
-  saveSettings({ base: 'https://laststream.gtux-prog.workers.dev', mode: 'public' });
+  saveSettings({ base: 'https://app.laststream.app', mode: 'public' });
   state.views = [viewOf(httpStream({ filename: 'a.mkv', size: GB }))];
   transfers = [];
   removed = [];

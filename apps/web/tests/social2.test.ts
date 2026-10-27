@@ -140,7 +140,7 @@ describe('salons publics', () => {
       { id: 'r2', title: 'Alien', poster: null, language: 'en', mediaType: 'movie', host: 'bob', participants: 2, maxParticipants: 2, createdAt: '2026-01-01' },
     ], nextCursor: 'c2' }) : undefined);
     detail().innerHTML = '';
-    p.showParties();
+    (await import('../src/ui/ensemble.js')).showEnsemble('maintenant');
     await tick(120);
     const req = calls.find((c) => c.path.startsWith('/party?'))!;
     expect(req.path).toContain('profileId=');
@@ -160,12 +160,11 @@ describe('salons publics', () => {
 
   it('profil enfant : pas de liste publique', async () => {
     const { auth } = await import('../src/data/auth');
-    const p = await import('../src/ui/parties.js');
     const before = auth.profile;
     auth.profile = { id: 'k', name: 'Léo', isKid: true, kidMaxAge: 10 } as any;
     calls.length = 0;
     detail().innerHTML = '';
-    p.showParties();
+    (await import('../src/ui/ensemble.js')).showEnsemble('maintenant');
     await tick(40);
     expect(detail().textContent).toContain('pas disponibles sur un profil enfant');
     expect(calls.some((c) => c.path.startsWith('/party'))).toBe(false);
@@ -228,7 +227,7 @@ describe('page Watch parties (refonte)', () => {
     routes = (c) => (c.path.startsWith('/party?') ? json({ rooms, nextCursor: null }) : undefined);
     const p = await import('../src/ui/parties.js');
     detail().innerHTML = '';
-    p.showParties();
+    (await import('../src/ui/ensemble.js')).showEnsemble('maintenant');
     await tick(120);
     return p;
   };
@@ -305,7 +304,7 @@ describe('page Watch parties (refonte)', () => {
     routes = (c) => (c.path.startsWith('/party?') && !c.path.includes('language=en') ? (first as unknown as Response) : c.path.includes('language=en') ? json({ rooms: [room({ id: 'e', title: 'English One', language: 'en' })], nextCursor: null }) : undefined);
     const p = await import('../src/ui/parties.js');
     detail().innerHTML = '';
-    p.showParties();
+    (await import('../src/ui/ensemble.js')).showEnsemble('maintenant');
     await tick(20);
     (detail().querySelector('[data-wp-lang="en"]') as HTMLButtonElement).click();
     await tick(60);

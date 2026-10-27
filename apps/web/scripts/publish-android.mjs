@@ -17,7 +17,7 @@ import { copyFileSync, createReadStream, existsSync, mkdirSync, readFileSync, st
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const DEFAULT_BASE_URL = 'https://laststream.gtux-prog.workers.dev/app/android';
+export const DEFAULT_BASE_URL = 'https://app.laststream.app/app/android';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');

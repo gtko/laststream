@@ -228,7 +228,7 @@ describe('transport : navigateur puis pont natif', () => {
     expect(r.headers.get('Content-Range')).toBe('bytes 0-2/10');
     await range('https://e1.debrid.it/dl/f.mkv', { headers: { Range: 'bytes=3-5' } });
     expect(urls).toHaveLength(2);
-    await expect(range('https://laststream.gtux-prog.workers.dev/__laststream/range?u=x')).rejects.toMatchObject({ code: 'host_not_allowed' });
+    await expect(range('https://app.laststream.app/__laststream/range?u=x')).rejects.toMatchObject({ code: 'host_not_allowed' });
   });
   it('sans pont natif ni CORS : le fetch échoue proprement (pas de miniatures)', async () => {
     const range = createRangeFetch({ fetchHttp: netFail, nativeHttp: null });

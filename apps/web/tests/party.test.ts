@@ -595,7 +595,7 @@ describe('profil enfant et lien du salon', () => {
   });
 
   it('adresse WebSocket : relative au serveur (https -> wss, http -> ws)', () => {
-    expect(socketUrl('https://laststream.gtux-prog.workers.dev', '/party/r1/ws?ticket=T')).toBe('wss://laststream.gtux-prog.workers.dev/party/r1/ws?ticket=T');
+    expect(socketUrl('https://app.laststream.app', '/party/r1/ws?ticket=T')).toBe('wss://app.laststream.app/party/r1/ws?ticket=T');
     expect(socketUrl('http://localhost:7000/', '/party/r1/ws?ticket=T')).toBe('ws://localhost:7000/party/r1/ws?ticket=T');
   });
 
@@ -803,7 +803,7 @@ describe('contrôleur : attente de tampon, pause et reprise sans écho', () => {
 });
 
 describe('profil enfant : routes', () => {
-  it('#/friends, #/friend/x et #/parties ne sont pas des routes ; un salon privé s’ouvre par son lien', async () => {
+  it('#/friends, #/friend/x, #/parties et #/ensemble ne sont pas des routes ; un salon privé s’ouvre par son lien', async () => {
     vi.resetModules();
     vi.doMock('../src/data/auth', async (importOriginal) => {
       const real = await importOriginal<typeof import('../src/data/auth')>();
@@ -812,7 +812,7 @@ describe('profil enfant : routes', () => {
     const html = (await import('node:fs')).readFileSync((await import('node:path')).resolve(__dirname, '../index.html'), 'utf8');
     document.body.innerHTML = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[\s\S]*?<\/script>/g, '');
     const { parseRoute } = await import('../src/ui/router.js');
-    for (const h of ['#/friends', '#/friend/alice', '#/parties']) { location.hash = h; expect(parseRoute()).toBeNull(); }
+    for (const h of ['#/friends', '#/friend/alice', '#/parties', '#/ensemble', '#/ensemble/ce-soir']) { location.hash = h; expect(parseRoute()).toBeNull(); }
     location.hash = '#/party/abc_123';
     expect(parseRoute()).toEqual({ kind: 'party', id: 'abc_123' });
     vi.doUnmock('../src/data/auth');

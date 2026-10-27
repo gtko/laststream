@@ -1,6 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { toggleEpisode } from './watched.js';
 import { isKidProfile } from '../data/auth';
+import { eveningsAvailable } from '../data/eveningsStore';
 import { IMG, REDUCE } from './constants.js';
 import { elKey, PLAY_COOLDOWN_MS, runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { closeCtx } from './ctxmenu.js';
@@ -190,6 +191,15 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     const m = state.model;
     once('sources', srcOpen, () => { openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, srcOpen); }, { el: srcOpen, cooldown: PLAY_COOLDOWN_MS });
+    return;
+  }
+  const wwith = t.closest('[data-watch-with]');
+  if (wwith) {
+    e.preventDefault();
+    if (!eveningsAvailable()) { openPartyDialog(wwith); return; }
+    // Feuille « Regarder avec… » chargée au clic : hors du premier chargement (budget).
+    const model = state.model;
+    void import('./watchWith.js').then((m) => { if (!m.openWatchWith(wwith, model)) openPartyDialog(wwith); }, () => openPartyDialog(wwith));
     return;
   }
   const wparty = t.closest('[data-wparty]');

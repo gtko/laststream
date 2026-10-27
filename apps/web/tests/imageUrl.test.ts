@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { IMAGE_HOSTS, safeImageUrl } from '../src/data/imageUrl';
 
-const SERVER = 'https://laststream.gtux-prog.workers.dev';
+const SERVER = 'https://app.laststream.app';
 
 describe('safeImageUrl : adresses acceptées', () => {
   it('liste blanche : exactement celle du serveur (affiches TMDB, fonds fanart.tv, affiches metahub)', () => {
@@ -21,7 +21,7 @@ describe('safeImageUrl : adresses acceptées', () => {
     'https://images.metahub.space/poster/small/tt0137523/img',
     'https://episodes.metahub.space/tt0944947/1/1/w780.jpg',
     'https://live.metahub.space/background/medium/tt0111161/img',
-    'https://laststream.gtux-prog.workers.dev/img/x.png',
+    'https://app.laststream.app/img/x.png',
   ])('accepte %s', (u) => {
     expect(safeImageUrl(u, SERVER)).toBe(u);
   });
@@ -45,7 +45,7 @@ describe('safeImageUrl : adresses refusées', () => {
     'https://www.metahub.space/poster/small/tt0137523/img',
     'https://metahub.space/x.jpg',
     'https://images.metahub.space.evil.example/x.jpg',
-    'http://laststream.gtux-prog.workers.dev/img/x.png',
+    'http://app.laststream.app/img/x.png',
     'javascript:alert(1)',
     'data:image/png;base64,AAAA',
     'https://image.tmdb.org/x.jpg" onerror="alert(1)',

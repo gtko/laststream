@@ -1,8 +1,8 @@
 {
-  "versionCode": 2026102501,
-  "versionName": "2026.10.25.1",
-  "url": "https://laststream.gtux-prog.workers.dev/app/android/laststream-2026102501.apk",
-  "sha256": "ee0c36e1a634fd64e3a4780037769a4c1d80ddaeee3a49f9b8dba46641d00786",
-  "size": 48366779,
-  "notes": "Guide TV complet et replay Molotov, plafond de résolution automatique sur Android TV, téléchargements natifs"
+  "versionCode": 2026102702,
+  "versionName": "2026.10.27.2",
+  "url": "https://app.laststream.app/app/android/laststream-2026102702.apk",
+  "sha256": "bc97a892db581f6dd4b13c2b516ff59908c711a47b3a6b526fd32f495ef54d53",
+  "size": 46284148,
+  "notes": "Adresse officielle app.laststream.app (l'ancienne ne répond plus). Réinstaller cette version."
 }

@@ -31,6 +31,9 @@ import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
 import { mainNavHTML, syncTopbar, topActionsHTML } from './topnav.js';
 import { socialAvailable } from './socialButton.js';
+import { mountRail, railSlotHTML, stripSlotHTML } from './friendRailSlot.js';
+import { watchHeroSocial } from './heroSocial.js';
+import { homeSocialMobileSlotHTML, homeSocialSlotHTML, mountHomeSocial } from './homeSocialSlot.js';
 import { getState as socialState } from '../data/socialStore';
 import { state } from './state.js';
 import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
@@ -269,22 +272,24 @@ export function renderAI() {
     row(items.slice(0, HOME_ROW_COUNT).map((it) => posterCard(it)).join('')) + '</section>';
 }
 
-/** Amis et Watch parties : compte connecté seulement, jamais sur un profil enfant (voir socialButton.js). */
+/** Amis et Ensemble : compte connecté seulement, jamais sur un profil enfant (voir socialButton.js). */
 export const socialEnabled = socialAvailable;
 
 // ---------- Accueil (style A · Cinéma) ----------
-/** Barre du haut : logo (accueil), Séries, Films, Direct, Émissions TV, Documentaires, menu Explorer ; à droite recherche, Watch parties, profil. */
+/** Barre du haut : logo (accueil), Séries, Films, Direct, Émissions TV, Documentaires, menu Explorer ; Ensemble (compte connecté) ; à droite recherche, Amis, profil. */
 export function headerA() {
   return '<header class="topbar">' + brand() +
-    '<nav class="nav" aria-label="Principale">' + mainNavHTML() + '</nav>' +
+    '<nav class="nav" aria-label="Principale">' + mainNavHTML({ social: socialEnabled() }) + '</nav>' +
     topActionsHTML({ kid: isKidProfile(), social: socialEnabled(), server: isServerMode(), owner: canAdmin() }) + '</header>';
 }
 
 export function viewA(d) {
   const r = d.rows;
-  return '<main id="main" class="page-a">' + headerA() + heroCarousel(d.heroes) +
+  // Le rail (fixe à droite) est posé juste après l'en-tête : la tabulation l'atteint avant les rangées.
+  return '<main id="main" class="page-a' + (socialEnabled() ? ' has-rail' : '') + '">' + headerA() + railSlotHTML() + stripSlotHTML() + homeSocialMobileSlotHTML() + heroCarousel(d.heroes) +
     '<div class="rows">' +
     '<div id="cont-slot">' + continueSection() + '</div>' +
+    homeSocialSlotHTML() +
     '<div id="follow-slot"></div>' +
     '<div id="ai-slot"></div>' +
     section('top10', 'Top 10 aujourd’hui', r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
@@ -300,18 +305,26 @@ export function viewA(d) {
     '</div></main>';
 }
 
-export function tabbar() {
-  // Compte connecté (hors profil enfant) : Accueil, Rechercher, Amis (pastille, ouvre la page Amis) et Ma liste (Social v3).
+/**
+ * Barre du bas (mobile). `current` : onglet de la page affichée ('home' par défaut, 'ensemble' sur la page Ensemble).
+ * Compte connecté (hors profil enfant) : Accueil, Rechercher, Ensemble, Ma liste, Téléchargés. L'onglet Ensemble porte la pastille
+ * des notifications sociales du store (demandes d'amis reçues + messages non lus, invitations de watch party comprises) ; l'accès aux Amis
+ * passe par le bouton « Amis » de la page Ensemble. Sans compte connecté : onglets d'origine.
+ */
+export function tabbar(current = 'home') {
   if (socialEnabled()) {
     const n = socialState().badge;
     const tab = (cls, attrs, icon, label, extra = '') =>
       '<' + (attrs.href ? 'a' : 'button type="button"') + ' class="tab' + cls + '"' + attrs.html + '>' + ICON[icon] + '<span class="tab-label">' + label + '</span>' + extra +
       '</' + (attrs.href ? 'a' : 'button') + '>';
-    const badge = '<span class="soc-badge tab-badge" data-soc-badge' + (n > 0 ? '' : ' hidden') + '>' + (n > 99 ? '99+' : n) + '</span>';
+    const badge = '<span class="soc-badge tab-badge" data-ens-badge' + (n > 0 ? '' : ' hidden') + '>' + (n > 99 ? '99+' : n) + '</span>';
+    const here = (id) => (current === id ? ' is-current' : '');
+    const curAttr = (id) => (current === id ? ' aria-current="page"' : '');
     return '<nav class="tabbar" aria-label="Navigation principale">' +
-      tab(' is-current', { href: true, html: ' href="#/" data-noop aria-current="page"' }, 'home', 'Accueil') +
+      // Accueil : inerte sur l'accueil, lien ordinaire (data-go) depuis les autres pages (Ensemble...).
+      tab(here('home'), { href: true, html: ' href="#/"' + (current === 'home' ? ' data-noop' : ' data-go') + curAttr('home') }, 'home', 'Accueil') +
       tab('', { html: ' data-search aria-label="Rechercher"' }, 'search', 'Rechercher') +
-      tab('', { html: ' data-soc-open aria-controls="social-sidebar" aria-expanded="false" aria-label="Amis"' }, 'users', 'Amis', badge) +
+      tab(here('ensemble'), { href: true, html: ' href="#/ensemble" data-go' + curAttr('ensemble') }, 'users', 'Ensemble', badge) +
       tab('', { href: true, html: ' href="#/library" data-libnav' }, 'list', 'Ma liste') +
       tab('', { href: true, html: ' href="#/downloads" data-go data-dl-nav' }, 'download', 'Téléchargés', downloadsTabBadgeHTML()) + '</nav>';
   }
@@ -370,6 +383,7 @@ export function renderHome() {
   if (!state.data.kids) { renderFollowRow(); renderTvRows(); }
   observeTiles(app);
   setupPreviews();
+  if (!state.data.kids) { mountRail(); mountHomeSocial(); syncContinueSocial(true); watchHeroSocial(() => (state.data && state.data.heroes) || []); } // social : rail d'amis et ligne du héros
   if (state.data.kids) {
     prepareSingle(d.hero); // mise en avant simple (profil enfant) : détail à l'affichage, notes MDBList au survol
     renderLibrary();
@@ -430,6 +444,12 @@ const cardOf = (html) => {
  * Rafraîchit « Reprendre la lecture » sans rechargement : les cartes inchangées sont gardées (image, logo, focus), les
  * autres sont refaites, et l'ordre (récent d'abord) suit la progression. Sans effet si rien n'a changé.
  */
+/** Avance des amis sur les cartes de « Reprendre » : module chargé à la demande, un appel groupé au plus, échec silencieux. */
+function syncContinueSocial(fresh) {
+  if (!socialAvailable()) return;
+  void import('./continueSocial.js').then((m) => (fresh ? m.mountContinueSocial() : m.loadContinueSocial())).catch(() => undefined);
+}
+
 export function renderContinue() {
   const slot = document.getElementById('cont-slot');
   if (!slot) return;
@@ -440,6 +460,7 @@ export function renderContinue() {
     slot.innerHTML = continueSection();
     observeTiles(slot);
     hydrateContinue(slot);
+    syncContinueSocial(false);
     return;
   }
   const have = new Map(Array.from(rowEl.querySelectorAll('.cont-card')).map((c) => [c.dataset.resume, c]));
@@ -452,6 +473,7 @@ export function renderContinue() {
   keepRowState(slot, () => rowEl.replaceChildren(...nodes), 'data-resume');
   observeTiles(slot);
   hydrateContinue(slot);
+  syncContinueSocial(false);
 }
 
 // ---------- Mise à jour à chaud (sans rechargement) ----------

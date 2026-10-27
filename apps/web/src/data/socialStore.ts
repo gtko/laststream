@@ -12,6 +12,7 @@ import type {
   MessageV3, NewMessage, PrefsPatch, ProfilePatch, Reaction, RelationPatch, ReportInput, ShareInput, SocialPrefs,
   SocialProfile, Poll, TagResult,
 } from './socialV3Api';
+import { handleEveningEvent, resetEvenings } from './eveningsStore';
 import { createSocialLive, type LiveEvent, type LiveStatus, type SocialLive } from './socialLive';
 
 /* Store du Social v2 et v3 : moi, profil, préférences, amis, foyer, demandes, conversations directes et groupes, messages
@@ -306,6 +307,7 @@ export function typingPids(s: SocialState, conv: string, now: number = Date.now(
 export function reduceLiveEvent(s: SocialState, ev: LiveEvent, now: number = Date.now()): SocialState {
   switch (ev.t) {
     case 'pong':
+    case 'evening':
     case 'note':
     case 'note_removed':
     case 'list':
@@ -814,6 +816,9 @@ function applyLive(ev: LiveEvent): void {
         try { cb({ from: ev.from, partyId: ev.partyId, title: ev.title }); } catch { /* un écouteur ne casse pas le canal */ }
       });
       return;
+    case 'evening':
+      handleEveningEvent(ev.event);
+      return;
     case 'typing':
       commit(reduceLiveEvent(state, ev));
       later(() => commit(withCounts({ ...state, typing: pruneTyping(state.typing, Date.now()) })), TYPING_MS);
@@ -859,5 +864,6 @@ export function stop(): void {
   clearTimers();
   clearCinemaTimer();
   lastTypingSent.clear();
+  resetEvenings();
   commit(initialSocialState());
 }
