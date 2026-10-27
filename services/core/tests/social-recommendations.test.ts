@@ -260,3 +260,38 @@ describe('forme de l entrée', () => {
     expect(item).toMatchObject({ friend: { nickname: 'Bobby' } });
   });
 });
+
+describe('bornes et profil devenu enfant', () => {
+  it('tmdbId : 999 999 999 accepté en PUT puis retiré en DELETE ; 1 000 000 000 refusé partout', async () => {
+    expect((await recommend(cast.bob, { tmdbId: 999_999_999 })).status).toBe(204);
+    expect(await seenBy(cast.alice)).toEqual([cast.bob.pid]);
+    expect((await as(app, cast.bob, 'DELETE', '/user/social/recommendations/movie/999999999')).status).toBe(204);
+    expect(await seenBy(cast.alice)).toEqual([]);
+    expect((await recommend(cast.bob, { tmdbId: 1_000_000_000 })).status).toBe(400);
+    expect((await as(app, cast.bob, 'DELETE', '/user/social/recommendations/movie/1000000000')).status).toBe(400);
+  });
+
+  it('un adulte qui a un coup de cœur et devient enfant : 200 (pas de 500) ; son coup de cœur disparaît pour ses amis', async () => {
+    await as(app, cast.alice2, 'PUT', '/user/social/status', { body: { status: 'online' } });
+    expect((await recommend(cast.alice2)).status).toBe(204);
+    const toKid = await as(app, cast.alice, 'PATCH', `/user/profiles/${cast.alice2.profile}`, { body: { isKid: true } });
+    expect(toKid.status).toBe(200);
+    expect(await seenBy(cast.alice)).toEqual([]);
+  });
+
+  it('choix produit : historyVisible faux et activityVisibility « nobody » chez l ami laissent ses coups de cœur visibles', async () => {
+    await recommend(cast.bob);
+    expect((await as(app, cast.bob, 'PUT', '/user/social/prefs', { body: { historyVisible: false, activityVisibility: 'nobody' } })).status).toBe(200);
+    expect(await seenBy(cast.alice)).toEqual([cast.bob.pid]);
+  });
+});
+
+describe('plafond', () => {
+  it('au-delà de 500 coups de cœur : 429 recommendation_limit_reached pour une nouvelle clé ; remplacer une clé existante : 204', async () => {
+    for (let id = 1; id <= 500; id++) expect((await recommend(cast.bob, { tmdbId: id })).status).toBe(204);
+    const over = await as<ErrorBodyV2>(app, cast.bob, 'PUT', '/user/social/recommendations', { body: { ...DEFAULT_BODY, tmdbId: 501 } });
+    expect(over.status).toBe(429);
+    expect(over.body.error).toBe('recommendation_limit_reached');
+    expect((await recommend(cast.bob, { tmdbId: 7, word: 'Remplacé' })).status).toBe(204);
+  }, 60_000);
+});

@@ -243,12 +243,13 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
 
   /**
    * Mon coup de cœur sur un titre : crée ou remplace (mot, titre, affiche, date). 204. 400 `invalid_body` si le corps est invalide
-   * (mot vide ou de plus de 140 caractères, genre ou identifiant TMDB incorrect). Profil enfant : 403.
+   * (mot vide ou de plus de 140 caractères, genre ou identifiant TMDB incorrect). Profil enfant : 403. 429 `recommendation_limit_reached` au-delà de 500 coups de cœur (remplacer un existant reste permis).
    */
   router.put('/social/recommendations', async (c) => {
     const me = await actor(c);
     const input = parseWith(recommendationSchema, c.get('body'));
-    await social().setRecommendation(me.pid, input, Date.now());
+    const outcome = await social().setRecommendation(me.pid, input, Date.now());
+    if (outcome === 'limit_reached') throw new UserApiError(429, 'recommendation_limit_reached');
     return sendEmpty(c, 204);
   });
 

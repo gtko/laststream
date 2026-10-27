@@ -395,7 +395,7 @@ function recommendationMediaOf(row: RecommendationRow): HomeMedia {
 }
 
 /** Pids des amis acceptés d'un profil (`other`). Trois paramètres : le pid, répété trois fois. */
-const FRIENDS_OF_SQL =`SELECT CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END AS other FROM profile_friendships f WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?)`;
+const FRIENDS_OF_SQL = `SELECT CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END AS other FROM profile_friendships f WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?)`;
 
 /** JSON stocké d'un champ de profil. Une valeur illisible est ignorée (le champ est absent), jamais une erreur. */
 function parseStoredJson<T>(raw: string | null | undefined): T | undefined {
@@ -536,6 +536,8 @@ const WRITE_WINDOW_MS = 60_000;
 /** Messages renvoyés au plus par page, et notes renvoyées au plus pour un titre. */
 export const MAX_MESSAGE_PAGE = 50;
 const MAX_NOTES_PER_MEDIA = 500;
+/** Coups de cœur au plus par profil (une nouvelle clé au-delà est refusée ; remplacer une clé existante reste permis). */
+const MAX_RECOMMENDATIONS = 500;
 /** Membres d'un groupe, créateur compris, au plus. */
 const MAX_GROUP_MEMBERS = 20;
 /** Groupes créés par un profil et par heure. */
@@ -1935,13 +1937,19 @@ export class SocialV2Store {
   // Coups de cœur (LAST-191, lot 2)
 
   /** Crée ou remplace mon coup de cœur sur un titre (mot, titre, affiche, date) : un nouveau mot remonte en tête de l'accueil. */
-  setRecommendation(pid: string, input: RecommendationInput, now: number): void {
+  setRecommendation(pid: string, input: RecommendationInput, now: number): 'ok' | 'limit_reached' {
+    const existing = this.db.prepare('SELECT 1 AS x FROM recommendations WHERE pid = ? AND type = ? AND tmdb_id = ?').get(pid, input.type, input.tmdbId);
+    if (existing === undefined) {
+      const count = this.db.prepare('SELECT COUNT(*) AS n FROM recommendations WHERE pid = ?').get(pid) as { n: number };
+      if (Number(count.n) >= MAX_RECOMMENDATIONS) return 'limit_reached';
+    }
     this.db
       .prepare(
         `INSERT INTO recommendations (pid, type, tmdb_id, title, poster, word, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(pid, type, tmdb_id) DO UPDATE SET title = excluded.title, poster = excluded.poster, word = excluded.word, created_at = excluded.created_at`,
       )
       .run(pid, input.type, input.tmdbId, input.title, input.poster ?? null, input.word, now);
+    return 'ok';
   }
 
   /** Retire mon coup de cœur sur ce titre. Ne touche jamais celui d'un autre profil ; sans effet s'il n'y en a pas. */

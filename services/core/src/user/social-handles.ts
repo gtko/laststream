@@ -294,6 +294,7 @@ export function purgeSocialData(db: SqlDb, pid: string): void {
   db.prepare('DELETE FROM message_reactions WHERE pid = ?').run(pid);
   db.prepare('DELETE FROM poll_votes WHERE pid = ?').run(pid);
   db.prepare('DELETE FROM activity WHERE pid = ?').run(pid);
+  db.prepare('DELETE FROM recommendations WHERE pid = ?').run(pid);
   // Liens publics : l'invitation réservée par un lien non consommé redevient libre.
   db.prepare(
     'UPDATE invites SET sent_at = NULL WHERE used_at IS NULL AND id IN (SELECT invite_id FROM share_links WHERE author_pid = ? AND invite_id IS NOT NULL)',

@@ -918,7 +918,7 @@ export const MIGRATIONS: readonly Migration[] = [
         created_at INTEGER NOT NULL,
         PRIMARY KEY (pid, type, tmdb_id)
       );
-      CREATE INDEX recommendations_created ON recommendations (created_at DESC);
+      CREATE INDEX recommendations_created ON recommendations (pid, created_at DESC);
     `,
   },
 ];

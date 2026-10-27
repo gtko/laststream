@@ -47,7 +47,7 @@ export function cleanPoster(value: string | undefined): string | undefined {
   return value !== undefined && isTmdbImageRef(value) ? value : undefined;
 }
 
-const TMDB_ID = z.number().int().positive().max(1_000_000_000);
+const TMDB_ID = z.number().int().positive().max(999_999_999);
 const SEASON = z.number().int().min(0).max(10_000);
 const EPISODE = z.number().int().min(0).max(10_000);
 
