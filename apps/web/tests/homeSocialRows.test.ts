@@ -120,6 +120,14 @@ describe('sections sociales de l’accueil', () => {
     expect(join).toHaveBeenCalledWith('e1');
   });
 
+  it('soirée proposée pour un autre jour : l’étiquette ne dit pas « Ce soir »', async () => {
+    setEveningSource(() => [{ id: 'e2', type: 'movie', tmdbId: 5, startsAt: Date.now() + 3 * 86_400_000, title: 'Dune 2', host: 'Tom', going: [] }]);
+    const slot = await mountWith();
+    const eye = slot.querySelector('.hsr-eye')!.textContent!;
+    expect(eye).not.toContain('Ce soir');
+    expect(eye).toContain(' · ');
+  });
+
   it('ce que regardent les amis : épisode, en cours, lien vers la fiche, échappement', async () => {
     api.homeWatching.mockResolvedValue({
       items: [

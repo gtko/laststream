@@ -69,7 +69,7 @@ export const mobileLiveHTML = (rooms) => rooms.slice(0, MOBILE_LIVE_MAX).map(liv
 function eveningCard(e, friends) {
   const going = (e.going || []).map((pid) => friends.find((f) => f.pid === pid)).filter(Boolean);
   return '<article class="hsr-card"><div class="hsr-top">' + posterHTML(e.poster, e.title) + '<div class="hsr-body">' +
-    '<span class="hsr-eye">Ce soir · ' + esc(eveningTime(e.startsAt)) + '</span>' +
+    '<span class="hsr-eye">' + esc(eveningDay(e.startsAt)) + ' · ' + esc(eveningTime(e.startsAt)) + '</span>' +
     '<h3 class="hsr-t">' + esc(e.title || 'Soirée proposée') + '</h3>' +
     '<p class="hsr-sub">' + (e.host ? 'Proposée par ' + esc(e.host) + '. ' : '') + (going.length ? going.length + ' confirmé' + (going.length > 1 ? 's' : '') + '.' : '') + '</p></div></div>' +
     '<div class="hsr-foot"><span class="hsr-stack" aria-hidden="true">' + going.slice(0, 3).map(avatar).join('') + '</span>' +
