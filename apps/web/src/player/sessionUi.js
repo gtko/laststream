@@ -22,6 +22,7 @@ import { addonThumb, cancelAddonThumb, rangeThumb, thumbsAllowedNow, thumbSource
 import * as playerState from './playerState';
 import { nudgeTick, onEnded, refreshUI, saveProgress, syncTicks, ticksAsleep } from './sessionTick.js';
 import { ensureExternalSubs, onReady, onTracks } from './sessionTracks.js';
+import { reopenTracksEvent } from './sessionReopen.js';
 
 
 export function ensureUI() {
@@ -222,7 +223,8 @@ export function bindEngine(e) {
     if (externalAfterError(S.P, msg)) return; // iPhone et iPad : format ou décodage refusé par le lecteur intégré → lecteur externe, sans changer de source
     failover('Erreur de lecture (' + msg + ')');
   });
-  e.on('tracks', () => { if (S.P && S.P.engine === e) onTracks(); });
+  // Après une réouverture (LAST-507), les pistes perdues au rechargement sont réappliquées au premier événement du moteur.
+  e.on('tracks', () => { if (S.P && S.P.engine === e) { reopenTracksEvent(S.P); onTracks(); } });
   e.on('ready', () => { if (S.P && S.P.engine === e) onReady(); });
   // Lecteur natif Android : fermeture par l'utilisateur, bouton « Épisode suivant », changement de piste dans le panneau natif.
   e.on('closed', () => { if (S.P && S.P.engine === e) closePlayer(); });

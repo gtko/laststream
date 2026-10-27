@@ -5,8 +5,10 @@ import { isOfflineView } from './offlinePlay';
 import { playView } from './sessionPlay.js';
 import { S } from './sessionState.js';
 
-/** Sans réouverture pendant ce délai, le compteur repart à zéro. */
+/** Sans verdict lent (réouverture ou verdict ignoré) pendant ce délai, le compteur repart à zéro. */
 const REOPEN_WINDOW_MS = 600_000;
+/** Écart de position entre deux relevés (1 s) au-delà duquel le saut compte comme un seek. */
+const TIME_JUMP_SEC = 3;
 /** Réouvertures au-delà desquelles on n'agit plus : le failover prend le relais. */
 const REOPEN_MAX_COUNT = 3;
 /** Au-delà de ce délai, le drapeau `reopening` tombe même sans reprise visible : le blocage redevient surveillé. */
@@ -22,11 +24,12 @@ export function reopenEligible(p) {
   try { return !LOCAL_HOSTS.includes(new URL(p.mediaUrl).hostname); } catch (_) { return false; }
 }
 
-/** Compteur des réouvertures (repart à zéro après REOPEN_WINDOW_MS sans réouverture). Renvoie le palier (1 ou 2), 0 au-delà. */
+/** Compteur des réouvertures : repart à zéro après REOPEN_WINDOW_MS sans verdict lent. Renvoie le palier (1 ou 2), 0 au-delà. */
 function nextPalier(p, now) {
   if (p.reopenLast !== undefined && now - p.reopenLast > REOPEN_WINDOW_MS) p.reopenCount = 0;
   const n = (p.reopenCount || 0) + 1;
-  if (n > REOPEN_MAX_COUNT) return 0;
+  // Verdict ignoré : il compte pour la fenêtre, pour que le compteur ne reparte pas tant que le lien reste lent.
+  if (n > REOPEN_MAX_COUNT) { p.reopenLast = now; return 0; }
   p.reopenCount = n;
   p.reopenLast = now;
   return n === REOPEN_MAX_COUNT ? 2 : 1;
@@ -44,8 +47,33 @@ async function reloadSameLink(p, now) {
   await eng.load({ url: p.mediaUrl, startAt: p.reopenFrom });
   if (audio) eng.setAudioTrack(audio.id);
   if (primary != null) eng.setSubtitleTrack(primary);
-  if (secondary != null && eng.supportsSecondary()) eng.setSecondarySubtitleTrack(secondary);
+  const second = secondary != null && eng.supportsSecondary() ? secondary : null;
+  if (second != null) eng.setSecondarySubtitleTrack(second);
+  p.reopenTracks = { audio: audio ? audio.id : null, primary, second, at: now };
   if (p.slowLink) p.slowLink.reset(now);
+}
+
+/**
+ * Premier événement `tracks` du moteur après le rechargement (palier 1) : mpv peut avoir ignoré les pistes choisies avant que sa
+ * liste n'existe. Réapplique une fois celles dont la valeur observée diffère ; attend une liste non vide, et n'agit plus au-delà
+ * de REOPEN_MAX_MS.
+ */
+export function reopenTracksEvent(p, now = Date.now()) {
+  const want = p && p.reopenTracks;
+  if (!want || !p.engine) return;
+  if (now - want.at > REOPEN_MAX_MS) { p.reopenTracks = null; return; }
+  const eng = p.engine;
+  const audios = eng.audioTracks();
+  if (!audios.length) return;
+  p.reopenTracks = null;
+  const audio = audios.find((t) => t.selected);
+  if (want.audio != null && (!audio || String(audio.id) !== String(want.audio))) eng.setAudioTrack(want.audio);
+  if (want.primary != null) {
+    const sub = eng.subtitleTracks().find((t) => t.selected);
+    if (!sub || String(sub.id) !== String(want.primary)) eng.setSubtitleTrack(want.primary);
+  }
+  // Le moteur ne rapporte pas la piste secondaire : elle est réappliquée une fois, sans comparaison (sans effet si elle est déjà la bonne).
+  if (want.second != null) eng.setSecondarySubtitleTrack(want.second);
 }
 
 /** Fin de la réouverture : le StallWatch repart de zéro, la pause de rechargement ne doit pas compter comme un blocage. */
@@ -100,9 +128,12 @@ export function reopenTick(p, st, now = Date.now()) {
   const seeking = !!st.seeking;
   const seekEnded = p.reopenSeeking === true && !seeking;
   p.reopenSeeking = seeking;
+  // Saut de position depuis le relevé précédent, réouverture comprise (son retour à 0 n'est pas un seek, mais le relevé doit suivre).
+  const jumped = typeof p.reopenPos === 'number' && Math.abs(st.time - p.reopenPos) > TIME_JUMP_SEC;
+  p.reopenPos = st.time;
   if (!reopenEligible(p) || !p.slowLink || p.reopening || p.reloading || p.failing || p.resumeTimer) return undefined;
-  // Recherche terminée : la mise en tampon qui suit la recherche ne compte pas comme un lien lent.
-  if (seekEnded) p.slowLink.seeked(now);
+  // Recherche terminée, ou saut de position : la mise en tampon qui suit ne compte pas comme un lien lent.
+  if (seekEnded || jumped) p.slowLink.seeked(now);
   const verdict = p.slowLink.tick(now, st.time, !!st.buffering, !!(st.paused || seeking || st.ended), st.cacheTime ?? null);
   return verdict === 'reopen' ? reopenLink(p, now) : undefined;
 }

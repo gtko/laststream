@@ -19,7 +19,8 @@ export function partyAdapter(p = S.P) {
   return {
     req: p.req, cur: p.cur, view: p.view, poster: p.meta ? p.meta.poster : '', engine: p.engine,
     // Pas prêt pendant un rechargement (bascule de source) : l'ancien moteur, détruit, n'est pas une mesure.
-    ready: !!(p.view && p.engine && p.mediaUrl && !p.failing && !p.resumeTimer && !p.reloading),
+    // Pas prêt non plus pendant une réouverture (LAST-507) : mpv repart de zéro, ce n'est pas un saut de l'hôte.
+    ready: !!(p.view && p.engine && p.mediaUrl && !p.failing && !p.resumeTimer && !p.reloading && !p.reopening),
     // Bascule de source demandée par le salon : le lecteur suit le salon, il ne l'aligne pas sur lui.
     switching: !!p.partySwitch,
     // Lien HTTP(S) lu directement par cet appareil (débridé ou direct d'addon) pour le partage aux invités ; jamais un torrent.
