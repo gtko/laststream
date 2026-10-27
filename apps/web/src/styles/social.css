@@ -540,3 +540,32 @@ body.lp-open .ss { z-index: 620; }
 .tab { position: relative; }
 button.tab { background: none; border: 0; }
 .tab-badge { top: 0; right: 6px; }
+
+/* ---------- Page Ensemble (#/ensemble) ---------- */
+.ens-root { min-height: 100vh; }
+.ens-page { max-width: 1280px; margin: 0 auto; padding: calc(var(--topbar-h, 76px) + 20px) var(--gutter) 110px; }
+.ens-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 20px; margin-bottom: 24px; }
+.ens-head-t { min-width: 0; }
+.ens-title { margin: 0; font-family: var(--ff-title); font-size: clamp(28px, 3.4vw, 44px); font-weight: 800; letter-spacing: -0.02em; outline: none; }
+.ens-sub { margin: 8px 0 0; max-width: 560px; font-size: 15px; line-height: 1.5; color: var(--dim); }
+.ens-acts { display: flex; flex-wrap: wrap; gap: 10px; }
+.ens-acts .btn { min-height: 44px; position: relative; } /* position : ancre de la pastille « Amis » */
+.ens-join { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 24px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.ens-join[hidden] { display: none; }
+.ens-join-input { flex: 1 1 260px; min-width: 0; min-height: 44px; padding: 0 16px; border: 1.5px solid #3a3646; border-radius: 999px; background: var(--bg); color: var(--text); font: inherit; }
+.ens-join-msg { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--accent); }
+.ens-join-msg:empty { display: none; }
+.ens-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 28px; }
+.ens-tab { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 999px; background: var(--surface); color: var(--soft); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.ens-tab:hover { color: #fff; background: var(--line-2); }
+.ens-tab.is-on { background: var(--text); color: var(--bg); }
+.ens-tab:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.ens-panel .wp-pane { padding: 0; max-width: none; }
+.ens-panel .wp-intro { margin-bottom: 4px; }
+.ens-empty { margin-top: 8px; }
+@media (max-width: 640px) {
+  .ens-acts { width: 100%; }
+  .ens-acts .btn { flex: 1 1 auto; justify-content: center; }
+  .ens-tabs { flex-wrap: nowrap; overflow-x: auto; margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scrollbar-width: none; }
+  .ens-tabs::-webkit-scrollbar { display: none; }
+}
