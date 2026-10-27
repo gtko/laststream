@@ -30,6 +30,7 @@ import { playBest } from './session.js';
 import { closePlayer } from './sessionClose.js';
 import { streamInstead } from './sessionFailover.js';
 import { chooseResume, continueWith, ensureEpisodes } from './sessionOpen.js';
+import { externalAction } from './externalScreen.js';
 import { AUDIO_MODE_LABEL, playView } from './sessionPlay.js';
 import { catchUp, openReactHere, shareHere, toggleCinemaMenu } from './sessionSocial.js';
 import { S, activeLangPrefs, audioPreference, AUTOPIP_KEY, AUTOSYNC_MIN, AUTOSYNC_TARGET, headingFor, langPrefsOf, miniState, nextRef, originalLangOf, storeGet, storeSet, THUMBS_KEY } from './sessionState.js';
@@ -188,7 +189,9 @@ export function onAction(act, data) {
     showSourcesPanel();
     return;
   }
-  if (!S.P.view) return; // recherche en cours : seuls « Annuler » et le choix de source sont possibles
+  if (act.startsWith('ext-')) { externalAction(act); return; }
+  // Recherche en cours : seuls « Annuler » et le choix de source sont possibles. Lecteur externe : pas de moteur, pas de commande de lecture.
+  if (!S.P.view || !S.P.engine) return;
   const st = S.P.engine.state();
   const s = S.P.subs;
   switch (act) {
