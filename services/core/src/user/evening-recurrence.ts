@@ -149,6 +149,19 @@ export function zonedToUtc(tz: string, y: number, m: number, d: number, hh: numb
 }
 
 /**
+ * Jour de la semaine (0 = dimanche) et heure murale `HH:MM` de l'instant `utcMs` dans `tz` : la règle d'une série qui
+ * commence à cet instant. Réciproque de `zonedToUtc` pour le couple (jour, heure) ; lève si le fuseau est invalide.
+ */
+export function localSlotOf(tz: string, utcMs: number): { weekday: number; localTime: string } {
+  verifierFuseau(tz);
+  const h = heureMurale(tz, utcMs);
+  return {
+    weekday: jourDeSemaine(numeroJour(h.year, h.month, h.day)),
+    localTime: `${String(h.hour).padStart(2, '0')}:${String(h.minute).padStart(2, '0')}`,
+  };
+}
+
+/**
  * Jusqu'à `n` instants UTC (ms) strictement postérieurs à `from`, triés, où la série tombe.
  *
  * Une occurrence tombe sur `weekday` dans la semaine (lundi à dimanche) de l'ancre, puis toutes les `interval` semaines.

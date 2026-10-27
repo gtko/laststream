@@ -94,7 +94,7 @@ const responseOf = (evening: EveningView, pid: string): string | undefined => ev
 describe('soirées : création et lecture', () => {
   it('soirée ponctuelle : l hôte figure parmi les invités (oui), les invités sont en attente, le titre est épuré', () => {
     const { store } = seeded();
-    const evening = evOf(store.create(ALICE, { title: '  Film du soir  ', startsAt: NOW + 2 * HOUR, guests: [BOB, CAROL] }, NOW));
+    const evening = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: '  Film du soir  ', startsAt: NOW + 2 * HOUR, guests: [BOB, CAROL] }, NOW));
     expect(evening).toMatchObject({ title: 'Film du soir', role: 'host', myResponse: 'yes', status: 'scheduled', overridden: false, series: null });
     expect(guestPids(evening)).toEqual([ALICE, BOB, CAROL].sort());
     expect(responseOf(evening, ALICE)).toBe('yes');
@@ -107,17 +107,32 @@ describe('soirées : création et lecture', () => {
   it('bornes du titre (1 à 80 caractères) et du début (entre une minute et 90 jours)', () => {
     const { store } = seeded();
     const base = { startsAt: NOW + 2 * HOUR, guests: [] as string[] };
-    expect(store.create(ALICE, { ...base, title: '   ' }, NOW)).toEqual({ result: 'invalid_body' });
-    expect(store.create(ALICE, { ...base, title: 'x'.repeat(81) }, NOW)).toEqual({ result: 'invalid_body' });
-    expect(store.create(ALICE, { ...base, title: 'x'.repeat(80) }, NOW).result).toBe('ok');
-    expect(store.create(ALICE, { ...base, title: 'ok', startsAt: NOW + 30_000 }, NOW)).toEqual({ result: 'invalid_body' });
-    expect(store.create(ALICE, { ...base, title: 'ok', startsAt: NOW + MIN }, NOW).result).toBe('ok');
-    expect(store.create(ALICE, { ...base, title: 'ok', startsAt: NOW + 91 * DAY }, NOW)).toEqual({ result: 'invalid_body' });
+    expect(store.create(ALICE, { tz: 'Europe/Paris', ...base, title: '   ' }, NOW)).toEqual({ result: 'invalid_body' });
+    expect(store.create(ALICE, { tz: 'Europe/Paris', ...base, title: 'x'.repeat(81) }, NOW)).toEqual({ result: 'invalid_body' });
+    expect(store.create(ALICE, { tz: 'Europe/Paris', ...base, title: 'x'.repeat(80) }, NOW).result).toBe('ok');
+    expect(store.create(ALICE, { tz: 'Europe/Paris', ...base, title: 'ok', startsAt: NOW + 30_000 }, NOW)).toEqual({ result: 'invalid_body' });
+    expect(store.create(ALICE, { tz: 'Europe/Paris', ...base, title: 'ok', startsAt: NOW + MIN }, NOW).result).toBe('ok');
+    expect(store.create(ALICE, { tz: 'Europe/Paris', ...base, title: 'ok', startsAt: NOW + 91 * DAY }, NOW)).toEqual({ result: 'invalid_body' });
+  });
+
+  it('fuseau : persisté sur la soirée ponctuelle, copié sur chaque occurrence ; une série dont le fuseau diffère du corps est refusée', () => {
+    const { store } = seeded();
+    const oneOff = evOf(store.create(ALICE, { tz: 'Asia/Tokyo', title: 'Tokyo', startsAt: NOW + 2 * HOUR, guests: [] }, NOW));
+    expect(oneOff.tz).toBe('Asia/Tokyo');
+    expect(store.get(ALICE, oneOff.id)).toMatchObject({ result: 'ok', evening: { tz: 'Asia/Tokyo' } });
+
+    evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
+    const listed = store.list(BOB, { scope: 'upcoming', limit: 50 }, NOW);
+    expect(listed.result === 'ok' && listed.items.length).toBe(4);
+    expect(listed.result === 'ok' && listed.items.every((item) => item.tz === 'Europe/Paris')).toBe(true);
+
+    expect(store.create(ALICE, { tz: 'UTC', title: 'Mardi', startsAt: ANCHOR, guests: [], series: PARIS_TUESDAY }, NOW)).toEqual({ result: 'invalid_body' });
+    expect(store.create(ALICE, { tz: 'Mars/Olympus', title: 'x', startsAt: NOW + 2 * HOUR, guests: [] }, NOW)).toEqual({ result: 'invalid_body' });
   });
 
   it('liste : à venir par date, curseur keyset, invitations sans réponse, passées en ordre inverse', () => {
     const { store } = seeded();
-    const ids = [1, 2, 3].map((h) => evOf(store.create(ALICE, { title: `S${h}`, startsAt: NOW + h * HOUR, guests: [BOB] }, NOW)).id);
+    const ids = [1, 2, 3].map((h) => evOf(store.create(ALICE, { tz: 'Europe/Paris', title: `S${h}`, startsAt: NOW + h * HOUR, guests: [BOB] }, NOW)).id);
 
     const first = store.list(BOB, { scope: 'upcoming', limit: 2 }, NOW);
     expect(first.result).toBe('ok');
@@ -145,7 +160,7 @@ describe('soirées : création et lecture', () => {
 
   it('visibilité : un profil étranger ne voit ni la soirée ni la liste', () => {
     const { store } = seeded();
-    const evening = evOf(store.create(ALICE, { title: 'Privé', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
+    const evening = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Privé', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
     expect(store.get(CAROL, evening.id)).toEqual({ result: 'evening_not_found' });
     expect(store.list(CAROL, { scope: 'upcoming', limit: 50 }, NOW)).toEqual({ result: 'ok', items: [], nextCursor: null });
   });
@@ -154,7 +169,7 @@ describe('soirées : création et lecture', () => {
 describe('soirées : droits', () => {
   it('un invité ne modifie, n annule, n invite, ne retire pas ; l hôte ne répond ni ne quitte', () => {
     const { store } = seeded();
-    const { id } = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB, CAROL] }, NOW));
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB, CAROL] }, NOW));
     expect(store.update(BOB, id, { scope: 'occurrence', title: 'Autre' }, NOW)).toEqual({ result: 'not_host' });
     expect(store.cancel(BOB, id, 'occurrence', NOW)).toEqual({ result: 'not_host' });
     expect(store.addGuests(BOB, id, [FRIENDS[0] ?? ''], NOW)).toEqual({ result: 'not_host' });
@@ -165,7 +180,7 @@ describe('soirées : droits', () => {
 
   it('un profil non participant obtient evening_not_found pour toute action', () => {
     const { store } = seeded();
-    const { id } = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
     expect(store.get(CAROL, id)).toEqual({ result: 'evening_not_found' });
     expect(store.update(CAROL, id, { scope: 'occurrence', title: 'x' }, NOW)).toEqual({ result: 'evening_not_found' });
     expect(store.respond(CAROL, id, 'yes', NOW)).toEqual({ result: 'evening_not_found' });
@@ -175,7 +190,7 @@ describe('soirées : droits', () => {
 
   it('réponse : oui, peut-être, non ; une valeur hors liste est refusée ; une soirée commencée est close', () => {
     const { store } = seeded();
-    const { id } = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
     expect(store.respond(BOB, id, 'maybe', NOW)).toEqual({ result: 'ok' });
     expect(store.get(BOB, id)).toMatchObject({ evening: { myResponse: 'maybe' } });
     expect(store.respond(BOB, id, 'pending' as never, NOW)).toEqual({ result: 'invalid_body' });
@@ -184,14 +199,14 @@ describe('soirées : droits', () => {
 
   it('quitter une soirée passe la réponse à non, la soirée reste visible', () => {
     const { store } = seeded();
-    const { id } = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
     expect(store.leave(BOB, id, 'occurrence', NOW)).toEqual({ result: 'ok' });
     expect(store.get(BOB, id)).toMatchObject({ evening: { myResponse: 'no' } });
   });
 
   it('modifier une soirée close (annulée) répond evening_closed', () => {
     const { store } = seeded();
-    const { id } = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [] }, NOW));
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [] }, NOW));
     expect(store.cancel(ALICE, id, 'occurrence', NOW)).toEqual({ result: 'ok' });
     expect(store.update(ALICE, id, { scope: 'occurrence', title: 'Repris' }, NOW)).toEqual({ result: 'evening_closed' });
     expect(store.cancel(ALICE, id, 'occurrence', NOW)).toEqual({ result: 'evening_closed' });
@@ -202,23 +217,31 @@ describe('soirées : ami seulement', () => {
   it('invités : seuls les amis acceptés ; même réponse pour tout autre profil (en attente, bloqué, foyer, enfant, inconnu)', () => {
     const { store, db } = seeded();
     const others = [DAVE, ERIC, TWIN, KIDP, GHOST];
-    const outcomes = others.map((pid) => store.create(ALICE, { title: 'x', startsAt: NOW + 2 * HOUR, guests: [pid] }, NOW));
+    const outcomes = others.map((pid) => store.create(ALICE, { tz: 'Europe/Paris', title: 'x', startsAt: NOW + 2 * HOUR, guests: [pid] }, NOW));
     for (const outcome of outcomes) expect(outcome).toEqual({ result: 'not_friend' });
     expect((db.prepare('SELECT COUNT(*) AS n FROM evening_guests WHERE pid IN (?, ?, ?, ?, ?)').get(...others) as { n: number }).n).toBe(0);
   });
 
   it('addGuests applique la même règle : un seul profil non ami fait échouer l ajout', () => {
     const { store } = seeded();
-    const { id } = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
     expect(store.addGuests(ALICE, id, [CAROL, DAVE], NOW)).toEqual({ result: 'not_friend' });
     expect(guestPids(evOf(store.get(ALICE, id)))).not.toContain(CAROL);
   });
 
+  it('pid mal formé ou vide : traité comme un pid inconnu, not_friend à la création et à l ajout ; retirer un pid non invité est sans effet', () => {
+    const { store } = seeded();
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'x', startsAt: NOW + 2 * HOUR, guests: ['pas un pid', ''] }, NOW)).toEqual({ result: 'not_friend' });
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
+    expect(store.addGuests(ALICE, id, ['pas un pid'], NOW)).toEqual({ result: 'not_friend' });
+    expect(store.removeGuest(ALICE, id, 'pas un pid', NOW)).toEqual({ result: 'ok' });
+  });
+
   it('blocage après amitié : le blocage (par le profil bloqué) retire l accès ; detach retire l invité des soirées futures', () => {
     const { store, social } = seeded();
-    const { id } = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [FRANK] }, NOW));
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [FRANK] }, NOW));
     expect(social.blockProfile(FRANK, ALICE, NOW)).toMatchObject({ result: 'ok' });
-    expect(store.create(ALICE, { title: 'Nouveau', startsAt: NOW + 3 * HOUR, guests: [FRANK] }, NOW)).toEqual({ result: 'not_friend' });
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Nouveau', startsAt: NOW + 3 * HOUR, guests: [FRANK] }, NOW)).toEqual({ result: 'not_friend' });
     store.detach(ALICE, FRANK, NOW);
     expect(store.get(FRANK, id)).toEqual({ result: 'evening_not_found' });
     expect(store.get(ALICE, id)).toMatchObject({ result: 'ok' });
@@ -228,49 +251,49 @@ describe('soirées : ami seulement', () => {
 describe('soirées : plafonds', () => {
   it('invités : 19 au plus, hôte compris 20 ; un ajout qui dépasse est refusé', () => {
     const { store } = seeded();
-    expect(store.create(ALICE, { title: 'Trop', startsAt: NOW + 2 * HOUR, guests: FRIENDS.slice(0, 20) }, NOW)).toEqual({ result: 'invalid_body' });
-    const { id } = evOf(store.create(ALICE, { title: 'Plein', startsAt: NOW + 2 * HOUR, guests: FRIENDS.slice(0, 19) }, NOW));
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Trop', startsAt: NOW + 2 * HOUR, guests: FRIENDS.slice(0, 20) }, NOW)).toEqual({ result: 'invalid_body' });
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Plein', startsAt: NOW + 2 * HOUR, guests: FRIENDS.slice(0, 19) }, NOW));
     expect(store.get(ALICE, id)).toMatchObject({ evening: { guests: expect.any(Array) } });
     expect(store.addGuests(ALICE, id, [FRIENDS[19] ?? ''], NOW)).toEqual({ result: 'invalid_body' });
   });
 
   it('soirées ponctuelles : 10 à venir au plus ; une annulée libère sa place', () => {
     const { store } = seeded();
-    const made = Array.from({ length: 10 }, (_, i) => store.create(ALICE, { title: `S${i}`, startsAt: NOW + (i + 1) * HOUR, guests: [] }, NOW));
+    const made = Array.from({ length: 10 }, (_, i) => store.create(ALICE, { tz: 'Europe/Paris', title: `S${i}`, startsAt: NOW + (i + 1) * HOUR, guests: [] }, NOW));
     for (const outcome of made) expect(outcome.result).toBe('ok');
-    expect(store.create(ALICE, { title: 'Onzième', startsAt: NOW + 20 * HOUR, guests: [] }, NOW)).toEqual({ result: 'too_many_evenings' });
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Onzième', startsAt: NOW + 20 * HOUR, guests: [] }, NOW)).toEqual({ result: 'too_many_evenings' });
     const first = made[0];
     if (first?.result !== 'ok') throw new Error('première soirée absente');
     expect(store.cancel(ALICE, first.evening.id, 'occurrence', NOW)).toEqual({ result: 'ok' });
-    expect(store.create(ALICE, { title: 'Onzième', startsAt: NOW + 20 * HOUR, guests: [] }, NOW).result).toBe('ok');
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Onzième', startsAt: NOW + 20 * HOUR, guests: [] }, NOW).result).toBe('ok');
   });
 
   it('séries : 5 actives au plus, les occurrences ne comptent pas parmi les soirées ponctuelles', () => {
     const { store } = seeded();
     const monday: SeriesRuleInput = { tz: 'UTC', weekday: 1, localTime: '09:00', interval: 1, untilAt: null };
     const startsAt = Date.parse('2026-05-04T09:00:00.000Z');
-    for (let i = 0; i < 5; i++) expect(store.create(ALICE, { title: `Série ${i}`, startsAt, guests: [], series: monday }, NOW).result).toBe('ok');
-    expect(store.create(ALICE, { title: 'Sixième', startsAt, guests: [], series: monday }, NOW)).toEqual({ result: 'too_many_evenings' });
-    expect(store.create(ALICE, { title: 'Ponctuelle', startsAt: NOW + 2 * HOUR, guests: [] }, NOW).result).toBe('ok');
+    for (let i = 0; i < 5; i++) expect(store.create(ALICE, { tz: 'UTC', title: `Série ${i}`, startsAt, guests: [], series: monday }, NOW).result).toBe('ok');
+    expect(store.create(ALICE, { tz: 'UTC', title: 'Sixième', startsAt, guests: [], series: monday }, NOW)).toEqual({ result: 'too_many_evenings' });
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Ponctuelle', startsAt: NOW + 2 * HOUR, guests: [] }, NOW).result).toBe('ok');
   });
 
   it('série : fin au plus un an ; début sur la règle ; fuseau, heure et cadence valides', () => {
     const { store } = seeded();
     const startsAt = ANCHOR;
-    expect(store.create(ALICE, { title: 'Loin', startsAt, guests: [], series: { ...PARIS_TUESDAY, untilAt: NOW + 366 * DAY } }, NOW)).toEqual({
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Loin', startsAt, guests: [], series: { ...PARIS_TUESDAY, untilAt: NOW + 366 * DAY } }, NOW)).toEqual({
       result: 'invalid_body',
     });
-    expect(store.create(ALICE, { title: 'Proche', startsAt, guests: [], series: { ...PARIS_TUESDAY, untilAt: NOW + 300 * DAY } }, NOW).result).toBe('ok');
-    expect(store.create(ALICE, { title: 'Mercredi', startsAt, guests: [], series: { ...PARIS_TUESDAY, weekday: 3 } }, NOW)).toEqual({
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Proche', startsAt, guests: [], series: { ...PARIS_TUESDAY, untilAt: NOW + 300 * DAY } }, NOW).result).toBe('ok');
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mercredi', startsAt, guests: [], series: { ...PARIS_TUESDAY, weekday: 3 } }, NOW)).toEqual({
       result: 'invalid_body',
     });
-    expect(store.create(ALICE, { title: 'Fuseau', startsAt, guests: [], series: { ...PARIS_TUESDAY, tz: 'Mars/Olympus' } }, NOW)).toEqual({
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Fuseau', startsAt, guests: [], series: { ...PARIS_TUESDAY, tz: 'Mars/Olympus' } }, NOW)).toEqual({
       result: 'invalid_body',
     });
-    expect(store.create(ALICE, { title: 'Heure', startsAt, guests: [], series: { ...PARIS_TUESDAY, localTime: '24:00' } }, NOW)).toEqual({
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Heure', startsAt, guests: [], series: { ...PARIS_TUESDAY, localTime: '24:00' } }, NOW)).toEqual({
       result: 'invalid_body',
     });
-    expect(store.create(ALICE, { title: 'Cadence', startsAt, guests: [], series: { ...PARIS_TUESDAY, interval: 3 as never } }, NOW)).toEqual({
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'Cadence', startsAt, guests: [], series: { ...PARIS_TUESDAY, interval: 3 as never } }, NOW)).toEqual({
       result: 'invalid_body',
     });
   });
@@ -279,7 +302,7 @@ describe('soirées : plafonds', () => {
 describe('soirées : modification et récurrence', () => {
   it('occurrence dont le début change : réponses remises en attente, sauf celle de l hôte ; titre seul : réponses gardées', () => {
     const { store } = seeded();
-    const { id } = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB, CAROL] }, NOW));
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB, CAROL] }, NOW));
     store.respond(BOB, id, 'yes', NOW);
     const renamed = evOf(store.update(ALICE, id, { scope: 'occurrence', title: 'Dîner chez Bob' }, NOW));
     expect(renamed).toMatchObject({ title: 'Dîner chez Bob', overridden: false });
@@ -294,16 +317,25 @@ describe('soirées : modification et récurrence', () => {
 
   it('série : création de la fenêtre de quatre occurrences, invités copiés sur chacune', () => {
     const { store } = seeded();
-    const first = evOf(store.create(ALICE, { title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
+    const first = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
     expect(first.series).toMatchObject({ status: 'active', tz: 'Europe/Paris', weekday: 2, localTime: '20:00', interval: 1, untilAt: null });
     const listed = store.list(BOB, { scope: 'upcoming', limit: 50 }, NOW);
     expect(listed.result === 'ok' && listed.items.map((item) => item.startsAt)).toEqual([0, 1, 2, 3].map((k) => ANCHOR + k * 7 * DAY));
     expect(listed.result === 'ok' && listed.items.every((item) => item.myResponse === 'pending')).toBe(true);
   });
 
+  it('série : changer le fuseau de la série change celui des occurrences futures non modifiées', () => {
+    const { store } = seeded();
+    const first = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
+    expect(store.update(ALICE, first.id, { scope: 'series', tz: 'UTC' }, NOW)).toMatchObject({ result: 'ok' });
+    const listed = store.list(BOB, { scope: 'upcoming', limit: 50 }, NOW);
+    expect(listed.result === 'ok' && listed.items.length).toBe(4);
+    expect(listed.result === 'ok' && listed.items.every((item) => item.tz === 'UTC')).toBe(true);
+  });
+
   it('série : une occurrence modifiée à la main (overridden) survit à une modification de la série', () => {
     const { store } = seeded();
-    const first = evOf(store.create(ALICE, { title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
+    const first = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
     const second = (store.list(BOB, { scope: 'upcoming', limit: 50 }, NOW) as { items: EveningView[] }).items[1];
     if (second === undefined) throw new Error('deuxième occurrence absente');
     const moved = evOf(store.update(ALICE, second.id, { scope: 'occurrence', title: 'Spécial' }, NOW));
@@ -323,7 +355,7 @@ describe('soirées : modification et récurrence', () => {
 
   it('série : un invité qui quitte la série ne reçoit plus les occurrences générées ensuite', () => {
     const { store, db } = seeded();
-    const first = evOf(store.create(ALICE, { title: 'Mardi', startsAt: ANCHOR, guests: [BOB, CAROL], series: PARIS_TUESDAY }, NOW));
+    const first = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [BOB, CAROL], series: PARIS_TUESDAY }, NOW));
     expect(store.leave(BOB, first.id, 'series', NOW)).toEqual({ result: 'ok' });
     expect(store.list(BOB, { scope: 'upcoming', limit: 50 }, NOW)).toEqual({ result: 'ok', items: [], nextCursor: null });
     const carol = store.list(CAROL, { scope: 'upcoming', limit: 50 }, NOW);
@@ -343,7 +375,7 @@ describe('soirées : modification et récurrence', () => {
 
   it('série arrêtée : occurrences futures annulées, aucune nouvelle génération, arrêter deux fois est close', () => {
     const { store } = seeded();
-    const first = evOf(store.create(ALICE, { title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
+    const first = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
     expect(store.stop(ALICE, first.id, NOW)).toEqual({ result: 'ok' });
     const listed = store.list(ALICE, { scope: 'upcoming', limit: 50 }, NOW);
     if (listed.result !== 'ok') throw new Error('liste refusée');
@@ -359,20 +391,20 @@ describe('soirées : modification et récurrence', () => {
 
   it('série : une occurrence annulée n est pas régénérée ; occurrence et série sur une soirée ponctuelle', () => {
     const { store, db } = seeded();
-    const first = evOf(store.create(ALICE, { title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
+    const first = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [BOB], series: PARIS_TUESDAY }, NOW));
     expect(store.cancel(ALICE, first.id, 'occurrence', NOW)).toEqual({ result: 'ok' });
     store.tick(NOW + 1 * DAY);
     expect((db.prepare('SELECT COUNT(*) AS n FROM evenings WHERE series_id IS NOT NULL AND starts_at = ?').get(ANCHOR) as { n: number }).n).toBe(1);
     expect((db.prepare("SELECT status FROM evenings WHERE id = ?").get(first.id) as { status: string }).status).toBe('cancelled');
 
-    const oneOff = evOf(store.create(ALICE, { title: 'Seule', startsAt: NOW + 2 * HOUR, guests: [] }, NOW));
+    const oneOff = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Seule', startsAt: NOW + 2 * HOUR, guests: [] }, NOW));
     expect(store.stop(ALICE, oneOff.id, NOW)).toEqual({ result: 'invalid_body' });
     expect(store.update(ALICE, oneOff.id, { scope: 'series', title: 'x' }, NOW)).toEqual({ result: 'invalid_body' });
   });
 
   it('une occurrence déplacée sur une autre occurrence de la série est refusée', () => {
     const { store } = seeded();
-    const first = evOf(store.create(ALICE, { title: 'Mardi', startsAt: ANCHOR, guests: [], series: PARIS_TUESDAY }, NOW));
+    const first = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Mardi', startsAt: ANCHOR, guests: [], series: PARIS_TUESDAY }, NOW));
     const second = (store.list(ALICE, { scope: 'upcoming', limit: 50 }, NOW) as { items: EveningView[] }).items[1];
     if (second === undefined) throw new Error('deuxième occurrence absente');
     expect(store.update(ALICE, first.id, { scope: 'occurrence', startsAt: second.startsAt }, NOW)).toEqual({ result: 'invalid_body' });
@@ -382,9 +414,9 @@ describe('soirées : modification et récurrence', () => {
 describe('soirées : rappels (tick)', () => {
   it('rappel à T-15 min : une seule fois, aux invités qui n ont pas dit non ; une annulée n en a pas', () => {
     const { store } = seeded();
-    const kept = evOf(store.create(ALICE, { title: 'Rappel', startsAt: NOW + 20 * MIN, guests: [BOB, CAROL] }, NOW));
+    const kept = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Rappel', startsAt: NOW + 20 * MIN, guests: [BOB, CAROL] }, NOW));
     store.respond(CAROL, kept.id, 'no', NOW);
-    const cancelled = evOf(store.create(ALICE, { title: 'Annulée', startsAt: NOW + 20 * MIN, guests: [BOB] }, NOW));
+    const cancelled = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Annulée', startsAt: NOW + 20 * MIN, guests: [BOB] }, NOW));
     store.cancel(ALICE, cancelled.id, 'occurrence', NOW);
 
     const first = store.tick(NOW + 6 * MIN);
@@ -402,7 +434,7 @@ describe('soirées : rappels (tick)', () => {
 
   it('pas de rappel avant T-15 min, ni une fois la soirée commencée', () => {
     const { store } = seeded();
-    evOf(store.create(ALICE, { title: 'Plus tard', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
+    evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Plus tard', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
     expect(store.tick(NOW).effects).toEqual([]);
     expect(store.tick(NOW + 2 * HOUR + MIN).effects).toEqual([]);
   });
@@ -411,10 +443,10 @@ describe('soirées : rappels (tick)', () => {
 describe('soirées : détachement, purge et cascade', () => {
   it('détachement : chacun est retiré des soirées futures de l autre, séries comprises ; le passé reste', () => {
     const { store } = seeded();
-    const aliceEvening = evOf(store.create(ALICE, { title: 'Chez Alice', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
-    const bobEvening = evOf(store.create(BOB, { title: 'Chez Bob', startsAt: NOW + 3 * HOUR, guests: [ALICE] }, NOW));
-    const bobSeries = evOf(store.create(BOB, { title: 'Série Bob', startsAt: ANCHOR, guests: [ALICE], series: PARIS_TUESDAY }, NOW));
-    const earlier = evOf(store.create(ALICE, { title: 'Hier', startsAt: NOW + HOUR, guests: [BOB] }, NOW));
+    const aliceEvening = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Chez Alice', startsAt: NOW + 2 * HOUR, guests: [BOB] }, NOW));
+    const bobEvening = evOf(store.create(BOB, { tz: 'Europe/Paris', title: 'Chez Bob', startsAt: NOW + 3 * HOUR, guests: [ALICE] }, NOW));
+    const bobSeries = evOf(store.create(BOB, { tz: 'Europe/Paris', title: 'Série Bob', startsAt: ANCHOR, guests: [ALICE], series: PARIS_TUESDAY }, NOW));
+    const earlier = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Hier', startsAt: NOW + HOUR, guests: [BOB] }, NOW));
 
     // Détachement à 1 h 30 : la soirée de 1 h est passée, celles de 2 h et 3 h sont à venir.
     store.detach(ALICE, BOB, NOW + 90 * MIN);
@@ -427,9 +459,9 @@ describe('soirées : détachement, purge et cascade', () => {
 
   it('purgeProfile : supprime les soirées et séries hébergées, retire le profil des autres soirées', () => {
     const { store } = seeded();
-    const hosted = evOf(store.create(BOB, { title: 'Bob hôte', startsAt: NOW + 2 * HOUR, guests: [ALICE] }, NOW));
-    const invited = evOf(store.create(ALICE, { title: 'Alice hôte', startsAt: NOW + 3 * HOUR, guests: [BOB, CAROL] }, NOW));
-    evOf(store.create(BOB, { title: 'Série Bob', startsAt: ANCHOR, guests: [ALICE], series: PARIS_TUESDAY }, NOW));
+    const hosted = evOf(store.create(BOB, { tz: 'Europe/Paris', title: 'Bob hôte', startsAt: NOW + 2 * HOUR, guests: [ALICE] }, NOW));
+    const invited = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Alice hôte', startsAt: NOW + 3 * HOUR, guests: [BOB, CAROL] }, NOW));
+    evOf(store.create(BOB, { tz: 'Europe/Paris', title: 'Série Bob', startsAt: ANCHOR, guests: [ALICE], series: PARIS_TUESDAY }, NOW));
 
     store.purgeProfile(BOB);
 
@@ -448,7 +480,7 @@ describe('soirées : détachement, purge et cascade', () => {
     expect(tables).toEqual(expect.arrayContaining(['evening_series', 'evening_series_guests', 'evenings', 'evening_guests']));
     expect((db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number }).v).toBe(34);
 
-    const evening = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB, CAROL] }, NOW));
+    const evening = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB, CAROL] }, NOW));
     db.prepare('DELETE FROM profiles WHERE pid = ?').run(CAROL);
     expect(store.get(ALICE, evening.id)).toMatchObject({ result: 'ok', evening: { guests: expect.any(Array) } });
     expect(guestPids(evOf(store.get(ALICE, evening.id)))).not.toContain(CAROL);
@@ -456,7 +488,7 @@ describe('soirées : détachement, purge et cascade', () => {
 
   it('attachParty : le premier salon rattaché gagne ; une soirée inconnue renvoie undefined', () => {
     const { store } = seeded();
-    const { id } = evOf(store.create(ALICE, { title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [] }, NOW));
+    const { id } = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [] }, NOW));
     expect(store.attachParty(id, 'PARTY-A')).toBe('PARTY-A');
     expect(store.attachParty(id, 'PARTY-B')).toBe('PARTY-A');
     expect(store.attachParty('inconnue', 'PARTY-C')).toBeUndefined();

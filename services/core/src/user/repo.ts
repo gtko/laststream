@@ -1,5 +1,6 @@
 import type { AdminStore } from './admin-store.js';
 import type { MetaStore } from './meta-store.js';
+import type { EveningStore } from './social-evenings-store.js';
 import type { SkipSegmentStore } from './skip-segments.js';
 import type { SocialStore } from './social-store.js';
 import type { SocialV2Store } from './social-v2-store.js';
@@ -35,6 +36,9 @@ export type SocialV2Repo = AsyncRepo<SocialV2Store>;
 /** Partage (S3b) : messages de partage multiples, liens publics, listes partagées. */
 export type SocialV3Repo = AsyncRepo<SocialV3Store>;
 
+/** Soirées planifiées (LAST-198) : soirées ponctuelles et séries, invitations, réponses, rappels. */
+export type SocialEveningsRepo = AsyncRepo<EveningStore>;
+
 /** Administration : comptes, réglages globaux, journal d'audit, réinitialisation de mot de passe, signalements. */
 export type AdminRepo = AsyncRepo<AdminStore>;
 
@@ -48,6 +52,7 @@ export interface UserBackend {
   social(): SocialRepo;
   socialV2(): SocialV2Repo;
   socialV3(): SocialV3Repo;
+  socialEvenings(): SocialEveningsRepo;
   admin(): AdminRepo;
   meta(): MetaRepo;
   /** Faux tant qu'aucune base n'existe (Node : fichier absent et jamais ouvert) : rien à lire, et lire n'en créerait pas. Absent = vrai. */

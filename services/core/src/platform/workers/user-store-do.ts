@@ -7,6 +7,7 @@ import { connectionsToEvict, createSlidingWindow } from '../../ws-limits.js';
 import { AdminStore } from '../../user/admin-store.js';
 import { migrate } from '../../user/migrations.js';
 import { MetaStore } from '../../user/meta-store.js';
+import { EveningStore } from '../../user/social-evenings-store.js';
 import { SkipSegmentStore } from '../../user/skip-segments.js';
 import { SocialStore } from '../../user/social-store.js';
 import type { SocialEvent } from '../../user/social-v2-events.js';
@@ -89,6 +90,7 @@ const SKIP_METHODS = callableNames(SkipSegmentStore.prototype);
 const SOCIAL_METHODS = callableNames(SocialStore.prototype);
 const SOCIAL_V2_METHODS = callableNames(SocialV2Store.prototype);
 const SOCIAL_V3_METHODS = callableNames(SocialV3Store.prototype);
+const SOCIAL_EVENINGS_METHODS = callableNames(EveningStore.prototype);
 const ADMIN_METHODS = callableNames(AdminStore.prototype);
 const META_METHODS = callableNames(MetaStore.prototype);
 
@@ -109,6 +111,7 @@ export class UserStoreDO extends DurableObject {
   private readonly socialStore: SocialStore;
   private readonly socialV2Store: SocialV2Store;
   private readonly socialV3Store: SocialV3Store;
+  private readonly eveningStore: EveningStore;
   private readonly adminStore: AdminStore;
   private readonly metaStore: MetaStore;
   private readonly db: SqlDb;
@@ -129,6 +132,7 @@ export class UserStoreDO extends DurableObject {
     this.socialStore = new SocialStore(db);
     this.socialV2Store = new SocialV2Store(db);
     this.socialV3Store = new SocialV3Store(db);
+    this.eveningStore = new EveningStore(db);
     this.adminStore = new AdminStore(db);
     this.metaStore = new MetaStore(db);
   }
@@ -156,6 +160,11 @@ export class UserStoreDO extends DurableObject {
   /** Appelle une méthode de SocialV3Store (partage multiple, liens publics, listes partagées). */
   socialV3(method: string, args: unknown[]): unknown {
     return dispatch(this.socialV3Store, SOCIAL_V3_METHODS, method, args);
+  }
+
+  /** Appelle une méthode d'EveningStore (soirées planifiées : soirées, séries, invitations, réponses, rappels). */
+  socialEvenings(method: string, args: unknown[]): unknown {
+    return dispatch(this.eveningStore, SOCIAL_EVENINGS_METHODS, method, args);
   }
 
   /** Appelle une méthode d'AdminStore (administration : comptes, réglages, audit, signalements). Réservé aux routes /admin et aux salons. */

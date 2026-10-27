@@ -56,6 +56,8 @@ export interface EveningCreateInput {
   title: string;
   /** Début de la soirée ; avec `series`, début de la première occurrence, qui doit tomber sur la règle. */
   startsAt: number;
+  /** Fuseau IANA de la soirée. Avec `series`, celui de la règle, qui doit être le même. */
+  tz: string;
   /** Pids des invités, amis acceptés. L'hôte n'est pas à inclure. */
   guests: readonly string[];
   series?: SeriesRuleInput;
@@ -94,6 +96,8 @@ export interface EveningView {
   id: string;
   title: string;
   startsAt: number;
+  /** Fuseau IANA de la soirée (celui de sa série pour une occurrence). */
+  tz: string;
   status: EveningStatus;
   overridden: boolean;
   hostPid: string;
@@ -146,6 +150,7 @@ interface EveningRow {
   series_id: string | null;
   host_pid: string;
   title: string;
+  tz: string;
   starts_at: number;
   status: string;
   overridden: number;
@@ -186,7 +191,7 @@ interface DueRow {
   host_pid: string;
 }
 
-const EVENING_SELECT = `SELECT e.id, e.series_id, e.host_pid, e.title, e.starts_at, e.status, e.overridden, e.party_id, e.reminded_at,
+const EVENING_SELECT = `SELECT e.id, e.series_id, e.host_pid, e.title, e.tz, e.starts_at, e.status, e.overridden, e.party_id, e.reminded_at,
   s.status AS s_status, s.tz AS s_tz, s.weekday AS s_weekday, s.local_time AS s_local_time, s.interval AS s_interval, s.until_at AS s_until_at
   FROM evenings e LEFT JOIN evening_series s ON s.id = e.series_id`;
 
@@ -206,7 +211,9 @@ function isValidStart(startsAt: number, now: number): boolean {
   return Number.isSafeInteger(startsAt) && startsAt >= now + MIN_LEAD_MS && startsAt <= now + MAX_AHEAD_MS;
 }
 
-function isValidTimezone(tz: string): boolean {
+/** Fuseau IANA de 1 à 64 caractères, reconnu par Intl. */
+function isValidTimezone(tz: unknown): tz is string {
+  if (typeof tz !== 'string' || tz.length === 0 || tz.length > 64) return false;
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: tz });
     return true;
@@ -216,7 +223,7 @@ function isValidTimezone(tz: string): boolean {
 }
 
 function isValidRule(rule: SeriesRuleInput, now: number): boolean {
-  if (typeof rule.tz !== 'string' || rule.tz.length === 0 || rule.tz.length > 64 || !isValidTimezone(rule.tz)) return false;
+  if (!isValidTimezone(rule.tz)) return false;
   if (!Number.isInteger(rule.weekday) || rule.weekday < 0 || rule.weekday > 6) return false;
   if (typeof rule.localTime !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(rule.localTime)) return false;
   if (rule.interval !== 1 && rule.interval !== 2) return false;
@@ -224,11 +231,14 @@ function isValidRule(rule: SeriesRuleInput, now: number): boolean {
   return true;
 }
 
-/** Invités dédoublonnés ; `undefined` si la liste est trop longue, mal formée, ou si elle contient l'hôte. */
+/**
+ * Invités dédoublonnés ; `undefined` si la liste est trop longue, n'est pas une liste de chaînes, ou contient l'hôte. Un pid mal
+ * formé n'est pas refusé ici : ce n'est pas un ami, donc `not_friend`, comme un pid inconnu.
+ */
 function normalizeGuests(input: unknown, hostPid: string): string[] | undefined {
   if (!Array.isArray(input) || input.length > MAX_GUESTS) return undefined;
   const pids = [...new Set<unknown>(input)];
-  if (!pids.every((pid): pid is string => typeof pid === 'string' && pid !== '' && pid !== hostPid)) return undefined;
+  if (!pids.every((pid): pid is string => typeof pid === 'string' && pid !== hostPid)) return undefined;
   return pids;
 }
 
@@ -271,12 +281,12 @@ export class EveningStore {
     return this.db.transaction((): EveningCreateOutcome => {
       if (!this.isAdult(hostPid)) return { result: 'not_host' };
       const title = normalizeTitle(input.title);
-      if (title === undefined || !isValidStart(input.startsAt, now)) return INVALID;
+      if (title === undefined || !isValidStart(input.startsAt, now) || !isValidTimezone(input.tz)) return INVALID;
       const guests = normalizeGuests(input.guests, hostPid);
       if (guests === undefined) return INVALID;
       const rule = input.series;
       if (rule !== undefined) {
-        if (!isValidRule(rule, now)) return INVALID;
+        if (!isValidRule(rule, now) || rule.tz !== input.tz) return INVALID;
         // Le début doit être une occurrence de la règle, sinon la série et sa première soirée divergeraient.
         const first = nextOccurrences({ ...rule, anchorStartsAt: input.startsAt }, input.startsAt - 1, 1)[0];
         if (first !== input.startsAt) return INVALID;
@@ -290,9 +300,9 @@ export class EveningStore {
         const id = randomUUID();
         this.db
           .prepare(
-            "INSERT INTO evenings (id, series_id, host_pid, title, starts_at, status, overridden, party_id, reminded_at, opened_at, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, 'scheduled', 0, NULL, NULL, NULL, ?, ?)",
+            "INSERT INTO evenings (id, series_id, host_pid, title, tz, starts_at, status, overridden, party_id, reminded_at, opened_at, created_at, updated_at) VALUES (?, NULL, ?, ?, ?, ?, 'scheduled', 0, NULL, NULL, NULL, ?, ?)",
           )
-          .run(id, hostPid, title, input.startsAt, now, now);
+          .run(id, hostPid, title, input.tz, input.startsAt, now, now);
         this.insertGuests(id, hostPid, guests, now);
         return { result: 'ok', evening: this.mustView(id, hostPid) };
       }
@@ -628,7 +638,7 @@ export class EveningStore {
         .prepare(`DELETE FROM evenings WHERE ${futureUnlocked} AND starts_at NOT IN (${keep.map(() => '?').join(', ')})`)
         .run(series.id, now, ...keep);
     }
-    this.db.prepare(`UPDATE evenings SET title = ?, updated_at = ? WHERE ${futureUnlocked}`).run(title, now, series.id, now);
+    this.db.prepare(`UPDATE evenings SET title = ?, tz = ?, updated_at = ? WHERE ${futureUnlocked}`).run(title, rule.tz, now, series.id, now);
     this.materialize(updated, now);
 
     const kept = this.participantRow(row.id, viewer);
@@ -653,9 +663,9 @@ export class EveningStore {
       const inserted = Number(
         this.db
           .prepare(
-            "INSERT OR IGNORE INTO evenings (id, series_id, host_pid, title, starts_at, status, overridden, party_id, reminded_at, opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'scheduled', 0, NULL, NULL, NULL, ?, ?)",
+            "INSERT OR IGNORE INTO evenings (id, series_id, host_pid, title, tz, starts_at, status, overridden, party_id, reminded_at, opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', 0, NULL, NULL, NULL, ?, ?)",
           )
-          .run(id, series.id, series.host_pid, series.title, startsAt, now, now).changes,
+          .run(id, series.id, series.host_pid, series.title, series.tz, startsAt, now, now).changes,
       );
       if (inserted === 1) this.insertGuests(id, series.host_pid, guests, now);
     }
@@ -719,6 +729,7 @@ export class EveningStore {
       id: row.id,
       title: row.title,
       startsAt: row.starts_at,
+      tz: row.tz,
       status: row.status === 'cancelled' ? 'cancelled' : 'scheduled',
       overridden: row.overridden === 1,
       hostPid: row.host_pid,

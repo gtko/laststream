@@ -951,13 +951,15 @@ export const MIGRATIONS: readonly Migration[] = [
         PRIMARY KEY (series_id, pid)
       );
 
-      -- Soirée (ou occurrence d'une série). starts_at en ms UTC. overridden = 1 : occurrence modifiée à la main, que la série
-      -- ne réécrit plus. reminded_at : rappel T-15 min envoyé (un seul par soirée).
+      -- Soirée (ou occurrence d'une série). starts_at en ms UTC ; tz : fuseau IANA de la soirée (copié de la série pour une
+      -- occurrence). overridden = 1 : occurrence modifiée à la main, que la série ne réécrit plus. reminded_at : rappel T-15 min
+      -- envoyé (un seul par soirée).
       CREATE TABLE evenings (
         id TEXT PRIMARY KEY,
         series_id TEXT REFERENCES evening_series (id) ON DELETE CASCADE,
         host_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
         title TEXT NOT NULL,
+        tz TEXT NOT NULL,
         starts_at INTEGER NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('scheduled', 'cancelled')),
         overridden INTEGER NOT NULL DEFAULT 0 CHECK (overridden IN (0, 1)),

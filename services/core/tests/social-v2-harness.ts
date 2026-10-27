@@ -96,6 +96,12 @@ export async function befriend(app: RunningApp, from: Persona, to: Persona): Pro
   if (accepted.status !== 200) throw new Error(`acceptation refusée (${accepted.status})`);
 }
 
+/** Blocage de `target` par `who` (POST /user/social/blocks/:pid, 204) : retire aussi l'amitié, dans les deux sens. */
+export async function block(app: RunningApp, who: Acting, target: Persona): Promise<void> {
+  const res = await as(app, who, 'POST', `/user/social/blocks/${target.pid}`);
+  if (res.status !== 204) throw new Error(`blocage refusé (${res.status})`);
+}
+
 /** Corps de réponse d'erreur v2 : `{ error, issues? }`. */
 export interface ErrorBodyV2 {
   error: string;
