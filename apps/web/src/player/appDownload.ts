@@ -4,11 +4,17 @@ export type Os = 'windows' | 'android' | 'ios' | 'macos' | 'linux' | 'other';
 
 export interface OsInput { userAgent?: string; platform?: string; maxTouchPoints?: number }
 
+/** iPhone, iPod et iPad : l'iPad récent se dit « Macintosh » et se reconnaît à son écran tactile. */
+function isIOSAgent(i: OsInput): boolean {
+  const ua = i.userAgent ?? '';
+  return /iphone|ipad|ipod/i.test(ua) || (/mac/i.test(i.platform ?? ua) && (i.maxTouchPoints ?? 0) > 1);
+}
+
 /** OS du navigateur d'après l'user-agent (l'iPad récent se dit « Macintosh » : écran tactile = iOS). */
 export function detectOs(i: OsInput = {}): Os {
   const ua = i.userAgent ?? '';
   if (/android/i.test(ua)) return 'android';
-  if (/iphone|ipad|ipod/i.test(ua) || (/mac/i.test(i.platform ?? ua) && (i.maxTouchPoints ?? 0) > 1)) return 'ios';
+  if (isIOSAgent(i)) return 'ios';
   if (/windows/i.test(ua) || /^win/i.test(i.platform ?? '')) return 'windows';
   if (/mac/i.test(ua) || /^mac/i.test(i.platform ?? '')) return 'macos';
   if (/linux|x11|cros/i.test(ua)) return 'linux';
@@ -18,6 +24,12 @@ export function detectOs(i: OsInput = {}): Os {
 export function currentOs(): Os {
   const n = typeof navigator === 'undefined' ? null : navigator;
   return detectOs({ userAgent: n?.userAgent, platform: n?.platform, maxTouchPoints: n?.maxTouchPoints });
+}
+
+/** Vrai sur iPhone, iPod et iPad (y compris l'iPad qui se dit « Macintosh »), d'après le navigateur courant. */
+export function isIOS(): boolean {
+  const n = typeof navigator === 'undefined' ? null : navigator;
+  return isIOSAgent({ userAgent: n?.userAgent, platform: n?.platform, maxTouchPoints: n?.maxTouchPoints });
 }
 
 /** Page de téléchargement de l'app (Windows, Android). */

@@ -32,6 +32,8 @@ import { refreshAddonThumbs } from './sessionThumbs.js';
 import { refreshUI, syncTicks } from './sessionTick.js';
 import { stopAutoSync, toastBusy } from './sessionTracks.js';
 import { bindEngine } from './sessionUi.js';
+import { NOTE_NOT_EXTERNAL, externalPlan, openExternal } from './externalScreen.js';
+import { looksUnplayableOnIOS } from './external';
 
 
 /** Message clair pour une erreur de débridage sur l'appareil. */
@@ -51,7 +53,7 @@ export async function resolveMedia(view, signal, local = false) {
   const hints = s.behaviorHints || {};
   if (typeof s.url === 'string' && /^https?:\/\//i.test(s.url)) {
     const ph = hints.proxyHeaders;
-    if (up && ph && typeof ph === 'object') return { url: proxyUrl(base, s.url, ph.request || {}, ph.response || {}), up, base };
+    if (up && ph && typeof ph === 'object') return { url: proxyUrl(base, s.url, ph.request || {}, ph.response || {}), up, base, proxied: true };
     return { url: s.url, up, base };
   }
   // Torrent livré sans lien par lastAddon : cache et déblocage sur l'appareil (AllDebrid, TorBox, Real-Debrid), jamais par le serveur.
@@ -88,6 +90,12 @@ async function prepareView(p, cand, signal, local = false) {
   const media = await resolveMedia(view, signal, local);
   view.fromShare = media.shared === true;
   if (signal.aborted) throw abortError();
+  // Lecteur externe : décidé ici, avant la sonde et le moteur, qui ne servent pas à une lecture externe (voir externalPlan).
+  let ext = externalPlan(view, media);
+  // Lien passant par le serveur : impossible hors de l'app. Ailleurs, la lecture reste intégrée, avec un avis. Sur iPhone et iPad, pareil
+  // pour un format que le lecteur intégré lit ; un MKV (format illisible sur iOS) garde l'écran bloqué.
+  if (ext && ext.blocked && (ext.platform !== 'ios' || !looksUnplayableOnIOS(media.url, view.filename || media.url))) { p.notice = NOTE_NOT_EXTERNAL; ext = null; }
+  if (ext) return { shell, media, probe: null, choice: ext, conversion: 'none', hlsUrl: null, hlsId: '', direct: !!direct };
   let probe = p.hint && p.hint.url === media.url ? p.hint.probe : null;
   if (!shell && !native && media.up && !probe) probe = await fetchProbe(media.url, media.base, signal);
   if (signal.aborted) throw abortError();
@@ -248,9 +256,11 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.mediaUrl = media.url;
   p.mediaBase = media.base;
   p.mediaUp = !!media.up;
+  p.mediaProxied = media.proxied === true;
   p.probe = probe;
   p.probeTracks = parseProbe(probe);
   p.choice = choice;
+  if (choice.engine === 'external') { openExternal(p, choice, media.url); return; } // lecteur externe : ni moteur, ni progression
   if (!isOfflineView(p.view)) refreshAddonThumbs();
   p.conversion = plan.conversion;
   p.startedAt = Date.now();

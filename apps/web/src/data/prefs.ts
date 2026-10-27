@@ -141,3 +141,13 @@ export const getVideoLangSetting = (): string => {
   const v = read(VIDEO_LANG_KEY);
   return VIDEO_LANGS.some(([c]) => c === v) ? (v as string) : 'auto';
 };
+
+// ---- Lecteur externe (par appareil : un téléphone n'a pas les mêmes applis qu'un PC ; hors synchronisation du compte) ----
+const EXTERNAL_PLAYER_KEY = 'laststream.externalPlayer';
+const PREFERRED_EXTERNAL_KEY = 'laststream.preferredExternal';
+/** Lecteur externe choisi sur cet appareil ; vide tant qu'il n'a jamais été réglé (voir currentPlayer). */
+export const getExternalPlayer = (): string => read(EXTERNAL_PLAYER_KEY) ?? '';
+export const setExternalPlayer = (id: string): void => write(EXTERNAL_PLAYER_KEY, id);
+/** Lecteur externe préféré de cet appareil : VLC par défaut. */
+export const getPreferredExternal = (): string => read(PREFERRED_EXTERNAL_KEY) || 'vlc';
+export const setPreferredExternal = (id: string): void => write(PREFERRED_EXTERNAL_KEY, id);

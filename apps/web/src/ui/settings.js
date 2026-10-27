@@ -9,10 +9,12 @@ import { clearCache } from '../data/transport';
 import {
   BANDWIDTH_PRESETS_MBPS, getUiUpdateAuto, getUiUpdateNotify, setUiUpdateAuto, setUiUpdateNotify, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getVideoLangSetting, REGIONS, VIDEO_LANGS, setVideoLang,
   setAutoplay, setBandwidthSetting, getResolutionCap, setResolutionCap, RESOLUTION_CAPS, setRegion, setSkipPref, getTrailerAutoplay, setTrailerAutoplay,
+  getPreferredExternal, setExternalPlayer, setPreferredExternal,
 } from '../data/prefs';
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { capHeightOf, capLabel, screenShortSide } from '../sources/resolutionCap';
 import { getBufferLevel, setBufferLevel } from '../player/bufferLevel';
+import { currentPlayer, detectPlatform, isExternalChoice, playerOptions } from '../player/external';
 import { ANIME_AUDIO_CHOICES, ANIME_SUBS_CHOICES, getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setAnimePrefs, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
 import { auth, canAdmin, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
@@ -123,13 +125,57 @@ function uiUpdateCard() {
     switchRow('Mettre à jour automatiquement quand l’app est inactive', 'Recharge l’interface après 5 minutes sans interaction, hors lecture et plein écran.', getUiUpdateAuto(), 'data-set-pref="uiupdate-auto"'));
 }
 
+// ---- Lecteur par appareil (hors synchronisation du compte) ----
+const WEB_PLAYER_DESC = 'Le lecteur intégré lit la plupart des formats ; la playlist .m3u s’ouvre dans ton lecteur habituel.';
+/** Description de la ligne « Lecteur » selon la plateforme où tourne l'app. */
+const PLAYER_DESC = {
+  ios: 'Les liens débridés en MKV ne se lisent pas dans Safari : ouvre-les dans une app comme VLC ou Infuse.',
+  shell: 'Le lecteur intégré lit tout ; VLC ou ton lecteur par défaut s’ouvrent à côté de Laststream.',
+  'android-app': 'Le lecteur intégré (libVLC) lit tout.',
+  web: WEB_PLAYER_DESC,
+  'web-android': WEB_PLAYER_DESC,
+};
+
+/** Carte « Lecteur sur cet appareil » : les options de la plateforme. Une option grisée affiche son motif entre parenthèses. */
+function playerCardHTML(platform) {
+  const cur = currentPlayer(platform);
+  const opts = playerOptions(platform).map((o) => '<option value="' + o.id + '"' + (o.disabled ? ' disabled' : '') + (o.id === cur ? ' selected' : '') + '>' +
+    esc(o.disabled && o.hint ? o.label + ' (' + o.hint + ')' : o.label) + '</option>').join('');
+  return card('Lecteur sur cet appareil', fieldRow('Lecteur', PLAYER_DESC[platform], (id) =>
+    '<select class="set-input" id="' + id + '" data-set-pref="external-player">' + opts + '</select>'), { attrs: 'data-player-card' });
+}
+
+/** Lecteur externe préféré, proposé sur iPhone et iPad quand le lecteur est « auto » : les schémas d'applis, sans « intégré ». */
+function preferredCardHTML() {
+  const pref = getPreferredExternal();
+  const opts = playerOptions('ios').filter((o) => isExternalChoice(o.id))
+    .map((o) => '<option value="' + o.id + '"' + (o.id === pref ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('');
+  return card('Lecteur externe', fieldRow('Lecteur externe préféré', 'Utilisé quand une source ne peut pas être lue dans Safari.', (id) =>
+    '<select class="set-input" id="' + id + '" data-set-pref="external-preferred">' + opts + '</select>'), { attrs: 'data-player-pref' });
+}
+
+const showPreferredPlayer = (platform) => platform === 'ios' && currentPlayer(platform) === 'auto';
+
+/** Après un changement de lecteur : la carte du lecteur externe préféré apparaît ou disparaît. Le select principal n'est pas reconstruit (focus conservé). */
+function syncPreferredPlayer() {
+  const anchor = detailEl.querySelector('[data-player-card]');
+  const pref = detailEl.querySelector('[data-player-pref]');
+  if (!anchor) return;
+  if (!showPreferredPlayer(detectPlatform())) { if (pref) pref.remove(); return; }
+  if (pref) return;
+  // eslint-disable-next-line no-restricted-syntax -- HTML fixe : libellés constants, aucune donnée saisie
+  anchor.insertAdjacentHTML('afterend', preferredCardHTML());
+}
+
 function playbackPanel() {
+  const platform = detectPlatform();
   const bw = getBandwidthSetting();
   const stored = readStoredBandwidth();
   const mbps = stored && stored.expiresAt > Date.now() ? (stored.kbps / 1000).toFixed(1).replace('.', ',') + ' Mb/s' : '';
   return card('Lancement', switchRow('Lancer la meilleure source', 'Démarre la lecture sans passer par la liste des sources.', getAutoplay(), 'data-set-pref="autoplay"') +
     switchRow('Lancer automatiquement après la bande-annonce', 'Sur la fiche d’un titre, la bande-annonce se lance puis enchaîne sur la lecture.',
       getTrailerAutoplay(isKidProfile()), 'data-set-pref="trailer-autoplay"')) +
+    playerCardHTML(platform) + (showPreferredPlayer(platform) ? preferredCardHTML() : '') +
     card('Résolution',
       fieldRow('Résolution maximale', 'La source choisie d’office, en lecture comme en téléchargement, ne dépasse pas ce plafond tant qu’une source plus légère existe (moins de données). Tu peux toujours choisir une autre source à la main.', (id) =>
         '<select class="set-input" id="' + id + '" data-set-pref="max-resolution">' + RESOLUTION_CAPS.map((c) => '<option value="' + c + '"' + (c === getResolutionCap() ? ' selected' : '') + '>' + esc(CAP_LABELS[c]) + '</option>').join('') + '</select>') +
@@ -592,6 +638,12 @@ detailEl.addEventListener('change', (e) => {
     setResolutionCap(t.value);
     const msg = document.getElementById('set-cap-msg');
     if (msg) msg.textContent = capStatus(getResolutionCap());
+  }
+  else if (p === 'external-player') {
+    if (playerOptions(detectPlatform()).some((o) => o.id === t.value && !o.disabled)) setExternalPlayer(t.value);
+    syncPreferredPlayer();
+  } else if (p === 'external-preferred') {
+    if (playerOptions('ios').some((o) => o.id === t.value && isExternalChoice(o.id))) setPreferredExternal(t.value);
   }
   else if (p === 'videolang') {
     setVideoLang(t.value);

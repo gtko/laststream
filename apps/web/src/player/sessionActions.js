@@ -30,6 +30,7 @@ import { playBest } from './session.js';
 import { closePlayer } from './sessionClose.js';
 import { streamInstead } from './sessionFailover.js';
 import { chooseResume, continueWith, ensureEpisodes } from './sessionOpen.js';
+import { externalAction } from './externalScreen.js';
 import { AUDIO_MODE_LABEL, playView } from './sessionPlay.js';
 import { catchUp, openReactHere, shareHere, toggleCinemaMenu } from './sessionSocial.js';
 import { S, activeLangPrefs, audioPreference, AUTOPIP_KEY, AUTOSYNC_MIN, AUTOSYNC_TARGET, headingFor, langPrefsOf, miniState, nextRef, originalLangOf, storeGet, storeSet, THUMBS_KEY } from './sessionState.js';
@@ -49,14 +50,14 @@ function guestBlocked() {
 }
 
 export function seekTo(t) {
-  if (!S.P || !S.P.view) return;
+  if (!S.P || !S.P.view || !S.P.engine) return;
   S.P.engine.seek(t);
   S.P.watch.reset(Date.now());
   S.P.skipped = null;
 }
 
 function seekBy(d) {
-  if (!S.P || !S.P.view) return;
+  if (!S.P || !S.P.view || !S.P.engine) return;
   const st = S.P.engine.state();
   const to = Math.min(st.duration || Infinity, Math.max(0, st.time + d));
   seekTo(to);
@@ -65,7 +66,7 @@ function seekBy(d) {
 }
 
 export function togglePlay() {
-  if (!S.P || !S.P.view) return;
+  if (!S.P || !S.P.view || !S.P.engine) return;
   const st = S.P.engine.state();
   if (st.paused) S.P.engine.play(); else { S.P.engine.pause(); saveProgress(true); }
 }
@@ -188,7 +189,9 @@ export function onAction(act, data) {
     showSourcesPanel();
     return;
   }
-  if (!S.P.view) return; // recherche en cours : seuls « Annuler » et le choix de source sont possibles
+  if (act.startsWith('ext-')) { externalAction(act); return; }
+  // Recherche en cours : seuls « Annuler » et le choix de source sont possibles. Lecteur externe : pas de moteur, pas de commande de lecture.
+  if (!S.P.view || !S.P.engine) return;
   const st = S.P.engine.state();
   const s = S.P.subs;
   switch (act) {
@@ -432,8 +435,9 @@ export function onKey(e) {
   if (action.type === 'nav') { e.preventDefault(); e.stopImmediatePropagation(); S.ui.navPanel(action.dir); return; }
   e.preventDefault();
   e.stopImmediatePropagation();
-  if (!S.P.view && action.type !== 'back') return;
-  const st = S.P.view ? S.P.engine.state() : null;
+  // Lecteur externe (view sans engine) : seule la fermeture (back) est traitée.
+  if ((!S.P.view || !S.P.engine) && action.type !== 'back') return;
+  const st = S.P.view && S.P.engine ? S.P.engine.state() : null;
   switch (action.type) {
     case 'toggle-play': togglePlay(); break;
     case 'seek': seekBy(action.by); break;

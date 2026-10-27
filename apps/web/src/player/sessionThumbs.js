@@ -41,7 +41,7 @@ function playerBuffering() {
 }
 
 export function thumbsAllowedNow() {
-  return !!S.P && !!S.P.view && thumbsAllowed({
+  return !!S.P && !!S.P.view && !!S.P.engine && thumbsAllowed({
     enabled: storeGet(THUMBS_KEY) !== '0', hasSource: thumbSourceOf(S.P).mode !== 'none', duration: S.P.engine.state().duration,
     bandwidthKbps: knownBandwidthKbps(), torrentBuffering: playerBuffering(),
   });

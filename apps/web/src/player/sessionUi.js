@@ -13,6 +13,7 @@ import { getState as getSocialState, sendMessage as sendSocialMessage, subscribe
 import { onAction, onKey, panelData, playEpisode, seekTo, sendSegment, togglePlay } from './sessionActions.js';
 import { closePlayer } from './sessionClose.js';
 import { failover } from './sessionFailover.js';
+import { externalAfterError } from './externalScreen.js';
 import { onNativeSource, onNativeTrack, syncNative } from './sessionNative.js';
 import { ensureEpisodes } from './sessionOpen.js';
 import { deleteReaction, editReaction, onCinema, partyAdapter, postReact, socialHidden } from './sessionSocial.js';
@@ -28,7 +29,7 @@ export function ensureUI() {
   S.ui = createPlayerUI({
     action: (act, data) => { onAction(act, data); nudgeTick(); },
     seekTo: (t) => seekTo(t),
-    setVolume: (v) => { if (S.P) { S.P.engine.setMuted(false); S.P.engine.setVolume(v); rememberVolume(v); } },
+    setVolume: (v) => { if (S.P && S.P.engine) { S.P.engine.setMuted(false); S.P.engine.setVolume(v); rememberVolume(v); } },
     panelData,
     panelOpened: (name) => {
       if (name === 'tracks') ensureExternalSubs();
@@ -59,7 +60,7 @@ export function ensureUI() {
   mountPartyPanel(S.ui.root, { adapter: () => partyAdapter() });
   S.thumbs = new Thumbs(S.ui.thumbCanvas, {
     allowed: () => thumbsAllowedNow(),
-    duration: () => (S.P ? S.P.engine.state().duration : 0),
+    duration: () => (S.P && S.P.engine ? S.P.engine.state().duration : 0),
     // Vidéo d'aperçu : lien direct, ou seconde session HLS basse résolution du serveur (jamais celle de la lecture).
     source: async () => {
       const p = S.P;
@@ -211,7 +212,12 @@ export function bindEngine(e) {
     wasPaused = paused;
   });
   e.on('ended', () => { if (S.P && S.P.engine === e) onEnded(); });
-  e.on('error', (err) => { if (S.P && S.P.engine === e) failover('Erreur de lecture (' + (err && err.message ? err.message : 'inconnue') + ')'); });
+  e.on('error', (err) => {
+    if (!S.P || S.P.engine !== e) return;
+    const msg = err && err.message ? err.message : 'inconnue';
+    if (externalAfterError(S.P, msg)) return; // iPhone et iPad : format ou décodage refusé par le lecteur intégré → lecteur externe, sans changer de source
+    failover('Erreur de lecture (' + msg + ')');
+  });
   e.on('tracks', () => { if (S.P && S.P.engine === e) onTracks(); });
   e.on('ready', () => { if (S.P && S.P.engine === e) onReady(); });
   // Lecteur natif Android : fermeture par l'utilisateur, bouton « Épisode suivant », changement de piste dans le panneau natif.
