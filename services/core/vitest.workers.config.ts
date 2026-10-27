@@ -35,7 +35,13 @@ export default defineConfig({
     ],
     setupFiles: ['tests-workers/setup.ts'],
     // Code Molotov mis de côté (archive/molotov/) : jamais testé.
-    exclude: [...configDefaults.exclude, 'archive/**'],
+    exclude: [
+      ...configDefaults.exclude,
+      'archive/**',
+      // Soirées planifiées : le store ouvre node:sqlite (Node seulement) et les routes, trop lentes sous workerd (scrypt par compte)
+      // et sans salons simulés, sont couvertes par la suite Node. Sous Workers : tests-workers/evenings-alarm.test.ts et la migration.
+      'tests/social-evenings-*.test.ts',
+    ],
     // Runner CI auto-hébergé partagé et souvent chargé : workerd démarre lentement, les délais par défaut (5 s) ne suffisent pas.
     // Les tests créent des comptes (hachage scrypt) : à 11 fichiers en parallèle sur ce runner, des tests de ~1 s
     // dépassent 30 s. Parallélisme borné, délais larges.

@@ -8,6 +8,7 @@ import { parseHandle } from './social-handles.js';
 import type { SocialV2Repo, UserBackend, UserRepo } from './repo.js';
 import { assertProfileAccess, assertUnlocked, sessionOf } from './session.js';
 import { friendLibraryQuery } from './social-validation.js';
+import { detachEvenings } from './social-evenings-live.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { SOCIAL_LIVE_PATH } from './social-v2-live.js';
 import type { HomeProgressResponse, HomeRecommendationsResponse, HomeWatchingResponse } from '@laststream/protocol/social';
@@ -190,6 +191,8 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     if (!(await social().removeFriend(me.pid, otherPid))) throw new UserApiError(404, 'friend_not_found');
     emitSocialEvent(deps.socialEvents, [otherPid], { t: 'unfriend', pid: me.pid });
     emitSocialEvent(deps.socialEvents, [me.pid], { t: 'unfriend', pid: otherPid });
+    // Plus amis : chacun quitte les soirées futures de l'autre.
+    await detachEvenings(deps, backend, me.pid, otherPid);
     return sendEmpty(c, 204);
   });
 

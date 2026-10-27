@@ -1,3 +1,4 @@
+import type { EveningEvent } from '@laststream/protocol/social';
 import type { ActivityItem } from './social-v2-activity.js';
 import type { SocialEvent } from './social-v2-events.js';
 import {
@@ -70,7 +71,9 @@ export type LiveFrame =
   | { t: 'join_request'; from: FriendView }
   | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
   | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string; avatar?: string }; partyId: string; title: string }
-  | { t: 'activity'; item: ActivityItem };
+  | { t: 'activity'; item: ActivityItem }
+  /** Soirées : la trame est l'`EveningEvent` du protocole, discriminée par `type` (et non `t`). */
+  | EveningEvent;
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
 export interface LiveEnvelope {
@@ -162,6 +165,32 @@ function noteOut(view: NoteView): NoteView {
   };
 }
 
+/** Trame de soirée champ par champ : aucun champ interne ne passe. */
+function eveningOut(event: EveningEvent): EveningEvent {
+  switch (event.type) {
+    case 'evening_invite': {
+      const out: Extract<EveningEvent, { type: 'evening_invite' }> = {
+        type: 'evening_invite',
+        eveningId: event.eveningId,
+        title: event.title,
+        startsAt: event.startsAt,
+        tz: event.tz,
+        host: { pid: event.host.pid, handle: handleOut(event.host.handle), avatarColor: event.host.avatarColor },
+      };
+      if (event.host.avatar !== undefined) out.host.avatar = event.host.avatar;
+      return out;
+    }
+    case 'evening_update':
+      return { type: 'evening_update', eveningId: event.eveningId, change: event.change };
+    case 'evening_response':
+      return { type: 'evening_response', eveningId: event.eveningId, pid: event.pid, response: event.response };
+    case 'evening_reminder':
+      return { type: 'evening_reminder', eveningId: event.eveningId, title: event.title, startsAt: event.startsAt, tz: event.tz };
+    case 'evening_open':
+      return { type: 'evening_open', eveningId: event.eveningId, party: { partyId: event.party.partyId, title: event.party.title } };
+  }
+}
+
 /** Trame du contrat pour un événement (sans destinataire). */
 export function liveFrame(event: SocialEvent): LiveFrame {
   switch (event.t) {
@@ -209,6 +238,8 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       };
     case 'activity':
       return { t: 'activity', item: activityOut(event.item) };
+    case 'evening':
+      return eveningOut(event.event);
   }
 }
 

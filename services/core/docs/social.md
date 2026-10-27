@@ -195,6 +195,77 @@ Le contrat v3 (`docs/social-v3-contract.md`) est hors dépôt. Cette section dé
 
 **Identité retirée** : un profil qui devient enfant, ou qui est supprimé, perd toutes ses données sociales : activité, liens publics (invitation réservée libérée), listes possédées avec leurs éléments et membres, éléments ajoutés dans les listes des autres, appartenances aux listes et groupes, en plus des amitiés, messages, notes, blocages et préférences. `syncProfileIdentity` ne lève plus d'erreur de clé étrangère.
 
+### Soirées planifiées (LAST-198)
+
+Soirées ponctuelles ou séries hebdomadaires entre amis, sous `/user/social/evenings*`, avec le profil agissant (`X-Profile-Id`). Un profil enfant reçoit 403 `kid_profile` sur les onze routes. Une soirée n'est visible que de son hôte et de ses invités non retirés. Code : `src/user/social-evenings-{store,routes,live,validation}.ts` ; types `Evening` et `EveningEvent` dans `@laststream/protocol` v0.4.0.
+
+**Routes**
+
+| Méthode | Chemin | Effet | Réponse et erreurs |
+| --- | --- | --- | --- |
+| GET | `/evenings?scope=&cursor=&limit=` | `upcoming` (défaut, annulées comprises), `past` (commencées, plus récentes d'abord), `invites` (à venir, hôte exclu, sans réponse) | `{ items, nextCursor }` ; 400 `invalid_body` |
+| GET | `/evenings/:id` | Détail | 200 ; 404 `evening_not_found` |
+| POST | `/evenings` | Crée une soirée ; `recurrence` (`weekly`, `interval` 1 ou 2, `until`) crée une série | 201 ; 400 ; 403 `not_friend` ; 429 `too_many_evenings` |
+| PATCH | `/evenings/:id` | Titre ou début, sur `scope` `occurrence` ou `series` (`scope` seul : 400) | 204 ; 403 `not_host` ; 409 `evening_closed` |
+| DELETE | `/evenings/:id?scope=` | `occurrence` annule ; `series` arrête la série | 204 ; 400 (`series` sur une ponctuelle) ; 403 `not_host` |
+| POST | `/evenings/:id/guests` | Ajoute des amis (`pids`, 1 à 19) | 204 ; 400 ; 403 `not_friend` ou `not_host` |
+| DELETE | `/evenings/:id/guests/:pid` | Retire un invité ; pid inconnu : 204 sans effet ; l'hôte ne se retire pas | 204 ; 400 (hôte) ; 403 `not_host` |
+| PUT | `/evenings/:id/response` | Ma réponse : `yes`, `maybe` ou `no` | 204 ; 403 `not_host` ; 409 `evening_closed` |
+| POST | `/evenings/:id/leave` | `occurrence` met « non » ; `series` retire mes occurrences futures et ne me génère plus | 204 ; 400 ; 403 `not_host` ; 409 |
+| POST | `/evenings/:id/stop` | Arrête la série : occurrences futures annulées | 204 ; 400 (ponctuelle) ; 409 si déjà arrêtée |
+| POST | `/evenings/:id/open` | Ouvre le salon de visionnage (voir plus bas) | 200 avec la soirée ; 403 `not_host` ; 409 `evening_not_open` ; 429 `too_many_rooms` ; 501 `party_unavailable` (Node) |
+
+Erreurs communes : 404 `evening_not_found` pour un non-participant, un identifiant mal formé ou inconnu (même réponse) ; 409 `evening_closed` pour une soirée annulée, commencée ou dont la série est arrêtée.
+
+**Droits**
+
+- Un non-participant, y compris un autre profil du même compte, reçoit 404, jamais 403. Le foyer n'est pas une amitié : un profil ne peut ni inviter ni être invité par son jumeau.
+- Invitation : ami accepté seulement. Demande en attente, blocage dans un sens ou dans l'autre, profil enfant et pid inconnu donnent le même corps `not_friend`.
+- Blocage ou fin d'amitié : chacun est retiré des soirées futures de l'autre, séries comprises. Un invité bloqué avec un co-invité est masqué de la liste d'invités de l'autre, dans les deux sens, comme pour les groupes ; il reste participant.
+- Passage en profil enfant : les soirées hébergées par le profil et ses invitations sont supprimées.
+
+**Trames temps réel** (`t: "evening"`, émises après écriture ; ni stockées ni rejouées). Audience : l'hôte et les invités qui n'ont pas dit « non », hors profils bloqués avec l'acteur. Sous Node, pas de diffusion.
+
+| `type` | Déclencheur | Destinataires |
+| --- | --- | --- |
+| `evening_invite` | Création, ajout d'invité | les invités ajoutés, jamais l'hôte |
+| `evening_update` `updated` | Modification | l'audience |
+| `evening_update` `cancelled` | Annulation, arrêt de série | l'audience |
+| `evening_update` `cancelled` | Retrait d'un invité, blocage ou fin d'amitié | l'invité retiré ; l'hôte reçoit `updated`, sauf en cas de blocage entre eux |
+| `evening_response` | Réponse, sortie | les autres participants (ni le répondant, ni les « non ») |
+| `evening_reminder` | Rappel T-15 min | l'audience |
+| `evening_open` | Ouverture du salon | l'audience |
+
+**Rappel et alarme**
+
+- Un rappel par soirée, à T-15 min, pour l'hôte et les invités qui n'ont pas dit « non ». Une modification de l'heure le réarme ; une soirée annulée n'en a pas.
+- Sous Node, une minuterie passe chaque minute. Sous Workers, l'alarme du Durable Object est recalée après chaque écriture et à chaque réveil. Le tick est idempotent : `reminded_at` est posé dans la transaction qui lit le rappel.
+- Le même tick complète la fenêtre de quatre occurrences de chaque série active, arrête les séries arrivées à leur fin et purge.
+
+**Salon de visionnage** (`POST /evenings/:id/open`)
+
+- Hôte seul, de T-15 min à T+2 h, soirée non annulée. Crée un salon privé au titre de la soirée et le rattache. Idempotent : un salon déjà rattaché est renvoyé sans trame. En cas d'ouverture simultanée, le premier rattachement gagne.
+- `party: { partyId, title }` n'apparaît dans la soirée qu'après rattachement, pour les participants seulement.
+
+**Plafonds**
+
+| Limite | Valeur | Dépassement |
+| --- | --- | --- |
+| Soirées ponctuelles à venir, par hôte | 10 (une annulée libère sa place) | 429 `too_many_evenings` |
+| Séries actives, par hôte | 5 (les occurrences ne comptent pas) | 429 `too_many_evenings` |
+| Invités, hôte non compris | 19 | 400 `invalid_body` |
+| Titre, après `trim` | 1 à 80 caractères | 400 |
+| Début | entre 1 minute et 90 jours | 400 |
+| Fin de série (`until`) | au plus 365 jours | 400 |
+| Début d'une série | doit tomber sur la règle (jour, heure, cadence) | 400 |
+| Liste | `limit` 1 à 50 (20 par défaut) | 400 |
+| Rétention | soirées commencées depuis plus de 30 jours, purgées au tick | |
+
+**Points d'attention**
+
+- Le contrat v3 ne couvre pas les soirées : cette section décrit le code. Le masquage des co-invités bloqués suit la règle des groupes ; à valider côté produit.
+- Après une coupure, relire la liste ou le détail : les trames ne sont pas rejouées.
+
 ## 1. Parrainage (inscription par lien)
 
 L'inscription n'est possible qu'avec un lien de parrainage. Le tout premier compte d'un serveur vide s'inscrit sans lien (il devient propriétaire). `LASTADDON_ALLOW_SIGNUP=1` rouvre l'inscription libre : option réservée aux serveurs personnels, absente du Worker public.

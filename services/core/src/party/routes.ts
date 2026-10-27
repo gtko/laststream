@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import { type App, type Ctx, newApp } from '../http/app-env.js';
@@ -19,16 +18,13 @@ import type { PartyBackend } from './backend.js';
 import {
   DEFAULT_MAX_PARTICIPANTS,
   GUEST_SESSION_MS,
-  type Fingerprint,
   MAX_PARTICIPANTS_LIMIT,
-  MAX_ROOMS_PER_HOST,
   MIN_PARTICIPANTS,
   parseFingerprint,
   type RoomInfo,
-  type RoomMeta,
 } from './protocol.js';
+import { createPartyRoom, participantOf as participantKeyOf } from './create-room.js';
 import { cleanGuestName, newGuestId, signGuestToken, signRoomInviteToken, verifyRoomInviteToken } from './guest.js';
-import { displayName, memberKey } from './keys.js';
 import { signTicket } from './ticket.js';
 import { ROOM_ID } from './ws.js';
 
@@ -139,16 +135,8 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     return { account: session.account, profile };
   }
 
-  /**
-   * Clé et pseudo de participant d'un profil dans un salon. Salon `memberKeys: 'profile'` : clé `<compte>:<profil>`, pseudo = nom
-   * du compte pour le profil principal (admin().mainProfileId), `<compte> · <profil>` pour les autres. Salon ancien : clé = compte et
-   * pseudo = nom du compte, comme avant.
-   */
-  async function participantOf(account: { id: string; username: string }, profile: ProfileRecord, mode: 'profile' | 'account'): Promise<{ key: string; name: string }> {
-    if (mode !== 'profile') return { key: account.id, name: account.username };
-    const mainId = await backend.admin().mainProfileId(account.id);
-    return { key: memberKey(account.id, profile.id, 'profile'), name: displayName(account.username, profile.name, mainId === null || mainId === profile.id) };
-  }
+  /** Clé et pseudo de participant d'un profil dans un salon (voir create-room.ts). */
+  const participantOf = (account: { id: string; username: string }, profile: ProfileRecord, mode: 'profile' | 'account') => participantKeyOf(backend, account, profile, mode);
 
   const roomId = (c: Ctx): string => {
     const id = c.req.param('id') ?? '';
@@ -218,49 +206,15 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     const body = parseWith(createSchema, c.get('body'));
     const { account, profile } = await profileFor(c, body.profileId);
     if (body.visibility === 'public' && profile.isKid) throw new UserApiError(403, 'kid_profile');
-    // Limite de salons ouverts par hôte ; les salons terminés sont retirés de l'annuaire au passage.
-    let open = 0;
-    for (const record of await social().partyRoomsOf(account.id)) {
-      if ((await party.room(record.id).info()) === null) await social().deletePartyRoom(record.id);
-      else open += 1;
-    }
-    if (open >= MAX_ROOMS_PER_HOST) throw new UserApiError(429, 'too_many_rooms');
-    const fingerprint: Fingerprint | null = parseFingerprint(body.fingerprint);
-    const series = body.media.type === 'series';
-    // Salon récent : participants identifiés par profil, pour que les profils d'un même compte coexistent.
-    const host = await participantOf(account, profile, 'profile');
-    const meta: RoomMeta = {
-      id: randomBytes(12).toString('base64url'),
+    const { info } = await createPartyRoom(backend, party, { account, profile }, {
       visibility: body.visibility,
-      hostId: host.key,
-      hostName: host.name,
       title: body.title,
       poster: body.poster ?? null,
       language: body.language ?? null,
-      media: {
-        type: body.media.type,
-        tmdbId: body.media.tmdbId ?? null,
-        imdbId: body.media.imdbId ?? null,
-        season: series ? (body.media.season ?? null) : null,
-        episode: series ? (body.media.episode ?? null) : null,
-      },
-      fingerprint,
+      media: body.media,
+      fingerprint: parseFingerprint(body.fingerprint),
       maxParticipants: body.maxParticipants,
-      createdAt: Date.now(),
-      memberKeys: 'profile',
-    };
-    if ((await party.room(meta.id).init(meta)) !== 'ok') throw new UserApiError(409, 'room_exists');
-    await social().addPartyRoom({
-      id: meta.id,
-      hostId: account.id,
-      visibility: meta.visibility,
-      title: meta.title,
-      poster: meta.poster,
-      language: meta.language,
-      mediaType: meta.media.type,
-      createdAt: new Date(meta.createdAt).toISOString(),
     });
-    const info = await party.room(meta.id).info();
     return sendJson(c, { room: info }, 201);
   });
 

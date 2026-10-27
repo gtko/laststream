@@ -1,12 +1,15 @@
 import type { DurableObjectNamespace, DurableObjectStub } from '@cloudflare/workers-types';
-import type { AdminRepo, MetaRepo, SkipRepo, SocialRepo, SocialV2Repo, SocialV3Repo, UserBackend, UserRepo } from '../../user/repo.js';
+import type { AdminRepo, MetaRepo, SkipRepo, SocialEveningsRepo, SocialRepo, SocialV2Repo, SocialV3Repo, UserBackend, UserRepo } from '../../user/repo.js';
 import type { UserStoreDO } from './user-store-do.js';
 
 /** Nom du Durable Object global des données utilisateur. */
 export const USER_STORE_NAME = 'users';
 
 /** Dépôt dont chaque méthode est un appel RPC vers le Durable Object (`kind` : store visé). */
-function remoteRepo<R>(stub: () => DurableObjectStub<UserStoreDO>, kind: 'user' | 'skip' | 'social' | 'socialV2' | 'socialV3' | 'admin' | 'meta'): R {
+function remoteRepo<R>(
+  stub: () => DurableObjectStub<UserStoreDO>,
+  kind: 'user' | 'skip' | 'social' | 'socialV2' | 'socialV3' | 'socialEvenings' | 'admin' | 'meta',
+): R {
   const cache = new Map<string, unknown>();
   return new Proxy({} as R & object, {
     get(_target, name) {
@@ -28,7 +31,9 @@ function remoteRepo<R>(stub: () => DurableObjectStub<UserStoreDO>, kind: 'user' 
                     ? stub().socialV2(name, args)
                     : kind === 'socialV3'
                       ? stub().socialV3(name, args)
-                      : stub().social(name, args));
+                      : kind === 'socialEvenings'
+                        ? stub().socialEvenings(name, args)
+                        : stub().social(name, args));
         cache.set(name, call);
       }
       return call;
@@ -47,6 +52,7 @@ export function createDurableObjectUserBackend(
   const social = remoteRepo<SocialRepo>(stub, 'social');
   const socialV2 = remoteRepo<SocialV2Repo>(stub, 'socialV2');
   const socialV3 = remoteRepo<SocialV3Repo>(stub, 'socialV3');
+  const socialEvenings = remoteRepo<SocialEveningsRepo>(stub, 'socialEvenings');
   const admin = remoteRepo<AdminRepo>(stub, 'admin');
   const meta = remoteRepo<MetaRepo>(stub, 'meta');
   return {
@@ -55,6 +61,7 @@ export function createDurableObjectUserBackend(
     social: () => social,
     socialV2: () => socialV2,
     socialV3: () => socialV3,
+    socialEvenings: () => socialEvenings,
     admin: () => admin,
     meta: () => meta,
     close: () => undefined,

@@ -15,6 +15,7 @@ import { sendJson } from './http/respond.js';
 import { catalogEntries } from './lt/catalog.js';
 import { closeLtRoutes, registerLtRoutes } from './lt/router.js';
 import { platform, runtimeEnv, type UserBackend } from './platform/index.js';
+import { startEveningTicker } from './user/social-evenings-live.js';
 import { createHealthReporter } from './health/probes.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
@@ -286,12 +287,15 @@ export function createApp(deps: AppDeps): App {
   registerUserRoutes(app, deps, backend, maintenance);
   const party = deps.party ?? platform().createPartyBackend?.();
   registerPartyRoutes(app, deps, backend, party);
+  // Rappels des soirées planifiées : minuterie du processus sous Node ; sous Workers, l'alarme du Durable Object des données.
+  const stopEveningTicker = platform().capabilities.sharedState ? undefined : startEveningTicker(deps, backend, platform().scheduler);
   registerAdminRoutes(app, deps, backend, maintenance, party);
   registerPublicAnnouncementRoute(app, backend);
   // Avatars par collections : R2 sous Workers, dossier ou relais sous Node. Avant l'interface web (pas de repli sur index.html).
   const avatars = platform().avatarAssets;
   if (avatars !== undefined) registerAvatarRoutes(app, avatars);
   closers.set(app, () => {
+    stopEveningTicker?.();
     closeLtRoutes(app);
     backend.close();
   });

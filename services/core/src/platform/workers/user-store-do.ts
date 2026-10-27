@@ -7,6 +7,8 @@ import { connectionsToEvict, createSlidingWindow } from '../../ws-limits.js';
 import { AdminStore } from '../../user/admin-store.js';
 import { migrate } from '../../user/migrations.js';
 import { MetaStore } from '../../user/meta-store.js';
+import { reminderFrames } from '../../user/social-evenings-live.js';
+import { EveningStore } from '../../user/social-evenings-store.js';
 import { SkipSegmentStore } from '../../user/skip-segments.js';
 import { SocialStore } from '../../user/social-store.js';
 import type { SocialEvent } from '../../user/social-v2-events.js';
@@ -78,7 +80,7 @@ function sendQuietly(ws: CfWebSocket, frame: string): void {
 }
 
 /** Méthodes des stores jamais exposées en RPC (internes ou propres à l'hôte). */
-const HIDDEN = new Set(['constructor', 'transaction', 'close', 'updateProfileFields', 'createSession', 'openSession']);
+const HIDDEN = new Set(['constructor', 'transaction', 'close', 'updateProfileFields', 'createSession', 'openSession', 'tick', 'wakeAt']);
 
 function callableNames(prototype: object): Set<string> {
   return new Set(Object.getOwnPropertyNames(prototype).filter((name) => !HIDDEN.has(name)));
@@ -89,6 +91,7 @@ const SKIP_METHODS = callableNames(SkipSegmentStore.prototype);
 const SOCIAL_METHODS = callableNames(SocialStore.prototype);
 const SOCIAL_V2_METHODS = callableNames(SocialV2Store.prototype);
 const SOCIAL_V3_METHODS = callableNames(SocialV3Store.prototype);
+const SOCIAL_EVENINGS_METHODS = callableNames(EveningStore.prototype);
 const ADMIN_METHODS = callableNames(AdminStore.prototype);
 const META_METHODS = callableNames(MetaStore.prototype);
 
@@ -109,6 +112,7 @@ export class UserStoreDO extends DurableObject {
   private readonly socialStore: SocialStore;
   private readonly socialV2Store: SocialV2Store;
   private readonly socialV3Store: SocialV3Store;
+  private readonly eveningStore: EveningStore;
   private readonly adminStore: AdminStore;
   private readonly metaStore: MetaStore;
   private readonly db: SqlDb;
@@ -129,8 +133,11 @@ export class UserStoreDO extends DurableObject {
     this.socialStore = new SocialStore(db);
     this.socialV2Store = new SocialV2Store(db);
     this.socialV3Store = new SocialV3Store(db);
+    this.eveningStore = new EveningStore(db);
     this.adminStore = new AdminStore(db);
     this.metaStore = new MetaStore(db);
+    // Réveil réveillé ou redémarré : des soirées à venir peuvent attendre un rappel (l'alarme survit, mais on la recale).
+    void ctx.blockConcurrencyWhile(() => this.armEveningAlarm());
   }
 
   /** Appelle une méthode de UserStore. */
@@ -156,6 +163,34 @@ export class UserStoreDO extends DurableObject {
   /** Appelle une méthode de SocialV3Store (partage multiple, liens publics, listes partagées). */
   socialV3(method: string, args: unknown[]): unknown {
     return dispatch(this.socialV3Store, SOCIAL_V3_METHODS, method, args);
+  }
+
+  /** Appelle une méthode d'EveningStore (soirées planifiées : soirées, séries, invitations, réponses, rappels). */
+  async socialEvenings(method: string, args: unknown[]): Promise<unknown> {
+    const result = dispatch(this.eveningStore, SOCIAL_EVENINGS_METHODS, method, args);
+    // Toute écriture peut avancer ou retarder le prochain rappel : l'alarme est recalée (idempotent, un seul réveil posé).
+    if (method !== 'get' && method !== 'list') await this.armEveningAlarm();
+    return result;
+  }
+
+  /**
+   * Alarme des soirées : émet les rappels T-15 min, complète les séries, purge les soirées anciennes, puis repose l'alarme.
+   * Idempotente : `tick` marque chaque rappel dans sa transaction avant de le renvoyer, donc un réveil rejoué n'en émet aucun.
+   */
+  async alarm(): Promise<void> {
+    const outcome = this.eveningStore.tick(Date.now());
+    for (const frame of reminderFrames(outcome)) this.liveBroadcast(frame.pids, frame.event);
+    await this.armEveningAlarm(outcome.nextWake);
+  }
+
+  /** Pose l'alarme au prochain réveil utile (ou la retire s'il n'y en a pas) ; sans changement, ne réécrit rien. */
+  private async armEveningAlarm(wake: number | null = this.eveningStore.wakeAt(Date.now())): Promise<void> {
+    const current = await this.ctx.storage.getAlarm();
+    if (wake === null) {
+      if (current !== null) await this.ctx.storage.deleteAlarm();
+      return;
+    }
+    if (current !== wake) await this.ctx.storage.setAlarm(wake);
   }
 
   /** Appelle une méthode d'AdminStore (administration : comptes, réglages, audit, signalements). Réservé aux routes /admin et aux salons. */
