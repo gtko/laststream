@@ -27,44 +27,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Runner persistant : node_modules (et ses caches node_modules/.cache) survit d'un run à l'autre.
-# Le checkout ne nettoie pas (clean: false) ; le nettoyage explicite épargne node_modules. npm ci n'est relancé que si le lockfile change.
+# Le checkout ne nettoie pas (clean: false) ; le nettoyage explicite épargne node_modules. npm ci n'est relancé que si
+# package.json, package-lock.json ou .npmrc changent.
 jobs:
   static:
     runs-on: [self-hosted, laststream-local]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-        with:
-          clean: false
-          persist-credentials: false
-
-      - name: Nettoyer l'arbre (node_modules conservé)
-        run: git clean -ffdx -e node_modules
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Installer les dépendances
-        run: node scripts/ci-install.mjs
-
-      # Incrémental : le cache tsc est écrit dans node_modules/.cache.
-      - name: Typecheck
-        run: npm run typecheck -- --incremental --tsBuildInfoFile node_modules/.cache/tsc.tsbuildinfo
-
-      - name: Lint
-        run: npm run lint -- --cache --cache-location node_modules/.cache/eslint/
-
-      # knip : version exacte épinglée en devDependencies, exécutée depuis node_modules par npm run knip.
-      - name: Code mort (knip)
-        run: npm run knip
-
-  test:
-    runs-on: [self-hosted, laststream-local]
-    timeout-minutes: 30
-    steps:
-      # fetch-depth 0 : `--changed origin/main` a besoin de l'historique et de la référence origin/main.
+      # fetch-depth 0 dans tous les jobs : sinon le runner alterne entre checkout superficiel et complet.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -77,7 +47,47 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+
+      - name: Installer les dépendances
+        run: node scripts/ci-install.mjs
+
+      # Incrémental : le cache tsc est écrit dans node_modules/.cache.
+      - name: Typecheck
+        run: npm run typecheck -- --incremental --tsBuildInfoFile node_modules/.cache/tsc.tsbuildinfo
+
+      - name: Lint
+        run: npm run lint -- --cache --cache-location node_modules/.cache/eslint/
+
+      # Build et budget sur toutes les PR : un build cassé ou un budget dépassé bloque avant merge.
+      - name: Build
+        run: npm run build:ci
+
+      # Budget du premier chargement (chunks du démarrage, manifeste Vite, LAST-129) : aucun chunk au-dessus de 500 Ko brut,
+      # et total gzip plafonné à 450 Ko (bloquant, ratchet : ~419 Ko aujourd'hui ; un lecteur rechargé au démarrage le pousse à ~637 Ko).
+      # Objectif web : 350 Ko gzip, à atteindre en abaissant ce plafond.
+      - name: Budget du premier chargement
+        run: npm run budget -- --max-kb 500 --max-total-gzip-kb 450 --strict-gzip
+
+      # knip : version exacte épinglée en devDependencies, exécutée depuis node_modules par npm run knip.
+      - name: Code mort (knip)
+        run: npm run knip
+
+  test:
+    runs-on: [self-hosted, laststream-local]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: false
+          persist-credentials: false
+
+      - name: Nettoyer l'arbre (node_modules conservé)
+        run: git clean -ffdx -e node_modules
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Installer les dépendances
         run: node scripts/ci-install.mjs
@@ -92,17 +102,11 @@ jobs:
         if: github.event_name != 'pull_request'
         run: npm test
 
-      # Build, budget et e2e : push sur main seulement, pour rester sous une minute sur PR (compromis à valider).
-      - name: Build
+      # e2e : push sur main seulement (compromis à valider pour rester sous une minute sur PR).
+      # Le smoke lit dist/ ; dist/ n'est pas partagé entre jobs, on le reconstruit ici.
+      - name: Build pour l'e2e
         if: github.event_name != 'pull_request'
         run: npm run build:ci
-
-      # Budget du premier chargement (chunks du démarrage, manifeste Vite, LAST-129) : aucun chunk au-dessus de 500 Ko brut,
-      # et total gzip plafonné à 450 Ko (bloquant, ratchet : ~419 Ko aujourd'hui ; un lecteur rechargé au démarrage le pousse à ~637 Ko).
-      # Objectif web : 350 Ko gzip, à atteindre en abaissant ce plafond.
-      - name: Budget du premier chargement
-        if: github.event_name != 'pull_request'
-        run: npm run budget -- --max-kb 500 --max-total-gzip-kb 450 --strict-gzip
 
       # Chromium de Playwright, headless ; no-op quand il est déjà en cache sur le runner.
       - name: Navigateur de test e2e
