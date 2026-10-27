@@ -60,7 +60,12 @@ export function refreshWatchedUI() {
     if (sb) {
       const refs = seasonAired();
       const all = allWatched(m.key, refs);
-      sb.textContent = all ? 'Marquer la saison comme non vue' : 'Marquer la saison comme vue';
+      const long = all ? 'Marquer la saison comme non vue' : 'Marquer la saison comme vue';
+      sb.setAttribute('aria-label', long);
+      const l = sb.querySelector('.sw-l');
+      const sh = sb.querySelector('.sw-s');
+      if (l) l.textContent = long; else sb.textContent = long;
+      if (sh) sh.textContent = all ? 'Saison non vue' : 'Saison vue';
       sb.dataset.state = all ? 'on' : 'off';
       sb.disabled = !refs.length;
     }

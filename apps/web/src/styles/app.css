@@ -235,6 +235,40 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .pp-follow { margin: 4px 0 6px; }
 .hc-btn.is-on[data-follow], .btn-round.is-on[data-follow] { color: var(--accent); }
 .f-rate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 4px; }
+.f-rate-l { display: inline-flex; flex-direction: column; gap: 2px; }
+.stars.is-locked { opacity: 0.4; }
+/* Reprise sous l'action principale : barre et temps restant (LAST-500). */
+.f-resume { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
+.f-resume-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--line-2); overflow: hidden; }
+.f-resume-bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+.f-resume-t { font-size: 12px; color: var(--dim); white-space: nowrap; }
+/* Menu « … » : groupes séparés ; sur téléphone, feuille basse sur un voile (LAST-500). */
+.ctx-sep { height: 1px; margin: 4px 10px; background: var(--line-2); flex: none; }
+.ctx-scrim { position: fixed; inset: 0; z-index: 399; background: rgba(6, 5, 9, 0.7); }
+.ctxmenu.is-sheet { left: 0; right: 0; bottom: 0; top: auto; width: auto; min-width: 0; max-width: none; max-height: 82vh; overflow-y: auto;
+  border-radius: 22px 22px 0 0; padding: 8px 8px calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--surface); box-shadow: 0 -1px 0 var(--line-2); }
+.ctxmenu.is-sheet button { min-height: 52px; font-size: 15px; }
+.ctx-sheet-h { display: flex; flex-direction: column; gap: 12px; padding: 2px 14px 10px; }
+.ctx-grip { align-self: center; width: 40px; height: 4px; border-radius: 2px; background: #3a3646; }
+.ctx-sheet-h strong { font-family: var(--ff-title); font-size: 17px; font-weight: 700; }
+.f-eps-head [data-season-watch] { gap: 8px; }
+.f-eps-head [data-season-watch] svg { width: 18px; height: 18px; flex: none; }
+.f-eps-head .sw-s { display: none; }
+.f-sec-title .f-newcount { margin-left: 10px; vertical-align: middle; }
+@media (max-width: 640px) {
+  /* Note sur une ligne : libellé à gauche, étoiles à droite, cibles de 44 px de haut. */
+  .f-rate { align-self: stretch; flex-wrap: nowrap; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--line); }
+  .f-rate .star { width: 36px; height: 44px; }
+  .f-rate .star svg { width: 28px; height: 28px; margin: 8px 4px; }
+  /* Épisodes : saisons sur une ligne, puis une barre d'outils compacte. */
+  .f-eps-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .f-eps-head > .pills { flex: 1 1 100%; }
+  .f-eps-head .dl-season, .f-eps-head [data-season-watch] { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 0 12px; font-size: 13px; border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .f-eps-head .sw-l { display: none; }
+  .f-eps-head .sw-s { display: inline; }
+  .f-eps-head .ep-more { min-width: 48px; min-height: 44px; border-radius: 999px; }
+  .f-sec-title .f-newcount { height: 24px; padding: 0 10px; font-size: 12px; }
+}
 .f-rate-label { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
 .f-rate-value { font-size: 14px; color: var(--muted); }
 .stars { display: inline-flex; gap: 2px; }

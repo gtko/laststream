@@ -290,12 +290,13 @@ describe('interface portée', () => {
     document.body.click();
     expect(JSON.parse(localStorage.getItem('laststream.follows')!)[0]).toMatchObject({ id: 100, type: 'movie' });
     // Pas encore vu : la note est désactivée.
-    expect(detail.querySelector('#f-rate button[disabled]')).not.toBeNull();
+    expect(detail.querySelector('#f-rate .stars.is-locked')).not.toBeNull();
+    expect(detail.querySelector('#f-rate [data-rate]')).toBeNull();
     menuItem('seen').click();
     await settle(50);
     expect(menuItem('seen').textContent).toBe('Marquer comme non vu');
     document.body.click();
-    expect(detail.querySelector('#f-rate .stars')).not.toBeNull();
+    expect(detail.querySelector('#f-rate .stars:not(.is-locked)')).not.toBeNull();
     expect(document.querySelector('.rate-pop')).not.toBeNull(); // « Tu as aimé ? »
     (detail.querySelector('#f-rate [data-rate="4.5"]') as HTMLElement).click();
     expect(JSON.parse(localStorage.getItem('laststream.ratings')!)[0]).toMatchObject({ id: 100, rating: 4.5 });
@@ -472,6 +473,9 @@ describe('interface portée', () => {
     // Le « Suivre » est la pastille principale : pas de cloche en double.
     expect(d.querySelectorAll('.f-actions [data-follow="movie:505"]')).toHaveLength(1);
     expect(d.querySelector('.f-actions .btn-pill.is-cinema')).not.toBeNull();
+    // Au cinéma : ni bouton de téléchargement ni note (LAST-500).
+    expect(d.querySelector('.f-actions .dl-wrap')).toBeNull();
+    expect(d.querySelector('#f-rate')).toBeNull();
     expect(d.querySelector('.f-release')!.textContent).toMatch(/Au cinéma depuis le/);
     const be = d.querySelector('.f-actions [data-follow="movie:505"]') as HTMLElement;
     expect(be.textContent).toBe('Me prévenir');

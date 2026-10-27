@@ -12,7 +12,7 @@ import { getDetail } from './catalog.js';
 import { isFuture } from './dates.js';
 import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { toast } from './dom.js';
-import { downloadsAllowed, startDownload } from './downloadBtn.js';
+import { downloadsAllowed, ficheDownloadMenuItems, startDownload } from './downloadBtn.js';
 import { platformAvailability } from '../downloads/service';
 import { nextToWatch, partyKind } from './fiche.js';
 import { ICON } from './icons.js';
@@ -58,6 +58,7 @@ export function closeCtx(restoreFocus) {
   const opener = m._opener;
   if (m._more) setOpenState(m._more, false);
   if (m._releaseBack) m._releaseBack();
+  if (m._scrim) m._scrim.remove();
   m.remove();
   state.ctxMenu = null;
   if (restoreFocus && opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true });
@@ -301,6 +302,7 @@ function ficheItems(t) {
   const m = t.model;
   if (!m) return [];
   const items = [];
+  // Groupes séparés par un filet : le titre, son téléchargement, le social, l'accueil (LAST-500).
   if (m.trailer) items.push({ id: 'trailer', label: 'Bande-annonce', icon: ICON.film, run: () => openVideo(m.trailer, 'Bande-annonce', t.el, !!m.trailerVO) });
   const on = inLib(m.key);
   items.push({
@@ -315,14 +317,15 @@ function ficheItems(t) {
   if (m.cinemaSince) items.push({ id: 'sources', label: 'Voir les sources', icon: ICON.list, run: () => openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, t.el) });
   // Adulte connecté, titre sorti : « Regarder avec… » (feuille chargée au clic, hors du premier chargement) à la place de la watch party simple.
   const withSheet = partyKind(m) === 'with';
-  socialItems(t.el, () => m).forEach((x) => {
-    if (x.id !== 'party' || !withSheet) { items.push(x); return; }
-    items.push({ id: 'party', label: 'Regarder avec…', icon: ICON.users, run: () => import('./watchWith.js').then((w) => { if (!w.openWatchWith(t.el, m)) openPartyDialog(t.el); }, () => openPartyDialog(t.el)) });
-  });
+  const social = socialItems(t.el, () => m).map((x) => (x.id !== 'party' || !withSheet ? x
+    : { id: 'party', label: 'Regarder avec…', icon: ICON.users, run: () => import('./watchWith.js').then((w) => { if (!w.openWatchWith(t.el, m)) openPartyDialog(t.el); }, () => openPartyDialog(t.el)) }));
   extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
+  items.forEach((x) => { x.group = 'title'; });
+  ficheDownloadMenuItems(m, m.seasons ? nextToWatch(m) : null, t.el).forEach((x) => items.push(x));
+  social.forEach((x) => items.push({ ...x, group: 'social' }));
   if (!isKidProfile()) {
     const hidden = isHiddenKey(m.key);
-    items.push({ id: 'hide', label: hidden ? 'Proposer à nouveau sur l’accueil' : 'Ne plus proposer sur l’accueil', icon: ICON.close, run: () => toggleHidden(m.key, m.name, m.posterPath) });
+    items.push({ id: 'hide', group: 'home', label: hidden ? 'Proposer à nouveau sur l’accueil' : 'Ne plus proposer sur l’accueil', icon: ICON.close, run: () => toggleHidden(m.key, m.name, m.posterPath) });
   }
   return items;
 }
@@ -355,18 +358,32 @@ export function openCtx(t, x, y) {
   menu._at = Date.now();
   menu._x = x;
   menu._y = y;
-  menu.innerHTML = items.map((it) => '<button type="button" role="menuitem" data-ctx="' + esc(it.id) + '">' + (it.icon || '') + '<span>' + esc(it.label) + '</span></button>').join('');
+  // Fiche sur téléphone : feuille basse avec le titre, sur un voile (LAST-500).
+  const sheet = t.kind === 'fiche' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 640px)').matches;
+  menu.innerHTML = (sheet ? '<div class="ctx-sheet-h" aria-hidden="true"><span class="ctx-grip"></span><strong>' + esc(t.model.name || '') + '</strong></div>' : '') +
+    items.map((it, i) => (i && it.group && items[i - 1].group && it.group !== items[i - 1].group ? '<div class="ctx-sep" role="separator"></div>' : '') +
+      '<button type="button" role="menuitem" data-ctx="' + esc(it.id) + '">' + (it.icon || '') + '<span>' + esc(it.label) + '</span></button>').join('');
   if ((t.kind === 'title' || t.kind === 'episode') && takeHint()) {
     menu.insertAdjacentHTML('beforeend', '<p class="ctx-hint" aria-hidden="true">Astuce : clic droit, appui long ou « … » sur une affiche ouvre ce menu.</p>');
   }
   menu._opener = t.el;
+  if (sheet) {
+    menu.classList.add('is-sheet');
+    const scrim = document.createElement('div');
+    scrim.className = 'ctx-scrim';
+    scrim.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(scrim);
+    menu._scrim = scrim;
+  }
   document.body.appendChild(menu);
   state.ctxMenu = menu;
   menu._releaseBack = pushLayer(() => closeCtx(true)); // retour du téléphone : ferme le menu (LAST-499)
-  const w = menu.offsetWidth;
-  const h = menu.offsetHeight;
-  menu.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
-  menu.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
+  if (!sheet) {
+    const w = menu.offsetWidth;
+    const h = menu.offsetHeight;
+    menu.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
+    menu.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
+  }
   const buttons = Array.from(menu.querySelectorAll('button'));
   menu.addEventListener('click', (e) => {
     const b = e.target instanceof Element && e.target.closest('[data-ctx]');

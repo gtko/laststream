@@ -102,6 +102,18 @@ function primaryBtn(m) {
     : '<button type="button" class="btn btn-primary btn-pill" data-play>' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>';
 }
 
+/** Sous l'action principale : avancement de la reprise (film entamé, ou épisode à suivre entamé). */
+function resumeBarHTML(m) {
+  const p = userStore.continueWatching().find((x) => x.key === m.key);
+  if (!p || p.finished || p.suggested || !p.duration || !(p.position > 0)) return '';
+  const n = nextToWatch(m);
+  if (m.type === 'tv' && (!n || p.season !== n.s || p.episode !== n.e)) return '';
+  const pct = Math.max(1, Math.min(99, Math.round((p.position / p.duration) * 100)));
+  const left = Math.max(1, Math.round((p.duration - p.position) / 60));
+  return '<div class="f-resume"><span class="f-resume-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></span>' +
+    '<span class="f-resume-t">reste ' + esc(left >= 60 ? fmtMin(left) : left + ' min') + '</span></div>';
+}
+
 export function updatePlayLabel(m) {
   if (isUnreleased(m)) return;
   detailEl.querySelectorAll('.f-play-label').forEach((el) => { el.textContent = playText(m); });
@@ -164,6 +176,7 @@ function ficheHTML(m) {
     ? '<h1 class="f-title" id="f-title" tabindex="-1"><img class="logo-img f-logo" src="' + esc(m.logo) + '" alt="' + esc(m.name) + '" data-logo="' + esc(m.name) + '"></h1>'
     : '<h1 class="f-title" id="f-title" tabindex="-1"><span class="title-text">' + esc(m.name) + '</span></h1>';
 
+  const soon = !!m.cinemaSince || isUnreleased(m);
   const info =
     '<div class="f-info">' + title +
     '<ul class="meta f-meta">' + metaLine(m) + '</ul>' +
@@ -175,22 +188,22 @@ function ficheHTML(m) {
     (m.overview.length > 150 ? '<button type="button" class="link-btn" data-more>Plus</button>' : '') + '</div>' +
     '<div class="f-actions" id="f-actions" data-nav>' +
     primaryBtn(m) +
-    ficheDownloadHTML(m, nextToWatch(m), m.cinemaSince ? 'Pas encore disponible en streaming' : isUnreleased(m) ? 'Pas encore sorti' : '') +
+    // Au cinéma ou pas encore sorti : la ligne de sortie le dit déjà, ni téléchargement ni note (LAST-500).
+    (soon ? '' : resumeBarHTML(m) + ficheDownloadHTML(m, nextToWatch(m), '')) +
     moreBtn() +
-    '</div><div class="f-rate" id="f-rate" data-nav>' + ficheRateHTML(m) + '</div></div>';
+    '</div>' + (soon ? '' : '<div class="f-rate" id="f-rate" data-nav>' + ficheRateHTML(m) + '</div>') + '</div>';
 
   const panels = [];
   if (tabs.includes('eps')) {
-    panels.push(fsec('eps', 'Épisodes',
+    panels.push(fsec('eps', 'Épisodes <span class="f-newcount" id="f-newcount" hidden></span>',
       '<div class="f-eps-head"><div class="pills" data-nav role="group" aria-label="Saison">' + m.seasons.map((s) =>
         '<button type="button" class="pill" data-season="' + s.season_number + '" aria-pressed="' + (s.season_number === seasonN) + '">' +
         esc(s.season_number === 0 ? 'Bonus' : 'Saison ' + s.season_number) + '</button>').join('') + '</div>' +
       seasonDownloadHTML() +
-      '<button type="button" class="btn btn-ghost btn-sm" data-season-watch>Marquer la saison comme vue</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-season-watch aria-label="Marquer la saison comme vue">' + ICON.check + '<span class="sw-l">Marquer la saison comme vue</span><span class="sw-s">Saison vue</span></button>' +
       '<span class="ep-menu-wrap"><button type="button" class="btn btn-ghost btn-sm ep-more" data-eps-menu aria-haspopup="menu" aria-expanded="false" aria-label="Plus d’actions sur la série">…</button>' +
       '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-series-watch="1">Marquer toute la série comme vue</button>' +
       '<button type="button" role="menuitem" data-series-watch="0">Marquer toute la série comme non vue</button></span></span>' +
-      '<span class="f-newcount" id="f-newcount" hidden></span>' +
       '<p class="f-next" id="f-next"></p></div>' +
       '<ol class="row eps" id="f-eplist" data-nav aria-live="polite"><li class="sk sk-ep"></li><li class="sk sk-ep"></li><li class="sk sk-ep"></li></ol>'));
   }

@@ -67,6 +67,30 @@ afterEach(async () => {
 const detail = () => document.getElementById('detail')!;
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+describe('menu « … » de la fiche : actions du téléchargement (LAST-500)', () => {
+  const film = { key: 'movie:1', type: 'movie', id: 1, name: 'Film' };
+  const ids = async () => {
+    const ui = await import('../src/ui/downloadBtn.js');
+    return ui.ficheDownloadMenuItems(film, null, document.body).map((x: { id: string; group: string }) => x.id + '/' + x.group);
+  };
+
+  it('rien sans téléchargement', async () => {
+    expect(await ids()).toEqual([]);
+  });
+
+  it('en cours : pause et annulation ; en pause : reprise ; terminé : suppression', async () => {
+    h.s.items = [item('movie:1', 'running')];
+    expect(await ids()).toEqual(['dl-pause/dl', 'dl-remove/dl']);
+    h.s.items = [item('movie:1', 'paused')];
+    expect(await ids()).toEqual(['dl-resume/dl', 'dl-remove/dl']);
+    h.s.items = [item('movie:1', 'error')];
+    expect(await ids()).toEqual(['dl-retry/dl', 'dl-remove/dl']);
+    h.s.items = [item('movie:1', 'done')];
+    const ui = await import('../src/ui/downloadBtn.js');
+    expect(ui.ficheDownloadMenuItems(film, null, document.body).map((x: { label: string }) => x.label)).toEqual(['Supprimer le téléchargement']);
+  });
+});
+
 describe('bouton large de la fiche', () => {
   const movie = { key: 'movie:1', type: 'movie', id: 1, name: 'Le Phare' };
   const mount = async (it?: Item, off = '') => {
@@ -87,7 +111,8 @@ describe('bouton large de la fiche', () => {
   it('en attente, en pause, terminé', async () => {
     expect((await mount(item('movie:1', 'pending'))).textContent).toContain('En attente');
     const p = await mount(item('movie:1', 'paused'));
-    expect(p.textContent).toContain('Reprendre · 62 %');
+    expect(p.textContent).toContain('En pause');
+    expect(p.querySelector('.dl-sub')!.textContent).toBe('62 %');
     expect((p.querySelector('.dl-fill') as HTMLElement).style.width).toBe('62%');
     const d = await mount(item('movie:1', 'done'));
     expect(d.classList.contains('is-done')).toBe(true);
@@ -97,7 +122,8 @@ describe('bouton large de la fiche', () => {
   it('en cours : la progression remplit le bouton, mise à jour en place', async () => {
     const ui = await import('../src/ui/downloadBtn.js');
     const b = await mount(item('movie:1', 'running'));
-    expect(b.textContent).toContain('62 % · Pause');
+    expect(b.textContent).toContain('Téléchargement');
+    expect(b.querySelector('.dl-sub')!.textContent).toBe('62 %');
     expect((b.querySelector('.dl-fill') as HTMLElement).style.width).toBe('62%');
     ui.paintControls([item('movie:1', 'running', { bytesDone: 800 })]);
     expect(detail().querySelector('[data-dl-ctl]')).toBe(b); // même nœud
@@ -106,7 +132,7 @@ describe('bouton large de la fiche', () => {
 
   it('erreur : « Réessayer » et motif écrit sous le bouton', async () => {
     const b = await mount(item('movie:1', 'error', { error: { code: 'link_expired' } }));
-    expect(b.textContent).toContain('Réessayer');
+    expect(b.textContent).toContain('Échec · Réessayer');
     const why = detail().querySelector('.dl-why') as HTMLElement;
     expect(why.hidden).toBe(false);
     expect(why.textContent).toMatch(/lien a expiré/);
