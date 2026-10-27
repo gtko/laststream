@@ -196,9 +196,10 @@ describe('plan de lancement (planLaunch)', () => {
     expect(plan.kind).toBe('shell');
     if (plan.kind !== 'shell') return;
     expect(plan.method).toBe('play-external');
-    const prefix = 'data:application/x-mpegurl,';
+    const prefix = 'data:application/octet-stream;charset=utf-8;base64,';
     expect(plan.params.startsWith(prefix)).toBe(true);
-    expect(decodeURIComponent(plan.params.slice(prefix.length))).toBe(buildM3u(URL_TEST, 'Mon film'));
+    const bytes = Uint8Array.from(atob(plan.params.slice(prefix.length)), (c) => c.charCodeAt(0));
+    expect(new TextDecoder().decode(bytes)).toBe(buildM3u(URL_TEST, 'Mon film'));
   });
   it('playlist : contenu M3U et nom de fichier assaini', () => {
     expect(planLaunch('m3u', URL_TEST, 'Film: saison/1', 'web')).toEqual({

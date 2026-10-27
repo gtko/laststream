@@ -110,8 +110,10 @@ function fileBase(title: string): string {
   return title.replace(/[\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'lecture';
 }
 
-// Format à confirmer avec la coque : rien dans le dépôt ne décrit ce qu'elle attend pour une playlist ; data URI application/x-mpegurl en attendant.
-const m3uDataUri = (m3u: string): string => `data:application/x-mpegurl,${encodeURIComponent(m3u)}`;
+// Format attendu par la coque Windows (laststream-shell-ng, external_player.rs : M3U_DATA_URI_PREFIX).
+const M3U_DATA_URI_PREFIX = 'data:application/octet-stream;charset=utf-8;base64,';
+const m3uDataUri = (m3u: string): string =>
+  M3U_DATA_URI_PREFIX + btoa(String.fromCharCode(...new TextEncoder().encode(m3u)));
 
 /** Intent Android : garde le schéma réel (http ou https) de l'URL. */
 function intentHref(url: string, title: string): string {
