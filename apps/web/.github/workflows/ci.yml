@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
 
 permissions:
   contents: read
@@ -20,14 +26,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Runner persistant : node_modules (et ses caches node_modules/.cache) survit d'un run à l'autre.
+# Le checkout ne nettoie pas (clean: false) ; le nettoyage explicite épargne node_modules. npm ci n'est relancé que si le lockfile change.
 jobs:
-  check:
+  static:
     runs-on: [self-hosted, laststream-local]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
+          clean: false
           persist-credentials: false
+
+      - name: Nettoyer l'arbre (node_modules conservé)
+        run: git clean -ffdx -e node_modules
 
       - uses: actions/setup-node@v4
         with:
@@ -35,33 +47,68 @@ jobs:
           cache: npm
 
       - name: Installer les dépendances
-        run: npm ci --prefer-offline --no-audit --no-fund
+        run: node scripts/ci-install.mjs
 
+      # Incrémental : le cache tsc est écrit dans node_modules/.cache.
       - name: Typecheck
-        run: npm run typecheck
+        run: npm run typecheck -- --incremental --tsBuildInfoFile node_modules/.cache/tsc.tsbuildinfo
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint -- --cache --cache-location node_modules/.cache/eslint/
 
+      # knip : version exacte épinglée en devDependencies, exécutée depuis node_modules par npm run knip.
+      - name: Code mort (knip)
+        run: npm run knip
+
+  test:
+    runs-on: [self-hosted, laststream-local]
+    timeout-minutes: 30
+    steps:
+      # fetch-depth 0 : `--changed origin/main` a besoin de l'historique et de la référence origin/main.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: false
+          persist-credentials: false
+
+      - name: Nettoyer l'arbre (node_modules conservé)
+        run: git clean -ffdx -e node_modules
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: node scripts/ci-install.mjs
+
+      # PR : seuls les tests liés aux fichiers modifiés (vitest relance tout si la config ou package.json changent).
+      - name: Tests sur PR (fichiers concernés)
+        if: github.event_name == 'pull_request'
+        run: npx vitest run --changed origin/main --passWithNoTests
+
+      # push sur main : suite complète.
       - name: Tests
+        if: github.event_name != 'pull_request'
         run: npm test
 
+      # Build, budget et e2e : push sur main seulement, pour rester sous une minute sur PR (compromis à valider).
       - name: Build
-        run: npm run build
+        if: github.event_name != 'pull_request'
+        run: npm run build:ci
 
       # Budget du premier chargement (chunks du démarrage, manifeste Vite, LAST-129) : aucun chunk au-dessus de 500 Ko brut,
       # et total gzip plafonné à 450 Ko (bloquant, ratchet : ~419 Ko aujourd'hui ; un lecteur rechargé au démarrage le pousse à ~637 Ko).
       # Objectif web : 350 Ko gzip, à atteindre en abaissant ce plafond.
       - name: Budget du premier chargement
+        if: github.event_name != 'pull_request'
         run: npm run budget -- --max-kb 500 --max-total-gzip-kb 450 --strict-gzip
 
       # Chromium de Playwright, headless ; no-op quand il est déjà en cache sur le runner.
       - name: Navigateur de test e2e
+        if: github.event_name != 'pull_request'
         run: npx playwright install chromium
 
       - name: Test de fumée e2e
+        if: github.event_name != 'pull_request'
         run: npm run smoke:e2e
-
-      # knip : version exacte épinglée en devDependencies, exécutée depuis node_modules par npm run knip.
-      - name: Code mort (knip)
-        run: npm run knip
