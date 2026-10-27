@@ -51,13 +51,33 @@ describe('createDownloadHttp : transport selon la plateforme (LAST-182)', () => 
     expect(res.status).toBe(206);
   });
 
-  it('coque + lien d’addon : fetch, jamais le pont', async () => {
+  it('coque + lien direct d’addon : le pont natif, jamais fetch (LAST-501)', async () => {
     const fetchSpy = fakeFetch();
     const bridge = fakeBridge();
     const res = await createDownloadHttp('shell', { fetchImpl: fetchSpy, shell: bridge })(req(ADDON_LINK));
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(bridge).not.toHaveBeenCalled();
+    expect(bridge).toHaveBeenCalledTimes(1);
+    expect(bridge.mock.calls[0][0].url).toBe(ADDON_LINK);
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(res.status).toBe(206);
+  });
+
+  it('coque + lien d’addon hors règles du transfert natif (port, identifiants) : fetch, jamais le pont', async () => {
+    for (const url of ['https://addon.example.org:8443/stream/film.mkv', 'https://u:p@addon.example.org/stream/film.mkv']) {
+      const fetchSpy = fakeFetch();
+      const bridge = fakeBridge();
+      await createDownloadHttp('shell', { fetchImpl: fetchSpy, shell: bridge })(req(url));
+      expect(bridge).not.toHaveBeenCalled();
+    }
+  });
+
+  it('coque + lien d’addon refusé par le pont (redirection) : blocage, sans exception', async () => {
+    const fetchSpy = fakeFetch();
+    const bridge = vi.fn<HttpFn>(async () => {
+      throw new DebridError('redirect_not_allowed', 'unsupported');
+    });
+    const res = await createDownloadHttp('shell', { fetchImpl: fetchSpy, shell: bridge })(req(ADDON_LINK));
+    expect(res.status).toBe(BLOCKED_STATUS);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('coque + lien débrideur non https : ni pont ni fetch, blocage', async () => {

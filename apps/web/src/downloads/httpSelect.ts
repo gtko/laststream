@@ -1,7 +1,9 @@
 /* Transport HTTP des téléchargements selon la plateforme (LAST-182).
  * Coque Windows : `fetch` du WebView2 est soumis à CORS, et les hôtes des débrideurs ne l'autorisent pas (BLOCKED_STATUS).
  * Leurs liens passent donc par le pont natif de la coque (plages bornées, comme la lecture : relay/sources.ts).
- * Les liens des addons restent sur `fetch` (linkHosts.ts). Android et web : `fetch`, inchangé.
+ * Les liens directs d'addon aussi (LAST-501) : ils redirigent souvent vers un débrideur, ce que `fetch` refuse (CORS). Seuls ceux
+ * qu'accepte le transfert natif (`isNativeLinkUrl` : https:443, sans identifiants, hôte public) partent au pont, qui revalide chaque
+ * redirection ; les autres restent sur `fetch`, qui les refuse. Android et web : `fetch`, inchangé.
  * Réponses du pont : un statut HTTP refusé (`bad_status`, 4xx/5xx) est rendu tel quel à transfer.ts (lien périmé, réseau) ; un refus
  * définitif (hôte, redirection, plage, taille, méthode) est un blocage (BLOCKED_STATUS, classé `content`) ; le reste (délai, réseau,
  * occupé, morceau invalide) reste une exception transitoire. Aucun lien dans les erreurs ni dans les journaux. */
@@ -9,7 +11,7 @@ import { parseDebridUrl } from '../sources/debrid/hosts';
 import { shellHttp, type HttpFn, type HttpResponse } from '../sources/debrid/http';
 import { shellRangeHttp } from '../sources/debrid/nativeRange';
 import { DebridError } from '../sources/debrid/types';
-import { isAddonLinkUrl } from './linkHosts';
+import { isAddonLinkUrl, isNativeLinkUrl } from './linkHosts';
 import { BLOCKED_STATUS, createWebDownloadHttp } from './webHttp';
 
 /** Plateforme qui choisit le transport. `shell` seulement sans transfert de plateforme enregistré (voir service.ts). */
@@ -53,9 +55,19 @@ function bridgeTransport(bridge: HttpFn): HttpFn {
   };
 }
 
+/** Lien lu par le pont de la coque : hôte de débrideur, ou lien direct d'addon accepté par le transfert natif. */
+function viaBridge(raw: string): boolean {
+  if (parseDebridUrl(raw) !== null) return true;
+  try {
+    return isNativeLinkUrl(new URL(raw));
+  } catch {
+    return false;
+  }
+}
+
 export function createDownloadHttp(kind: DownloadHttpKind, deps: DownloadHttpDeps = {}): HttpFn {
   const web = createWebDownloadHttp({ allowHost: isAddonLinkUrl, fetchImpl: deps.fetchImpl });
   if (kind !== 'shell') return web;
   const bridge = bridgeTransport(deps.shell ?? shellRangeHttp(shellHttp()));
-  return (req) => (parseDebridUrl(req.url) !== null ? bridge(req) : web(req));
+  return (req) => (viaBridge(req.url) ? bridge(req) : web(req));
 }
