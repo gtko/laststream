@@ -216,7 +216,7 @@
   },
   "src/ui/parties.js": {
     "no-restricted-syntax": {
-      "count": 7
+      "count": 4
     }
   },
   "src/ui/partyjoin.js": {

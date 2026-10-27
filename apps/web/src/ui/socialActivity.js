@@ -12,7 +12,7 @@ const VERB = {
 };
 
 /** Phrase d'un événement : « a commencé Severance · S02E03 ». */
-function activityText(it) {
+export function activityText(it) {
   const m = it.media || {};
   const ep = episodeCode({ type: m.type === 'tv' || m.type === 'series' ? 'series' : 'movie', season: m.season, episode: m.episode });
   return (VERB[it.kind] || 'a une activité sur') + ' ' + (m.title || 'un titre') + (ep ? ' · ' + ep : '') +

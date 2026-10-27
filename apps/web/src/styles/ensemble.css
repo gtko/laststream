@@ -1,0 +1,52 @@
+/* Page Ensemble (LAST-197) : grille panneau + colonne latérale, cartes « en direct », cartes de la colonne. Jetons de styles.css :root. */
+.ens-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 32px; align-items: start; }
+.ens-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ens-side:empty { display: none; }
+@media (max-width: 1000px) {
+  .ens-grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+}
+
+/* Cartes salon : pastille « En direct » et position de lecture. */
+.wp-live { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text); font-variant-numeric: tabular-nums; }
+.wp-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: ens-live 1.6s ease-in-out infinite; }
+@keyframes ens-live { 50% { opacity: 0.35; } }
+.wp-card-private { border-style: dashed; }
+.wp-card-private .wp-join { background: transparent; border: 1.5px solid var(--line-2); }
+.wp-card-private .wp-join:hover:not(:disabled) { border-color: var(--muted); background: rgba(255, 255, 255, 0.08); }
+
+/* Colonne latérale. */
+.ens-card { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.ens-card h2 { margin: 0; font-family: var(--ff-title); font-size: 16px; font-weight: 700; }
+.ens-note { margin: 0; font-size: 14px; line-height: 1.5; color: var(--dim); }
+.ens-flist, .ens-act-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ens-frow { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+.ens-fnm { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ens-fnm b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ens-fnm small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--dim); }
+.ens-sbtn { min-height: 44px; padding-inline: 16px; font-size: 14px; }
+.ens-all { align-self: flex-start; }
+.ens-act-list li { font-size: 13px; line-height: 1.45; color: var(--dim); }
+.ens-act-list b { color: var(--text); }
+.ens-tkt { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, var(--surface)), var(--surface) 70%); }
+.ens-tkt .btn { align-self: flex-start; }
+
+/* Titre de salon : deux lignes au lieu d'une troncature sèche. */
+.ens-panel .wp-list .wp-t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
+.ens-panel .wp-seg-btn { min-height: 44px; }
+
+/* Mobile : « Créer un salon » en tête, Amis et Rejoindre côte à côte ; filtres de langue sur une ligne défilante ; la recherche est dans la tabbar. */
+@media (max-width: 640px) {
+  .ens-root .ens-acts { display: grid; grid-template-columns: 1fr 1fr; }
+  .ens-root .ens-acts [data-ens-create] { grid-column: 1 / -1; order: -1; }
+  .ens-panel .wp-filters .wp-pills { flex-wrap: nowrap; overflow-x: auto; flex: 1 1 100%; margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scrollbar-width: none; }
+  .ens-panel .wp-filters .wp-pills::-webkit-scrollbar { display: none; }
+  .ens-panel .wp-filters .pill { flex: none; }
+  .ens-panel .wp-count { flex: 1 1 0; min-width: 0; text-align: right; }
+}
+@media (max-width: 480px) {
+  .ens-root .top-actions [data-search] { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wp-live i { animation: none; }
+}
