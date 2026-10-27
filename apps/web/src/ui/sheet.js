@@ -3,6 +3,7 @@
  * sur le voile ferment (sauf pendant un appel : `locked()`), le focus revient au déclencheur. Une seule feuille à la fois. */
 import { onEveningsReset } from '../data/eveningsStore';
 import { esc } from './util.js';
+import { pushLayer } from './backStack.js';
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -41,6 +42,8 @@ export function openSheet(o) {
   const scrollWas = document.body.style.overflow;
   document.body.style.overflow = 'hidden';
   const locked = () => !!(o.locked && o.locked());
+  // Retour du téléphone : ferme la feuille (même pendant un appel, la page ne change pas pour autant).
+  const releaseBack = pushLayer(() => close());
 
   /** @param {boolean} [silent] sans rendre le focus (navigation en cours ou autre feuille qui s'ouvre) */
   function close(silent) {
@@ -49,6 +52,7 @@ export function openSheet(o) {
     if (current === handle) current = null;
     document.removeEventListener('keydown', onKey, true);
     window.removeEventListener('hashchange', onHash);
+    releaseBack();
     offReset();
     document.body.style.overflow = scrollWas;
     veil.remove();

@@ -8,8 +8,11 @@ import { stopPreview, ytSrc } from './preview.js';
 import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
 import { state } from './state.js';
 import { esc } from './util.js';
+import { pushLayer } from './backStack.js';
 
 let stopGuard = null;
+/** Entrée d'historique de la fenêtre ouverte : le retour du téléphone la ferme (LAST-499). */
+let releaseBack = null;
 
 export async function openTrailer(it, opener) {
   const d = await getDetail(it);
@@ -67,7 +70,10 @@ export function openVideo(key, title, opener, vo = false, d = /** @type {any} */
 export function openModal(html, opener, cls) {
   stopPreview();
   closeHover();
-  if (modal.hidden) state.modalFocus = opener || document.activeElement;
+  if (modal.hidden) {
+    state.modalFocus = opener || document.activeElement;
+    releaseBack = pushLayer(() => closeModal());
+  }
   modalBox.className = 'modal' + (cls ? ' ' + cls : '');
   modalBody.innerHTML = html;
   modal.hidden = false;
@@ -79,6 +85,7 @@ export function openModal(html, opener, cls) {
 export function closeModal(silent) {
   if (modal.hidden) return;
   modal.hidden = true;
+  if (releaseBack) { releaseBack(); releaseBack = null; }
   if (stopGuard) { stopGuard(); stopGuard = null; }
   modalBody.innerHTML = ''; // arrête la lecture de l'iframe
   document.body.classList.remove('modal-open');

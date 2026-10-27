@@ -50,6 +50,7 @@ import { state } from './ui/state.js';
 import { load } from './ui/home.js';
 import { parseRoute, showView } from './ui/router.js';
 import { startDlBadgeWatch } from './ui/dlBadgeWatch.js';
+import { startAndroidBack } from './ui/androidBack.js';
 import { ensureSocial, setSocialLoader, setSocialNotifier } from './ui/socialHooks.js';
 import { shareCodeFrom } from './ui/shareModel.js';
 import { isPlayerOpen } from './player/sessionLoader.js';
@@ -132,6 +133,7 @@ setSocialNotifier(toast);
 setSocialLoader(() => import('./ui/socialBoot.js').then((m) => m.bootSocial()));
 // Pastille des téléchargements en cours (ODY-234) : abonnement permanent, qui démarre le gestionnaire dès le lancement (hors profil enfant).
 startDlBadgeWatch();
+startAndroidBack(); // bouton retour Android : couche, page précédente, puis arrière-plan (LAST-499)
 state.curHash = location.hash || '';
 const first = parseRoute();
 if (first && first.kind !== 'friends') {
