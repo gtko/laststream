@@ -39,4 +39,9 @@ export function paintSocialBadges(s = getState()) {
     }
     b.setAttribute('aria-label', labelOf(n));
   });
+  // Pastille de l'onglet « Ensemble » de la barre du bas : même compte que le bouton Amis.
+  document.querySelectorAll('[data-ens-badge]').forEach((p) => {
+    p.textContent = countText(s.badge);
+    p.hidden = s.badge <= 0;
+  });
 }

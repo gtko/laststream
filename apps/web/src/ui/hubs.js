@@ -18,7 +18,7 @@ const BAR_ID = '-hub';
 
 /** Barre du haut : logo, menu principal (entrée de la page soulignée), recherche, profil. */
 const topbarHTML = (id) =>
-  '<header class="topbar">' + brand() + '<nav class="nav" aria-label="Principale">' + mainNavHTML({ current: id, idSuffix: BAR_ID }) + '</nav>' +
+  '<header class="topbar">' + brand() + '<nav class="nav" aria-label="Principale">' + mainNavHTML({ current: id, idSuffix: BAR_ID, social: socialAvailable() }) + '</nav>' +
   topActionsHTML({ social: socialAvailable(), server: isServerMode(), owner: canAdmin(), idSuffix: BAR_ID }) + '</header>';
 
 /** Affiche la page `id` ('films', 'series' ou 'documentaires'). */

@@ -269,14 +269,14 @@ export function renderAI() {
     row(items.slice(0, HOME_ROW_COUNT).map((it) => posterCard(it)).join('')) + '</section>';
 }
 
-/** Amis et Watch parties : compte connecté seulement, jamais sur un profil enfant (voir socialButton.js). */
+/** Amis et Ensemble : compte connecté seulement, jamais sur un profil enfant (voir socialButton.js). */
 export const socialEnabled = socialAvailable;
 
 // ---------- Accueil (style A · Cinéma) ----------
-/** Barre du haut : logo (accueil), Séries, Films, Direct, Émissions TV, Documentaires, menu Explorer ; à droite recherche, Watch parties, profil. */
+/** Barre du haut : logo (accueil), Séries, Films, Direct, Émissions TV, Documentaires, menu Explorer ; Ensemble (compte connecté) ; à droite recherche, Amis, profil. */
 export function headerA() {
   return '<header class="topbar">' + brand() +
-    '<nav class="nav" aria-label="Principale">' + mainNavHTML() + '</nav>' +
+    '<nav class="nav" aria-label="Principale">' + mainNavHTML({ social: socialEnabled() }) + '</nav>' +
     topActionsHTML({ kid: isKidProfile(), social: socialEnabled(), server: isServerMode(), owner: canAdmin() }) + '</header>';
 }
 
@@ -300,18 +300,25 @@ export function viewA(d) {
     '</div></main>';
 }
 
-export function tabbar() {
-  // Compte connecté (hors profil enfant) : Accueil, Rechercher, Amis (pastille, ouvre la page Amis) et Ma liste (Social v3).
+/**
+ * Barre du bas (mobile). `current` : onglet de la page affichée ('home' par défaut, 'ensemble' sur la page Ensemble).
+ * Compte connecté (hors profil enfant) : Accueil, Rechercher, Ensemble, Ma liste, Téléchargés. L'onglet Ensemble porte la pastille
+ * des notifications sociales du store (demandes d'amis reçues + messages non lus, invitations de watch party comprises) ; l'accès aux Amis
+ * passe par le bouton « Amis » de la page Ensemble. Sans compte connecté : onglets d'origine.
+ */
+export function tabbar(current = 'home') {
   if (socialEnabled()) {
     const n = socialState().badge;
     const tab = (cls, attrs, icon, label, extra = '') =>
       '<' + (attrs.href ? 'a' : 'button type="button"') + ' class="tab' + cls + '"' + attrs.html + '>' + ICON[icon] + '<span class="tab-label">' + label + '</span>' + extra +
       '</' + (attrs.href ? 'a' : 'button') + '>';
-    const badge = '<span class="soc-badge tab-badge" data-soc-badge' + (n > 0 ? '' : ' hidden') + '>' + (n > 99 ? '99+' : n) + '</span>';
+    const badge = '<span class="soc-badge tab-badge" data-ens-badge' + (n > 0 ? '' : ' hidden') + '>' + (n > 99 ? '99+' : n) + '</span>';
+    const here = (id) => (current === id ? ' is-current' : '');
+    const curAttr = (id) => (current === id ? ' aria-current="page"' : '');
     return '<nav class="tabbar" aria-label="Navigation principale">' +
-      tab(' is-current', { href: true, html: ' href="#/" data-noop aria-current="page"' }, 'home', 'Accueil') +
+      tab(here('home'), { href: true, html: ' href="#/" data-noop' + curAttr('home') }, 'home', 'Accueil') +
       tab('', { html: ' data-search aria-label="Rechercher"' }, 'search', 'Rechercher') +
-      tab('', { html: ' data-soc-open aria-controls="social-sidebar" aria-expanded="false" aria-label="Amis"' }, 'users', 'Amis', badge) +
+      tab(here('ensemble'), { href: true, html: ' href="#/ensemble" data-go' + curAttr('ensemble') }, 'users', 'Ensemble', badge) +
       tab('', { href: true, html: ' href="#/library" data-libnav' }, 'list', 'Ma liste') +
       tab('', { href: true, html: ' href="#/downloads" data-go data-dl-nav' }, 'download', 'Téléchargés', downloadsTabBadgeHTML()) + '</nav>';
   }

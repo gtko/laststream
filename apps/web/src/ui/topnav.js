@@ -27,10 +27,13 @@ const MAIN_NAV = [
 /** Attributs d'état du lien de la page affichée (`current` : identifiant de MAIN_NAV). */
 const currentAttrs = (id, current) => (id === current ? ' aria-current="page"' : '');
 
-/** Menu « Explorer » : les entrées hors menu principal ; sous 1100 px, les cinq entrées du menu principal s'y ajoutent (classe nav-pop-compact). */
-function exploreMenuHTML(idSuffix, current) {
+/** Entrée « Ensemble » (comptes connectés hors profil enfant) : [identifiant, adresse, attributs, icône, libellé], après Documentaires. */
+const ENSEMBLE_NAV = ['ensemble', '#/ensemble', ' data-go', 'users', 'Ensemble'];
+
+/** Menu « Explorer » : les entrées hors menu principal ; sous 1100 px, les entrées du menu principal (et Ensemble si social) s'y ajoutent (classe nav-pop-compact). */
+function exploreMenuHTML(idSuffix, current, social) {
   const compact = '<ul class="nav-pop-list nav-pop-compact">' +
-    MAIN_NAV.map(([id, href, attrs, icon, label]) => '<li>' + menuLink(href, attrs + currentAttrs(id, current), icon, label) + '</li>').join('') + '</ul>';
+    (social ? [...MAIN_NAV, ENSEMBLE_NAV] : MAIN_NAV).map(([id, href, attrs, icon, label]) => '<li>' + menuLink(href, attrs + currentAttrs(id, current), icon, label) + '</li>').join('') + '</ul>';
   const main = '<ul class="nav-pop-list">' +
     '<li>' + menuLink('#/library', ' data-libnav', 'list', 'Ma liste') + '</li>' +
     '<li>' + menuLink('#/collections', ' data-go', 'grid', 'Collections') + '</li>' +
@@ -42,22 +45,23 @@ function exploreMenuHTML(idSuffix, current) {
 }
 
 /**
- * Liens de la barre du haut (adulte) : Séries, Films, Direct, Émissions TV, Documentaires, puis le menu « Explorer ».
+ * Liens de la barre du haut (adulte) : Séries, Films, Direct, Émissions TV, Documentaires, Ensemble (point d'accent, si `social`), puis le menu « Explorer ».
  * `current` : identifiant de l'entrée de la page affichée (soulignée, aria-current), vide sur l'accueil (le logo y ramène).
+ * `social` : compte connecté hors profil enfant (voir socialAvailable).
  */
-export function mainNavHTML({ current = '', idSuffix = '' } = {}) {
+export function mainNavHTML({ current = '', idSuffix = '', social = false } = {}) {
+  const ens = social
+    ? '<a href="' + ENSEMBLE_NAV[1] + '"' + ENSEMBLE_NAV[2] + ' class="nav-wide nav-ens' + (current === 'ensemble' ? ' is-current' : '') + '"' + currentAttrs('ensemble', current) +
+      '><span class="nav-dot" aria-hidden="true"></span>Ensemble</a>'
+    : '';
   return MAIN_NAV.map(([id, href, attrs, , label]) =>
     '<a href="' + href + '"' + attrs + ' class="nav-wide' + (id === current ? ' is-current' : '') + '"' + currentAttrs(id, current) + '>' + label + '</a>').join('') +
-    exploreMenuHTML(idSuffix, current);
+    ens + exploreMenuHTML(idSuffix, current, social);
 }
 
-/** Bouton « Watch parties » (comptes connectés hors profil enfant). */
-export const partyLinkHTML = () =>
-  '<a class="icon-btn nav-party" href="#/parties" data-go aria-label="Watch parties" title="Watch parties">' + ICON.party + '</a>';
-
 /**
- * Recherche (loupe, ou champ fourni par `search` : page Recherche), Amis et Watch parties (si social), puis l'avatar qui ouvre le menu du profil.
- * kid : profil enfant (seulement « Changer de profil »). social : bouton Amis (barre latérale, pastille) et Watch parties. server : profil de compte (changement, déconnexion). owner : propriétaire du serveur.
+ * Recherche (loupe, ou champ fourni par `search` : page Recherche), Amis (si social), puis l'avatar qui ouvre le menu du profil.
+ * kid : profil enfant (seulement « Changer de profil »). social : bouton Amis (barre latérale, pastille). server : profil de compte (changement, déconnexion). owner : propriétaire du serveur.
  */
 export function topActionsHTML({ kid = false, social = false, server = false, owner = false, search = '', idSuffix = '' } = {}) {
   const current = userStore.currentProfile();
@@ -75,7 +79,6 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
     (search || '<button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>') +
     (kid ? '' : downloadsNavHTML()) +
     (social ? friendsButtonHTML('icon-btn') : '') +
-    (social ? partyLinkHTML() : '') +
     '<div class="nav-drop nav-drop-profile" data-drop>' +
     '<button type="button" class="avatar nav-avatar" data-drop-btn aria-expanded="false" aria-controls="nav-profile' + idSuffix + '"' + bg +
     ' aria-label="Profil ' + esc(name) + ', menu">' + esc(initial) + '</button>' +

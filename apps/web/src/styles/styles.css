@@ -254,7 +254,8 @@ body.modal-open { overflow: hidden; }
 .nav-pop-who { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px 10px; margin-bottom: 6px; border-bottom: 1px solid var(--line-2); color: var(--text); font-weight: 700; }
 .nav-pop-sub { font-size: 12px; font-weight: 500; color: var(--dim); }
 .nav-avatar { border: 0; cursor: pointer; }
-.nav-party { flex: none; }
+/* Entrée « Ensemble » : point d'accent à gauche du libellé (comptes connectés). */
+.nav-dot { display: inline-block; width: 8px; height: 8px; margin-right: 8px; vertical-align: 1px; border-radius: 50%; background: var(--accent); }
 /* Hauteur au format 16:9 de la bande-annonce : la vidéo n'est presque pas recadrée (fitPreview la centre). */
 .s-a .hero { position: relative; display: grid; min-height: max(56.25vw, 600px); overflow: hidden; background: var(--surface-2); }
 .s-a .hero-slide { grid-area: 1 / 1; position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; padding: calc(var(--topbar-h) + 32px) var(--gutter) 84px; transition: opacity 0.9s ease, visibility 0.9s; }
@@ -330,7 +331,7 @@ body.modal-open { overflow: hidden; }
 
 /* ---------- Tabbar jusqu'à 760 px : la barre du haut ne garde que logo, recherche et profil ---------- */
 @media (max-width: 760px) {
-  .s-a .nav > a, .s-a .nav-party { display: none; }
+  .s-a .nav > a { display: none; }
   /* Le menu Explorer reste dans la barre et s’ouvre sur toute la largeur, sous la barre. */
   .s-a .nav .nav-drop { position: static; }
   .s-a .nav-pop-explore { left: var(--gutter); right: var(--gutter); width: auto; transform: none; }

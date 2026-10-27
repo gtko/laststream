@@ -1,10 +1,10 @@
-/* Watch parties : liste des salons publics (#/parties) et page d'un salon (#/party/<id>, lien d'invitation) pour le rejoindre. */
+/* Watch parties : liste des salons ouverts (onglet « Maintenant » de la page Ensemble, ensemble.js) et page d'un salon (#/party/<id>, lien d'invitation) pour le rejoindre. */
 import { isKidProfile, isServerMode } from '../data/auth';
 import { getParty, listParties } from '../data/socialApi';
 import { socialErrorText } from '../data/socialText';
 import { userStore } from '../data/userStore';
 import { initialsOf } from '../party/lobbyModel';
-import { canBrowsePublicParties, canJoinRoom, partyBridge } from '../party/bridge';
+import { canJoinRoom, partyBridge } from '../party/bridge';
 import { openLogin } from './auth-ui.js';
 import { IMG } from './constants.js';
 import { detailEl, toast } from './dom.js';
@@ -27,9 +27,9 @@ const langName = (c) => (LANGS.find(([k]) => k === c) || [c, c || ''])[1];
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 const REFRESH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>';
 
-function shell(title, eyebrow, body, tools = '', intro = '') {
-  return topBar(false) + '<article class="svc-page soc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain' + (tools ? ' wp-head' : '') + '"><div class="svc-head-t">' +
-    '<p class="svc-eyebrow">' + esc(eyebrow) + '</p><h1 class="svc-title" id="svc-title" tabindex="-1">' + esc(title) + '</h1>' + (intro ? '<p class="wp-intro">' + esc(intro) + '</p>' : '') + '</div>' + tools + '</header><div class="soc-body">' + body + '</div></article>';
+function shell(title, eyebrow, body) {
+  return topBar(false) + '<article class="svc-page soc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
+    '<p class="svc-eyebrow">' + esc(eyebrow) + '</p><h1 class="svc-title" id="svc-title" tabindex="-1">' + esc(title) + '</h1></div></header><div class="soc-body">' + body + '</div></article>';
 }
 
 const message = (text) => '<p class="row-msg" role="status">' + esc(text) + '</p>';
@@ -122,32 +122,23 @@ async function loadRooms(more) {
     rooms = more ? [...rooms, ...res.rooms] : res.rooms;
     cursor = res.nextCursor;
     loading = false;
-    if (state.kind === 'parties') paintRooms();
+    if (state.kind === 'ensemble') paintRooms();
   } catch (err) {
     if (seq !== reqSeq) return;
     loading = false;
-    if (state.kind === 'parties') paintRooms(socialErrorText(err));
+    if (state.kind === 'ensemble') paintRooms(socialErrorText(err));
   }
 }
 
-export function showParties() {
-  teardownFiche();
-  state.kind = 'parties';
-  document.title = 'Watch parties · Laststream';
-  const intro = 'Chacun lit avec sa propre source : la watch party cale vos lectures l’une sur l’autre, aucun flux vidéo n’est partagé.';
-  if (!isServerMode() || !canBrowsePublicParties(isKidProfile())) {
-    detailEl.innerHTML = shell('Watch parties', 'Regarder ensemble', message(isKidProfile() ? 'Les salons publics ne sont pas disponibles sur un profil enfant.' : 'Connecte-toi à un compte Laststream pour rejoindre une watch party.'));
-    return;
-  }
-  const tools = '<div class="wp-head-acts"><a class="btn btn-ghost" href="#/friends" data-go>' + ICON.users + 'Mes amis</a>' + CREATE_BTN + '</div>';
+/** Remplit `host` (panneau « Maintenant » de la page Ensemble) : filtres, puis liste des salons ouverts chargée depuis le serveur. Réservé aux comptes connectés hors profil enfant (ensemble.js). */
+export function mountPartiesPane(host) {
+  const intro = '<p class="wp-intro">Chacun lit avec sa propre source : la watch party cale vos lectures l’une sur l’autre, aucun flux vidéo n’est partagé.</p>';
   const bar = '<div class="wp-filters"><div class="wp-pills" role="group" aria-label="Langue">' +
     LANGS.map(([c, l]) => '<button type="button" class="pill" data-wp-lang="' + c + '" aria-pressed="' + (c === filter.language) + '">' + esc(l) + '</button>').join('') + '</div>' +
     '<div class="wp-seg" role="group" aria-label="Type">' + KINDS.map(([k, l]) => '<button type="button" class="wp-seg-btn" data-wp-kind="' + k + '" aria-pressed="' + (k === filter.kind) + '">' + esc(l) + '</button>').join('') + '</div>' +
     '<span class="wp-count" id="wp-count" aria-live="polite"></span>' +
     '<button type="button" class="wp-refresh" data-wp-reload aria-label="Actualiser la liste" title="Actualiser la liste">' + REFRESH + '</button></div>';
-  detailEl.innerHTML = shell('Watch parties', 'Regarder ensemble', bar + '<div id="wp-list">' + message('Chargement…') + '</div>', tools, intro);
-  const h1 = detailEl.querySelector('#svc-title');
-  if (h1) h1.focus({ preventScroll: true });
+  host.innerHTML = '<div class="soc-body wp-pane">' + intro + bar + '<div id="wp-list">' + message('Chargement…') + '</div></div>';
   loadRooms(false);
 }
 
@@ -184,7 +175,7 @@ export async function showParty(id) {
     detailEl.innerHTML = shell('Watch party', 'Invitation', roomPageHTML(room));
   } catch (err) {
     if (state.kind !== 'party') return;
-    detailEl.innerHTML = shell('Watch party', 'Invitation', message(socialErrorText(err)) + '<div class="tv-form-actions"><a class="btn btn-ghost" href="#/parties" data-go>Salons publics</a></div>');
+    detailEl.innerHTML = shell('Watch party', 'Invitation', message(socialErrorText(err)) + '<div class="tv-form-actions"><a class="btn btn-ghost" href="#/ensemble" data-go>Salons ouverts</a></div>');
   }
 }
 
@@ -210,7 +201,7 @@ detailEl.addEventListener('click', (e) => {
   const join = t.closest('[data-wp-join]');
   if (join && state.kind === 'party') { e.preventDefault(); joinFromPage(join.dataset.wpJoin, join); return; }
   if (t.closest('[data-wp-login]') && state.kind === 'party') { e.preventDefault(); openLogin(); return; }
-  if (state.kind !== 'parties') return;
+  if (state.kind !== 'ensemble') return;
   if (t.closest('[data-wp-create]')) { e.preventDefault(); openCreateParty(); return; }
   if (t.closest('[data-wp-more]')) {
     e.preventDefault();
