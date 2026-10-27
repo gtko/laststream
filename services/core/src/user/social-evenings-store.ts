@@ -36,12 +36,12 @@ const TICK_BATCH = 200;
 /** Soirées renvoyées au plus par page de liste. */
 export const MAX_EVENING_PAGE = 50;
 
-export type EveningResponse = 'pending' | 'yes' | 'maybe' | 'no';
+type EveningResponse = 'pending' | 'yes' | 'maybe' | 'no';
 type Answer = 'yes' | 'maybe' | 'no';
-export type EveningStatus = 'scheduled' | 'cancelled';
-export type SeriesStatus = 'active' | 'stopped';
+type EveningStatus = 'scheduled' | 'cancelled';
+type SeriesStatus = 'active' | 'stopped';
 export type EveningScope = 'occurrence' | 'series';
-export type EveningListScope = 'upcoming' | 'past' | 'invites';
+type EveningListScope = 'upcoming' | 'past' | 'invites';
 
 /** Règle d'une série : fuseau IANA, jour (0 = dimanche), heure locale HH:MM, cadence (1 ou 2 semaines), fin facultative (ms). */
 export interface SeriesRuleInput {
@@ -75,13 +75,13 @@ export interface EveningListOptions {
   limit: number;
 }
 
-export interface EveningGuest {
+interface EveningGuest {
   pid: string;
   response: EveningResponse;
   respondedAt: number | null;
 }
 
-export interface EveningSeriesView {
+interface EveningSeriesView {
   id: string;
   status: SeriesStatus;
   tz: string;
@@ -124,15 +124,16 @@ export type EveningListOutcome = { result: 'invalid_body' } | { result: 'ok'; it
 export type EveningUpdateOutcome = EveningFailure | { result: 'ok'; evening: EveningView | null };
 export type EveningOutcome = EveningFailure | { result: 'ok' };
 
-export interface EveningReminder {
+interface EveningReminder {
   type: 'reminder';
   eveningId: string;
   title: string;
   startsAt: number;
+  tz: string;
   hostPid: string;
 }
 
-export interface EveningEffect {
+interface EveningEffect {
   /** Destinataires : invités qui n'ont pas répondu « non », hôte compris. */
   pids: string[];
   event: EveningReminder;
@@ -188,7 +189,15 @@ interface DueRow {
   id: string;
   title: string;
   starts_at: number;
+  tz: string;
   host_pid: string;
+}
+
+/** Invité retiré d'une soirée future par `detach`. */
+export interface DetachedGuest {
+  eveningId: string;
+  hostPid: string;
+  guestPid: string;
 }
 
 const EVENING_SELECT = `SELECT e.id, e.series_id, e.host_pid, e.title, e.tz, e.starts_at, e.status, e.overridden, e.party_id, e.reminded_at,
@@ -271,6 +280,17 @@ function ruleOf(series: SeriesRow): SeriesRule {
 
 function pairOf(a: string, b: string): { low: string; high: string } {
   return a < b ? { low: a, high: b } : { low: b, high: a };
+}
+
+/**
+ * Supprime les lignes de soirées d'un profil : séries et soirées qu'il héberge (invités en cascade), ses invitations et
+ * ses séries suivies. Sans transaction propre : l'appelant (purge sociale, `purgeProfile`) la fournit.
+ */
+export function purgeEveningRows(db: SqlDb, pid: string): void {
+  db.prepare('DELETE FROM evening_series WHERE host_pid = ?').run(pid);
+  db.prepare('DELETE FROM evenings WHERE host_pid = ?').run(pid);
+  db.prepare('DELETE FROM evening_guests WHERE pid = ?').run(pid);
+  db.prepare('DELETE FROM evening_series_guests WHERE pid = ?').run(pid);
 }
 
 export class EveningStore {
@@ -509,19 +529,27 @@ export class EveningStore {
 
   /**
    * Après un blocage ou la fin d'une amitié : chacun des deux profils est retiré des soirées futures de l'autre, séries
-   * comprises (la série ne le génère plus).
+   * comprises (la série ne le génère plus). Renvoie les invitations retirées, pour prévenir les profils concernés.
    */
-  detach(a: string, b: string, now: number): void {
-    this.db.transaction((): void => {
+  detach(a: string, b: string, now: number): DetachedGuest[] {
+    return this.db.transaction((): DetachedGuest[] => {
+      const removed: DetachedGuest[] = [];
       for (const [guest, host] of [
         [a, b],
         [b, a],
       ] as const) {
-        this.db
-          .prepare('DELETE FROM evening_guests WHERE pid = ? AND evening_id IN (SELECT id FROM evenings WHERE host_pid = ? AND starts_at > ?)')
-          .run(guest, host, now);
+        const rows = this.db
+          .prepare(
+            'SELECT g.evening_id AS id FROM evening_guests g JOIN evenings e ON e.id = g.evening_id WHERE g.pid = ? AND e.host_pid = ? AND e.starts_at > ? ORDER BY e.starts_at, e.id',
+          )
+          .all(guest, host, now) as unknown as { id: string }[];
+        for (const row of rows) {
+          this.db.prepare('DELETE FROM evening_guests WHERE evening_id = ? AND pid = ?').run(row.id, guest);
+          removed.push({ eveningId: row.id, hostPid: host, guestPid: guest });
+        }
         this.db.prepare('DELETE FROM evening_series_guests WHERE pid = ? AND series_id IN (SELECT id FROM evening_series WHERE host_pid = ?)').run(guest, host);
       }
+      return removed;
     });
   }
 
@@ -540,7 +568,7 @@ export class EveningStore {
 
       const due = this.db
         .prepare(
-          "SELECT id, title, starts_at, host_pid FROM evenings WHERE status = 'scheduled' AND reminded_at IS NULL AND starts_at > ? AND starts_at <= ? ORDER BY starts_at, id LIMIT ?",
+          "SELECT id, title, starts_at, tz, host_pid FROM evenings WHERE status = 'scheduled' AND reminded_at IS NULL AND starts_at > ? AND starts_at <= ? ORDER BY starts_at, id LIMIT ?",
         )
         .all(now, now + REMINDER_LEAD_MS, TICK_BATCH) as unknown as DueRow[];
       const effects: EveningEffect[] = [];
@@ -552,7 +580,7 @@ export class EveningStore {
           .all(row.id) as unknown as { pid: string }[];
         effects.push({
           pids: guests.map((guest) => guest.pid),
-          event: { type: 'reminder', eveningId: row.id, title: row.title, startsAt: row.starts_at, hostPid: row.host_pid },
+          event: { type: 'reminder', eveningId: row.id, title: row.title, startsAt: row.starts_at, tz: row.tz, hostPid: row.host_pid },
         });
       }
 
@@ -563,11 +591,16 @@ export class EveningStore {
   /** Efface les soirées d'un profil (hôte) et ses invitations et séries (invité), lors de la purge au passage en profil enfant. */
   purgeProfile(pid: string): void {
     this.db.transaction((): void => {
-      this.db.prepare('DELETE FROM evening_series WHERE host_pid = ?').run(pid);
-      this.db.prepare('DELETE FROM evenings WHERE host_pid = ?').run(pid);
-      this.db.prepare('DELETE FROM evening_guests WHERE pid = ?').run(pid);
-      this.db.prepare('DELETE FROM evening_series_guests WHERE pid = ?').run(pid);
+      purgeEveningRows(this.db, pid);
     });
+  }
+
+  /**
+   * Instant (ms) du prochain réveil utile, sans rien modifier : rappel le plus proche ou début de la prochaine soirée.
+   * `null` : rien à attendre. Sert à (re)poser l'alarme du Durable Object après une écriture.
+   */
+  wakeAt(now: number): number | null {
+    return this.nextWake(now, false);
   }
 
   // Modifications

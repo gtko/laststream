@@ -1,3 +1,4 @@
+import { purgeEveningRows } from './social-evenings-store.js';
 import type { SqlDb } from './sql.js';
 
 /**
@@ -282,7 +283,7 @@ export function settleGroupAfterLeave(db: SqlDb, groupId: string, leaverPid: str
  * Supprime toutes les données sociales qui référencent le pid d'un profil (clés étrangères sur `profiles(pid)`, migrations
  * 14 à 22) : amitiés, présence, relations, messages, réactions, votes, notes, blocages, demandes de rejoindre, préférences,
  * activité, liens publics (l'invitation réservée est libérée), listes partagées possédées (avec leurs éléments et membres),
- * éléments ajoutés et appartenances aux listes d'autrui, appartenances aux groupes (groupe vide supprimé, propriété
+ * éléments ajoutés et appartenances aux listes d'autrui, soirées planifiées (hébergées ou invité), appartenances aux groupes (groupe vide supprimé, propriété
  * transmise au plus ancien membre). À appeler avant de vider ou supprimer le pid.
  */
 export function purgeSocialData(db: SqlDb, pid: string): void {
@@ -313,6 +314,8 @@ export function purgeSocialData(db: SqlDb, pid: string): void {
   db.prepare('DELETE FROM blocks WHERE blocker_pid = ? OR blocked_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM join_requests WHERE requester_pid = ? OR host_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM social_prefs WHERE profile_pid = ?').run(pid);
+  // Soirées planifiées : soirées et séries hébergées, invitations et séries suivies (clés étrangères sur profiles(pid)).
+  purgeEveningRows(db, pid);
 }
 
 /**

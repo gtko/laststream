@@ -627,10 +627,11 @@ describe('profil enfant', () => {
 });
 
 describe('ouverture du salon (POST /open)', () => {
-  it('501 not_implemented pour un participant (hôte ou invité), 404 pour un non-participant', async () => {
+  it('non-participant : 404 ; sans service de salons (Node), l hôte reçoit 501 party_unavailable dans la fenêtre d ouverture', async () => {
     const id = (await createEvening(cast.alice, draft({ guests: [cast.bob.pid] }))).id;
-    expect(await as(app, cast.bob, 'POST', `${evening(id)}/open`)).toMatchObject({ status: 501, body: { error: 'not_implemented' } });
-    expect(await as(app, cast.alice, 'POST', `${evening(id)}/open`)).toMatchObject({ status: 501, body: { error: 'not_implemented' } });
     expect(await as(app, cast.carol, 'POST', `${evening(id)}/open`)).toMatchObject({ status: 404, body: { error: 'evening_not_found' } });
+    // Le détail de l'ouverture (hôte, fenêtre, salon, trames) est couvert par social-evenings-live.test.ts.
+    vi.setSystemTime(START - MINUTE);
+    expect(await as(app, cast.alice, 'POST', `${evening(id)}/open`)).toMatchObject({ status: 501, body: { error: 'party_unavailable' } });
   });
 });

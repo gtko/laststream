@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { reminderFrames, startEveningTicker } from '../src/user/social-evenings-live.js';
+import type { UserBackend } from '../src/user/repo.js';
+import { asyncRepo } from '../src/user/repo.js';
+import type { Scheduler } from '../src/platform/types.js';
 import { openUserDb } from '../src/platform/node/user-db.js';
 import { type EveningView, EveningStore, type SeriesRuleInput } from '../src/user/social-evenings-store.js';
 import { SocialV2Store } from '../src/user/social-v2-store.js';
@@ -423,7 +427,7 @@ describe('soirées : rappels (tick)', () => {
     expect(first.effects).toEqual([
       {
         pids: [ALICE, BOB].sort(),
-        event: { type: 'reminder', eveningId: kept.id, title: 'Rappel', startsAt: NOW + 20 * MIN, hostPid: ALICE },
+        event: { type: 'reminder', eveningId: kept.id, title: 'Rappel', startsAt: NOW + 20 * MIN, tz: 'Europe/Paris', hostPid: ALICE },
       },
     ]);
     expect(first.nextWake).toBe(NOW + 20 * MIN);
@@ -492,5 +496,61 @@ describe('soirées : détachement, purge et cascade', () => {
     expect(store.attachParty(id, 'PARTY-A')).toBe('PARTY-A');
     expect(store.attachParty(id, 'PARTY-B')).toBe('PARTY-A');
     expect(store.attachParty('inconnue', 'PARTY-C')).toBeUndefined();
+  });
+});
+
+describe('soirées : trames de rappel et minuterie Node', () => {
+  /** Planificateur manuel : `every` garde la tâche, le test la déclenche. */
+  function manualScheduler(): { scheduler: Scheduler; run: () => Promise<void>; stopped: () => boolean } {
+    let task: (() => void | Promise<void>) | undefined;
+    let stopped = false;
+    const scheduler: Scheduler = {
+      after: () => () => undefined,
+      every: (_ms, work) => {
+        task = work;
+        return () => {
+          stopped = true;
+        };
+      },
+      background: () => undefined,
+    };
+    return { scheduler, run: async () => void (await task?.()), stopped: () => stopped };
+  }
+
+  it('reminderFrames : une trame evening_reminder par soirée, vers les participants qui n ont pas dit non', () => {
+    const { store } = seeded();
+    const kept = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Rappel', startsAt: NOW + 20 * MIN, guests: [BOB, CAROL] }, NOW));
+    store.respond(CAROL, kept.id, 'no', NOW);
+    const frames = reminderFrames(store.tick(NOW + 6 * MIN));
+    expect(frames).toEqual([
+      { pids: [ALICE, BOB].sort(), event: { t: 'evening', event: { type: 'evening_reminder', eveningId: kept.id, title: 'Rappel', startsAt: NOW + 20 * MIN, tz: 'Europe/Paris' } } },
+    ]);
+    expect(frames[0]?.pids).not.toContain(CAROL);
+    // Idempotence : un second tick au même instant n'en renvoie aucune.
+    expect(reminderFrames(store.tick(NOW + 6 * MIN))).toEqual([]);
+  });
+
+  it('startEveningTicker : émet le rappel une seule fois, ignore un tick déjà en cours et une base absente', async () => {
+    const { store } = seeded();
+    const created = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Minuterie', startsAt: Date.now() + 10 * MIN, guests: [BOB] }, Date.now()));
+    const repo = asyncRepo(store);
+    const emitted: { pids: readonly string[]; type: string }[] = [];
+    const deps = { socialEvents: (pids: readonly string[], event: { t: string; event?: { type: string } }) => void emitted.push({ pids, type: event.event?.type ?? event.t }) };
+    const manual = manualScheduler();
+    const stop = startEveningTicker(deps as never, { hasData: () => true, socialEvenings: () => repo } as unknown as UserBackend, manual.scheduler);
+
+    await Promise.all([manual.run(), manual.run()]);
+    await manual.run();
+    expect(emitted).toEqual([{ pids: [ALICE, BOB].sort(), type: 'evening_reminder' }]);
+    expect(store.get(ALICE, created.id)).toMatchObject({ result: 'ok' });
+    stop();
+    expect(manual.stopped()).toBe(true);
+
+    // Base jamais créée (Node) : le tick ne l'ouvre pas.
+    let opened = false;
+    const idle = manualScheduler();
+    startEveningTicker(deps as never, { hasData: () => false, socialEvenings: () => ((opened = true), repo) } as unknown as UserBackend, idle.scheduler);
+    await idle.run();
+    expect(opened).toBe(false);
   });
 });

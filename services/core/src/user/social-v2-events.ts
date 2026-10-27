@@ -1,3 +1,4 @@
+import type { EveningEvent } from '@laststream/protocol/social';
 import type { ActivityItem } from './social-v2-activity.js';
 import type { FriendRequestView, FriendView, Handle, MediaRef, MessageView, NoteView, PollView, ReactionView } from './social-v2-store.js';
 
@@ -35,6 +36,8 @@ export type SocialEvent =
   | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
   /** Invitation à un salon de visionnage (watch party) : `from` = l'ami qui invite, destinataire seul. */
   | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string; avatar?: string }; partyId: string; title: string }
+  /** Soirée planifiée (LAST-198) : invitation, modification, réponse, rappel ou ouverture du salon. Destinataires : participants qui n'ont pas dit non. */
+  | { t: 'evening'; event: EveningEvent }
   // Activité : destinataires fixés par activityLiveAudience (social-v2-activity.ts).
   | { t: 'activity'; item: ActivityItem };
 

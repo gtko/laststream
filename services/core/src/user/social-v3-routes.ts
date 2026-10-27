@@ -6,6 +6,7 @@ import type { AppDeps } from '../deps.js';
 import { createSharedLimiter } from '../rate-limit-shared.js';
 import type { UserBackend } from './repo.js';
 import { recordActivityOf } from './social-v2-activity-routes.js';
+import { detachEvenings } from './social-evenings-live.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { convError } from './social-v2-messages-routes.js';
 import { actorOf, pidParam } from './social-v2-routes.js';
@@ -79,6 +80,8 @@ function registerPrefsRoutes(router: App, deps: AppDeps, backend: UserBackend): 
       emitSocialEvent(deps.socialEvents, [targetPid], { t: 'unfriend', pid: me.pid });
       emitSocialEvent(deps.socialEvents, [me.pid], { t: 'unfriend', pid: targetPid });
     }
+    // Chacun quitte les soirées futures de l'autre (que l'amitié soit tombée ou non : le blocage suffit).
+    await detachEvenings(deps, backend, me.pid, targetPid);
     return sendEmpty(c, 204);
   });
 

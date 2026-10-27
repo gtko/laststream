@@ -1,7 +1,10 @@
-import type { Evening, EveningGuest, EveningPage, EveningRecurrence, HomeFriend } from '@laststream/protocol/social';
+import type { Evening, EveningEvent, EveningGuest, EveningPage, EveningRecurrence, HomeFriend } from '@laststream/protocol/social';
 import type { AppDeps } from '../deps.js';
 import type { App, Ctx } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
+import { createPartyRoom } from '../party/create-room.js';
+import { DEFAULT_MAX_PARTICIPANTS } from '../party/protocol.js';
+import { platform } from '../platform/index.js';
 import { localSlotOf } from './evening-recurrence.js';
 import type { UserBackend } from './repo.js';
 import type { EveningChange, EveningFailure, EveningView, SeriesRuleInput } from './social-evenings-store.js';
@@ -16,7 +19,9 @@ import {
   type EveningUpdateBody,
   isEveningId,
 } from './social-evenings-validation.js';
-import { actorOf } from './social-v2-routes.js';
+import { sessionOf } from './session.js';
+import { emitSocialEvent } from './social-v2-events.js';
+import { actorOf, type Actor } from './social-v2-routes.js';
 import type { Card } from './social-v2-store.js';
 import { parseWith, UserApiError } from './validation.js';
 
@@ -26,8 +31,17 @@ import { parseWith, UserApiError } from './validation.js';
  *
  * Droits : un non-participant reçoit 404 `evening_not_found` (jamais 403). Un profil qui n'est pas mon ami, ou qui est en
  * attente ou bloqué, reçoit le même corps 403 `not_friend`. Les réponses de mutation sont sans corps (204), sauf la création
- * (201 avec la soirée). `open` renvoie 501 pour l'instant : le salon sera branché au lot suivant.
+ * (201 avec la soirée).
+ *
+ * Temps réel (trames `evening_*`, voir social-v2-events.ts) : invitation (création, ajout d'invité), modification et annulation
+ * (`evening_update`), réponse (`evening_response`, aux autres participants), ouverture du salon (`evening_open`). Audience : l'hôte
+ * et les invités qui n'ont pas dit non, sans les profils en blocage avec le profil agissant. `open` : hôte seul, de T-15 min à T+2 h,
+ * rattache un salon privé à la soirée (idempotent) ; 200 avec la soirée.
  */
+
+/** Ouverture possible de 15 minutes avant le début jusqu'à 2 heures après. */
+const OPEN_LEAD_MS = 15 * 60_000;
+const OPEN_GRACE_MS = 2 * 60 * 60_000;
 
 type ProfileOf = (pid: string) => Promise<HomeFriend | undefined>;
 
@@ -122,10 +136,45 @@ function seriesRuleOf(tz: string, startsAt: number, recurrence: EveningRecurrenc
   };
 }
 
+/** Profil public de l'hôte pour la trame d'invitation. */
+function hostProfileOf(me: Actor): HomeFriend {
+  const profile: HomeFriend = { pid: me.pid, handle: { name: me.handle.name, tag: me.handle.tag, full: me.handle.full }, avatarColor: me.avatarColor };
+  if (me.avatar !== undefined) profile.avatar = me.avatar;
+  return profile;
+}
+
 export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend: UserBackend): void {
   const evenings = () => backend.socialEvenings();
   const social = () => backend.socialV2();
   const actor = (c: Ctx) => actorOf(c, backend.users(), social(), deps.secret);
+
+  const emit = (pids: readonly string[], event: EveningEvent): void => emitSocialEvent(deps.socialEvents, pids, { t: 'evening', event });
+
+  /** Profils sans blocage (dans un sens ou dans l'autre) avec le profil agissant ; lui-même reste. */
+  const unblocked = async (actorPid: string, pids: readonly string[]): Promise<string[]> => {
+    const distinct = [...new Set(pids)];
+    const kept = await Promise.all(distinct.map(async (pid) => pid === actorPid || !(await social().isBlockedEither(actorPid, pid))));
+    return distinct.filter((_, index) => kept[index]);
+  };
+
+  /** Audience d'une soirée : l'hôte et les invités qui n'ont pas dit non, hors `except` et hors profils bloqués avec l'acteur. */
+  const audienceOf = (view: EveningView, actorPid: string, except?: string): Promise<string[]> =>
+    unblocked(
+      actorPid,
+      [view.hostPid, ...view.guests.filter((guest) => guest.response !== 'no').map((guest) => guest.pid)].filter((pid) => pid !== except),
+    );
+
+  /** Vue de la soirée avant une écriture (audience à prévenir) ; `undefined` si le profil n'y participe pas. */
+  const viewBefore = async (pid: string, id: string): Promise<EveningView | undefined> => {
+    const outcome = await evenings().get(pid, id);
+    return outcome.result === 'ok' ? outcome.evening : undefined;
+  };
+
+  /** Invitation envoyée aux profils `pids` (jamais à l'hôte), hors profils bloqués. */
+  const sendInvites = async (me: Actor, view: EveningView, pids: readonly string[]): Promise<void> => {
+    const audience = await unblocked(me.pid, pids.filter((pid) => pid !== me.pid));
+    emit(audience, { type: 'evening_invite', eveningId: view.id, title: view.title, startsAt: view.startsAt, tz: view.tz, host: hostProfileOf(me) });
+  };
 
   /** Profils publics d'une même réponse : chaque pid n'est lu qu'une fois. */
   const profilesOfRequest = (): ProfileOf => {
@@ -211,6 +260,11 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
       Date.now(),
     );
     if (outcome.result !== 'ok') throw failureOf(outcome);
+    await sendInvites(
+      me,
+      outcome.evening,
+      outcome.evening.guests.map((guest) => guest.pid),
+    );
     return sendJson(c, await presentOne(outcome.evening), 201);
   });
 
@@ -224,6 +278,8 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
     const body = parseWith(eveningUpdateSchema, c.get('body'));
     const outcome = await evenings().update(me.pid, id, await changeOf(me.pid, id, body), Date.now());
     if (outcome.result !== 'ok') throw failureOf(outcome);
+    // Une modification de série qui remplace l'occurrence visée (evening null) ne prévient personne : les clients relisent la liste.
+    if (outcome.evening !== null) emit(await audienceOf(outcome.evening, me.pid), { type: 'evening_update', eveningId: id, change: 'updated' });
     return sendEmpty(c);
   });
 
@@ -232,8 +288,10 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
     const me = await actor(c);
     const id = eveningIdOf(String(c.req.param('id')));
     const query = parseWith(eveningDeleteQuery, queryParams(c));
+    const before = await viewBefore(me.pid, id);
     const outcome = await evenings().cancel(me.pid, id, query.scope, Date.now());
     if (outcome.result !== 'ok') throw failureOf(outcome);
+    if (before !== undefined) emit(await audienceOf(before, me.pid), { type: 'evening_update', eveningId: id, change: 'cancelled' });
     return sendEmpty(c);
   });
 
@@ -244,8 +302,18 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
     const me = await actor(c);
     const id = eveningIdOf(String(c.req.param('id')));
     const body = parseWith(eveningGuestsSchema, c.get('body'));
+    const before = await viewBefore(me.pid, id);
     const outcome = await evenings().addGuests(me.pid, id, body.pids, Date.now());
     if (outcome.result !== 'ok') throw failureOf(outcome);
+    const after = await viewBefore(me.pid, id);
+    if (after !== undefined) {
+      const known = new Set(before?.guests.map((guest) => guest.pid));
+      await sendInvites(
+        me,
+        after,
+        after.guests.map((guest) => guest.pid).filter((pid) => !known.has(pid)),
+      );
+    }
     return sendEmpty(c);
   });
 
@@ -257,8 +325,11 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
     const me = await actor(c);
     const id = eveningIdOf(String(c.req.param('id')));
     const pid = String(c.req.param('pid'));
+    const before = await viewBefore(me.pid, id);
     const outcome = await evenings().removeGuest(me.pid, id, pid, Date.now());
     if (outcome.result !== 'ok') throw failureOf(outcome);
+    // Le profil retiré perd la soirée : même trame que pour une annulation.
+    if (before?.guests.some((guest) => guest.pid === pid) === true) emit(await unblocked(me.pid, [pid]), { type: 'evening_update', eveningId: id, change: 'cancelled' });
     return sendEmpty(c);
   });
 
@@ -269,6 +340,8 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
     const body = parseWith(eveningResponseSchema, c.get('body'));
     const outcome = await evenings().respond(me.pid, id, body.response, Date.now());
     if (outcome.result !== 'ok') throw failureOf(outcome);
+    const view = await viewBefore(me.pid, id);
+    if (view !== undefined) emit(await audienceOf(view, me.pid, me.pid), { type: 'evening_response', eveningId: id, pid: me.pid, response: body.response });
     return sendEmpty(c);
   });
 
@@ -280,8 +353,10 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
     const me = await actor(c);
     const id = eveningIdOf(String(c.req.param('id')));
     const body = parseWith(eveningLeaveSchema, c.get('body'));
+    const before = await viewBefore(me.pid, id);
     const outcome = await evenings().leave(me.pid, id, body.scope, Date.now());
     if (outcome.result !== 'ok') throw failureOf(outcome);
+    if (before !== undefined) emit(await audienceOf(before, me.pid, me.pid), { type: 'evening_response', eveningId: id, pid: me.pid, response: 'no' });
     return sendEmpty(c);
   });
 
@@ -289,16 +364,76 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
   router.post('/social/evenings/:id/stop', async (c) => {
     const me = await actor(c);
     const id = eveningIdOf(String(c.req.param('id')));
+    const before = await viewBefore(me.pid, id);
     const outcome = await evenings().stop(me.pid, id, Date.now());
     if (outcome.result !== 'ok') throw failureOf(outcome);
+    if (before !== undefined) emit(await audienceOf(before, me.pid), { type: 'evening_update', eveningId: id, change: 'cancelled' });
     return sendEmpty(c);
   });
 
-  /** Ouverture du salon de visionnage : pas encore disponible (lot suivant). Le profil et la soirée sont vérifiés d'abord. */
+  /**
+   * Ouvre le salon de visionnage de la soirée (hôte seul) : de T-15 min à T+2 h, soirée non annulée. Crée un salon privé au titre
+   * de la soirée et le rattache ; 200 avec la soirée (`party` renseigné) et `evening_open` aux participants. Idempotent : un salon
+   * déjà rattaché est renvoyé tel quel (aucune trame). 403 `not_host` pour un invité, 409 `evening_closed` (annulée) ou
+   * `evening_not_open` (hors fenêtre), 429 `too_many_rooms` au plafond de salons de l'hôte, 501 `party_unavailable` sans salons.
+   */
   router.post('/social/evenings/:id/open', async (c) => {
     const me = await actor(c);
-    const outcome = await evenings().get(me.pid, eveningIdOf(String(c.req.param('id'))));
-    if (outcome.result !== 'ok') throw failureOf(outcome);
-    throw new UserApiError(501, 'not_implemented');
+    const id = eveningIdOf(String(c.req.param('id')));
+    const found = await evenings().get(me.pid, id);
+    if (found.result !== 'ok') throw failureOf(found);
+    const view = found.evening;
+    if (view.role !== 'host') throw new UserApiError(403, 'not_host');
+    if (view.status === 'cancelled') throw new UserApiError(409, 'evening_closed');
+    if (view.partyId !== null) return sendJson(c, await presentOne(view));
+    const now = Date.now();
+    if (now < view.startsAt - OPEN_LEAD_MS || now > view.startsAt + OPEN_GRACE_MS) throw new UserApiError(409, 'evening_not_open');
+    const party = deps.party ?? platform().createPartyBackend?.();
+    if (party === undefined) throw new UserApiError(501, 'party_unavailable');
+
+    const session = await sessionOf(backend.users(), c);
+    const profile = await backend.users().findProfile(session.account.id, c.req.header('x-profile-id') ?? '');
+    if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
+    let created: Awaited<ReturnType<typeof createPartyRoom>>;
+    try {
+      created = await createPartyRoom(
+        backend,
+        party,
+        { account: session.account, profile },
+        {
+          visibility: 'private',
+          title: view.title,
+          poster: null,
+          language: null,
+          media: { type: 'movie' },
+          fingerprint: null,
+          maxParticipants: DEFAULT_MAX_PARTICIPANTS,
+        },
+      );
+    } catch (err) {
+      // Une ouverture concurrente a pu gagner pendant ce temps : son salon est alors le bon, le plafond n'est pas une erreur.
+      if (err instanceof UserApiError && err.code === 'too_many_rooms') {
+        const raced = await viewBefore(me.pid, id);
+        if (raced?.partyId != null) return sendJson(c, await presentOne(raced));
+      }
+      throw err;
+    }
+    // Le premier rattachement gagne (écriture atomique côté base) : en cas de course perdue, le salon en trop est supprimé.
+    const effective = await evenings().attachParty(id, created.id);
+    if (effective !== created.id) {
+      await party
+        .room(created.id)
+        .close(session.account.id)
+        .catch(() => undefined);
+      await backend.social().deletePartyRoom(created.id);
+      if (effective === undefined) throw new UserApiError(404, 'evening_not_found');
+      const winner = await viewBefore(me.pid, id);
+      if (winner === undefined) throw new UserApiError(404, 'evening_not_found');
+      return sendJson(c, await presentOne(winner));
+    }
+    const opened = await viewBefore(me.pid, id);
+    if (opened === undefined) throw new UserApiError(404, 'evening_not_found');
+    emit(await audienceOf(opened, me.pid), { type: 'evening_open', eveningId: id, party: { partyId: created.id, title: opened.title } });
+    return sendJson(c, await presentOne(opened));
   });
 }
