@@ -1,6 +1,6 @@
 // Épisodes filler et récap d'anime : marquage, enchaînement, « prochain non vu », badge et réglage (ODY-302).
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyFillers, autoNextEpisode, firstUnseen, type EpisodeInfo } from '../src/player/episodes';
+import { applyFillers, autoNextEpisode, fillerKinds, firstUnseen, type EpisodeInfo } from '../src/player/episodes';
 import { episodesHtml } from '../src/player/panels';
 import { getSkipPref, setSkipPref } from '../src/data/prefs';
 import { applyPrefs, snapshotPrefs } from '../src/data/prefsSync';
@@ -30,6 +30,18 @@ describe('applyFillers', () => {
     const eps = new Map<number, EpisodeInfo[]>([[1, [ep(1)]]]);
     for (const r of [null, undefined, {}, { fillers: 'x' }, []]) applyFillers(eps, r);
     expect(eps.get(1)![0].filler).toBeUndefined();
+  });
+});
+
+describe('fillerKinds (fiche série)', () => {
+  it('indexe les fillers et récaps par « saison:épisode »', () => {
+    const kinds = fillerKinds({ fillers: [
+      { season: 1, episode: 2, kind: 'filler' }, { season: 2, episode: 1, kind: 'recap' }, { season: 1, episode: 3, kind: 'canon' }, null,
+    ] });
+    expect([...kinds]).toEqual([['1:2', 'filler'], ['2:1', 'recap']]);
+  });
+  it('réponse inexploitable : aucune entrée', () => {
+    for (const r of [null, undefined, {}, { fillers: 'x' }]) expect(fillerKinds(r).size).toBe(0);
   });
 });
 

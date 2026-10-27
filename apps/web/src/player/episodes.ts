@@ -98,15 +98,25 @@ function nextCanon(
   return null;
 }
 
-/** Marque les épisodes filler et récap d'après la réponse `{ fillers: [{ season, episode, kind }] }` de lastAddon. */
-export function applyFillers(episodes: ReadonlyMap<number, readonly EpisodeInfo[]>, resp: unknown): void {
+/** Épisodes filler et récap de la réponse `{ fillers: [{ season, episode, kind }] }` de lastAddon, par clé « saison:épisode ». */
+export function fillerKinds(resp: unknown): Map<string, EpisodeFiller> {
+  const out = new Map<string, EpisodeFiller>();
   const list = (resp as { fillers?: unknown } | null)?.fillers;
-  if (!Array.isArray(list)) return;
+  if (!Array.isArray(list)) return out;
   for (const raw of list) {
     const f = raw as { season?: unknown; episode?: unknown; kind?: unknown } | null;
     if (!f || typeof f.season !== 'number' || typeof f.episode !== 'number' || (f.kind !== 'filler' && f.kind !== 'recap')) continue;
-    const info = episodes.get(f.season)?.find((e) => e.episode === f.episode);
-    if (info) info.filler = f.kind;
+    out.set(f.season + ':' + f.episode, f.kind);
+  }
+  return out;
+}
+
+/** Marque les épisodes filler et récap d'après la réponse de lastAddon (voir fillerKinds). */
+export function applyFillers(episodes: ReadonlyMap<number, readonly EpisodeInfo[]>, resp: unknown): void {
+  for (const [key, kind] of fillerKinds(resp)) {
+    const [season, episode] = key.split(':').map(Number);
+    const info = episodes.get(season)?.find((e) => e.episode === episode);
+    if (info) info.filler = kind;
   }
 }
 

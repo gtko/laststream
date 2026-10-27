@@ -93,8 +93,26 @@ export function ficheDownloadHTML(m, ep, off) {
   const whyId = 'dl-why-' + String(m.key).replace(/[^a-z0-9]/gi, '-');
   return '<span class="dl-wrap">' +
     '<button type="button" class="btn btn-pill dl-btn" data-dl-ctl="btn"' + targetAttrs(t) + (off ? ' data-dl-off="' + esc(off) + '"' : '') + ' aria-describedby="' + whyId + '">' +
-    '<span class="dl-fill" aria-hidden="true"></span><span class="dl-lbl"><span class="dl-ic">' + DL_ICON.dl + '</span><span class="dl-txt">Télécharger</span></span></button>' +
+    '<span class="dl-fill" aria-hidden="true"></span><span class="dl-lbl"><span class="dl-ic">' + DL_ICON.dl + '</span><span class="dl-txt">Télécharger</span>' +
+    ' <span class="dl-sub">' + (m.type === 'tv' ? esc(epCode(t.season, t.episode)) : '') + '</span></span></button>' +
     '<span class="dl-why" id="' + whyId + '" hidden></span></span>';
+}
+
+/** Entrées du menu « … » de la fiche pour le téléchargement du film ou de l'épisode à suivre : pause, reprise, nouvel essai, suppression (LAST-500). */
+export function ficheDownloadMenuItems(m, ep, opener) {
+  if (!downloadsAllowed()) return [];
+  const t = { key: m.key, type: m.type, id: String(m.id), name: m.name };
+  if (m.type === 'tv') { t.season = ep ? ep.s : 1; t.episode = ep ? ep.e : 1; }
+  const id = downloadIdFor(t);
+  const item = visibleItems(listDownloads()).find((it) => it.id === id);
+  if (!item) return [];
+  const out = [];
+  if (item.state === 'running') out.push({ id: 'dl-pause', label: 'Mettre en pause le téléchargement', icon: DL_ICON.pause, run: () => pauseItem(id) });
+  if (item.state === 'paused') out.push({ id: 'dl-resume', label: 'Reprendre le téléchargement', icon: DL_ICON.play, run: () => resumeItem(id) });
+  if (item.state === 'error') out.push({ id: 'dl-retry', label: 'Réessayer le téléchargement', icon: DL_ICON.retry, run: () => retryItem(id) });
+  // Toujours « Supprimer » : la confirmation dit « Supprimer » et son « Annuler » veut dire garder.
+  out.push({ id: 'dl-remove', label: 'Supprimer le téléchargement', icon: DL_ICON.trash, run: () => confirmRemove(item, opener) });
+  return out.map((x) => ({ ...x, group: 'dl' }));
 }
 
 /** Pastille ronde de 44 px d'un épisode (à côté de .ep-main, jamais dedans). */
@@ -148,18 +166,22 @@ export function setSeasonDownload(targets, root = detailEl) {
 
 const STATE_ICON = { available: 'dl', pending: 'clock', running: 'pause', paused: 'play', done: 'check', error: 'alert', unavailable: 'block' };
 
-/** Libellés des maquettes (« 62 % · Pause », « Reprendre · 62 % », « Réessayer ») sur la base de buttonState. */
+/** Libellé court du bouton (maquette LAST-500) et, à droite, `sub` : l'épisode visé, l'avancement ou « Hors ligne ». */
 function viewOf(el, item, av) {
-  if (!item && el.dataset.dlOff) return { state: 'unavailable', label: 'Indisponible', percent: null, reason: el.dataset.dlOff };
+  if (!item && el.dataset.dlOff) return { state: 'unavailable', label: 'Indisponible', sub: '', percent: null, reason: el.dataset.dlOff };
   const vm = buttonState(item, av);
   const p = vm.percent;
+  const pct = p == null ? '' : p + ' %';
+  const ep = el.dataset.dlS ? epCode(el.dataset.dlS, el.dataset.dlE) : '';
   let label = vm.label;
-  if (vm.state === 'running') label = p == null ? 'Téléchargement… · Pause' : p + ' % · Pause';
-  else if (vm.state === 'paused') label = 'Reprendre' + (p == null ? '' : ' · ' + p + ' %');
-  else if (vm.state === 'error') label = 'Réessayer';
+  let sub = '';
+  if (vm.state === 'running') { label = 'Téléchargement'; sub = pct || '…'; }
+  else if (vm.state === 'paused') { label = 'En pause'; sub = pct; }
+  else if (vm.state === 'error') label = 'Échec · Réessayer';
+  else if (vm.state === 'done') sub = 'Hors ligne';
   else if (vm.state === 'available' && el.dataset.dlBusy) label = 'Recherche…';
-  else if (vm.state === 'available' && el.dataset.dlS) label = 'Télécharger ' + epCode(el.dataset.dlS, el.dataset.dlE);
-  return { ...vm, label };
+  else if (vm.state === 'available') { label = 'Télécharger'; sub = ep; }
+  return { ...vm, label, sub };
 }
 
 function pillAria(el, v) {
@@ -201,6 +223,18 @@ function paintControl(el, item, av) {
   if (fill) fill.style.width = (v.state === 'running' || v.state === 'paused' ? pct : 0) + '%';
   const txt = el.querySelector('.dl-txt');
   if (txt && txt.textContent !== v.label) txt.textContent = v.label;
+  const sub = el.querySelector('.dl-sub');
+  if (sub && sub.textContent !== v.sub) sub.textContent = v.sub;
+  // En cours ou en pause, le libellé dit l'état : le nom accessible et l'infobulle disent ce que fait l'appui.
+  const act = v.state === 'running' ? 'mettre en pause' : v.state === 'paused' ? 'reprendre' : '';
+  if (act) {
+    const name = v.label + (v.sub ? ' ' + v.sub : '') + ', ' + act;
+    if (el.getAttribute('aria-label') !== name) el.setAttribute('aria-label', name);
+    el.title = act.charAt(0).toUpperCase() + act.slice(1);
+  } else if (el.hasAttribute('aria-label')) {
+    el.removeAttribute('aria-label');
+    el.removeAttribute('title');
+  }
   const why = el.parentElement && el.parentElement.querySelector('.dl-why');
   if (why) {
     const reason = v.state === 'unavailable' || v.state === 'error' ? v.reason || '' : '';
@@ -817,7 +851,7 @@ function setBusy(el) {
   if (txt) txt.textContent = 'Recherche…';
   return () => {
     delete el.dataset.dlBusy;
-    if (txt && txt.textContent === 'Recherche…') txt.textContent = el.dataset.dlS ? 'Télécharger ' + epCode(el.dataset.dlS, el.dataset.dlE) : 'Télécharger';
+    if (txt && txt.textContent === 'Recherche…') txt.textContent = 'Télécharger';
   };
 }
 

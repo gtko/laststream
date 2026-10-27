@@ -165,12 +165,31 @@
   .dl-more { background: none; border-radius: 50%; }
 }
 
-/* Fiche mobile : « Lecture » et « Télécharger » côte à côte (maquette mobile-fiche-film). */
+/* Libellé court à gauche, état à droite (épisode, avancement, « Hors ligne ») (LAST-500). */
+.dl-btn .dl-txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-btn .dl-sub { font-weight: 500; font-size: 0.85em; color: var(--dim); white-space: nowrap; }
+.dl-btn .dl-sub:empty { display: none; }
+
+/* Fiche mobile (maquette LAST-500) : l'action principale sur toute la largeur, sa reprise dessous,
+   puis « Télécharger » et « … » ; sans téléchargement, « … » à côté de l'action principale. */
 @media (max-width: 640px) {
-  .f-actions:has(.dl-wrap) > .btn-pill { flex: 1 1 0; padding: 0 16px; font-size: 16px; }
-  .f-actions > .dl-wrap { flex: 1 1 0; min-width: 0; }
-  .f-actions > .dl-wrap .btn-pill { width: 100%; padding: 0 12px; font-size: 15px; }
-  .dl-why { max-width: none; }
+  .fiche .f-actions { display: grid; grid-template-columns: minmax(0, 1fr) 56px; align-items: center; gap: 8px 10px; }
+  .fiche .f-actions > .btn-pill { grid-column: 1 / -1; min-width: 0; min-height: 52px; padding: 0 20px; font-size: 16px; }
+  .fiche .f-actions:not(:has(> .dl-wrap)) > .btn-pill { grid-column: 1; }
+  .fiche .f-actions > .f-resume { grid-column: 1 / -1; }
+  .fiche .f-actions > .dl-wrap { grid-column: 1; min-width: 0; }
+  .fiche .f-actions > .f-more { grid-column: 2; width: 56px; height: 48px; border-radius: 999px; }
+  .fiche .f-actions:not(:has(> .dl-wrap)) > .f-more { height: 52px; }
+  /* Raison d'un échec sous le bouton : « … » reste aligné sur le bouton, pas sur le bloc. */
+  .fiche .f-actions > .dl-wrap ~ .f-more { align-self: start; }
+  .fiche .f-actions .dl-btn { width: 100%; min-height: 48px; padding: 0 18px; font-size: 15px; justify-content: flex-start; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .fiche .f-actions .dl-btn .dl-lbl { width: 100%; }
+  .fiche .f-actions .dl-btn .dl-txt { flex: 1; min-width: 0; text-align: left; }
+  .fiche .f-actions .dl-btn.is-done { color: var(--text); }
+  .fiche .f-actions .dl-btn.is-done .dl-ic { color: var(--accent); }
+  /* Téléchargement impossible ici : la raison remplace le bouton, rien de grisé à toucher. */
+  .fiche .f-actions .dl-btn.is-unavailable { display: none; }
+  .dl-why { max-width: none; text-align: left; }
 }
 
 /* ---------- Feuilles basses (mobile) / fenêtres centrées (bureau, TV) ---------- */
@@ -261,5 +280,3 @@
 .dl-season.is-done, .dl-season.is-done:disabled { color: var(--ok); opacity: 1; cursor: default; }
 .dl-season-sum { font-size: 18px; font-weight: 700; color: var(--text); }
 
-/* Film au cinéma : « Indisponible » ferait doublon avec la ligne « pas encore disponible en streaming ». */
-.f-actions:has(> .is-cinema) > .dl-wrap { display: none; }
