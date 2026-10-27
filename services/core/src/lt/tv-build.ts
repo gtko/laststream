@@ -369,7 +369,7 @@ export async function probeDirectStreams(catalog: TvCatalog, previous: ProbeSnap
     const untried = all.filter((url) => !attempts.has(url));
     const retry = all.filter((url) => attempts.has(url)).sort((a, b) => (attempts.get(a) ?? 0) - (attempts.get(b) ?? 0));
     const todo = [...untried, ...retry].slice(0, options.maxProbes ?? 800);
-    const origin = options.probeOrigin ?? 'https://laststream.gtux-prog.workers.dev';
+    const origin = options.probeOrigin ?? 'https://app.laststream.app';
     const deadline = Date.now() + (options.probeBudgetMs ?? 5 * 60_000);
     let next = 0;
     const worker = async (): Promise<void> => {

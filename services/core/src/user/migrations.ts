@@ -890,6 +890,20 @@ export const MIGRATIONS: readonly Migration[] = [
     `,
   },
   {
+    version: 32,
+    name: 'clés de services serveur (une ligne par champ, valeur chiffrée)',
+    sql: `
+      -- Clés des services gérés par le propriétaire (TMDB, MDBList, TheTVDB, Fanart.tv, IntroDB, SkipDB, Anime Skip).
+      -- La valeur est chiffrée (AES-256-GCM, clé dérivée de LASTADDON_SECRET avec le libellé « server-services »), jamais en clair.
+      -- OpenRouter n'a pas de ligne ici : sa clé vient du compte ou de OPENROUTER_API_KEY.
+      CREATE TABLE server_services (
+        field TEXT PRIMARY KEY CHECK (field IN ('tmdbToken', 'tmdbApiKey', 'mdblistApiKey', 'tvdbApiKey', 'tvdbPin', 'fanartApiKey', 'introdbApiKey', 'skipdbApiKey', 'animeskipClientId')),
+        sealed TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
     version: 33,
     name: 'coups de cœur des amis : un mot par profil et par titre (140 caractères au plus), lus par l accueil',
     sql: `

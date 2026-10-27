@@ -27,7 +27,7 @@ const option = (name: string): string | undefined => {
 
 const appData = process.env.APPDATA ?? '';
 const dbPath = option('--db') ?? join(appData, 'Laststream', 'lastaddon', 'laststream.db');
-const baseUrl = (option('--url') ?? 'https://lastaddon-core.gtux-prog.workers.dev').replace(/\/$/, '');
+const baseUrl = (option('--url') ?? 'https://core.laststream.app').replace(/\/$/, '');
 const BATCH = 400;
 
 function adminSecret(): string {

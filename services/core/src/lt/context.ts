@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { Ctx } from '../http/app-env.js';
-import { platform, runtimeEnv, type KvCache, type OutboundDispatcher } from '../platform/index.js';
+import { platform, runtimeEnv, type KvCache, type OutboundDispatcher, type UserBackend } from '../platform/index.js';
 import { createRateLimiter } from '../rate-limit.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
-import { withServerServices } from '../config/server-services.js';
+import { serverServicesEnv, withServerServices } from '../config/server-services.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import { CACHE_MAX_BYTES, CACHE_MAX_ENTRIES, TtlCache } from '../cache/ttl-cache.js';
@@ -180,16 +180,18 @@ function buildLtContext(deps: AppDeps): LtContext {
   };
 }
 
-/** Décode la configuration de l'URL. Configuration illisible : 400 invalid_config. */
-export function decodeFor(deps: AppDeps, encoded: string): Config {
+/** Décode la configuration de l'URL, complétée par les clés serveur. Configuration illisible : 400 invalid_config. */
+export async function decodeFor(deps: AppDeps, backend: UserBackend, encoded: string): Promise<Config> {
+  let config: Config;
   try {
-    return withServerServices(decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain }));
+    config = decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain });
   } catch (err) {
     if (err instanceof ConfigDecodeError || err instanceof ConfigValidationError) {
       throw new LtError(400, 'invalid_config');
     }
     throw err;
   }
+  return withServerServices(config, serverServicesEnv(deps.secret, backend.users()));
 }
 
 /** Traduit une erreur de transport en LtError, sans URL ni contenu. Les erreurs inconnues sont relancées. */

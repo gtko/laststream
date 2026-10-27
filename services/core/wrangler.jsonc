@@ -83,10 +83,10 @@
     // Mode public : adresses privées refusées pour les URL saisies (SSRF) ; la base publique sert aux liens /play.
     // AllDebrid suspend les comptes appelés depuis des IP de serveurs : aucun appel AllDebrid depuis Cloudflare.
     "LASTADDON_PUBLIC": "1",
-    "LASTADDON_PUBLIC_URL": "https://lastaddon-core.gtux-prog.workers.dev",
+    "LASTADDON_PUBLIC_URL": "https://app.laststream.app",
     // Aucune requête vers AllDebrid ni ses hôtes ne part de Cloudflare : miniatures et lecture passent par l'appareil, avec son IP.
     // Origines autorisées pour /config, /user et les écritures lt (en plus de l'origine du Worker).
-    "LASTADDON_ALLOWED_ORIGINS": "https://lastaddon-core.gtux-prog.workers.dev,https://laststream.gtux-prog.workers.dev,https://localhost,http://localhost,capacitor://localhost"
+    "LASTADDON_ALLOWED_ORIGINS": "https://app.laststream.app,https://core.laststream.app,https://lastaddon-core.gtux-prog.workers.dev,https://localhost,http://localhost,capacitor://localhost"
   }
   // Secrets (wrangler secret put, jamais dans ce fichier) : LASTADDON_SECRET, EDGE_SECRET,
   // ADMIN_SECRET (route /__admin/ de migration des données ; `wrangler secret delete ADMIN_SECRET` la ferme),

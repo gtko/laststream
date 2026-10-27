@@ -276,10 +276,12 @@ describe('clés de services du serveur', () => {
     expect(await decoded.text()).not.toContain(KEYS.tmdbToken);
   });
 
-  it('la clé de la configuration prime sur celle du serveur', async () => {
-    vi.stubEnv('TMDB_TOKEN', 'jeton-serveur-invalide');
-    const res = await fetch(`${app.baseUrl}/${tmdbToken()}/lt/tmdb/movie/603`);
+  it('la clé du serveur prime sur celle de la configuration', async () => {
+    vi.stubEnv('TMDB_TOKEN', KEYS.tmdbToken);
+    const res = await fetch(`${app.baseUrl}/${tokenFor({ tmdbToken: 'jeton-compte-invalide' })}/lt/tmdb/movie/603`);
     expect(res.status).toBe(200);
+    const call = upstream.callsTo('https://api.themoviedb.org/3/movie/603').at(-1);
+    expect(call?.headers.authorization).toBe(`Bearer ${KEYS.tmdbToken}`);
   });
 
   it('sans clé serveur ni clé utilisateur : 404 service_not_configured', async () => {
