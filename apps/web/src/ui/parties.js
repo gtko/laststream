@@ -13,10 +13,10 @@ import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { ICON } from './icons.js';
 import { sortedFriends } from './partyfriends.js';
-import { friendRooms } from './homeSocialRows.js';
 import { ago, clock, episodeCode, livePos, shortName, watchLine } from './socialFmt.js';
 import { state } from './state.js';
-import { esc } from './util.js';
+import { joinErrorMessage } from './socialChat.js';
+import { esc, rewriteKeepingFocus } from './util.js';
 
 const LANGS = [['', 'Toutes'], ['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien']];
 const KINDS = [['', 'Tout'], ['movie', 'Films'], ['series', 'Séries']];
@@ -30,6 +30,8 @@ let paneMode = 'now';
 let paneErr = '';
 /** Amis dont la demande d'entrée est partie pendant ce montage. */
 const knocked = new Set();
+/** Amis dont la demande d'entrée est en cours d'envoi (bouton « Envoi… » désactivé, un seul POST). */
+const pending = new Set();
 /** Compteur de montages : une réponse ou un clic dont le montage est périmé n'écrit plus rien. */
 let mountGen = 0;
 /** Dernier HTML écrit par élément (évite de réécrire le DOM quand rien ne change). */
@@ -37,8 +39,7 @@ const written = new WeakMap();
 function setHtml(el, html) {
   if (written.get(el) === html) return;
   written.set(el, html);
-  // eslint-disable-next-line no-restricted-syntax -- données serveur échappées par esc dans chaque gabarit
-  el.innerHTML = html;
+  rewriteKeepingFocus(el, html);
 }
 
 const langName = (c) => (LANGS.find(([k]) => k === c) || [c, c || ''])[1];
@@ -83,7 +84,7 @@ function roomCardHTML(r, friend, cta) {
   const full = nb >= max;
   const pct = max > 0 ? Math.min(100, Math.round((nb / max) * 100)) : 0;
   const w = friend && friend.watching;
-  const live = friend ? '<span class="wp-live"><i aria-hidden="true"></i>En direct' + (w ? ' · ' + esc(clock(livePos(w))) : '') + '</span>' : '';
+  const live = friend ? '<span class="wp-live"><i aria-hidden="true"></i>En direct' + (w ? '<span data-clk="r:' + esc(r.id) + '"></span>' : '') + '</span>' : '';
   return '<li class="wp-card' + (friend ? ' wp-card-friend' : '') + '" data-room="' + esc(r.id) + '">' + posterHTML(r.poster) +
     '<div class="wp-info">' + (friend ? '<span class="wp-pastille">Ton ami est dedans</span>' + live : '') + '<strong class="wp-t">' + esc(r.title) + esc(epSuffix(w)) + '</strong>' +
     '<span class="wp-chips"><span class="wp-chip">' + (r.mediaType === 'series' ? 'Série' : 'Film') + '</span>' + (r.language ? '<span class="wp-chip">' + esc(langName(r.language)) + '</span>' : '') + '</span>' +
@@ -98,11 +99,12 @@ function knockCardHTML(f) {
   const w = f.watching;
   const name = shortName(f);
   const sent = knocked.has(f.pid);
+  const busy = pending.has(f.pid);
   return '<li class="wp-card wp-card-friend wp-card-private" data-friend="' + esc(f.pid) + '">' + posterHTML(w.poster) +
-    '<div class="wp-info"><span class="wp-pastille">Entrée sur demande</span><span class="wp-live"><i aria-hidden="true"></i>En direct · ' + esc(clock(livePos(w))) + '</span>' +
+    '<div class="wp-info"><span class="wp-pastille">Regarde en ce moment</span><span class="wp-live"><i aria-hidden="true"></i>En direct · <span data-clk="f:' + esc(f.pid) + '"></span></span>' +
     '<strong class="wp-t">' + esc(w.title) + esc(epSuffix(w)) + '</strong>' +
     '<span class="wp-m"><span class="wp-av" aria-hidden="true">' + esc(initialsOf(name)) + '</span><span class="wp-host">' + esc(name) + ' · ' + esc(watchLine(w)) + '</span></span>' +
-    '<button type="button" class="btn btn-ghost wp-join" data-ens-knock="' + esc(f.pid) + '"' + (sent ? ' disabled' : '') + ' aria-label="Demander à entrer dans le salon de ' + esc(name) + '">' + (sent ? 'Demande envoyée' : 'Demander à entrer') + '</button></div></li>';
+    '<button type="button" class="btn btn-ghost wp-join" data-ens-knock="' + esc(f.pid) + '"' + (sent || busy ? ' disabled' : '') + ' aria-label="Demander à rejoindre ' + esc(name) + '">' + (sent ? 'Demande envoyée' : busy ? 'Envoi…' : 'Demander à rejoindre') + '</button></div></li>';
 }
 
 const CREATE_BTN = '<button type="button" class="btn btn-primary" data-wp-create>' + ICON.plus + 'Créer une watch party</button>';
@@ -136,18 +138,35 @@ function paintRooms() {
     return;
   }
   const friends = paneMode === 'now' ? allFriends() : [];
-  const mine = paneMode === 'now' ? friendRooms(shown, friends) : [];
+  const mine = shown.filter((r) => hostFriend(r.host, friends));
   const pub = mine.length ? shown.filter((r) => !mine.includes(r)) : shown;
   const taken = new Set(rooms.map((r) => hostFriend(r.host, friends)).filter(Boolean).map((f) => f.pid));
-  const knock = friends.filter((f) => !f.muted && f.watching && f.status !== 'offline' && !taken.has(f.pid) && (!filter.kind || f.watching.type === filter.kind));
+  const knock = friends.filter((f) => !f.muted && !f.household && f.watching && f.status !== 'offline' && f.status !== 'dnd' && !taken.has(f.pid) && (!filter.kind || f.watching.type === filter.kind));
   const cta = paneMode === 'public' ? 'Entrer' : 'Rejoindre';
   const more = cursor ? '<div class="wp-more"><button type="button" class="btn btn-ghost" data-wp-more>Charger plus</button></div>' : '';
   const nbFriends = mine.length + knock.length;
-  setHtml(slot, (nbFriends ? '<section class="soc-sec wp-friends" aria-labelledby="wp-h-friends"><h2 class="row-title" id="wp-h-friends">En direct chez tes amis<em>' + nbFriends + '</em></h2><ul class="wp-list">' +
-      mine.map((r) => roomCardHTML(r, hostFriend(r.host, friends), cta)).join('') + knock.map(knockCardHTML).join('') + '</ul></section>' : '') +
+  setHtml(slot, (mine.length ? '<section class="soc-sec wp-friends" aria-labelledby="wp-h-friends"><h2 class="row-title" id="wp-h-friends">En direct chez tes amis<em>' + mine.length + '</em></h2><ul class="wp-list">' +
+      mine.map((r) => roomCardHTML(r, hostFriend(r.host, friends), cta)).join('') + '</ul></section>' : '') +
+    (knock.length ? '<section class="soc-sec wp-watching" aria-labelledby="wp-h-watching"><h2 class="row-title" id="wp-h-watching">Regardent en ce moment<em>' + knock.length + '</em></h2><ul class="wp-list">' + knock.map(knockCardHTML).join('') + '</ul></section>' : '') +
     (pub.length ? '<section class="soc-sec" aria-labelledby="wp-h-public"><h2 class="row-title" id="wp-h-public">Salons publics<em>' + pub.length + '</em></h2><ul class="wp-list">' + pub.map((r) => roomCardHTML(r, null, cta)).join('') + '</ul></section>' : '') +
     (shown.length || nbFriends ? '' : emptyHTML()) + more);
+  paintClocks();
 }
+
+/** Horloges des cartes « en direct » : mises à jour par textContent (le HTML mémorisé reste identique d'une seconde à l'autre, donc le focus n'est jamais perdu). */
+function paintClocks() {
+  const slot = detailEl.querySelector('#wp-list');
+  if (!slot) return;
+  const friends = allFriends();
+  slot.querySelectorAll('[data-clk]').forEach((el) => {
+    const key = el.getAttribute('data-clk') || '';
+    const id = key.slice(2);
+    const f = key.startsWith('f:') ? friends.find((x) => x.pid === id) : hostFriend((rooms.find((r) => r.id === id) || {}).host, friends);
+    const w = f && f.watching;
+    if (w) el.textContent = (key.startsWith('r:') ? ' · ' : '') + clock(livePos(w));
+  });
+}
+let clockTimer = 0;
 
 let reqSeq = 0;
 async function loadRooms(more) {
@@ -185,6 +204,8 @@ export function mountPartiesPane(host, mode = 'now') {
   rooms = [];
   cursor = null;
   knocked.clear();
+  pending.clear();
+  if (!clockTimer) clockTimer = setInterval(() => { if (state.kind === 'ensemble') paintClocks(); }, 1000);
   if (!subscribed) {
     subscribed = true;
     // La présence des amis redessine « En direct chez tes amis » sans nouvelle requête ; setHtml ignore les émissions sans effet.
@@ -201,24 +222,26 @@ export function mountPartiesPane(host, mode = 'now') {
   loadRooms(false);
 }
 
-/** Clic sur « Demander à entrer » : message à l'ami (POST /friends/:pid/join-request). Le bouton se désactive ; un échec le rend. */
+/** Clic sur « Demander à rejoindre » : message à l'ami (POST /friends/:pid/join-request). Le bouton se désactive ; un échec le rend. */
 async function knockFriend(btn) {
   const pid = btn.dataset.ensKnock;
-  if (!pid || knocked.has(pid) || btn.disabled) return;
+  if (!pid || knocked.has(pid) || pending.has(pid) || btn.disabled) return;
   const gen = mountGen;
-  btn.disabled = true;
-  btn.textContent = 'Envoi…';
+  pending.add(pid);
+  if (!loading) paintRooms();
   try {
     await requestJoin(pid);
     if (gen !== mountGen) return;
     knocked.add(pid);
-    btn.textContent = 'Demande envoyée';
     toast('Demande envoyée : tu seras prévenu si on t’ouvre la porte.');
   } catch (err) {
     if (gen !== mountGen) return;
-    btn.disabled = false;
-    btn.textContent = 'Demander à entrer';
-    toast(err && err.status === 403 ? 'Cet ami n’accepte pas les demandes d’entrée.' : socialErrorText(err));
+    toast(joinErrorMessage(err));
+  } finally {
+    if (gen === mountGen) {
+      pending.delete(pid);
+      if (!loading) paintRooms();
+    }
   }
 }
 

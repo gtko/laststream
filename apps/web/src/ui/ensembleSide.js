@@ -10,7 +10,7 @@ import { ago, avatarHTML, SEEN_LABEL, shortName } from './socialFmt.js';
 import { inviteToParty } from './socialHooks.js';
 import { state } from './state.js';
 import { detailEl } from './dom.js';
-import { esc } from './util.js';
+import { esc, rewriteKeepingFocus } from './util.js';
 
 const FRIENDS_MAX = 5;
 const ACTIVITY_MAX = 4;
@@ -62,8 +62,7 @@ function paint() {
   const html = friendsCard() + activityCard() + ticketsCard();
   if (written.get(host) === html) return;
   written.set(host, html);
-  // eslint-disable-next-line no-restricted-syntax -- données serveur échappées par esc dans chaque carte
-  host.innerHTML = html;
+  rewriteKeepingFocus(host, html);
 }
 
 /** Remplit `el` (colonne latérale) et lance les deux chargements ; sans effet sur un autre montage ou un autre profil. */

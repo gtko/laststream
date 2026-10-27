@@ -15,6 +15,7 @@ const $$ = (sel: string) => Array.from(detail().querySelectorAll<HTMLElement>(se
 
 let showEnsemble: (tab?: string) => void;
 let getState: () => any;
+let setMyAvatar: (a: string | null) => void;
 let registerSocialHook: (name: string, fn: (...a: any[]) => void) => void;
 
 const room = (o: Record<string, unknown>) => ({ id: 'r', title: 'T', poster: null, language: 'fr', mediaType: 'movie', host: 'zed', participants: 2, maxParticipants: 8, createdAt: new Date().toISOString(), ...o });
@@ -33,7 +34,7 @@ beforeAll(async () => {
   auth.status = 'ready';
   auth.profile = { id: 'p1', name: 'Greg', isKid: false } as any;
   ({ showEnsemble } = await import('../src/ui/ensemble.js'));
-  ({ getState } = await import('../src/data/socialStore'));
+  ({ getState, setMyAvatar } = await import('../src/data/socialStore'));
   ({ registerSocialHook } = await import('../src/ui/socialHooks.js'));
 });
 
@@ -80,7 +81,7 @@ describe('Maintenant : en direct chez tes amis', () => {
     expect($$('[data-room="b"]')).toHaveLength(1);
   });
 
-  it('ami qui regarde sans salon public : « Demander à entrer » envoie la demande à l’ami', async () => {
+  it('ami qui regarde sans salon public : « Demander à rejoindre » envoie la demande à l’ami', async () => {
     const f = friend('F2', 'Sam', { watching: watching({ title: 'Shōgun' }) });
     routes = (c) => (c.path.endsWith('/friends/F2/join-request') ? new Response(null, { status: 204 }) : c.path.startsWith('/party?') ? json({ rooms: [], nextCursor: null }) : undefined);
     getState().friends = [f];
@@ -88,8 +89,10 @@ describe('Maintenant : en direct chez tes amis', () => {
     showEnsemble('maintenant');
     await tick(60);
     const btn = $<HTMLButtonElement>('[data-ens-knock="F2"]');
-    expect(btn.textContent).toBe('Demander à entrer');
+    expect(btn.textContent).toBe('Demander à rejoindre');
     expect($('.wp-card-private').textContent).toContain('Shōgun');
+    expect($('.wp-watching h2').textContent).toContain('Regardent en ce moment');
+    expect($$('.wp-friends')).toHaveLength(0);
     expect($('.wp-empty-box')).toBeNull();
     btn.click();
     await tick(40);
@@ -109,8 +112,60 @@ describe('Maintenant : en direct chez tes amis', () => {
     await tick(40);
     const btn = $<HTMLButtonElement>('[data-ens-knock="F2"]');
     expect(btn.disabled).toBe(false);
-    expect(btn.textContent).toBe('Demander à entrer');
-    expect(document.getElementById('toast')!.textContent).toContain('n’accepte pas les demandes d’entrée');
+    expect(btn.textContent).toBe('Demander à rejoindre');
+    expect(document.getElementById('toast')!.textContent).toContain('n’accepte pas cette demande');
+  });
+
+  it('une émission du store pendant la demande garde le bouton désactivé : un seul POST', async () => {
+    const f = friend('F2', 'Sam', { watching: watching() });
+    let release: () => void = () => undefined;
+    const gate = new Promise<Response>((r) => { release = () => r(new Response(null, { status: 204 })); });
+    routes = (c) => (c.path.endsWith('/friends/F2/join-request') ? gate : c.path.startsWith('/party?') ? json({ rooms: [], nextCursor: null }) : undefined);
+    getState().friends = [f];
+    detail().innerHTML = '';
+    showEnsemble('maintenant');
+    await tick(60);
+    $<HTMLButtonElement>('[data-ens-knock="F2"]').click();
+    setMyAvatar(null);
+    await tick(10);
+    const btn = $<HTMLButtonElement>('[data-ens-knock="F2"]');
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toBe('Envoi…');
+    btn.click();
+    release();
+    await tick(40);
+    expect(calls.filter((c) => c.method === 'POST' && c.path.endsWith('/friends/F2/join-request'))).toHaveLength(1);
+    expect($('[data-ens-knock="F2"]').textContent).toBe('Demande envoyée');
+  });
+
+  it('une émission au contenu identique ne remplace pas le nœud focalisé ; une réécriture réelle rend le focus', async () => {
+    const f = friend('F2', 'Sam', { watching: watching() });
+    await open('maintenant', [], [f]);
+    const btn = $<HTMLButtonElement>('[data-ens-knock="F2"]');
+    detail().hidden = false;
+    btn.focus();
+    expect(document.activeElement).toBe(btn);
+    setMyAvatar(null);
+    await tick(10);
+    expect($('[data-ens-knock="F2"]')).toBe(btn);
+    expect(document.activeElement).toBe(btn);
+    getState().friends = [f, friend('F6', 'Zed', { watching: watching({ title: 'Andor' }) })];
+    setMyAvatar(null);
+    await tick(10);
+    const next = $<HTMLButtonElement>('[data-ens-knock="F2"]');
+    expect(next).not.toBe(btn);
+    expect(document.activeElement).toBe(next);
+  });
+
+  it('foyer et ne-pas-déranger : pas de carte ; salon complet d’un ami : carte Complet gardée', async () => {
+    await open('maintenant', [room({ id: 'a', title: 'Plein', host: 'zoe', participants: 8, maxParticipants: 8 })], [
+      friend('F1', 'Zoé', { watching: watching() }), friend('H1', 'Léo', { household: true, watching: watching() }), friend('D1', 'Dan', { status: 'dnd', watching: watching() }),
+    ]);
+    expect($$('[data-ens-knock]')).toHaveLength(0);
+    expect($$('.wp-watching')).toHaveLength(0);
+    const full = $<HTMLButtonElement>('.wp-friends [data-room="a"] .wp-join');
+    expect(full.disabled).toBe(true);
+    expect(full.textContent).toBe('Complet');
   });
 
   it('ami hors ligne ou en sourdine : aucune carte ; pas d’ami : état vide', async () => {

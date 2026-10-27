@@ -11,7 +11,7 @@
 .wp-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: ens-live 1.6s ease-in-out infinite; }
 @keyframes ens-live { 50% { opacity: 0.35; } }
 .wp-card-private { border-style: dashed; }
-.wp-card-private .wp-join { background: transparent; border: 1.5px solid #3a3646; }
+.wp-card-private .wp-join { background: transparent; border: 1.5px solid var(--line-2); }
 .wp-card-private .wp-join:hover:not(:disabled) { border-color: var(--muted); background: rgba(255, 255, 255, 0.08); }
 
 /* Colonne latérale. */
