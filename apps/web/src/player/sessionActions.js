@@ -131,6 +131,9 @@ export function playEpisode(season, episode) {
   if (!p || guestBlocked()) return Promise.resolve();
   S.ui.closePanel(true);
   S.ui.closeMark(false); // le segment en cours de marquage appartient à l'épisode qu'on quitte
+  // Lecteur natif Android : son activité couvre la page. Laissée ouverte, l'épisode quitté continuerait par-dessus la recherche
+  // du suivant ; la vignette flottante, elle, ne cache rien et reste en place (en pause) pour être réutilisée.
+  if (p.engine && p.engine.kind === 'native') { if (S.nativeMini) p.engine.pause(); else p.engine.closeNow(); }
   if (p.addon) {
     // Titre d'addon : l'identifiant de flux de l'épisode est celui de la fiche de l'addon (`videos[].id`), sans TMDB.
     const video = addonVideoOf(p.addon.videos, season, episode);
