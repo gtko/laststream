@@ -11,7 +11,8 @@ vi.mock('@capacitor/core', async (importOriginal) => {
 });
 
 import { playerOptions } from '../src/player/external';
-import { getExternalPlayer, getPreferredExternal } from '../src/data/prefs';
+import { getDesktopEngine, getExternalPlayer, getPreferredExternal } from '../src/data/prefs';
+import { recordPlayerCapabilities, resetShell } from '../src/player/shell';
 
 const NAV = {
   iphone: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1', platform: 'iPhone', maxTouchPoints: 5 },
@@ -32,6 +33,7 @@ const fetchMock = vi.fn(async (url: string) => mockFetch(String(url)));
 const settle = (ms = 100) => new Promise((r) => setTimeout(r, ms));
 const playback = () => document.querySelector('#set-p-playback') as HTMLElement;
 const player = () => playback().querySelector('select[data-set-pref="external-player"]') as HTMLSelectElement;
+const engine = () => playback().querySelector('select[data-set-pref="desktop-engine"]') as HTMLSelectElement | null;
 const preferred = () => playback().querySelector('select[data-set-pref="external-preferred"]') as HTMLSelectElement | null;
 const pick = (el: HTMLSelectElement, value: string) => { el.value = value; el.dispatchEvent(new Event('change', { bubbles: true })); };
 const values = (el: HTMLSelectElement) => Array.from(el.options).map((o) => o.value);
@@ -53,7 +55,8 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  for (const k of ['laststream.externalPlayer', 'laststream.preferredExternal']) localStorage.removeItem(k);
+  for (const k of ['laststream.externalPlayer', 'laststream.preferredExternal', 'laststream.desktopEngine']) localStorage.removeItem(k);
+  resetShell();
   cap.native = false;
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -180,5 +183,41 @@ describe('lecteur externe préféré (iPhone et iPad, « auto »)', () => {
     expect(getPreferredExternal()).toBe('infuse');
     pick(preferred()!, 'builtin'); // « intégré » n’est pas un lecteur externe
     expect(localStorage.getItem('laststream.preferredExternal')).toBe('infuse');
+  });
+});
+
+describe('moteur de lecture de la coque (mpv, VLC intégré)', () => {
+  it('pas de carte quand la coque n’annonce pas libVLC (ancienne coque : mpv seul)', async () => {
+    vi.stubGlobal('chrome', WEBVIEW);
+    await open();
+    expect(engine()).toBeNull();
+    recordPlayerCapabilities({ backends: ['mpv'] });
+    await open();
+    expect(engine()).toBeNull();
+  });
+
+  it('coque avec libVLC : Automatique par défaut, puis le choix est mémorisé', async () => {
+    vi.stubGlobal('chrome', WEBVIEW);
+    recordPlayerCapabilities({ backends: ['mpv', 'libvlc'] });
+    await open();
+    await vi.waitFor(() => expect(engine()).not.toBeNull());
+    expect(labels(engine()!)).toEqual(['Automatique', 'mpv', 'VLC intégré']);
+    expect(engine()!.value).toBe('auto');
+    expect(desc(engine()!)).toContain('Automatique : mpv, puis VLC si la vidéo ne démarre pas.');
+    pick(engine()!, 'libvlc');
+    expect(localStorage.getItem('laststream.desktopEngine')).toBe('libvlc');
+    expect(getDesktopEngine()).toBe('libvlc');
+    await open();
+    await vi.waitFor(() => expect(engine()!.value).toBe('libvlc'));
+    pick(engine()!, 'inconnu');
+    expect(getDesktopEngine()).toBe('libvlc');
+  });
+
+  it('pas de carte hors coque, même si une coque avait annoncé libVLC', async () => {
+    recordPlayerCapabilities({ backends: ['mpv', 'libvlc'] });
+    vi.stubGlobal('navigator', NAV.windowsChrome);
+    await open();
+    await vi.waitFor(() => expect(player()).not.toBeNull());
+    expect(engine()).toBeNull();
   });
 });

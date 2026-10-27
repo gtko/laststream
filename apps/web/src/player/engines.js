@@ -4,7 +4,7 @@
  * Événements : state, ended, error, tracks, ready, buffering. */
 import { audioTrackLabel, langName, trackLang } from './tracks';
 import { nativeAudioTracks, nativeSubtitleTracks } from './native';
-import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast } from './shell';
+import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast, shellHasLibvlc } from './shell';
 import { marginProps, mpvMargins, sameMargins, ZERO_MARGINS } from './mini';
 import { isFull } from './playerState';
 import { PageHole } from './minihole.js';
@@ -259,6 +259,7 @@ export class MpvEngine extends Emitter {
     this.kind = 'mpv';
     this.ipc = ipc;
     this.container = container;
+    this.backendFixed = false; // un player-set-backend a déjà été envoyé : le retour à mpv doit l'être aussi
     this.p = { 'time-pos': 0, duration: 0, pause: false, volume: 100, mute: false, speed: 1, 'paused-for-cache': false, seeking: false, 'demuxer-cache-time': 0, 'track-list': [], aid: null, sid: null };
     this.loaded = false;
     this.version = '';
@@ -362,13 +363,15 @@ export class MpvEngine extends Emitter {
     marginProps(m).forEach(([name, value]) => this.ipc.send('mpv-set-prop', [name, value]));
   }
 
-  async load({ url, startAt }) {
+  async load({ url, startAt, backend = 'mpv' }) {
     this.live = true;
     this.loaded = false;
     this.ipc.send('mpv-command', ['stop']);
     // Pas de transparence ici : elle arrive avec la première image (showVideo).
     // La syntaxe de loadfile dépend de la version de mpv, annoncée juste après l'observation de `mpv-version`.
     if (!this.version) await new Promise((r) => setTimeout(r, 400));
+    // Ordre : stop, moteur, puis props de tampon (elles visent le moteur choisi, pas l'ancien), puis loadfile.
+    this.setBackend(backend);
     // Mémoire tampon (réglage « Mémoire tampon ») : mpv la lit à l'ouverture du fichier, donc elle part avant le loadfile.
     mpvBufferProps(getBufferLevel()).forEach(([name, value]) => this.ipc.send('mpv-set-prop', [name, value]));
     this.ipc.send('mpv-command', ['loadfile', ...loadfileArgs(url, startAt || 0, mpvVersionAtLeast(this.version || '0.0', '0.39'))]);
@@ -376,6 +379,17 @@ export class MpvEngine extends Emitter {
     this.ipc.send('mpv-set-prop', ['secondary-sid', 'no']);
     this.ipc.send('mpv-set-prop', ['pause', false]);
     this.ipc.send('mpv-set-prop', ['mute', 'no']);
+  }
+
+  /**
+   * Moteur de la coque (mpv ou libVLC intégré), envoyé à l'arrêt, avant `loadfile`. Rien tant que la coque n'annonce pas libVLC
+   * (ancienne coque inchangée) ; ensuite seulement si on demande libVLC, ou si un moteur a déjà été fixé (retour à mpv).
+   */
+  setBackend(backend) {
+    if (!shellHasLibvlc()) return;
+    if (backend !== 'libvlc' && !this.backendFixed) return;
+    this.backendFixed = true;
+    this.ipc.send('player-set-backend', { backend });
   }
 
   destroy() {

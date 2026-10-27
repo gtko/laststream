@@ -44,7 +44,7 @@ async function reloadSameLink(p, now) {
   // Avec les deux sous-titres inversés, le principal est celui de mpv en second.
   const primary = s.native ? (s.swapped && s.native2 ? s.secondaryId : s.selectedId) : null;
   const secondary = s.native2 ? (s.swapped ? s.selectedId : s.secondaryId) : null;
-  await eng.load({ url: p.mediaUrl, startAt: p.reopenFrom });
+  await eng.load({ url: p.mediaUrl, startAt: p.reopenFrom, backend: p.mpvBackend });
   if (audio) eng.setAudioTrack(audio.id);
   if (primary != null) eng.setSubtitleTrack(primary);
   const second = secondary != null && eng.supportsSecondary() ? secondary : null;

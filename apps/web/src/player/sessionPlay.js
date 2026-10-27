@@ -12,7 +12,8 @@ import { isOfflineView } from './offlinePlay';
 import { rememberLaunch } from './launchCache';
 import { markBad, sourceKey } from './memory';
 import { NativePlayer, isNativePlayer } from './native';
-import { connectShell } from './shell';
+import { connectShell, shellHasLibvlc } from './shell';
+import { getDesktopEngine } from '../data/prefs';
 import { fetchProbe, hlsMasterUrl, hlsQuery, newSessionId, proxyUrl, SERVER_STORAGE_KEY as SERVER_KEY, serverAlive, serverBase, setShellServerAddress } from './server';
 import { parseProbe } from './tracks';
 import { nextPhase } from './phase';
@@ -105,6 +106,7 @@ async function prepareView(p, cand, signal, local = false, opts = {}) {
     shell: !!shell, native, serverUp: media.up, probe, caps: getCaps(), notWebReady: view.notWebReady,
     name: view.filename || media.url, forceTranscoding: p.forceHls && !direct,
     preferredLang: audioPreference()[0], audioTracksSupported: !!S.ui.video.audioTracks,
+    desktopEngine: cand.shellBackend ? 'libvlc' : getDesktopEngine(), libvlcAvailable: shellHasLibvlc(),
   });
   if (!direct && choice.engine === 'hls') {
     // Démarrage rapide possible : la vidéo passe telle quelle dans le navigateur, seul l'audio demande le transcodage.
@@ -139,7 +141,8 @@ async function prepareWithLocalFallback(p, cand, signal, opts = {}) {
   }
 }
 
-/** `opts.fresh` : la reconnexion redemande le lien au débrideur pour chaque candidat (voir resolveMedia). */
+/** `opts.shellBackend` : relance de cette source avec ce moteur de la coque (bascule automatique vers libVLC).
+ *  `opts.fresh` : la reconnexion redemande le lien au débrideur pour chaque candidat (voir resolveMedia). */
 export async function playView(view, startAt, opts = {}) {
   const p = S.P;
   if (!p) return;
@@ -161,6 +164,7 @@ export async function playView(view, startAt, opts = {}) {
   clearTimeout(p.learnShowTimer);
   clearTimeout(p.learnNativeTimer);
   p.failing = false;
+  p.videoReady = false; // remis à zéro à chaque tentative : tant que la vidéo n'est pas prête (`ready`), un échec peut relancer avec libVLC
   p.localFailed = false;
   p.autoNexting = false;
   p.analyzed = false;
@@ -187,7 +191,7 @@ export async function playView(view, startAt, opts = {}) {
   // Course : la source choisie démarre seule ; passé 6 s, la suivante part en parallèle, la première prête gagne (12 s au plus
   // par candidat, 25 s ou 3 échecs au total).
   const race = raceCandidates({
-    first: { view, direct: false },
+    first: { view, direct: false, shellBackend: opts.shellBackend },
     next: (tried) => nextCandidate(p, tried),
     run: (cand, signal) => prepareWithLocalFallback(p, cand, signal, { fresh: opts.fresh === true }),
     onProgress: ({ attempt, max, slow, candidate }) => {
@@ -237,6 +241,7 @@ async function playLocal(p, view, startAt, stale) {
     const choice = chooseEngine({
       shell: !!sh, native, serverUp: false, probe: null, caps: getCaps(), notWebReady: false, name: view.filename || p.local.url,
       local: { name: view.filename, container: view.container },
+      desktopEngine: getDesktopEngine(), libvlcAvailable: shellHasLibvlc(),
     });
     if (stale()) return;
     if (choice.unsupported) { localFailure('container', choice.unsupported); return; }
@@ -288,8 +293,9 @@ async function startPlan(p, plan, startAt, stale, cand) {
   } else if (choice.engine === 'mpv') {
     if (!S.mpv) { S.mpv = new MpvEngine(shell, S.ui.root); bindEngine(S.mpv); }
     p.engine = S.mpv;
+    p.mpvBackend = choice.backend; // la réouverture (sessionReopen) recharge avec le même moteur de la coque
     S.ui.video.hidden = true;
-    await S.mpv.load({ url: media.url, startAt });
+    await S.mpv.load({ url: media.url, startAt, backend: choice.backend });
     if (miniState.mini && S.lastMiniRect) S.mpv.setMini(S.lastMiniRect);
   } else {
     p.engine = S.html;

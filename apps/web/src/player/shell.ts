@@ -86,6 +86,7 @@ export function createWebviewTransport(win: ShellWindow, timeoutMs = 2500): Prom
   // La coque injecte un relais `qt.webChannelTransport.onmessage` appelé à chaque message : il doit exister.
   if (win.qt?.webChannelTransport && typeof win.qt.webChannelTransport.onmessage !== 'function') win.qt.webChannelTransport.onmessage = () => undefined;
   const bus = emitter();
+  bus.on('player-capabilities', recordPlayerCapabilities);
   return new Promise((resolve) => {
     let done = false;
     const transport: ShellTransport = {
@@ -101,6 +102,7 @@ export function createWebviewTransport(win: ShellWindow, timeoutMs = 2500): Prom
       if (!m) return;
       if (m.kind === 'init') {
         transport.info = m.info;
+        recordInfoCapabilities(m.info);
         if (m.info.streamingServerUrl) setShellServerAddress(m.info.streamingServerUrl);
         finish(true);
       } else {
@@ -136,13 +138,17 @@ async function createQtTransport(win: ShellWindow): Promise<ShellTransport | nul
     });
     if (!t) return null;
     const bus = emitter();
+    bus.on('player-capabilities', recordPlayerCapabilities);
     t.event.connect((ev, args) => {
       let a = args;
       if (typeof a === 'string') { try { a = JSON.parse(a); } catch { /* texte simple */ } }
       bus.emit(ev, a);
     });
     if (typeof t.serverAddress === 'string') setShellServerAddress(t.serverAddress);
-    const transport: ShellTransport = { kind: 'qt', info: {}, send: (event, args) => t.onEvent(event, args), on: bus.on };
+    const rawInfo = (t as { info?: unknown }).info;
+    const info: Record<string, string> = rawInfo && typeof rawInfo === 'object' ? (rawInfo as Record<string, string>) : {};
+    recordInfoCapabilities(info);
+    const transport: ShellTransport = { kind: 'qt', info, send: (event, args) => t.onEvent(event, args), on: bus.on };
     transport.on('server-address', (a) => { if (typeof a === 'string') setShellServerAddress(a); });
     return transport;
   } catch {
@@ -152,6 +158,36 @@ async function createQtTransport(win: ShellWindow): Promise<ShellTransport | nul
 
 let connecting: Promise<ShellTransport | null> | null = null;
 let announced = false;
+
+/** Moteurs de lecture de la coque Windows (mpv, libVLC intégré). */
+export type ShellBackend = 'mpv' | 'libvlc';
+const SHELL_BACKENDS: readonly ShellBackend[] = ['mpv', 'libvlc'];
+/** Moteurs annoncés par la coque (`player-capabilities`) ; null tant qu'elle n'a rien annoncé (ancienne coque : mpv seul). */
+let backends: ShellBackend[] | null = null;
+
+/** Enregistre `{ backends: ["mpv", "libvlc"] }` ; une charge invalide ne change rien, les moteurs inconnus sont ignorés. */
+export function recordPlayerCapabilities(payload: unknown): void {
+  const list = (payload as { backends?: unknown } | null | undefined)?.backends;
+  if (!Array.isArray(list)) return;
+  backends = SHELL_BACKENDS.filter((b) => list.includes(b));
+}
+
+/**
+ * Capacités aussi annoncées dans la réponse `init` : propriété `playerBackends`, une chaîne contenant un tableau JSON
+ * (`["mpv","libvlc"]`). Même validation que `player-capabilities` ; une chaîne illisible ne change rien.
+ */
+export function recordInfoCapabilities(info: Record<string, unknown> | null | undefined): void {
+  const raw = info?.playerBackends;
+  if (typeof raw !== 'string') return;
+  let list: unknown;
+  try { list = JSON.parse(raw); } catch { return; }
+  recordPlayerCapabilities({ backends: list });
+}
+
+/** La coque sait lire avec libVLC intégré. Faux tant que rien n'est annoncé : l'ancienne coque n'est pas sollicitée. */
+export function shellHasLibvlc(): boolean {
+  return backends?.includes('libvlc') ?? false;
+}
 
 /** Se connecte à la coque ; null hors coque ou si la connexion échoue (repli : lecture dans le navigateur). */
 export function connectShell(win: ShellWindow = asShellWindow()): Promise<ShellTransport | null> {
@@ -164,6 +200,7 @@ export function connectShell(win: ShellWindow = asShellWindow()): Promise<ShellT
 export function resetShell(): void {
   connecting = null;
   announced = false;
+  backends = null;
 }
 
 // ---------- Événements envoyés à la coque ----------

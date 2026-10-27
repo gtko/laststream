@@ -290,12 +290,13 @@ describe('interface portée', () => {
     document.body.click();
     expect(JSON.parse(localStorage.getItem('laststream.follows')!)[0]).toMatchObject({ id: 100, type: 'movie' });
     // Pas encore vu : la note est désactivée.
-    expect(detail.querySelector('#f-rate button[disabled]')).not.toBeNull();
+    expect(detail.querySelector('#f-rate .stars.is-locked')).not.toBeNull();
+    expect(detail.querySelector('#f-rate [data-rate]')).toBeNull();
     menuItem('seen').click();
     await settle(50);
     expect(menuItem('seen').textContent).toBe('Marquer comme non vu');
     document.body.click();
-    expect(detail.querySelector('#f-rate .stars')).not.toBeNull();
+    expect(detail.querySelector('#f-rate .stars:not(.is-locked)')).not.toBeNull();
     expect(document.querySelector('.rate-pop')).not.toBeNull(); // « Tu as aimé ? »
     (detail.querySelector('#f-rate [data-rate="4.5"]') as HTMLElement).click();
     expect(JSON.parse(localStorage.getItem('laststream.ratings')!)[0]).toMatchObject({ id: 100, rating: 4.5 });
@@ -394,6 +395,25 @@ describe('interface portée', () => {
     await settle(50);
   });
 
+  it('fiche : reprise sous l’action principale, mise à jour quand la progression change (LAST-500)', async () => {
+    const { userStore } = await import('../src/data/userStore');
+    const { updatePlayLabel } = await import('../src/ui/fiche.js');
+    const { state } = await import('../src/ui/state.js');
+    userStore.setProgress({ key: 'movie:100', type: 'movie', id: 100, title: 'Film', poster: '', position: 1200, duration: 6000 });
+    location.hash = '#/movie/100';
+    await settle(300);
+    const resume = () => document.querySelector('#detail .f-actions .f-resume');
+    expect(resume()!.textContent).toMatch(/^reste 1 h 20/);
+    userStore.setProgress({ key: 'movie:100', type: 'movie', id: 100, title: 'Film', poster: '', position: 5400, duration: 6000 });
+    updatePlayLabel((state as any).model);
+    expect(resume()!.textContent).toBe('reste 10 min');
+    userStore.setProgress({ key: 'movie:100', type: 'movie', id: 100, title: 'Film', poster: '', position: 6000, duration: 6000, finished: true });
+    updatePlayLabel((state as any).model);
+    expect(resume()).toBeNull();
+    location.hash = '#/';
+    await settle(50);
+  });
+
   it('fiche : les actions secondaires sont rangées dans le menu « … »', async () => {
     location.hash = '#/movie/100';
     await settle(300);
@@ -472,6 +492,9 @@ describe('interface portée', () => {
     // Le « Suivre » est la pastille principale : pas de cloche en double.
     expect(d.querySelectorAll('.f-actions [data-follow="movie:505"]')).toHaveLength(1);
     expect(d.querySelector('.f-actions .btn-pill.is-cinema')).not.toBeNull();
+    // Au cinéma : ni bouton de téléchargement ni note (LAST-500).
+    expect(d.querySelector('.f-actions .dl-wrap')).toBeNull();
+    expect(d.querySelector('#f-rate')).toBeNull();
     expect(d.querySelector('.f-release')!.textContent).toMatch(/Au cinéma depuis le/);
     const be = d.querySelector('.f-actions [data-follow="movie:505"]') as HTMLElement;
     expect(be.textContent).toBe('Me prévenir');
