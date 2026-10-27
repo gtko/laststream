@@ -202,7 +202,7 @@ export interface FolderWriteOptions {
  * Premier nom libre du dossier : `name`, puis « nom (2).ext »… Un fichier déjà là n'est jamais écrasé ni supprimé.
  * Seule l'absence (`NotFoundError`) libère un nom ; toute autre réponse (dossier du même nom, accès refusé) le compte pris.
  */
-export async function freeFileName(folder: FolderHandle, name: string): Promise<string> {
+async function freeFileName(folder: FolderHandle, name: string): Promise<string> {
   const dot = name.lastIndexOf('.');
   const base = dot > 0 ? name.slice(0, dot) : name;
   const ext = dot > 0 ? name.slice(dot) : '';
@@ -338,8 +338,4 @@ export function browserDownload(url: string, name: string, doc: Document = docum
   doc.body.appendChild(a);
   a.click();
   a.remove();
-}
-
-export function resetWebSaveForTests(): void {
-  cached = undefined;
 }
