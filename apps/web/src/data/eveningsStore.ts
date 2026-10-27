@@ -181,3 +181,32 @@ export async function answerEvening(id: string, response: 'yes' | 'maybe' | 'no'
 export function putEvening(e: Evening): void {
   if (has(e.id)) applyEvening(e);
 }
+
+/** La soirée `id` telle que les listes la tiennent (première portée où elle figure), ou `undefined`. */
+export function findEvening(id: string): Evening | undefined {
+  for (const scope of SCOPES) {
+    const e = lists[scope].items.find((x) => x.id === id);
+    if (e) return e;
+  }
+  return undefined;
+}
+
+/**
+ * Exécute une écriture (création, modification, annulation…) puis relit ce qu'elle a touché : la soirée `id`, ou toutes les listes
+ * lues si `id` manque (série, création). Rend faux si le profil a changé pendant l'appel : l'appelant n'écrit alors plus rien.
+ * Une erreur est relancée à l'appelant ; avec `id`, la soirée est relue quand même (une modification peut être partielle).
+ */
+export async function commitEvening(run: () => Promise<unknown>, id?: string): Promise<boolean> {
+  if (!eveningsAvailable()) return false;
+  const g = gen;
+  try {
+    await run();
+  } catch (err) {
+    if (id && g === gen) void refreshEvening(id);
+    throw err;
+  }
+  if (g !== gen) return false;
+  if (id) await refreshEvening(id);
+  else reloadEvenings();
+  return g === gen;
+}

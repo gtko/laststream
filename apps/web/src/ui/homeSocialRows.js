@@ -8,6 +8,7 @@ import { listParties } from '../data/socialApi';
 import { userStore } from '../data/userStore';
 import { connectHomeEvenings, loadHomeEvenings } from '../data/eveningsHome';
 import { subscribeEvenings } from '../data/eveningsStore';
+import { openEveningForm } from './eveningForm.js';
 import { friendName, eveningDay, eveningTime, hasEveningJoin, joinEvening, upcomingEvenings } from '../data/homeSocial';
 import { toast } from './dom.js';
 import { socialAvailable } from './socialButton.js';
@@ -80,7 +81,7 @@ function eveningCard(e, friends) {
 
 const proposeCard = () => '<article class="hsr-card hsr-card-add"><h3 class="hsr-t">Rien de prévu ?</h3>' +
   '<p class="hsr-sub">Choisis un titre, invite tes amis : tout le monde lit au même moment, avec sa propre source.</p>' +
-  '<a class="btn btn-ghost hsr-btn" href="#/ensemble" data-go>Proposer une soirée</a></article>';
+  '<button type="button" class="btn btn-ghost hsr-btn" data-evening-new>Proposer une soirée</button></article>';
 
 export function tonightHTML(rooms, evenings, friends) {
   if (!rooms.length && !evenings.length) return '';
@@ -183,6 +184,13 @@ export async function paintHomeSocial() {
 }
 
 document.addEventListener('click', (e) => {
+  const plan = e.target instanceof Element ? e.target.closest('[data-evening-new]') : null;
+  if (plan) {
+    e.preventDefault();
+    // Hors compte ou profil enfant : la page Ensemble explique pourquoi les soirées ne sont pas disponibles.
+    if (!openEveningForm({ opener: plan })) location.hash = '#/ensemble';
+    return;
+  }
   const b = e.target instanceof Element ? e.target.closest('[data-hsr-evening]') : null;
   if (!b) return;
   e.preventDefault();

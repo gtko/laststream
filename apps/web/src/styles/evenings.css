@@ -46,3 +46,80 @@
 @media (prefers-reduced-motion: reduce) {
   .ev-btn { transition: none; }
 }
+
+/* Actions de gestion d'une carte (modifier, annuler, quitter). */
+.ev-manage { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 2px; }
+.ev-link { min-height: 44px; padding: 0 2px; font: inherit; font-size: 13px; font-weight: 700; color: var(--soft); background: none; border: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.ev-link:hover { color: var(--text); }
+.ev-link.is-danger { color: var(--danger-text); }
+.ev-link[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
+.ev-link:focus-visible, .sh :focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
+
+/* Feuille : basse sur mobile, modale centrée dès 768 px. */
+.sh-veil { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: flex-end; justify-content: center; background: color-mix(in srgb, var(--bg) 72%, transparent); }
+.sh { box-sizing: border-box; width: 100%; max-height: 92dvh; overflow-y: auto; overscroll-behavior: contain; padding: 10px 20px calc(20px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 14px; color: var(--text); background: var(--surface); border-top: 1px solid var(--line-2); border-radius: 22px 22px 0 0; animation: sh-up 0.22s ease-out; }
+.sh:focus { outline: none; }
+.sh-grab { align-self: center; width: 40px; height: 4px; border-radius: 4px; background: var(--line-2); }
+.sh-title { margin: 0; font-family: var(--ff-title); font-size: 20px; font-weight: 700; }
+@keyframes sh-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (min-width: 768px) {
+  .sh-veil { align-items: center; }
+  .sh { width: min(520px, calc(100vw - 48px)); padding: 24px; border: 1px solid var(--line-2); border-radius: 22px; animation-name: sh-pop; }
+  .sh-grab { display: none; }
+}
+@keyframes sh-pop { from { transform: scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .sh { animation: none; }
+}
+
+/* Formulaire de soirée. */
+.evf { display: flex; flex-direction: column; gap: 14px; margin: 0; }
+.evf-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 0; }
+.evf-row { display: flex; gap: 12px; }
+.evf-lb { font-size: 13px; font-weight: 700; color: var(--soft); padding: 0; }
+.evf-input { box-sizing: border-box; width: 100%; min-height: 44px; padding: 0 12px; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--input-border); border-radius: 12px; color-scheme: dark; }
+.evf-input:focus-visible { outline: var(--focus-ring-field); outline-offset: 1px; }
+.evf-input[aria-invalid="true"] { border-color: var(--danger); }
+.evf-hint { margin: -8px 0 0; font-size: 12px; color: var(--dim); }
+.evf-err { margin: 0; font-size: 13px; line-height: 1.4; color: var(--danger-text); }
+.evf-err[hidden], .evf-field .evf-err:empty { display: none; }
+.evf-server { padding: 10px 12px; border-radius: 12px; background: var(--danger-bg); border: 1px solid color-mix(in srgb, var(--danger) 55%, transparent); }
+.evf-scope, .evf-guests { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.evf-scope label { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; }
+.evf-scope input { width: 20px; height: 20px; accent-color: var(--accent); }
+.evf-count { margin-left: 6px; font-weight: 600; color: var(--dim); font-variant-numeric: tabular-nums; }
+.evf-friends { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.evf-friends li[hidden] { display: none; }
+.evf-friend { position: relative; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 4px 8px; border-radius: 12px; cursor: pointer; }
+.evf-friend:hover { background: var(--surface-2); }
+.evf-friend:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: -2px; }
+.evf-fn { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: 15px; font-weight: 600; }
+.evf-friend input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.evf-chk { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; border: 2px solid var(--input-border); box-sizing: border-box; }
+.evf-friend input:checked ~ .evf-chk { background: var(--accent); border-color: var(--accent); }
+.evf-friend input:checked ~ .evf-chk::after { content: ''; width: 5px; height: 10px; margin-top: -2px; border: solid var(--on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.evf-friend input:disabled ~ .evf-chk, .evf-friend input:disabled ~ .evf-fn { opacity: 0.45; }
+.evf-empty { margin: 0; font-size: 14px; line-height: 1.5; color: var(--dim); }
+.evf-foot { display: flex; justify-content: flex-end; gap: 10px; }
+.evf-btn { min-height: 44px; min-width: 44px; padding-inline: 18px; }
+.evf-btn[disabled] { opacity: 0.6; cursor: progress; }
+.evc-text { margin: 0; font-size: 15px; line-height: 1.5; color: var(--soft); overflow-wrap: anywhere; }
+.evc-danger { color: var(--text); background: var(--danger-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 60%, transparent); }
+@media (max-width: 480px) {
+  .evf-row { flex-direction: column; }
+  .evf-foot { flex-direction: column-reverse; }
+  .evf-foot .evf-btn { width: 100%; }
+}
+
+/* Feuille « Regarder avec… ». */
+.ww-lead { margin: 0; font-size: 14px; color: var(--dim); }
+.ww-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ww-row { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+.ww-nm { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.ww-nm b { font-size: 15px; overflow-wrap: anywhere; }
+.ww-nm small { font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+.ww-btn { min-height: 44px; min-width: 44px; padding-inline: 16px; font-size: 14px; }
+.ww-empty { margin: 0; font-size: 14px; line-height: 1.5; color: var(--dim); }
+.ww-empty a { color: var(--text); text-decoration: underline; }
+.ww-plan { min-height: 48px; width: 100%; }
+.ww-link { align-self: center; min-height: 44px; padding: 0 8px; font: inherit; font-size: 13px; font-weight: 700; color: var(--soft); background: none; border: 0; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }

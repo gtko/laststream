@@ -99,7 +99,7 @@ describe('sections sociales de l’accueil', () => {
     expect(join).toHaveLength(1);
     expect(join[0].getAttribute('href')).toBe('#/party/r%2F1');
     expect(slot.textContent).toContain('En direct · 2 spectateurs');
-    expect(slot.querySelector('a[href="#/ensemble"].hsr-btn')?.textContent).toBe('Proposer une soirée');
+    expect(slot.querySelector('button[data-evening-new].hsr-btn')?.textContent).toBe('Proposer une soirée');
   });
 
   it('ami en sourdine : son salon n’apparaît pas', async () => {

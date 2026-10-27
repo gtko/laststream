@@ -152,7 +152,7 @@ describe('cartes', () => {
     expect(cancelled).toContain('Annulée');
     expect(cancelled).not.toContain('data-evening-act');
     const hostAt = (dt: number, extra = {}) => card.eveningCardHTML(ev({ isHost: true, myResponse: undefined, startsAt: now + dt, ...extra }), { now });
-    expect(hostAt(20 * 60_000)).not.toContain('data-evening-act');
+    expect(hostAt(20 * 60_000)).not.toContain(':open"');
     expect(hostAt(10 * 60_000)).toContain('data-evening-act="e1:open"');
     expect(hostAt(-HOUR)).toContain(':open"');
     expect(hostAt(-3 * HOUR)).not.toContain(':open"');

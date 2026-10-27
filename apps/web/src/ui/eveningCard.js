@@ -60,6 +60,17 @@ function guestsHTML(e) {
   return '<ul class="ev-guests" aria-label="Invités">' + shown + (more > 0 ? '<li class="ev-more">+' + more + '<span class="sr-only"> autres invités</span></li>' : '') + '</ul>';
 }
 
+/** Modifier / annuler / arrêter (hôte) ou quitter (invité) : seulement tant que la soirée est maintenue et n'a pas commencé. */
+function manageHTML(e, id, now, dis) {
+  if (e.status !== 'scheduled' || now >= e.startsAt) return '';
+  const series = !!(e.recurrence || e.seriesId);
+  const btn = (act, label, extra = '') => '<button type="button" class="ev-link' + extra + '" data-evening-act="' + id + ':' + act + '"' + dis + '>' + label + '</button>';
+  let out = '';
+  if (e.isHost) out = btn('edit', 'Modifier') + (series ? btn('stop', 'Arrêter la série', ' is-danger') : '') + btn('cancel', series ? 'Annuler cette soirée' : 'Annuler la soirée', ' is-danger');
+  else if (series || e.myResponse === 'yes' || e.myResponse === 'maybe') out = btn('leave', series ? 'Quitter…' : 'Quitter la soirée', ' is-danger');
+  return out ? '<div class="ev-manage">' + out + '</div>' : '';
+}
+
 const summary = (e) => {
   const list = Array.isArray(e.guests) ? e.guests : [];
   const yes = list.filter((g) => g.response === 'yes').length;
@@ -91,8 +102,9 @@ export function eveningCardHTML(e, o = {}) {
     acts += '<button type="button" class="btn btn-primary ev-btn" data-evening-act="' + id + ':open"' + dis + '>Ouvrir le salon</button>';
   }
   if (acts) acts = '<div class="ev-acts">' + acts + '</div>';
+  const manage = manageHTML(e, id, now, dis);
   return '<article class="ev-card' + (invite ? ' is-invite' : '') + (cancelled ? ' is-cancelled' : '') + '" data-evening="' + id + '" aria-labelledby="ev-t-' + id + '">' +
     '<div class="ev-when"><span class="ev-day">' + esc(dayLabel(e.startsAt, now)) + '</span><b class="ev-time">' + esc(timeLabel(e.startsAt)) + '</b></div>' +
     '<div class="ev-main">' + (chips ? '<div class="ev-chips">' + chips + '</div>' : '') +
-    '<h3 class="ev-title" id="ev-t-' + id + '">' + esc(e.title) + '</h3><p class="ev-sub">' + summary(e) + '</p>' + guestsHTML(e) + '</div>' + acts + '</article>';
+    '<h3 class="ev-title" id="ev-t-' + id + '">' + esc(e.title) + '</h3><p class="ev-sub">' + summary(e) + '</p>' + guestsHTML(e) + manage + '</div>' + acts + '</article>';
 }

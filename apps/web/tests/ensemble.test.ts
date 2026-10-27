@@ -161,7 +161,7 @@ describe('page Ensemble', () => {
     const d = detail();
     expect(d.querySelector('h1')!.textContent).toBe('Ensemble');
     expect(d.querySelector('.ens-sub')!.textContent).toContain('à plusieurs');
-    expect(Array.from(d.querySelectorAll('.ens-acts .btn')).map((b) => b.textContent)).toEqual(['Amis', 'Rejoindre avec un code', 'Créer un salon']);
+    expect(Array.from(d.querySelectorAll('.ens-acts .btn')).map((b) => b.textContent)).toEqual(['Amis', 'Rejoindre avec un code', 'Planifier une soirée', 'Créer un salon']);
     expect(d.querySelector('.ens-acts a[href="#/friends"]')).not.toBeNull();
     expect(Array.from(d.querySelectorAll('.ens-tabs a')).map((a) => a.textContent)).toEqual(['Maintenant', 'Ce soir', 'À venir', 'Salons publics', 'Passées']);
     expect(Array.from(d.querySelectorAll('.ens-tabs a[aria-current="page"]')).map((a) => a.textContent)).toEqual(['Maintenant']);

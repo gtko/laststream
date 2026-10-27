@@ -21,6 +21,7 @@ import { go, goBack, openItem, route } from './router.js';
 import { buildSvcRows } from './services.js';
 import { openSources, playFrom } from './sources-ui.js';
 import { openPartyDialog } from './partylaunch.js';
+import { openWatchWith } from './watchWith.js';
 import { openShareDialog } from './socialHooks.js';
 import { socialAvailable } from './socialButton.js';
 import { state } from './state.js';
@@ -192,6 +193,8 @@ document.addEventListener('click', (e) => {
     once('sources', srcOpen, () => { openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, srcOpen); }, { el: srcOpen, cooldown: PLAY_COOLDOWN_MS });
     return;
   }
+  const wwith = t.closest('[data-watch-with]');
+  if (wwith) { e.preventDefault(); if (!openWatchWith(wwith, state.model)) openPartyDialog(wwith); return; }
   const wparty = t.closest('[data-wparty]');
   if (wparty) { e.preventDefault(); openPartyDialog(wparty); return; }
   const play = t.closest('[data-play]');

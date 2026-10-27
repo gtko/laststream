@@ -8,6 +8,7 @@ import { parseJoinHash } from '../party/join';
 import { detailEl } from './dom.js';
 import { mountEnsembleSide } from './ensembleSide.js';
 import { ENSEMBLE_TABS, ensembleHash, ensembleTabOf } from './ensembleTabs.js';
+import { openEveningForm } from './eveningForm.js';
 import { EVENING_TABS, mountEveningsPane } from './eveningsPane.js';
 import { teardownFiche } from './fiche.js';
 import { brand } from './fragments.js';
@@ -56,6 +57,7 @@ const headHTML = () =>
   '<header class="ens-head"><div class="ens-head-t"><h1 class="ens-title" id="ens-title" tabindex="-1">Ensemble</h1><p class="ens-sub">' + SUBTITLE + '</p></div>' +
   '<div class="ens-acts"><a class="btn btn-ghost" href="#/friends" data-go>' + ICON.users + 'Amis' + ensFriendsBadgeHTML() + '</a>' +
   '<button type="button" class="btn btn-ghost" data-ens-join aria-expanded="false" aria-controls="ens-join">Rejoindre avec un code</button>' +
+  '<button type="button" class="btn btn-ghost" data-ens-plan>' + ICON.calendar + 'Planifier une soirée</button>' +
   '<button type="button" class="btn btn-primary" data-ens-create>' + ICON.plus + 'Créer un salon</button></div></header>' +
   '<form class="ens-join" id="ens-join" data-ens-join-form hidden novalidate>' +
   '<label class="sr-only" for="ens-join-input">Code ou lien d’invitation du salon</label>' +
@@ -94,6 +96,8 @@ detailEl.addEventListener('click', (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t) return;
   if (t.closest('[data-ens-create]')) { e.preventDefault(); openCreateParty(); return; }
+  const plan = t.closest('[data-ens-plan]');
+  if (plan) { e.preventDefault(); openEveningForm({ opener: plan }); return; }
   const join = t.closest('[data-ens-join]');
   if (join) {
     e.preventDefault();

@@ -2,11 +2,13 @@
  * des soirées (eveningsStore.ts) et tenues à jour par les trames temps réel. Les réponses (Je viens / Peut-être / Refuser) et
  * l'ouverture du salon passent par des boutons `data-evening-act="<id>:<action>"`. Un compteur de montage protège toute réponse
  * asynchrone : changer d'onglet, de page ou de profil rend caduque une action en vol. */
-import { answerEvening, getEveningList, loadEvenings, putEvening, subscribeEvenings } from '../data/eveningsStore';
+import { answerEvening, findEvening, getEveningList, loadEvenings, putEvening, subscribeEvenings } from '../data/eveningsStore';
 import { openEvening } from '../data/socialV3Api';
 import { UserApiError } from '../data/userApi';
 import { detailEl, toast } from './dom.js';
+import { CONFIRM_KINDS, openEveningAction } from './eveningActions.js';
 import { eveningCardHTML } from './eveningCard.js';
+import { openEveningForm } from './eveningForm.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
 import { esc, rewriteKeepingFocus } from './util.js';
@@ -170,6 +172,11 @@ detailEl.addEventListener('click', (e) => {
     if (!busy.has(id)) answer(id, act, mountGen);
   } else if (act === 'open') {
     if (!busy.has(id)) openRoom(id, mountGen);
+  } else if (act === 'edit' || CONFIRM_KINDS.includes(act)) {
+    const ev = findEvening(id);
+    if (!ev) return;
+    if (act === 'edit') openEveningForm({ evening: ev, opener: btn });
+    else openEveningAction(act, ev, btn);
   } else if (act === 'more') {
     void loadEvenings(id, { more: true });
   } else if (act === 'retry') {
