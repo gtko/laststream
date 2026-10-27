@@ -23,20 +23,25 @@ export interface Evening {
   host?: string;
 }
 
+type EveningJoin = (id: string) => Promise<boolean> | boolean;
+
 let eveningSource: () => readonly Evening[] = () => [];
-let eveningJoin: (id: string) => Promise<boolean> | boolean = () => false;
+let eveningJoin: EveningJoin | null = null;
 
 /** Branche la source des soirées proposées (vide tant que le serveur n'en sert pas). */
 export function setEveningSource(fn: () => readonly Evening[]): void {
   eveningSource = fn;
 }
 
-/** Branche l'action « Je viens » ; elle rend vrai si l'inscription a réussi. */
-export function setEveningJoin(fn: (id: string) => Promise<boolean> | boolean): void {
+/** Branche l'action « Je viens » ; elle rend vrai si l'inscription a réussi. `null` la débranche. */
+export function setEveningJoin(fn: EveningJoin | null): void {
   eveningJoin = fn;
 }
 
-export const joinEvening = (id: string): Promise<boolean> => Promise.resolve(eveningJoin(id));
+/** Vrai si une action « Je viens » est branchée : sans elle, aucun bouton d'inscription n'est proposé. */
+export const hasEveningJoin = (): boolean => eveningJoin !== null;
+
+export const joinEvening = (id: string): Promise<boolean> => Promise.resolve(eveningJoin ? eveningJoin(id) : false);
 
 /** Soirées à venir (pas encore commencées), la plus proche d'abord. */
 export const upcomingEvenings = (now: number = Date.now()): Evening[] =>

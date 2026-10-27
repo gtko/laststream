@@ -17,6 +17,8 @@ const TMDB_MAX = 999_999_999;
 const answers = new Map();
 let inflight = false;
 let failedAt = 0;
+/** Génération : incrémentée à chaque montage (profil ou session changé) ; la réponse d'une génération passée est ignorée. */
+let gen = 0;
 
 const kindOf = (key) => (key.startsWith('tv:') ? 'series' : 'movie');
 const idOf = (key) => Number(key.slice(key.indexOf(':') + 1));
@@ -79,9 +81,11 @@ export async function loadContinueSocial() {
     .filter((k) => k && validId(k) && !(answers.has(k) && now - answers.get(k).at < TTL_MS));
   if (!keys.length) return;
   inflight = true;
+  const mine = gen;
   let ok = false;
   try {
     const res = await homeProgress(keys.map((k) => ({ type: kindOf(k), tmdbId: idOf(k) })));
+    if (mine !== gen) return; // profil précédent : sa réponse ne doit rien écrire (inflight est déjà libéré par le montage suivant)
     const at = Date.now();
     keys.forEach((k) => answers.set(k, { at, items: [] }));
     for (const it of res.items || []) {
@@ -89,12 +93,14 @@ export async function loadContinueSocial() {
       if (got) got.items.push(it);
     }
     ok = true;
-  } catch (_) { failedAt = Date.now(); } finally { inflight = false; }
+  } catch (_) { if (mine === gen) failedAt = Date.now(); } finally { if (mine === gen) inflight = false; }
   if (ok) await loadContinueSocial(); // cartes apparues pendant l'appel ; chaque succès répond à toutes les clés demandées, donc sans boucle
 }
 
-/** Ouverture de l'accueil : oublie les réponses d'une session ou d'un profil précédent, puis charge. */
+/** Ouverture de l'accueil : oublie les réponses, l'appel en cours et l'échec d'un profil ou d'une session précédents, puis charge. */
 export function mountContinueSocial() {
+  gen += 1;
+  inflight = false;
   answers.clear();
   failedAt = 0;
   return loadContinueSocial();

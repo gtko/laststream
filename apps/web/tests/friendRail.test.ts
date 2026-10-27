@@ -29,6 +29,7 @@ let railHTML: (s: any) => string;
 let heroSocialHTML: (it: any) => string;
 let heroEveningHTML: (it: any) => string;
 let watchHeroSocial: (items: () => any[]) => void;
+let paintHeroSocial: (items: any[], s?: any) => void;
 let viewA: (d: any) => string;
 
 beforeAll(async () => {
@@ -36,7 +37,7 @@ beforeAll(async () => {
   document.body.innerHTML = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[\s\S]*?<\/script>/g, '');
   ({ railSlotHTML, mountRail } = await import('../src/ui/friendRailSlot.js'));
   ({ railHTML } = await import('../src/ui/friendRail.js'));
-  ({ heroSocialHTML, heroEveningHTML, watchHeroSocial } = await import('../src/ui/heroSocial.js'));
+  ({ heroSocialHTML, heroEveningHTML, watchHeroSocial, paintHeroSocial } = await import('../src/ui/heroSocial.js'));
   ({ viewA } = await import('../src/ui/home.js'));
 });
 
@@ -72,7 +73,7 @@ beforeEach(() => {
 afterEach(() => {
   setAccount(null);
   setEveningSource(() => []);
-  setEveningJoin(() => false);
+  setEveningJoin(null);
   document.body.innerHTML = '';
 });
 
@@ -158,6 +159,12 @@ describe('rail d’amis', () => {
     expect(kid).not.toContain('has-rail');
     expect(kid).not.toContain('friend-rail');
   });
+
+  it('accueil : le rail vient après l’en-tête, donc avant les rangées dans l’ordre de tabulation', () => {
+    const adult = viewA({ heroes: [], rows: { start: [], top: [] } });
+    expect(adult.indexOf('id="friend-rail"')).toBeGreaterThan(adult.indexOf('class="topbar"'));
+    expect(adult.indexOf('id="friend-rail"')).toBeLessThan(adult.indexOf('class="rows"'));
+  });
 });
 
 describe('ligne sociale du héros', () => {
@@ -214,6 +221,28 @@ describe('ligne sociale du héros', () => {
     expect(heroEveningHTML(dune)).toBe('');
     setAccount(null);
     expect(heroSocialHTML(dune)).toBe('');
+  });
+
+  it('repeint la ligne sans la réécrire quand rien n’a changé (le HTML relu ne ressemble pas au HTML écrit)', () => {
+    h.st.friends = [friend('p1', "Léa d'Or")];
+    h.st.activity = [act('p1')];
+    document.body.innerHTML = '<div id="app">' + heroSocialHTML(dune) + '</div>';
+    paintHeroSocial([dune]);
+    const first = document.querySelector('.hero-social')!.firstChild;
+    paintHeroSocial([dune]);
+    paintHeroSocial([dune]);
+    expect(document.querySelector('.hero-social')!.firstChild).toBe(first);
+    expect(line()).toContain("Léa d'Or veut le voir");
+  });
+
+  it('« Je viens » absent tant qu’aucune action n’est branchée, même avec une soirée proposée', () => {
+    h.st.friends = [friend('p1', 'Léa')];
+    h.st.activity = [act('p1')];
+    setEveningSource(() => [{ id: 'e1', type: 'movie', tmdbId: 438631, startsAt: Date.now() + 3_600_000 }]);
+    setEveningJoin(null);
+    document.body.innerHTML = '<div id="app">' + heroSocialHTML(dune) + heroEveningHTML(dune) + '</div>';
+    expect(document.querySelector('[data-hero-evening]')).toBeNull();
+    expect(heroEveningHTML(dune)).toBe('<span class="hs-evening" data-hero-evening-slot="movie:438631"></span>');
   });
 
   it('suit le store en direct : la ligne apparaît quand un ami ajoute le titre', () => {

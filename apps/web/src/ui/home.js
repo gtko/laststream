@@ -285,7 +285,8 @@ export function headerA() {
 
 export function viewA(d) {
   const r = d.rows;
-  return '<main id="main" class="page-a' + (socialEnabled() ? ' has-rail' : '') + '">' + headerA() + stripSlotHTML() + homeSocialMobileSlotHTML() + heroCarousel(d.heroes) +
+  // Le rail (fixe à droite) est posé juste après l'en-tête : la tabulation l'atteint avant les rangées.
+  return '<main id="main" class="page-a' + (socialEnabled() ? ' has-rail' : '') + '">' + headerA() + railSlotHTML() + stripSlotHTML() + homeSocialMobileSlotHTML() + heroCarousel(d.heroes) +
     '<div class="rows">' +
     '<div id="cont-slot">' + continueSection() + '</div>' +
     homeSocialSlotHTML() +
@@ -301,7 +302,7 @@ export function viewA(d) {
     '<div id="svc-slot"></div>' +
     '<div id="col-slot"></div>' +
     '<div id="lib-slot"></div>' +
-    '</div>' + railSlotHTML() + '</main>';
+    '</div></main>';
 }
 
 /**

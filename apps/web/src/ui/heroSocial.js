@@ -2,7 +2,7 @@
  * Données : data/homeSocial.ts (état du store social, source de soirées isolée). Absente sans ami concerné, sur un profil enfant
  * et hors compte connecté. Module léger : pas d'illustration d'avatar ici (initiales sur la couleur du profil). */
 import { getState, subscribe } from '../data/socialStore';
-import { eveningFor, eveningTime, friendName, joinEvening, wantNames, wantVerb, wantersOf } from '../data/homeSocial';
+import { eveningFor, eveningTime, friendName, hasEveningJoin, joinEvening, wantNames, wantVerb, wantersOf } from '../data/homeSocial';
 import { toast } from './dom.js';
 import { ICON } from './icons.js';
 import { socialAvailable } from './socialButton.js';
@@ -35,9 +35,9 @@ export function heroSocialInner(it, s = getState(), now = Date.now()) {
     '<span class="hs-text">' + names + ' ' + wantVerb(friends.length) + (ev ? ' — soirée proposée à ' + eveningTime(ev.startsAt) : '') + '</span>';
 }
 
-/** Bouton « Je viens à 21 h » : seulement quand une soirée est proposée sur ce titre. */
+/** Bouton « Je viens à 21 h » : seulement quand une soirée est proposée sur ce titre et qu'une action d'inscription est branchée. */
 export function heroEveningInner(it, _s, now = Date.now()) {
-  const ref = socialAvailable() ? refOf(it) : null;
+  const ref = socialAvailable() && hasEveningJoin() ? refOf(it) : null;
   const ev = ref ? eveningFor(ref.type, ref.tmdbId, now) : null;
   if (!ev) return '';
   return '<button type="button" class="btn btn-ghost" data-hero-evening="' + esc(ev.id) + '">' + ICON.users + '<span>Je viens à ' + eveningTime(ev.startsAt) + '</span></button>';
@@ -53,6 +53,9 @@ export function heroEveningHTML(it) {
   return '<span class="hs-evening" data-hero-evening-slot="' + esc(it.key) + '">' + heroEveningInner(it) + '</span>';
 }
 
+/** Dernier HTML écrit dans chaque conteneur : le DOM relu ne reprend pas toujours le HTML écrit (apostrophes, guillemets), donc on compare ici. */
+const written = new WeakMap();
+
 /** Redessine la ligne et le bouton de chaque diapositive affichée si l'état a changé (rien ne bouge sinon). `items` : titres du héros. */
 export function paintHeroSocial(items, s = getState()) {
   const byKey = new Map(items.map((it) => [it.key, it]));
@@ -60,8 +63,10 @@ export function paintHeroSocial(items, s = getState()) {
     const it = byKey.get(el.dataset[attr]);
     if (!it) return;
     const html = inner(it, s);
+    if (written.get(el) === html) return;
+    written.set(el, html);
     // eslint-disable-next-line no-restricted-syntax -- noms échappés par esc (heroSocialInner, heroEveningInner)
-    if (el.innerHTML !== html) el.innerHTML = html;
+    el.innerHTML = html;
   });
   fill('#app [data-hero-social]', 'heroSocial', heroSocialInner);
   fill('#app [data-hero-evening-slot]', 'heroEveningSlot', heroEveningInner);

@@ -61,7 +61,7 @@ beforeEach(() => {
 afterEach(() => {
   setAccount(null);
   setEveningSource(() => []);
-  setEveningJoin(() => false);
+  setEveningJoin(null);
   document.body.innerHTML = '';
 });
 
@@ -118,6 +118,30 @@ describe('sections sociales de l’accueil', () => {
     slot.querySelector<HTMLElement>('[data-hsr-evening="e1"]')!.click();
     await flush();
     expect(join).toHaveBeenCalledWith('e1');
+  });
+
+  it('soirée proposée sans action « Je viens » branchée : aucun bouton, la carte reste', async () => {
+    setEveningJoin(null);
+    setEveningSource(() => [{ id: 'e1', type: 'movie', tmdbId: 5, startsAt: Date.now() + 3600_000, title: 'Dune 2', host: 'Tom', going: [] }]);
+    const slot = await mountWith();
+    expect(slot.textContent).toContain('Dune 2');
+    expect(slot.querySelector('[data-hsr-evening]')).toBeNull();
+  });
+
+  it('changement de profil : les sections de l’ancien profil ne reviennent pas pendant le chargement du nouveau', async () => {
+    api.listParties.mockResolvedValue({ rooms: [room()], nextCursor: null });
+    await mountWith();
+    expect(document.querySelector('#social-slot .hsr-room')).not.toBeNull();
+    setAccount({ ...ADULT, id: 'p2', name: 'Tom' });
+    const pending = () => new Promise<never>(() => undefined);
+    api.listParties.mockReturnValue(pending());
+    api.homeWatching.mockReturnValue(pending());
+    api.homeRecommendations.mockReturnValue(pending());
+    document.body.innerHTML = '<div id="app">' + slotHTML() + '</div>';
+    mount();
+    await flush();
+    h.subs.forEach((f) => f(h.st)); // émission du store pendant le chargement du nouveau profil
+    expect(document.getElementById('social-slot')!.innerHTML).toBe('');
   });
 
   it('soirée proposée pour un autre jour : l’étiquette ne dit pas « Ce soir »', async () => {

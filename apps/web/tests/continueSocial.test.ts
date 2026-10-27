@@ -22,6 +22,7 @@ function setAccount(p: typeof ADULT | null): void {
 const LEA = { pid: 'f1', handle: { name: 'Léa', full: 'Léa#1' }, avatarColor: '#ff5a36', muted: false };
 const prog = (o: object = {}) => ({ friend: LEA, type: 'series', tmdbId: 100, season: 2, episode: 4, pos: 600, duration: 3000, finished: false, updatedAt: 1, ...o });
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); await new Promise((r) => setTimeout(r, 0)); };
+const deferred = () => { let resolve!: (v: unknown) => void; let reject!: (e: unknown) => void; const promise = new Promise((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; };
 
 const card = (key: string) => '<div class="cont-card" data-resume="' + key + '"><span class="card-media"><span class="cont-info"><span class="cont-name">T</span></span></span></div>';
 let mod: typeof import('../src/ui/continueSocial.js');
@@ -104,6 +105,39 @@ describe('avance des amis dans « Reprendre la lecture »', () => {
     h.entries.push({ key: 'movie:300', type: 'movie', id: '300', position: 10, duration: 100 });
     await mod.loadContinueSocial();
     expect(api.homeProgress).toHaveBeenCalledTimes(2);
+    expect(api.homeProgress).toHaveBeenLastCalledWith([{ type: 'movie', tmdbId: 300 }]);
+  });
+
+  it('changement de profil pendant l’appel : la réponse tardive du précédent ne met aucune mention, et l’appel du suivant part', async () => {
+    const late = deferred();
+    api.homeProgress.mockReturnValueOnce(late.promise);
+    const first = mod.mountContinueSocial();
+    setAccount({ ...ADULT, id: 'p2', name: 'Tom' } as typeof ADULT);
+    const next = deferred();
+    api.homeProgress.mockReturnValueOnce(next.promise);
+    const second = mod.mountContinueSocial();
+    expect(api.homeProgress).toHaveBeenCalledTimes(2);
+    late.resolve({ items: [prog()] });
+    await flush();
+    expect(lines()).toEqual([null, null]);
+    expect(document.querySelector('.cont-mark')).toBeNull();
+    next.resolve({ items: [] });
+    await second;
+    await first;
+    expect(lines()).toEqual(["Personne d'autre ne l'a commencé", "Personne d'autre ne l'a commencé"]);
+  });
+
+  it('échec d’un profil précédent : ne retarde pas le chargement du suivant', async () => {
+    const late = deferred();
+    api.homeProgress.mockReturnValueOnce(late.promise);
+    const first = mod.mountContinueSocial();
+    setAccount({ ...ADULT, id: 'p2', name: 'Tom' } as typeof ADULT);
+    await mod.mountContinueSocial();
+    late.reject(new Error('boom'));
+    await first;
+    document.getElementById('cont-slot')!.insertAdjacentHTML('beforeend', card('movie:300'));
+    h.entries.push({ key: 'movie:300', type: 'movie', id: '300', position: 10, duration: 100 });
+    await mod.loadContinueSocial();
     expect(api.homeProgress).toHaveBeenLastCalledWith([{ type: 'movie', tmdbId: 300 }]);
   });
 });

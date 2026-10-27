@@ -1,7 +1,7 @@
 // Accueil social (LAST-193) : amis qui veulent voir un titre, soirée proposée, formats de la ligne du héros.
 import { afterEach, describe, expect, it } from 'vitest';
 import { initialSocialState, type SocialState } from '../src/data/socialStore';
-import { eveningDay, eveningFor, eveningTime, friendName, joinEvening, setEveningJoin, setEveningSource, wantNames, wantVerb, wantersOf, WANT_WINDOW_MS } from '../src/data/homeSocial';
+import { eveningDay, eveningFor, eveningTime, friendName, hasEveningJoin, joinEvening, setEveningJoin, setEveningSource, wantNames, wantVerb, wantersOf, WANT_WINDOW_MS } from '../src/data/homeSocial';
 
 const NOW = 1_800_000_000_000;
 const friend = (pid: string, name: string, extra: Record<string, unknown> = {}) => ({
@@ -14,7 +14,7 @@ const stateOf = (patch: Record<string, unknown>): SocialState => ({ ...initialSo
 
 afterEach(() => {
   setEveningSource(() => []);
-  setEveningJoin(() => false);
+  setEveningJoin(null);
 });
 
 describe('wantersOf', () => {
@@ -76,6 +76,15 @@ describe('soirée proposée', () => {
     expect(await joinEvening('e1')).toBe(false);
     setEveningJoin(async (id) => id === 'e1');
     expect(await joinEvening('e1')).toBe(true);
+  });
+
+  it('hasEveningJoin : vrai seulement quand une action « Je viens » est branchée', () => {
+    setEveningJoin(null);
+    expect(hasEveningJoin()).toBe(false);
+    setEveningJoin(() => true);
+    expect(hasEveningJoin()).toBe(true);
+    setEveningJoin(null);
+    expect(hasEveningJoin()).toBe(false);
   });
 });
 

@@ -6,7 +6,7 @@ import { getState, subscribe } from '../data/socialStore';
 import { homeRecommendations, homeWatching } from '../data/socialV3Api';
 import { listParties } from '../data/socialApi';
 import { userStore } from '../data/userStore';
-import { friendName, eveningDay, eveningTime, joinEvening, upcomingEvenings } from '../data/homeSocial';
+import { friendName, eveningDay, eveningTime, hasEveningJoin, joinEvening, upcomingEvenings } from '../data/homeSocial';
 import { toast } from './dom.js';
 import { socialAvailable } from './socialButton.js';
 import { posterSrc } from './socialFmt.js';
@@ -73,7 +73,7 @@ function eveningCard(e, friends) {
     '<h3 class="hsr-t">' + esc(e.title || 'Soirée proposée') + '</h3>' +
     '<p class="hsr-sub">' + (e.host ? 'Proposée par ' + esc(e.host) + '. ' : '') + (going.length ? going.length + ' confirmé' + (going.length > 1 ? 's' : '') + '.' : '') + '</p></div></div>' +
     '<div class="hsr-foot"><span class="hsr-stack" aria-hidden="true">' + going.slice(0, 3).map(avatar).join('') + '</span>' +
-    '<button type="button" class="btn btn-ghost hsr-btn" data-hsr-evening="' + esc(e.id) + '">Je viens</button></div></article>';
+    (hasEveningJoin() ? '<button type="button" class="btn btn-ghost hsr-btn" data-hsr-evening="' + esc(e.id) + '">Je viens</button>' : '') + '</div></article>';
 }
 
 const proposeCard = () => '<article class="hsr-card hsr-card-add"><h3 class="hsr-t">Rien de prévu ?</h3>' +
@@ -164,6 +164,9 @@ export async function paintHomeSocial() {
   if (!socialAvailable()) return;
   const mine = ++seq;
   if (!subscribed) { subscribed = true; subscribe((s) => renderSlot(s)); }
+  // Rien du montage précédent (ni d'un autre profil) pendant le chargement : une émission du store ne peut pas le redessiner.
+  model = { rooms: [], watching: [], recos: [] };
+  renderSlot();
   const [rooms, watching, recos] = await Promise.all([
     quiet(listParties(userStore.currentProfile().id, { limit: 20 })),
     quiet(homeWatching(WATCH_MAX)),
