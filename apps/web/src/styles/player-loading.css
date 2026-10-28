@@ -62,3 +62,27 @@
 .s-fail { padding: 10px 14px; border-radius: 12px; background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.35); font-size: 13px; }
 .s-fail b { color: #f87171; }
 .s-fail ul { margin: 6px 0 0; padding-left: 18px; color: var(--soft); }
+
+/* Téléphone à l'horizontale : la carte passe sur deux colonnes (titre à gauche, étapes et boutons à droite) pour tenir en hauteur. */
+@media (orientation: landscape) and (max-height: 520px) {
+  /* Barres haute (retour, titre) et basse (« Sources ») resserrées : la carte se loge entre les deux. */
+  .lp.is-loading .lp-top { padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: 8px; }
+  .lp.is-loading .lp-bottom { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .lp-loading { padding: 60px max(16px, env(safe-area-inset-right)) 60px max(16px, env(safe-area-inset-left)); }
+  .lp-load-in {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); grid-auto-rows: auto; align-content: center; justify-items: center;
+    column-gap: 28px; row-gap: 4px; width: min(720px, 100%); max-height: 100%; overflow-y: auto; padding: 12px 22px; border-radius: 20px;
+  }
+  .lp-load-in > * { grid-column: 1; }
+  .lp-lring { width: 32px; height: 32px; margin-bottom: 0; }
+  .lp-load-logo { margin-top: 0; }
+  .lp-load-logo img { max-height: 48px; }
+  .lp-load-ep { font-size: 15px; }
+  .lp-load-msg { font-size: 13px; }
+  .lp-steps {
+    grid-column: 2; grid-row: 1 / span 3; align-self: center; justify-self: stretch; margin: 0; padding: 0 0 0 24px; border-top: 0; border-left: 1px solid var(--line);
+  }
+  .lp-self { grid-column: 2; grid-row: 4; justify-self: stretch; min-height: 40px; padding: 0 18px; }
+  .lp-cancel { grid-column: 2; grid-row: 5; justify-self: stretch; margin-top: 0; min-height: 40px; padding: 0 18px; }
+  .lp-steps:empty ~ .lp-self, .lp-steps:empty ~ .lp-cancel { grid-row: auto; }
+}
