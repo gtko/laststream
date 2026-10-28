@@ -1,7 +1,7 @@
 /* Invitations sur un profil du foyer, côté hôte (contrat invitations v3, partie A) : panneau « Inviter sur ce profil »
  * (durée 24 h / 3 j / 7 j, lien à copier ou partager, anneau de temps restant, révocation), indicateur d’état dans l’éditeur
  * d’un profil et liste « Invitations du foyer » des réglages. Session verrouillée : rien de tout cela n’est proposé. */
-import { auth, isKidProfile, isProfileLocked, isServerMode, managingProfileId, onAuthChange } from '../data/auth';
+import { auth, isKidProfile, isMainProfile, isProfileLocked, isServerMode, managingProfileId, onAuthChange } from '../data/auth';
 import { foyerLink } from '../data/foyerLink';
 import {
   createHouseholdInvite, householdErrorCode, listHouseholdInvites, removeProfileLogin, revokeHouseholdInvite,
@@ -494,7 +494,7 @@ let listNote = '';
 const STATE_LABEL = { pending: 'En attente', used: 'Utilisée', expired: 'Expirée', revoked: 'Révoquée' };
 
 /** Pas de liste : session verrouillée, profil enfant, ou repli local sans serveur. */
-const listHidden = () => isProfileLocked() || isKidProfile() || !isServerMode();
+const listHidden = () => isProfileLocked() || isKidProfile() || !isServerMode() || !isMainProfile();
 
 /** État affiché d’une invitation : une invitation en attente dont l’échéance est passée est affichée expirée. */
 function shownState(inv) {
