@@ -154,13 +154,15 @@ export class SlowLinkWatch {
     } else {
       this.runTicks = 0;
     }
+    // Cache à 0 : moteur qui ne remonte pas demuxer-cache-time (VLC intégré, LAST-510), tenu pour inconnu.
+    const cache = cacheTime !== null && cacheTime > 0 ? cacheTime : null;
     let suspect = false;
-    if (cacheTime !== null && p && p.cache !== null && dt > 0) {
-      const fill = (cacheTime - p.cache) / (dt / 1000);
-      suspect = cacheTime - time < SLOW_RESERVE_S && fill < SLOW_FILL_RATE;
+    if (cache !== null && p && p.cache !== null && dt > 0) {
+      const fill = (cache - p.cache) / (dt / 1000);
+      suspect = cache - time < SLOW_RESERVE_S && fill < SLOW_FILL_RATE;
     }
     this.slowSince = suspect ? (this.slowSince ?? now) : null;
-    this.prev = { now, cache: cacheTime };
+    this.prev = { now, cache };
 
     this.episodes = this.episodes.filter((e) => e.end >= now - SLOW_WINDOW_MS);
     const bufferedMs = this.episodes.reduce((sum, e) => sum + (e.end - e.start), 0);

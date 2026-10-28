@@ -509,6 +509,23 @@ describe('lien lent : réouverture (SlowLinkWatch)', () => {
       w.reset(0);
       for (let s = 60; s <= 200; s++) expect(w.tick(s * 1000, 10, false, false, null)).toBe('ok');
     });
+
+    it('cache à 0 (VLC intégré, sans demuxer-cache-time) : 10 min de lecture fluide sans réouverture (LAST-510)', () => {
+      const w = new SlowLinkWatch();
+      w.reset(0);
+      for (let s = 1; s <= 600; s++) expect(w.tick(s * 1000, s, false, false, 0)).toBe('ok');
+    });
+
+    it('cache à 0 : les mises en tampon répétées rouvrent toujours (LAST-510)', () => {
+      const w = new SlowLinkWatch();
+      w.reset(0);
+      const run = (from: number, to: number, buf: boolean) => { const o: string[] = []; for (let s = from; s <= to; s++) o.push(w.tick(s * 1000, 10, buf, false, 0)); return o; };
+      run(61, 62, true);
+      run(63, 69, false);
+      run(70, 71, true);
+      run(72, 79, false);
+      expect(run(80, 81, true)).toEqual(['ok', 'reopen']);
+    });
   });
 
   it('épisodes plus vieux que 5 min oubliés', () => {
