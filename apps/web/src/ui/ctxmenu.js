@@ -419,7 +419,7 @@ const pointOf = (el, e) => {
 };
 
 /** Visuels de l'app (affiches, bannières, images) : jamais de menu natif dessus, même quand l'app n'a pas de menu pour eux.
- * Les cartes d'import Stremio (`data-open="true"`) ne sont pas des titres : menu natif. */
+ * Les cartes d'import Stremio (`data-expanded="true"`) ne sont pas des titres : menu natif. */
 const VISUAL = 'img, picture, video, canvas, [data-media], .hero-slide, [data-tile], [data-open^="movie:"], [data-open^="tv:"], [data-play-key], [data-showopen]';
 const FIELD = 'input, textarea, select, [contenteditable="true"]';
 /** Carte du guide (`epg:…`) : pas de titre TMDB, donc pas de menu de l'app ; le menu natif reste disponible. */

@@ -90,13 +90,15 @@ function accountPanel() {
       actions('<button type="button" class="btn btn-primary" data-set-login>Se connecter ou créer un compte</button>')) + data + migrationCard();
   }
   const pr = auth.profile;
+  // Billets, invitations du foyer, import et changement de profil : réservés au profil principal (ni profil du foyer, ni session verrouillée).
+  const owner = isMainProfile() && !isProfileLocked();
   return card('Compte et profils',
     rowHTML('Connecté en tant que', '', () => '<span class="set-val">' + esc(auth.username) + '</span>') +
     rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span>' +
-      (isProfileLocked() ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>')) +
+      (owner ? '<button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>' : '')) +
     rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + parentalCard() + adminCard() +
-    (isProfileLocked() ? '' : invitesCard()) + householdInvitesCard() + data +
-    migrationCard();
+    (owner ? invitesCard() + householdInvitesCard() : '') + data +
+    (owner ? migrationCard() : '');
 }
 
 function regionPanel() {
@@ -425,8 +427,10 @@ export async function showSettings() {
   detailEl.innerHTML = pageHTML();
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
-  if (isServerMode() && !isProfileLocked()) refreshInvites();
-  if (isServerMode()) void refreshHouseholdInvites();
+  if (isServerMode() && isMainProfile() && !isProfileLocked()) {
+    refreshInvites();
+    void refreshHouseholdInvites();
+  }
   loadConfig();
 }
 
