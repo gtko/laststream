@@ -5,6 +5,7 @@ import { userStore } from '../data/userStore';
 import { isHiddenKey } from '../data/homeFilters';
 import { isKidProfile, isServerMode } from '../data/auth';
 import { LastAddonError } from '../data/errors';
+import { shareBase } from '../data/shareBase';
 import { UserApiError } from '../data/userApi';
 import { toggleHidden } from './homeprefs.js';
 import { fetchFull } from './ficheModel.js';
@@ -27,6 +28,7 @@ import { openSources } from './sources-ui.js';
 import { state } from './state.js';
 import { getFavs } from './tv.js';
 import { mark } from './watched.js';
+import { ficheHash } from './ficheRoute.js';
 import { esc } from './util.js';
 import { setOpenState } from './disclosure.js';
 import { pushLayer } from './backStack.js';
@@ -265,6 +267,17 @@ function showItems(t) {
   return items;
 }
 
+/** Copie l'adresse de la fiche ouverte sur cet épisode (web, page servie par lastAddon, sinon le serveur Laststream). */
+async function copyEpisodeLink(m, season, episode) {
+  const url = shareBase() + '/' + ficheHash('tv', m.id, { season, episode });
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('Lien copié');
+  } catch {
+    toast('Copie impossible : ' + url, { ms: 8000 });
+  }
+}
+
 function episodeItems(t) {
   const m = t.model;
   const seen = userStore.isWatched(m.key, t.season, t.episode);
@@ -276,6 +289,7 @@ function episodeItems(t) {
     ...dl,
     { id: 'seen', label: seen ? 'Marquer comme non vu' : 'Marquer comme vu', icon: ICON.check, run: () => mark(m.key, [{ season: t.season, episode: t.episode }], !seen) },
     { id: 'upto', label: 'Vu jusqu’ici', icon: ICON.check, run: () => { const b = t.el.querySelector('[data-upto]'); if (b) b.click(); } },
+    { id: 'copy', label: 'Copier le lien', icon: ICON.link, run: () => copyEpisodeLink(m, t.season, t.episode) },
   ];
 }
 
