@@ -12,9 +12,14 @@ npm run preview    # sert dist/ sur http://localhost:8080 (écoute sur 0.0.0.0)
 npm test           # vitest : couche données/transport + test de fumée de l'interface (jsdom)
                    # LASTADDON_USER_TEST_URL=http://localhost:7099 npm test : ajoute le test d'intégration de l'API utilisateur
                    # (serveur lastAddon isolé : LASTADDON_ALLOW_SIGNUP=1 LASTADDON_DATA_DIR=<tmp> PORT=7099)
+npm run typecheck  # tsc --noEmit
+npm run lint       # eslint sur src/, zéro avertissement toléré
+npm run knip       # code mort
+npm run budget     # poids du premier chargement (lit dist/, lancer après un build)
+npm run smoke:e2e  # test de fumée Playwright de l'accueil (lit dist/)
 ```
 
-Prérequis : Node 20 ou plus, et un lastAddon joignable (par défaut `http://localhost:7000`).
+Prérequis : Node 22 (version de la CI), et un lastAddon joignable (par défaut `http://localhost:7000`).
 
 ## Configuration
 
@@ -92,7 +97,7 @@ Catalogue Free-TV / iptv-org via `/lt/tv/channels` (pays, langue, catégorie, so
 
 ### Lecture
 
-Le bouton « Lecture » ouvre le tiroir **Sources** : `GET {base}/{config}/stream/{movie|series}/{id}.json` (id IMDb obtenu par `external_ids` TMDB ; épisode : `tt:saison:épisode`), triées par `laststream.score` et groupées par qualité (langue, taille, débit, cache, copies). Un clic ouvre l'URL dans un lecteur `<video>` plein écran basique, qui enregistre la progression. Les torrents sans lien direct ne sont pas lisibles. Le lecteur complet (sous-titres, pistes audio, saut d'intro, lecture automatique) est à venir.
+Le bouton « Lecture » ouvre le tiroir **Sources** : `GET {base}/{config}/stream/{movie|series}/{id}.json` (id IMDb obtenu par `external_ids` TMDB ; épisode : `tt:saison:épisode`), triées par `laststream.score` et groupées par qualité (langue, taille, débit, cache, copies). Un clic ouvre la source dans le lecteur (`src/player/`) : progression enregistrée, sous-titres (`subsLoad.ts`, `extsubs.ts`), pistes audio (`trackgroups.ts`), saut d'intro et de récap, épisode suivant, mini-lecteur, Chromecast. Les torrents sans lien direct ne sont pas lisibles.
 
 ## Application Android : interface distante, mise à jour en un tap, mini-lecteur
 
@@ -100,3 +105,24 @@ Le bouton « Lecture » ouvre le tiroir **Sources** : `GET {base}/{config}/strea
 - **Mise à jour en un tap** : le build donne un `versionCode` AAAAMMJJNN (compteur du jour dans `android/app/version-counter.properties`, non versionné, incrémenté à chaque `assemble*`). `node scripts/publish-android.mjs` lit `output-metadata.json`, calcule le SHA-256 et écrit `public/app/android/latest.json` ({versionCode, versionName, url, sha256, size, notes}) ; l'APK (≈ 50 Mo, au-delà des 25 Mo par fichier des Workers Assets) est copiée dans `../dist/laststream-android/publish/laststream-<versionCode>.apk` pour être servie à l'adresse `url` (R2 public derrière le Worker). L'application compare le versionCode au lancement puis toutes les 24 h, affiche « Mise à jour disponible (vX) — Installer », télécharge en https, vérifie le SHA-256, puis ouvre l'installeur système (autorisation « sources inconnues » guidée).
 - **Signature** : toutes les APK (debug et release) sont signées avec la clé de debug de ce PC (`~/.android/debug.keystore`) : Android n'accepte une mise à jour que signée par la même clé, il faut donc toujours builder depuis ce PC ou copier cette clé. Perdre la clé impose de désinstaller l'application avant d'installer la nouvelle.
 - **Mini-lecteur natif** : bouton Réduire, geste vers le bas ou retour Android pendant la lecture ; la vidéo continue dans une vignette flottante au-dessus de l'interface (`PlaybackCore`, `MiniPlayer`).
+
+## Déploiement
+
+L'interface web n'a pas de Worker à elle : son build (`dist/`) est copié dans le Worker Cloudflare **lastaddon-core** (dépôt `gtko/lastaddon`), qui la sert en Workers Assets sur `core.laststream.app`. `app.laststream.app` passe par **laststream-edge**, qui relaie vers lastaddon-core (Service Binding `CORE`).
+
+**Un merge sur `main` ne déploie rien** : `.github/workflows/ci.yml` ne fait que les vérifications (typecheck, lint, build, budget, knip, tests). Contrairement à laststream-edge et laststream-www (site), reliés à GitHub dans Cloudflare (Workers Builds) et déployés à chaque merge, lastaddon-core se déploie à la main, depuis un tag de lastaddon (procédure complète : `docs/deploiement.md` de lastaddon) :
+
+```bash
+# laststream-app : main à jour, build frais
+git switch main && git pull && npm run build
+
+# lastaddon (dépôt voisin) : déployer depuis un tag vX.Y.Z posé sur la pointe de main
+cd ../lastaddon
+git switch main && git pull
+npm run release -- X.Y.Z                                # seulement si le dernier tag n'est plus la pointe de main
+git checkout vX.Y.Z
+npm run deploy:worker -- --ui ../laststream-app/dist    # --dry-run : vérifications seules
+git switch main
+```
+
+La garde de `deploy:worker` refuse si laststream-app n'est pas propre, sur `main` et égal à `origin/main`, ou si lastaddon n'est pas exactement sur un tag `vX.Y.Z` égal à `origin/main`. Elle ne vérifie pas que `dist/` vient de ce commit : reconstruire juste avant.
