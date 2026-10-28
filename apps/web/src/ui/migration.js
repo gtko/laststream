@@ -218,7 +218,7 @@ function bodyHTML() {
 export function migrationCard() {
   restoreJob();
   const open = isOpen() || ui.busy;
-  return '<div class="set-card si-card mg-card" id="mg-card" data-open="' + open + '">' +
+  return '<div class="set-card si-card mg-card" id="mg-card" data-expanded="' + open + '">' +
     '<h3 class="si-h"><button type="button" class="si-toggle" data-mg-toggle aria-expanded="' + open + '" aria-controls="mg-body">' +
     '<span class="si-t">Importer depuis une autre app</span><span class="si-sum" id="mg-sum">' + esc(summary()) + '</span>' + CHEV + '</button></h3>' +
     '<div class="si-body" id="mg-body"' + (open ? '' : ' inert') + '><div class="si-body-in" id="mg-in" data-phase="' + ui.phase + '">' + bodyHTML() + '</div></div></div>';
@@ -250,7 +250,7 @@ function fail(text) {
 function setOpen(open) {
   const c = card();
   if (!c) return;
-  c.dataset.open = String(open);
+  c.dataset.expanded = String(open);
   c.querySelector('[data-mg-toggle]').setAttribute('aria-expanded', String(open));
   const body = c.querySelector('#mg-body');
   if (open) body.removeAttribute('inert');
@@ -423,7 +423,7 @@ detailEl.addEventListener('click', (e) => {
   const c = card();
   if (!t || !c || !c.contains(t)) return;
   const src = t.closest('[data-mg-src]');
-  if (t.closest('[data-mg-toggle]')) setOpen(c.dataset.open !== 'true');
+  if (t.closest('[data-mg-toggle]')) setOpen(c.dataset.expanded !== 'true');
   else if (src) {
     ui.source = src.dataset.mgSrc;
     ui.plex = null;

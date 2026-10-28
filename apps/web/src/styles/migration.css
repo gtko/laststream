@@ -5,17 +5,19 @@
 .si-t { grid-area: t; font-family: var(--ff-title); font-size: 16px; font-weight: 700; }
 .si-sum { grid-area: s; font-size: 13px; color: var(--dim); }
 .si-chev { grid-area: c; color: var(--muted); transition: transform 0.2s ease; }
-.si-card[data-open="true"] .si-chev { transform: rotate(180deg); }
+.si-card[data-expanded="true"] .si-chev { transform: rotate(180deg); }
 .si-toggle:focus-visible, .si-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 .si-toggle:focus:not(:focus-visible), .si-eye:focus:not(:focus-visible) { outline: none; }
 .si-body { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 0.22s ease, visibility 0s linear 0.22s; }
-.si-card[data-open="true"] .si-body { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 0.22s ease, visibility 0s; }
+.si-card[data-expanded="true"] .si-body { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 0.22s ease, visibility 0s; }
 .si-body-in { overflow: hidden; min-height: 0; }
-.si-card[data-open="true"] .si-body-in { padding-bottom: 12px; }
+.si-card[data-expanded="true"] .si-body-in { padding-bottom: 12px; }
 .si-priv { display: flex; gap: 12px; padding: 12px 14px; margin-bottom: 8px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); }
 .si-lock { flex: none; color: var(--accent); margin-top: 1px; }
 .si-priv-t { margin: 0 0 4px; font-size: 14px; font-weight: 700; color: var(--text); }
-.si-priv ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.si-priv ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.si-priv li { position: relative; padding-left: 14px; }
+.si-priv li::before { content: ''; position: absolute; left: 2px; top: 0.62em; width: 5px; height: 5px; border-radius: 50%; background: var(--dim); }
 .si-alert { margin: 8px 0; padding: 12px 14px; border-radius: 10px; border: 1px solid #e5484d; background: rgba(229, 72, 77, 0.12); color: var(--text); font-size: 14px; line-height: 1.45; }
 .si-alert[hidden], .si-steps-w[hidden], .si-result[hidden], .si-form[hidden], .si-retry[hidden], .si-submit[hidden] { display: none; }
 .si-pwd { position: relative; display: block; width: 100%; }
@@ -43,7 +45,7 @@
   .si-actions .btn { width: 100%; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .si-body, .si-card[data-open="true"] .si-body, .si-chev { transition: none; }
+  .si-body, .si-card[data-expanded="true"] .si-body, .si-chev { transition: none; }
   .si-steps li[data-state="active"]::before, .si-bar i { animation: none; }
   .si-bar i { left: 0; width: 100%; opacity: 0.5; }
 }
@@ -60,7 +62,22 @@
 .mg-lead { margin: 8px 0; font-size: 15px; font-weight: 600; color: var(--text); outline: none; }
 .mg-fs { border: 0; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
 .mg-chk { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 14px; color: var(--text); }
-.mg-chk input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.mg-chk { cursor: pointer; }
+.mg-chk input {
+  appearance: none; -webkit-appearance: none; flex: none; width: 20px; height: 20px; margin: 0; border-radius: 6px; cursor: pointer;
+  border: 2px solid var(--input-border); background: var(--bg) center / 14px no-repeat; transition: background-color 0.15s, border-color 0.15s;
+}
+.mg-chk input:hover { border-color: var(--muted); }
+.mg-chk input:checked {
+  border-color: var(--accent); background-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230c0b11' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
+}
+.mg-chk input:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+/* Formulaire d'import : champs empilés sans filet entre eux, case et boutons détachés. */
+.si-form .set-row.is-stack { min-height: 0; padding: 8px 0; }
+.si-form .set-row + .set-row { border-top: 0; }
+.si-form > .mg-chk { margin-top: 4px; }
+.si-form > .si-actions { margin-top: 16px; }
 .mg-cat b { margin-left: auto; color: var(--dim); font-weight: 700; }
 .mg-off { color: var(--dim); font-size: 13px; }
 .mg-addon-step { padding-top: 8px; border-top: 1px solid var(--line-2); }

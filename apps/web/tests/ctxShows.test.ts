@@ -124,8 +124,8 @@ describe('menu natif conservé hors des fiches de l’app', () => {
     expect(menu()).toBeNull();
   });
 
-  it('carte d’import Stremio (data-open="true") : texte copiable, menu natif', () => {
-    mount('<div class="set-card si-card" data-open="true"><p class="si-priv-t">Tes identifiants restent entre toi et ton serveur</p></div>');
+  it('carte d’import Stremio (data-expanded="true") : texte copiable, menu natif', () => {
+    mount('<div class="set-card si-card" data-expanded="true"><p class="si-priv-t">Tes identifiants restent entre toi et ton serveur</p></div>');
     const ev = rightClick(pick('p'));
     expect(ev.defaultPrevented).toBe(false);
     expect(menu()).toBeNull();
