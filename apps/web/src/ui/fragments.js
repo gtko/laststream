@@ -11,7 +11,7 @@ export const brand = () => '<a href="#/" data-noop class="brand" aria-label="Las
 /** Lien Accueil de la barre du haut des pages profondes (LAST-1200) : même logo, navigation ordinaire vers #/ (data-go, go()).
  * Chaque clic ajoute une entrée d'historique, comme tout lien : Retour du navigateur revient à la page quittée, sans boucle
  * (route() remet state.depth à 0 sur l'accueil). */
-export const homeLink = () => '<a href="#/" data-go class="brand f-home" aria-label="Accueil">' + brandWord() + '</a>';
+export const homeLink = () => '<a href="#/" data-go class="brand f-home" aria-label="Laststream, accueil">' + brandWord() + '</a>';
 
 export function titleEl(it, d, cls) {
   if (d.logo) {

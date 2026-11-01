@@ -65,7 +65,7 @@ describe('LAST-1200 : lien Accueil dans la barre du haut', () => {
       const home = $<HTMLAnchorElement>('#scratch .f-top a.f-home');
       expect(home, 'lien Accueil').not.toBeNull();
       expect(home.getAttribute('href')).toBe('#/');
-      expect(home.getAttribute('aria-label')).toBe('Accueil');
+      expect(home.getAttribute('aria-label')).toBe('Laststream, accueil');
       expect(back.nextElementSibling).toBe(home);
     }
   });
