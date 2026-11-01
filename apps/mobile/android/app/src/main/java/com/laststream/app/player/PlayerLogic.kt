@@ -200,6 +200,12 @@ object PlayerLogic {
         return if (duration > FALLBACK_TAIL_SECONDS * 2) duration - FALLBACK_TAIL_SECONDS else null
     }
 
+    /** Délai après lequel une demande d'épisode suivant restée sans réponse du JS rend la main au lecteur. */
+    const val NEXT_REQUEST_TIMEOUT_MS = 8000L
+
+    /** Activité finie : `pending` n'est effacé que si l'utilisateur l'a fermée ; une fermeture du JS laisse celui du média suivant. */
+    fun clearPendingOnDestroy(silentClose: Boolean): Boolean = !silentClose
+
     /** Carte « Épisode suivant » : dès le générique, jamais pendant une intro ou un récap. */
     fun showNextCard(segments: List<SkipSegment>, t: Double, duration: Double, hasNext: Boolean): Boolean {
         if (!hasNext || !(duration > 0)) return false

@@ -185,7 +185,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         if (PlayerHub.activity === this) PlayerHub.activity = null
         if (::core.isInitialized && !handedOff) {
             if (!closedSent && !silentClose && isFinishing) emitClosed()
-            if (isFinishing) PlayerHub.pending = null else rememberPosition()
+            // Fermeture demandée par le JS (épisode suivant) : `pending` appartient déjà au prochain média, on n'y touche pas.
+            if (isFinishing) { if (PlayerLogic.clearPendingOnDestroy(silentClose)) PlayerHub.pending = null } else rememberPosition()
             if (core.ui === this) core.ui = null
             if (PlayerHub.core === core) PlayerHub.core = null
             PlayerHub.machine.close()
@@ -664,6 +665,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     // ---------- Chargement d'un média ----------
 
     override fun load(r: OpenRequest) {
+        handler.removeCallbacks(nextStalledRunnable)
         nextDismissed = false
         setHeading(r.title, r.subtitle)
         setNextEpisode(r.nextEpisode)
@@ -759,6 +761,15 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         showSpinner("Épisode suivant…")
         player.pause()
         emitEvent("nextEpisode", JSObject().put("position", lastPos).put("duration", lastDur))
+        // Si le JS ne lance rien (invité de salon, aucun épisode suivant), le spinner ne doit pas rester indéfiniment.
+        handler.removeCallbacks(nextStalledRunnable)
+        handler.postDelayed(nextStalledRunnable, PlayerLogic.NEXT_REQUEST_TIMEOUT_MS)
+    }
+
+    private val nextStalledRunnable = Runnable {
+        if (isFinishing || !::core.isInitialized) return@Runnable
+        hideSpinner()
+        setPlaying(true)
     }
 
 
