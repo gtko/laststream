@@ -10,7 +10,7 @@ import {
   tvgEpgId,
 } from './tv-catalog.js';
 import { fastEntry, M3uAccumulator, type Programme, XmltvIngest } from './tv-feed.js';
-import { applyHealth, type HealthMap, type HealthOptions } from './tv-health.js';
+import { applyHealth, type HealthChange, type HealthMap, type HealthOptions, type HealthReport } from './tv-health.js';
 import { epgSourceId, type PassPlan, type TvPassTrace } from './tv-passes.js';
 
 /**
@@ -94,8 +94,10 @@ export interface ProbeSnapshot {
   results: Record<string, [0 | 1, number]>;
   /** Sondes en échec (LAST-137) : url → date de la dernière tentative en s. En reprise, les URL jamais tentées passent avant. */
   failed?: Record<string, number>;
-  /** Test de santé des flux (tv-health.ts) : url → [échecs consécutifs, date du dernier contrôle en s]. */
+  /** Test de santé des flux (tv-health.ts) : url → [échecs consécutifs, date du dernier contrôle en s, dernier succès en s]. */
   health?: HealthMap;
+  /** Bilan du dernier passage de santé (chaînes retirées et remises). Conservé quand un passage ne contrôle pas. */
+  report?: HealthReport;
 }
 
 export interface TvBuildOptions {
@@ -419,6 +421,25 @@ const parse = <T extends { v: number }>(text: string | undefined): T | undefined
   }
 };
 
+/** Nombre de noms de chaînes détaillés dans le journal du Cron, par liste (au-delà : le total seulement). */
+const HEALTH_LOG_NAMES = 40;
+
+/** Journal d'un passage de santé : compteurs, puis noms des chaînes retirées et remises (40 au plus chacune). */
+export function healthLog(report: HealthReport, dead: number): string {
+  const names = (changes: HealthChange[]): string => {
+    const shown = changes
+      .slice(0, HEALTH_LOG_NAMES)
+      .map((change) => change.name)
+      .join(', ');
+    return changes.length > HEALTH_LOG_NAMES ? `${shown}, … (+${changes.length - HEALTH_LOG_NAMES})` : shown;
+  };
+  const tripped = report.tripped ? ' (disjoncteur : pannes de ce passage ignorées)' : '';
+  const lines = [`[tv] santé des flux : ${report.checked} contrôlés, ${dead} flux écartés, ${report.removed.length} chaînes retirées, ${report.restored.length} remises${tripped}`];
+  if (report.removed.length > 0) lines.push(`  retirées : ${names(report.removed)}`);
+  if (report.restored.length > 0) lines.push(`  remises : ${names(report.restored)}`);
+  return lines.join('\n');
+}
+
 export interface RefreshResult {
   channels: number;
   programmes: number;
@@ -447,7 +468,10 @@ export async function refreshTv(store: TvBlobStore, options: TvBuildOptions = {}
     options.trace.probesPending = direct.pending > 0;
   }
   probes.health = health.health;
-  console.log(`[tv] santé des flux : ${health.checked} contrôlés, ${health.dead} flux écartés, ${health.removed} chaînes retirées${health.tripped ? ' (disjoncteur : pannes de ce passage ignorées)' : ''}`);
+  // Bilan gardé dans probe.json ; un passage sans contrôle de santé garde le bilan précédent.
+  if (plan.health) probes.report = health.report;
+  else if (previous?.report !== undefined) probes.report = previous.report;
+  console.log(healthLog(health.report, health.dead));
   const builtAt = (options.now ?? Date.now)();
   const snapshot: CatalogSnapshot = cached !== undefined && reused ? { ...cached, catalog } : { v: 1, builtAt, catalog };
   await store.put(TV_KEYS.catalog, JSON.stringify(snapshot));

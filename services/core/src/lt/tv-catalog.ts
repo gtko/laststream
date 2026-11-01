@@ -1,5 +1,6 @@
 import { isRecord } from '../sources/http.js';
 import { parseSafeUrl } from './guard.js';
+import { isOfficialStreamUrl } from './tv-licensing.js';
 
 /**
  * Catalogue TV : fusion des sources (Free-TV, iptv-org, FAST Pluto TV et Samsung TV Plus) en chaînes uniques,
@@ -382,7 +383,7 @@ function addIptvOrg(raw: IptvOrgRaw, names: Names, drafts: Map<string, Draft>, e
   for (const stream of records(raw.streams)) {
     const channel = str(stream.channel);
     const url = str(stream.url);
-    if (!candidates.has(channel) || parseSafeUrl(url) === null) continue;
+    if (!candidates.has(channel) || parseSafeUrl(url) === null || !isOfficialStreamUrl(url)) continue;
     const reliability: Reliability = strings(stream.labels).some((label) => LOW_LABEL.test(label)) ? 'low' : 'high';
     const list = streamed.get(channel) ?? [];
     list.push({ url, feed: str(stream.feed), quality: str(stream.quality), reliability, order: seq.value++ });
@@ -446,7 +447,7 @@ function addIptvOrg(raw: IptvOrgRaw, names: Names, drafts: Map<string, Draft>, e
 function addFreeTv(entries: M3uEntry[], names: Names, drafts: Map<string, Draft>, excluded: Set<string>, seq: Sequence): void {
   for (const entry of entries) {
     const group = entry.attrs['group-title'] ?? '';
-    if (XXX.test(group) || XXX.test(entry.name) || parseSafeUrl(entry.url) === null) continue;
+    if (XXX.test(group) || XXX.test(entry.name) || parseSafeUrl(entry.url) === null || !isOfficialStreamUrl(entry.url)) continue;
     const tvgId = tvgEpgId(entry.attrs['tvg-id']);
     if (tvgId !== '' && excluded.has(tvgId)) continue;
     const name = cleanName(entry.name);

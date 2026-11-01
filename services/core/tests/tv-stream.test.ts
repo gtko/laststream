@@ -6,6 +6,7 @@ import {
   buildCatalogStreaming,
   buildEpgStreaming,
   epgIdsOf,
+  healthLog,
   refreshTv,
   TV_KEYS,
   type TvBlobStore,
@@ -250,6 +251,29 @@ describe('construction du catalogue et de l’EPG en flux', () => {
     calls.length = 0;
     await refreshTv(store, { fetch: fakeFetch(net, calls), countries: ['FR', 'BE'], probe: true, now: () => now + 3600_000 });
     expect(calls.filter((u) => u.includes('tf1.example') || u.includes('m6.example'))).toEqual([]);
+  });
+
+  it('refreshTv : bilan de santé gardé dans probe.json, conservé par un passage sans contrôle ; journal borné à 40 noms', async () => {
+    const written = new Map<string, string>();
+    const store: TvBlobStore = { get: (k) => Promise.resolve(written.get(k)), put: (k, v) => Promise.resolve(void written.set(k, v)) };
+    const net = routes();
+    net['https://tf1.example/tf1.m3u8'] = () => new Response('#EXTM3U', { headers: { 'access-control-allow-origin': '*' } });
+    await refreshTv(store, { fetch: fakeFetch(net), countries: ['FR', 'BE'], probe: true, now: () => now });
+    const first = JSON.parse(written.get(TV_KEYS.probe) ?? '{}') as { report?: { at: number; checked: number; removed: unknown[]; restored: unknown[] } };
+    expect(first.report).toMatchObject({ at: now, removed: [], restored: [] });
+    expect(first.report?.checked).toBeGreaterThan(0);
+
+    await refreshTv(store, { fetch: fakeFetch(net), countries: ['FR', 'BE'], probe: false, now: () => now + 3600_000 });
+    const second = JSON.parse(written.get(TV_KEYS.probe) ?? '{}') as { report?: { at: number } };
+    expect(second.report?.at).toBe(now);
+
+    const many = Array.from({ length: 42 }, (_, i) => ({ id: `c${i}`, name: `N${i}` }));
+    const line = healthLog({ at: now, checked: 7, tripped: true, removed: many, restored: [{ id: 'r', name: 'Remise' }] }, 42);
+    expect(line).toContain('7 contrôlés, 42 flux écartés, 42 chaînes retirées, 1 remises (disjoncteur');
+    expect(line).toContain('retirées : N0, N1, ');
+    expect(line).toContain('N39, … (+2)');
+    expect(line).not.toContain('N40');
+    expect(line).toContain('remises : Remise');
   });
 
   it('sans sondage, seul http est marqué non lisible', async () => {
