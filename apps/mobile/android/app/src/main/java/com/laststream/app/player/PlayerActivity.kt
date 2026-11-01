@@ -144,6 +144,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         core.ui = this
         core.attach(videoLayout)
         val pend = PlayerHub.pending
+        ownPending = pend // aussi sur le chemin `adopt` (agrandissement de la vignette) : sans lui, `pending` ne serait jamais effacé
         if (shared != null) adopt(shared)
         else if (pend != null) load(pend) else { silentClose = true; finish() }
         PlayerHub.machine.open()
@@ -162,6 +163,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     override fun onStart() {
         super.onStart()
         if (resumeOnStart && ::core.isInitialized) { resumeOnStart = false; setPlaying(true) }
+        if (nextStalledPending) handler.post(nextStalledRunnable) // retour d'arrière-plan avec un « suivant » resté sans réponse
     }
 
     override fun onStop() {
@@ -771,9 +773,12 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         handler.postDelayed(nextStalledRunnable, PlayerLogic.NEXT_REQUEST_TIMEOUT_MS)
     }
 
+    private var nextStalledPending = false
+
     private val nextStalledRunnable = Runnable {
         if (isFinishing || !::core.isInitialized) return@Runnable
-        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !isInPictureInPictureMode) return@Runnable
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !isInPictureInPictureMode) { nextStalledPending = true; return@Runnable }
+        nextStalledPending = false
         hideSpinner()
         setPlaying(true)
     }
