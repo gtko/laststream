@@ -306,7 +306,8 @@ export function viewA(d) {
 }
 
 /**
- * Barre du bas (mobile). `current` : onglet de la page affichée ('home' par défaut, 'ensemble' sur la page Ensemble).
+ * Barre du bas (mobile). `current` : onglet de la page affichée ('home' par défaut, 'ensemble' sur la page Ensemble ; 'hub' ou
+ * 'search' : aucun onglet courant, Accueil reste un lien vers #/ (LAST-488)).
  * Compte connecté (hors profil enfant) : Accueil, Rechercher, Ensemble, Ma liste, Téléchargés. L'onglet Ensemble porte la pastille
  * des notifications sociales du store (demandes d'amis reçues + messages non lus, invitations de watch party comprises) ; l'accès aux Amis
  * passe par le bouton « Amis » de la page Ensemble. Sans compte connecté : onglets d'origine.
@@ -328,10 +329,14 @@ export function tabbar(current = 'home') {
       tab('', { href: true, html: ' href="#/library" data-libnav' }, 'list', 'Ma liste') +
       tab('', { href: true, html: ' href="#/downloads" data-go data-dl-nav' }, 'download', 'Téléchargés', downloadsTabBadgeHTML()) + '</nav>';
   }
-  const items = TABS.map(([label, icon, current]) =>
-    '<a href="' + tabHref(label) + '"' + tabData(label) + ' class="tab' + (current ? ' is-current' : '') + '"' + (current ? ' aria-current="page"' : '') + '>' +
-    (icon ? ICON[icon] : '<span class="avatar avatar-tab" aria-hidden="true">' + esc(initialOf()) + '</span>') +
-    '<span class="tab-label">' + label + '</span></a>').join('');
+  const items = TABS.map(([label, icon, isHome]) => {
+    // Accueil : courant et inerte sur l'accueil seulement, lien ordinaire (data-go) depuis les autres pages (LAST-488).
+    const on = Boolean(isHome) && current === 'home';
+    const nav = isHome ? (on ? ' data-noop' : ' data-go') : tabData(label);
+    return '<a href="' + tabHref(label) + '"' + nav + ' class="tab' + (on ? ' is-current' : '') + '"' + (on ? ' aria-current="page"' : '') + '>' +
+      (icon ? ICON[icon] : '<span class="avatar avatar-tab" aria-hidden="true">' + esc(initialOf()) + '</span>') +
+      '<span class="tab-label">' + label + '</span></a>';
+  }).join('');
   return '<nav class="tabbar" aria-label="Navigation principale">' + items + '</nav>';
 }
 

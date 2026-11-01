@@ -432,6 +432,7 @@ body.modal-open { overflow: hidden; }
 /* Barre supérieure : Retour à gauche, actions à droite */
 .f-top { position: fixed; top: 0; left: 0; right: 0; z-index: 40; display: flex; justify-content: space-between; align-items: center; padding: 22px var(--gutter); pointer-events: none; transition: opacity 0.5s ease; }
 .f-top-r { display: flex; gap: 12px; }
+.f-top-l { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .f-round, .btn-round {
   position: relative; pointer-events: auto; flex: none; width: 48px; height: 48px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center; color: var(--text);
@@ -442,6 +443,14 @@ body.modal-open { overflow: hidden; }
 .f-round:focus-visible, .btn-round:focus-visible, .btn-pill:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .f-round svg, .btn-round svg { width: 22px; height: 22px; }
 .btn-round { width: 56px; height: 56px; }
+/* Accueil de la barre du haut (LAST-1200) : logo et mot dans une pastille de la même hauteur que les boutons ronds. */
+.f-home {
+  position: relative; pointer-events: auto; flex: none; box-sizing: border-box; height: 48px; padding: 0 18px 0 10px; border-radius: 999px;
+  color: var(--text); background: rgba(23, 21, 31, 0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.16); transition: background-color 0.2s, border-color 0.2s;
+}
+.f-home:hover { background: rgba(60, 56, 78, 0.75); }
+.f-home:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .btn-round[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 25%, transparent); border-color: var(--accent); }
 [data-tip]:hover::after, [data-tip]:focus-visible::after {
   content: attr(data-tip); position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; pointer-events: none;
@@ -463,12 +472,12 @@ body.modal-open { overflow: hidden; }
   #detail.is-quiet .f-title { transform: translate(var(--f-qx, 0px), var(--f-qy, 0px)) scale(0.6); }
   #detail .f-actions > * { transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s, transform 0.15s, border-color 0.2s; }
   #detail.is-quiet .f-actions > :not(.btn-primary) { opacity: 0; }
-  #detail .f-top .f-round { transition: opacity 0.6s ease, background-color 0.2s, transform 0.15s, border-color 0.2s; }
-  #detail.is-quiet .f-top .f-round:not([data-fsound]) { opacity: 0; }
+  #detail .f-top .f-round, #detail .f-top .f-home { transition: opacity 0.6s ease, background-color 0.2s, transform 0.15s, border-color 0.2s; }
+  #detail.is-quiet .f-top .f-round:not([data-fsound]), #detail.is-quiet .f-top .f-home { opacity: 0; }
   #detail.is-quiet .f-top [data-fsound] { opacity: 0.6; }
 }
 @media (min-width: 641px) and (prefers-reduced-motion: reduce) {
-  #detail .f-title, #detail .f-info > *, #detail .f-actions > *, #detail .f-top .f-round { transition: none !important; }
+  #detail .f-title, #detail .f-info > *, #detail .f-actions > *, #detail .f-top .f-round, #detail .f-top .f-home { transition: none !important; }
 }
 /* Enchaînement bande-annonce → lecture (trailerPlay.js) : compte à rebours discret, fondu vers le lecteur. */
 .f-next-up {
@@ -684,6 +693,9 @@ a.prov:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--foc
   .f-bg { position: absolute; top: 0; left: 0; right: 0; bottom: auto; width: 100%; height: 58vh; }
   .f-scrim { position: absolute; top: 0; left: 0; right: 0; bottom: auto; height: 58vh; background: linear-gradient(0deg, #0c0b11 0%, rgba(12, 11, 17, 0.55) 38%, rgba(12, 11, 17, 0) 75%), linear-gradient(180deg, rgba(12, 11, 17, 0.55) 0%, rgba(12, 11, 17, 0) 22%); }
   .f-top { padding: 12px var(--gutter); position: absolute; }
+  /* Sur téléphone, l'Accueil de la barre du haut est une icône ronde, comme Retour (le mot « laststream » est masqué). */
+  .f-home { width: 48px; padding: 0; justify-content: center; border-radius: 50%; }
+  .f-home .wordmark { display: none; }
   .f-first { height: auto; min-height: 0; align-items: flex-end; padding: calc(58vh - 170px) var(--gutter) 20px; }
   .f-info { width: 100%; }
   .prov-l { display: none; }

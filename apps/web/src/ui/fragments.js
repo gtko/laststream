@@ -6,9 +6,12 @@ import { esc } from './util.js';
 // ---------- Fragments communs (accueil) ----------
 export const brandMark = () =>
   '<svg class="logo-mark" viewBox="0 0 120 120" aria-hidden="true"><rect class="lm-bg" width="120" height="120" rx="28"/><polygon class="lm-play" points="42,30 92,60 42,90"/><rect class="lm-bar" x="38" y="44" width="60" height="5"/><rect class="lm-bar" x="38" y="57.5" width="60" height="5"/><rect class="lm-bar" x="38" y="71" width="60" height="5"/></svg>';
-export const brand = () =>
-  '<a href="#/" data-noop class="brand" aria-label="Laststream, accueil">' + brandMark() +
-  '<span class="wordmark">last<span class="wm-accent">stream</span></span></a>';
+const brandWord = () => brandMark() + '<span class="wordmark">last<span class="wm-accent">stream</span></span>';
+export const brand = () => '<a href="#/" data-noop class="brand" aria-label="Laststream, accueil">' + brandWord() + '</a>';
+/** Lien Accueil de la barre du haut des pages profondes (LAST-1200) : même logo, navigation ordinaire vers #/ (data-go, go()).
+ * Chaque clic ajoute une entrée d'historique, comme tout lien : Retour du navigateur revient à la page quittée, sans boucle
+ * (route() remet state.depth à 0 sur l'accueil). */
+export const homeLink = () => '<a href="#/" data-go class="brand f-home" aria-label="Accueil">' + brandWord() + '</a>';
 
 export function titleEl(it, d, cls) {
   if (d.logo) {
@@ -47,7 +50,8 @@ export function topBar(withActions) {
     ? '<button type="button" class="f-round" data-share data-tip="Partager" aria-label="Partager">' + ICON.share + '</button>' +
       '<button type="button" class="f-round" data-fsound hidden aria-pressed="false" data-tip="Activer le son" aria-label="Activer le son">' + ICON.mute + '</button>'
     : '';
-  return '<div class="f-top" data-nav>' + backBtn() + (friends || actions ? '<div class="f-top-r">' + friends + actions + '</div>' : '') + '</div>';
+  return '<div class="f-top" data-nav><div class="f-top-l">' + backBtn() + homeLink() + '</div>' +
+    (friends || actions ? '<div class="f-top-r">' + friends + actions + '</div>' : '') + '</div>';
 }
 export function svcError(msg) {
   return topBar(false) + '<article class="fiche f-error" tabindex="-1"><div class="state" role="alert"><p>' + esc(msg) + '</p>' +

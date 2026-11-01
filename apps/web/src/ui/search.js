@@ -74,7 +74,7 @@ export function showSearch() {
     '<h1 class="sr-only" id="search-title" tabindex="-1">Recherche</h1>' +
     '<div class="search-body" id="search-body"></div>' +
     '<p class="sr-only" id="search-status" role="status" aria-live="polite"></p>' +
-    '</article>' + tabbar() + '</div>';
+    '</article>' + tabbar('search') + '</div>';
   const inp = input();
   if (inp) { inp.focus(); run(inp.value); }
 }

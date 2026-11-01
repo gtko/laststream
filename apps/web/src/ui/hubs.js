@@ -34,7 +34,7 @@ export async function showHub(id) {
     '<h1 class="hub-title" id="hub-title" tabindex="-1">' + esc(hub.title) + '</h1>' +
     '<div class="rows hub-rows" id="hub-rows"></div>' +
     '<div class="hub-sk" aria-hidden="true"><span class="sk sk-line"></span><div class="row">' + '<span class="sk sk-card"></span>'.repeat(6) + '</div></div>' +
-    '<p class="sr-only" role="status">Chargement du catalogue…</p></article>' + tabbar() + '</div>';
+    '<p class="sr-only" role="status">Chargement du catalogue…</p></article>' + tabbar('hub') + '</div>';
   const h1 = detailEl.querySelector('#hub-title');
   if (h1) h1.focus({ preventScroll: true });
   const slot = detailEl.querySelector('#hub-rows');
