@@ -36,7 +36,7 @@ const DAY_MS = 864e5;
 /** Paramètres communs des listes TMDB « populaires » (liste blanche du Worker). */
 const POPULAR = { sort_by: 'popularity.desc', include_adult: 'false' };
 
-export type FeaturedType = 'movie' | 'tv';
+type FeaturedType = 'movie' | 'tv';
 
 /** Titre du pool, normalisé : champs lus par le filtre de l'accueil et par la tuile. */
 export interface FeaturedItem extends HomeItemLike {
@@ -58,7 +58,7 @@ export interface FeaturedItem extends HomeItemLike {
   certification: string;
 }
 
-export interface FeaturedHistoryEntry {
+interface FeaturedHistoryEntry {
   key: string;
   /** Jour local de la mise en tête (AAAA-MM-JJ). */
   at: string;
