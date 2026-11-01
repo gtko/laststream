@@ -82,8 +82,10 @@ class PlayerLogicTest {
     }
 
     @Test fun pendingIsKeptWhenJsClosesTheActivity() {
-        assertFalse(PlayerLogic.clearPendingOnDestroy(silentClose = true))
-        assertTrue(PlayerLogic.clearPendingOnDestroy(silentClose = false))
+        val mine = Any()
+        assertTrue(PlayerLogic.shouldClearPending(mine, mine))
+        assertFalse(PlayerLogic.shouldClearPending(Any(), mine)) // requête du média suivant : conservée
+        assertTrue(PlayerLogic.shouldClearPending<Any>(null, mine))
         assertTrue(PlayerLogic.NEXT_REQUEST_TIMEOUT_MS in 3000L..15000L)
     }
 

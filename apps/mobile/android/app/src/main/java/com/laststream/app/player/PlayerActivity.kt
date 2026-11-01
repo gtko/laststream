@@ -92,6 +92,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private var panelName: String? = null
     private var closedSent = false
     private var silentClose = false
+    /** Dernière requête écrite dans `PlayerHub.pending` par cette activité : seule celle-là lui appartient. */
+    private var ownPending: OpenRequest? = null
     private var resumeOnStart = false
     /** La lecture a été confiée à la vignette flottante : l'activité se ferme sans la toucher. */
     private var handedOff = false
@@ -167,7 +169,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         if (!isInPictureInPictureMode && !handedOff && ::core.isInitialized) {
             resumeOnStart = player.isPlaying
             if (player.isPlaying) player.pause()
-            rememberPosition()
+            if (!isFinishing) rememberPosition() // fermée (épisode suivant) : `pending` appartient déjà au prochain média
             emitState(true)
             emitProgress(true)
         }
@@ -176,7 +178,9 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     /** Position courante gardée dans la requête en attente : une activité recréée reprend là où elle était. */
     private fun rememberPosition() {
         if (!::core.isInitialized) return
-        PlayerHub.pending = core.snapshot()
+        val snap = core.snapshot()
+        ownPending = snap
+        PlayerHub.pending = snap
     }
 
     override fun onDestroy() {
@@ -185,8 +189,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         if (PlayerHub.activity === this) PlayerHub.activity = null
         if (::core.isInitialized && !handedOff) {
             if (!closedSent && !silentClose && isFinishing) emitClosed()
-            // Fermeture demandée par le JS (épisode suivant) : `pending` appartient déjà au prochain média, on n'y touche pas.
-            if (isFinishing) { if (PlayerLogic.clearPendingOnDestroy(silentClose)) PlayerHub.pending = null } else rememberPosition()
+            // `pending` n'est effacé que s'il est encore le nôtre : après un épisode suivant, il appartient au prochain média.
+            if (isFinishing) { if (PlayerLogic.shouldClearPending(PlayerHub.pending, ownPending)) PlayerHub.pending = null } else rememberPosition()
             if (core.ui === this) core.ui = null
             if (PlayerHub.core === core) PlayerHub.core = null
             PlayerHub.machine.close()
@@ -666,6 +670,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
 
     override fun load(r: OpenRequest) {
         handler.removeCallbacks(nextStalledRunnable)
+        ownPending = r
         nextDismissed = false
         setHeading(r.title, r.subtitle)
         setNextEpisode(r.nextEpisode)
@@ -768,6 +773,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
 
     private val nextStalledRunnable = Runnable {
         if (isFinishing || !::core.isInitialized) return@Runnable
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !isInPictureInPictureMode) return@Runnable
         hideSpinner()
         setPlaying(true)
     }
