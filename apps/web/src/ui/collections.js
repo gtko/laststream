@@ -1,15 +1,17 @@
 /* Collections : tuiles paysage animées au survol, hub (#/collections), page d'un dossier (#/collection/{id}) et rangées
  * d'accueil (En vedette, Services de streaming, collections du jour).
  * Collections inspirées de Focale (MIT) et Kaptain. Le JSON (~900 Ko) est chargé à la demande. */
-import { isKidProfile } from '../data/auth';
+import { isKidProfile, kidMaxAge } from '../data/auth';
 import {
   CREDIT, FOR_YOU_ID, SERVICES_CATEGORY, featuredFolders, folderById, loadCatalog, rotatingRows, searchCatalog, serviceFolders, serviceSlug,
 } from '../data/collections/catalog';
 import { folderBackdrop, newCtx, resolveUntil, usableSources } from '../data/collections/engine';
+import { featuredItems, rememberFeatured } from '../data/featured';
 import { filterAvailable } from './avail.js';
 import { register, toItem } from './catalog.js';
-import { REDUCE, STILL } from './constants.js';
+import { IMG, REDUCE, STILL } from './constants.js';
 import { detailEl } from './dom.js';
+import { ficheHash } from './ficheRoute.js';
 import { teardownFiche } from './fiche.js';
 import { svcError, topBar } from './fragments.js';
 import { infiniteList } from './infinite.js';
@@ -372,16 +374,33 @@ const rowSection = (id, title, inner, link) =>
   '<section class="row-section" id="' + id + '" aria-labelledby="h-' + id + '"><h2 class="row-title" id="h-' + id + '">' + esc(title) + (link || '') + '</h2>' + inner + '</section>';
 const rowLink = (href, label) => ' <a class="row-link" href="' + esc(href) + '" data-go>' + esc(label) + '</a>';
 
-/** « En vedette » : 8 dossiers en tuiles larges, ordre qui tourne chaque jour, visuels versionnés tous les 14 jours. */
-export async function renderFeatured(now) {
+/**
+ * Tuile large d'un titre de « En vedette » : même forme qu'un dossier (xl), fond du titre en couverture, clic vers sa fiche.
+ * @param {{key: string, type: 'movie'|'tv', id: number, name: string, backdropPath: string}} it titre du pool (featured.ts)
+ */
+const featuredTile = (it) => folderTile(
+  { id: 'feat-' + it.key.replace(':', '-'), title: it.name, cover: IMG('w1280', it.backdropPath), logo: '', gif: '' },
+  { size: 'xl', href: ficheHash(it.type, it.id) },
+);
+
+/**
+ * « En vedette » : huit titres tirés chaque jour dans le pool du profil (featured.ts), en tuiles larges. Si le pool est
+ * insuffisant, l'ancienne collection (SPOTLIGHTS, visuels versionnés) prend le relais.
+ */
+export async function renderFeatured(now = new Date()) {
   if (isKidProfile()) return false;
   try {
-    const cat = await loadCatalog();
-    catalogRef = cat;
+    const picks = await featuredItems({ now, isKid: isKidProfile(), kidMaxAge: kidMaxAge(), genreHints: [...state.byKey.values()] });
+    let tiles = picks.map(featuredTile);
+    if (!tiles.length) {
+      const cat = await loadCatalog();
+      catalogRef = cat;
+      tiles = featuredFolders(cat, now).map((f) => folderTile(f, { size: 'xl' }));
+    }
     const slot = document.getElementById('feat-slot');
-    const list = featuredFolders(cat, now);
-    if (!slot || !list.length || state.status !== 'ready') return false;
-    slot.innerHTML = rowSection('vedette', 'En vedette', '<div class="row ct-row ct-row-xl" data-nav>' + list.map((f) => folderTile(f, { size: 'xl' })).join('') + '</div>');
+    if (!slot || !tiles.length || state.status !== 'ready') return false;
+    slot.innerHTML = rowSection('vedette', 'En vedette', '<div class="row ct-row ct-row-xl" data-nav>' + tiles.join('') + '</div>');
+    if (picks.length) rememberFeatured(picks, now);
     return true;
   } catch (_) { return false; }
 }
