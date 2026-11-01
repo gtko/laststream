@@ -12,8 +12,12 @@ import { pruneStreams, type TvCatalog } from './tv-catalog.js';
 
 export type StreamVerdict = 'ok' | 'down' | 'unknown';
 
-/** url → [échecs consécutifs, date du dernier contrôle en s]. */
-export type HealthMap = Record<string, [number, number]>;
+/**
+ * url → [échecs consécutifs, date du dernier contrôle en s, date du dernier succès en s]. La troisième valeur n'existe
+ * qu'après un premier succès ; les entrées anciennes à deux éléments restent valides.
+ */
+export type HealthEntry = [number, number, number?];
+export type HealthMap = Record<string, HealthEntry>;
 
 const HEADERS = { 'user-agent': 'Mozilla/5.0 Laststream', accept: '*/*' };
 const REQUEST_TIMEOUT_MS = 8000;
@@ -177,7 +181,32 @@ export interface HealthResult {
   checked: number;
   /** Disjoncteur : trop de pannes d'un coup (réseau du Worker en cause ?), les pannes de ce passage sont ignorées. */
   tripped: boolean;
+  /** Bilan du passage, gardé dans probe.json (tv-build.ts). */
+  report: HealthReport;
 }
+
+export interface HealthChange {
+  id: string;
+  name: string;
+}
+
+/** Bilan d'un passage de contrôle : chaînes retirées (état courant du catalogue) et chaînes remises pendant ce passage. */
+export interface HealthReport {
+  /** Date du passage, en ms. */
+  at: number;
+  /** Flux contrôlés pendant ce passage. */
+  checked: number;
+  /** Disjoncteur déclenché : les pannes de ce passage ont été ignorées (listes après retour arrière). */
+  tripped: boolean;
+  /** Chaînes absentes du catalogue : aucun flux vivant (principal ni repli). */
+  removed: HealthChange[];
+  /** Chaînes présentes dont le flux principal était écarté avant ce passage et ne l'est plus. */
+  restored: HealthChange[];
+}
+
+/** Entrée de santé : la date du dernier succès n'est écrite qu'une fois connue (entrées anciennes inchangées). */
+const entryOf = (fails: number, checkedAt: number, lastOk: number | undefined): HealthEntry =>
+  lastOk === undefined ? [fails, checkedAt] : [fails, checkedAt, lastOk];
 
 /**
  * Au moins `BREAKER_MIN` flux principaux connus sains dont plus de `BREAKER_RATIO` tombent d'un coup : c'est le
@@ -194,7 +223,8 @@ const HEALTH_THRESHOLD = 3;
  * les chaînes dont le principal est en échec. Ce qui n'est pas contrôlé faute de budget l'est aux passages suivants.
  */
 export async function applyHealth(catalog: TvCatalog, previous: HealthMap | undefined, options: HealthOptions = {}): Promise<HealthResult> {
-  const nowSec = Math.floor((options.now ?? Date.now)() / 1000);
+  const nowMs = (options.now ?? Date.now)();
+  const nowSec = Math.floor(nowMs / 1000);
   const threshold = options.threshold ?? HEALTH_THRESHOLD;
   const ttl = options.ttlSec ?? 5 * 3600;
   const health: HealthMap = {};
@@ -220,7 +250,7 @@ export async function applyHealth(catalog: TvCatalog, previous: HealthMap | unde
       const entry = health[url];
       return entry === undefined || nowSec - entry[1] >= ttl;
     };
-    const downs = new Map<string, [number, number] | undefined>();
+    const downs = new Map<string, HealthEntry | undefined>();
     let steady = 0;
     let steadyDown = 0;
     const run = async (urls: string[], main: boolean): Promise<void> => {
@@ -238,11 +268,11 @@ export async function applyHealth(catalog: TvCatalog, previous: HealthMap | unde
             steady += 1;
             if (verdict === 'down') steadyDown += 1;
           }
-          if (verdict === 'ok') health[url] = [0, nowSec];
+          if (verdict === 'ok') health[url] = [0, nowSec, nowSec];
           else if (verdict === 'down') {
             downs.set(url, before);
-            health[url] = [fails + 1, nowSec];
-          } else health[url] = [fails, nowSec];
+            health[url] = entryOf(fails + 1, nowSec, before?.[2]);
+          } else health[url] = entryOf(fails, nowSec, before?.[2]); // refus d'accès : ni échec ni succès
         }
       };
       await Promise.all(Array.from({ length: options.concurrency ?? 16 }, () => worker()));
@@ -270,5 +300,17 @@ export async function applyHealth(catalog: TvCatalog, previous: HealthMap | unde
   }
 
   const dead = new Set(Object.entries(health).filter(([, entry]) => entry[0] >= threshold).map(([url]) => url));
-  return { health, removed: pruneStreams(catalog, dead), dead: dead.size, checked, tripped };
+  // Avant le retrait : pruneStreams modifie les chaînes en place (repli promu comme flux principal).
+  const entering = catalog.channels.map((channel) => ({ id: channel.id, name: channel.name, url: channel.url }));
+  const removed = pruneStreams(catalog, dead);
+  const surviving = new Set(catalog.channels.map((channel) => channel.id));
+  const failedBefore = (url: string): boolean => (previous?.[url]?.[0] ?? 0) >= threshold;
+  const report: HealthReport = {
+    at: nowMs,
+    checked,
+    tripped,
+    removed: entering.filter((c) => !surviving.has(c.id)).map(({ id, name }) => ({ id, name })),
+    restored: entering.filter((c) => surviving.has(c.id) && failedBefore(c.url) && !dead.has(c.url)).map(({ id, name }) => ({ id, name })),
+  };
+  return { health, removed, dead: dead.size, checked, tripped, report };
 }

@@ -261,3 +261,115 @@ describe('applyHealth : retrait après échecs consécutifs, retour automatique'
     expect(Object.keys(result.health)).toEqual([GOOD]);
   });
 });
+
+describe('applyHealth : dernier succès et rapport de passage', () => {
+  const T0 = 1_800_000_000_000;
+  const HOUR = 3_600_000;
+  const at = (hour: number): number => T0 + hour * HOUR;
+  const sec = (hour: number): number => Math.floor(at(hour) / 1000);
+  type Net = Record<string, Route | 'throw'>;
+
+  const PAIR: [string, string][] = [
+    ['Bonne', GOOD],
+    ['Morte', BAD],
+  ];
+  /** Un passage sur un catalogue (par défaut Bonne et Morte), avec l'état du passage précédent. */
+  function runner(net: () => Net) {
+    let health: HealthMap | undefined;
+    return async (hour: number, spec: [string, string][] = PAIR) => {
+      const catalog = catalogOf(spec.map(([name, url]) => channel(name, url)));
+      const result = await applyHealth(catalog, health, { fetch: fakeFetch(net()), now: () => at(hour), check: true });
+      health = result.health;
+      return { result, ids: catalog.channels.map((c) => c.id), health: result.health };
+    };
+  }
+
+  it('(a) chaîne gardée aux 1er et 2e échecs, retirée au 3e et listée dans report.removed', async () => {
+    const run = runner(() => live(GOOD));
+    const first = await run(0);
+    expect(first.ids).toEqual(['Bonne', 'Morte']);
+    expect(first.result.report.removed).toEqual([]);
+    const second = await run(6);
+    expect(second.ids).toEqual(['Bonne', 'Morte']);
+    const third = await run(12);
+    expect(third.ids).toEqual(['Bonne']);
+    expect(third.result.report).toEqual({
+      at: at(12),
+      checked: 2,
+      tripped: false,
+      removed: [{ id: 'Morte', name: 'Morte' }],
+      restored: [],
+    });
+  });
+
+  it('(b) un succès remet l’échec à 0 : la chaîne revient, figure dans restored, dernier succès à jour', async () => {
+    let up: Net = live(GOOD);
+    const run = runner(() => up);
+    await run(0);
+    await run(6);
+    expect((await run(12)).result.report.removed).toEqual([{ id: 'Morte', name: 'Morte' }]);
+    up = { ...live(GOOD), ...live(BAD) };
+    const back = await run(18);
+    expect(back.ids).toEqual(['Bonne', 'Morte']);
+    expect(back.result.report).toMatchObject({ removed: [], restored: [{ id: 'Morte', name: 'Morte' }] });
+    expect(back.health[BAD]).toEqual([0, sec(18), sec(18)]);
+    expect(back.health[GOOD]).toEqual([0, sec(18), sec(18)]);
+  });
+
+  it('(b bis) un échec garde le dernier succès d’avant ; sans succès, pas de troisième valeur', async () => {
+    let up: Net = live(GOOD);
+    const run = runner(() => up);
+    const first = await run(0);
+    expect(first.health[GOOD]).toEqual([0, sec(0), sec(0)]);
+    expect(first.health[BAD]).toEqual([1, sec(0)]); // jamais réussi : pas de troisième valeur
+    up = { [GOOD]: () => new Response('panne', { status: 500 }) };
+    const down = await run(6);
+    expect(down.health[GOOD]).toEqual([1, sec(6), sec(0)]);
+    expect(down.health[BAD]).toEqual([2, sec(6)]);
+  });
+
+  it('(c) refus 403 et 451 (géoblocage) : ni échec ni succès, le dernier succès ne bouge pas', async () => {
+    let status = 200;
+    const run = runner(() => (status === 200 ? live(GOOD) : { [GOOD]: () => new Response('non', { status }) }));
+    expect((await run(0, [['Bonne', GOOD]])).health[GOOD]).toEqual([0, sec(0), sec(0)]);
+    status = 403;
+    expect((await run(6, [['Bonne', GOOD]])).health[GOOD]).toEqual([0, sec(6), sec(0)]);
+    status = 451;
+    const geo = await run(12, [['Bonne', GOOD]]);
+    expect(geo.health[GOOD]).toEqual([0, sec(12), sec(0)]);
+    expect(geo.result.report.removed).toEqual([]);
+  });
+
+  it('(c bis) un refus d’accès ne remet pas non plus un échec à zéro', async () => {
+    let current: Net = {};
+    const run = runner(() => current);
+    const morte: [string, string][] = [['Morte', BAD]];
+    await run(0, morte); // 404 : échec
+    await run(6, morte); // 404 : échec
+    current = { [BAD]: () => new Response('non', { status: 403 }) };
+    const after = await run(12, morte);
+    expect(after.health[BAD]).toEqual([2, sec(12)]);
+    expect(after.ids).toEqual(['Morte']);
+  });
+
+  it('(d) entrées anciennes à 2 éléments acceptées : un succès ajoute le dernier succès, un échec reste à 2 éléments', async () => {
+    const legacy: HealthMap = { [GOOD]: [0, sec(-6)], [BAD]: [2, sec(-6)] };
+    const catalog = catalogOf([channel('Bonne', GOOD), channel('Morte', BAD)]);
+    const result = await applyHealth(catalog, legacy, { fetch: fakeFetch(live(GOOD)), now: () => at(0), check: true });
+    expect(result.health[GOOD]).toEqual([0, sec(0), sec(0)]);
+    expect(result.health[BAD]).toEqual([3, sec(0)]);
+    expect(result.report.removed).toEqual([{ id: 'Morte', name: 'Morte' }]);
+    expect(catalog.channels.map((c) => c.id)).toEqual(['Bonne']);
+  });
+
+  it('rapport : tripped reflète le disjoncteur', async () => {
+    const urls = Array.from({ length: 30 }, (_, i) => `https://ok.example/${i}/live.m3u8`);
+    const catalog = catalogOf(urls.map((u, i) => channel(`C${i}`, u)));
+    const before: HealthMap = Object.fromEntries(urls.map((u) => [u, [0, 1] as [number, number]]));
+    const net: Net = Object.fromEntries(urls.map((u) => [u, 'throw' as const]));
+    const result = await applyHealth(catalog, before, { fetch: fakeFetch(net), now: () => at(0), check: true });
+    expect(result.tripped).toBe(true);
+    expect(result.report.tripped).toBe(true);
+    expect(result.report.removed).toEqual([]);
+  });
+});
