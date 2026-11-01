@@ -125,10 +125,16 @@ export function showSourcesPanel(reasons = []) {
   });
 }
 
+/** Lecteur natif en attente d'un « suivant » refusé (le toast est caché sous l'activité) : il reprend la lecture. */
+function resumeNative(p) {
+  if (p && p.engine && p.engine.kind === 'native') p.engine.play();
+}
+
 /** Épisode d'une série : même ouverture immédiate que « Lecture », sans reprise proposée. */
 export function playEpisode(season, episode) {
   const p = S.P;
-  if (!p || guestBlocked()) return Promise.resolve();
+  if (!p) return Promise.resolve();
+  if (guestBlocked()) { resumeNative(p); return Promise.resolve(); }
   S.ui.closePanel(true);
   S.ui.closeMark(false); // le segment en cours de marquage appartient à l'épisode qu'on quitte
   // Lecteur natif Android : son activité couvre la page. Laissée ouverte, l'épisode quitté continuerait par-dessus la recherche
@@ -217,7 +223,7 @@ export function onAction(act, data) {
     case 'info': S.ui.togglePanel('info'); break;
     case 'skip': { const seg = activeSkip(S.P.segments, st.time); if (seg) { seekTo(seg.end); S.ui.toast('Passé'); } break; }
     case 'skip-wrong': { const seg = activeSkip(S.P.segments, st.time); if (seg) sendSegment(seg.kind, seg.start, seg.end, true); break; }
-    case 'next': { const nx = nextRef(); if (nx) playEpisode(nx.season, nx.episode); else S.ui.toast('Dernier épisode'); break; }
+    case 'next': { const nx = nextRef(); if (nx) playEpisode(nx.season, nx.episode); else { S.ui.toast('Dernier épisode'); resumeNative(S.P); } break; }
     case 'next-dismiss': S.P.nextDismissed = true; S.ui.setNextCard(null); break;
     case 'end-dismiss': S.P.endDismissed = true; S.ui.setEndRow(false); break;
     case 'more-info': case 'recs': {

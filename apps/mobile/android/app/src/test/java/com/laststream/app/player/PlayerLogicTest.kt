@@ -81,6 +81,14 @@ class PlayerLogicTest {
         assertEquals("Passer l’intro ?", PlayerLogic.skipLabel(SkipSegment("intro", 0.0, 9.0, inferred = true)))
     }
 
+    @Test fun pendingIsKeptWhenJsClosesTheActivity() {
+        val mine = Any()
+        assertTrue(PlayerLogic.shouldClearPending(mine, mine))
+        assertFalse(PlayerLogic.shouldClearPending(Any(), mine)) // requête du média suivant : conservée
+        assertTrue(PlayerLogic.shouldClearPending<Any>(null, mine))
+        assertTrue(PlayerLogic.NEXT_REQUEST_TIMEOUT_MS in 3000L..15000L)
+    }
+
     @Test fun nextCard() {
         assertFalse(PlayerLogic.showNextCard(segs, 2000.0, 2700.0, true))
         assertTrue(PlayerLogic.showNextCard(segs, 2510.0, 2700.0, true))
