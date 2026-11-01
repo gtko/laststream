@@ -126,7 +126,7 @@ export function showSourcesPanel(reasons = []) {
 }
 
 /** Lecteur natif en attente d'un « suivant » refusé (le toast est caché sous l'activité) : il reprend la lecture. */
-export function resumeNative(p) {
+function resumeNative(p) {
   if (p && p.engine && p.engine.kind === 'native') p.engine.play();
 }
 
