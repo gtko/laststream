@@ -16,7 +16,7 @@ export type StreamVerdict = 'ok' | 'down' | 'unknown';
  * url → [échecs consécutifs, date du dernier contrôle en s, date du dernier succès en s]. La troisième valeur n'existe
  * qu'après un premier succès ; les entrées anciennes à deux éléments restent valides.
  */
-export type HealthEntry = [number, number, number?];
+type HealthEntry = [number, number, number?];
 export type HealthMap = Record<string, HealthEntry>;
 
 const HEADERS = { 'user-agent': 'Mozilla/5.0 Laststream', accept: '*/*' };

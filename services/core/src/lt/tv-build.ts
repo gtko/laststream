@@ -422,7 +422,7 @@ const parse = <T extends { v: number }>(text: string | undefined): T | undefined
 };
 
 /** Nombre de noms de chaînes détaillés dans le journal du Cron, par liste (au-delà : le total seulement). */
-export const HEALTH_LOG_NAMES = 40;
+const HEALTH_LOG_NAMES = 40;
 
 /** Journal d'un passage de santé : compteurs, puis noms des chaînes retirées et remises (40 au plus chacune). */
 export function healthLog(report: HealthReport, dead: number): string {
