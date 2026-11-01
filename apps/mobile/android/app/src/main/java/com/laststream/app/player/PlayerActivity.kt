@@ -672,6 +672,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
 
     override fun load(r: OpenRequest) {
         handler.removeCallbacks(nextStalledRunnable)
+        nextStalledPending = false
         ownPending = r
         nextDismissed = false
         setHeading(r.title, r.subtitle)
