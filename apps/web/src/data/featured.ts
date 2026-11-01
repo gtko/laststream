@@ -21,8 +21,8 @@ const MIN_POOL = 4;
 const MIN_SERIES = 2;
 /** Un titre mis en tête depuis moins de 14 jours perd presque toute sa chance. */
 const HISTORY_DAYS = 14;
-/** Entrées gardées par profil (environ 7 jours à 8 titres par jour). */
-const HISTORY_MAX = 60;
+/** Entrées gardées par profil (14 jours à 8 titres par jour, avec marge). */
+const HISTORY_MAX = 120;
 const HISTORY_PREFIX = 'laststream.featured.';
 const NEW_DAYS = 30;
 const WEEK_DAYS = 7;
