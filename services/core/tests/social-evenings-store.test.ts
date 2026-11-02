@@ -217,13 +217,25 @@ describe('soirées : droits', () => {
   });
 });
 
-describe('soirées : ami seulement', () => {
-  it('invités : seuls les amis acceptés ; même réponse pour tout autre profil (en attente, bloqué, foyer, enfant, inconnu)', () => {
+describe('soirées : amis et foyer seulement', () => {
+  it('invités : amis acceptés et foyer ; même réponse pour tout autre profil (en attente, bloqué, enfant, inconnu)', () => {
     const { store, db } = seeded();
-    const others = [DAVE, ERIC, TWIN, KIDP, GHOST];
+    const others = [DAVE, ERIC, KIDP, GHOST];
     const outcomes = others.map((pid) => store.create(ALICE, { tz: 'Europe/Paris', title: 'x', startsAt: NOW + 2 * HOUR, guests: [pid] }, NOW));
     for (const outcome of outcomes) expect(outcome).toEqual({ result: 'not_friend' });
-    expect((db.prepare('SELECT COUNT(*) AS n FROM evening_guests WHERE pid IN (?, ?, ?, ?, ?)').get(...others) as { n: number }).n).toBe(0);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM evening_guests WHERE pid IN (?, ?, ?, ?)').get(...others) as { n: number }).n).toBe(0);
+  });
+
+  it('foyer : un autre profil adulte du même compte (non ami) s invite à la création et par addGuests ; un profil enfant du foyer reste refusé', () => {
+    const { store, db } = seeded();
+    profile(db, 'p-alice-kid', 'a1', 'ALKIDPIDAAAAAAAA', 'Mini', 1);
+    const evening = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'En famille', startsAt: NOW + 2 * HOUR, guests: [TWIN, BOB] }, NOW));
+    expect(guestPids(evening)).toEqual([ALICE, BOB, TWIN].sort());
+    expect(store.get(TWIN, evening.id)).toMatchObject({ result: 'ok', evening: { role: 'guest', myResponse: 'pending' } });
+    const other = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Autre', startsAt: NOW + 3 * HOUR, guests: [] }, NOW));
+    expect(store.addGuests(ALICE, other.id, [TWIN], NOW)).toEqual({ result: 'ok' });
+    expect(store.addGuests(ALICE, other.id, ['ALKIDPIDAAAAAAAA'], NOW)).toEqual({ result: 'not_friend' });
+    expect(store.create(ALICE, { tz: 'Europe/Paris', title: 'x', startsAt: NOW + 2 * HOUR, guests: ['ALKIDPIDAAAAAAAA'] }, NOW)).toEqual({ result: 'not_friend' });
   });
 
   it('addGuests applique la même règle : un seul profil non ami fait échouer l ajout', () => {

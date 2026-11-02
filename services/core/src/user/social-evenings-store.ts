@@ -321,7 +321,7 @@ export class EveningStore {
         if (first !== input.startsAt) return INVALID;
       }
       for (const pid of guests) {
-        if (!this.isFriend(hostPid, pid)) return { result: 'not_friend' };
+        if (!this.canInvite(hostPid, pid)) return { result: 'not_friend' };
       }
 
       if (rule === undefined) {
@@ -461,7 +461,7 @@ export class EveningStore {
       const guests = normalizeGuests(pids, viewer);
       if (guests === undefined || guests.length === 0) return INVALID;
       for (const pid of guests) {
-        if (!this.isFriend(viewer, pid)) return { result: 'not_friend' };
+        if (!this.canInvite(viewer, pid)) return { result: 'not_friend' };
       }
       const present = (this.db.prepare('SELECT COUNT(*) AS n FROM evening_guests WHERE evening_id = ?').get(id) as unknown as { n: number }).n;
       const fresh = guests.filter((pid) => !this.isGuestRow(id, pid)).length;
@@ -861,17 +861,19 @@ export class EveningStore {
   }
 
   /**
-   * Amitié acceptée entre deux profils adultes de comptes différents, sans blocage dans un sens ni dans l'autre. Même règle
-   * que la relation « ami » de SocialV2Store (qui reste privée) : le foyer n'est pas une amitié.
+   * Profil invitable : un autre profil adulte du même compte (foyer, y compris les profils rattachés par invitation foyer), ou un
+   * ami accepté d'un autre compte, adulte, sans blocage dans un sens ni dans l'autre. Même règle « ami » que SocialV2Store (qui
+   * reste privée) ; le foyer n'est pas une amitié mais peut être invité.
    */
-  private isFriend(viewer: string, target: string): boolean {
+  private canInvite(viewer: string, target: string): boolean {
     if (viewer === target) return false;
     const targetRow = this.db.prepare('SELECT account_id FROM profiles WHERE pid = ? AND is_kid = 0').get(target) as unknown as
       | { account_id: string }
       | undefined;
     if (targetRow === undefined) return false;
     const viewerRow = this.db.prepare('SELECT account_id FROM profiles WHERE pid = ?').get(viewer) as unknown as { account_id: string } | undefined;
-    if (viewerRow === undefined || viewerRow.account_id === targetRow.account_id) return false;
+    if (viewerRow === undefined) return false;
+    if (viewerRow.account_id === targetRow.account_id) return true;
     const blocked = this.db
       .prepare('SELECT 1 AS x FROM blocks WHERE (blocker_pid = ? AND blocked_pid = ?) OR (blocker_pid = ? AND blocked_pid = ?) LIMIT 1')
       .get(viewer, target, target, viewer);

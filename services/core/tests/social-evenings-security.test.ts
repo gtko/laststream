@@ -310,25 +310,25 @@ describe('ouverture du salon : visibilité du salon', () => {
 });
 
 describe('même foyer', () => {
-  it('autre profil du même compte : ne voit pas la soirée, ne peut ni inviter ni être invité ; l hôte la voit', async () => {
+  it('autre profil du même compte : ne voit la soirée que s il est invité ; l hôte et l invité du foyer la voient', async () => {
     const created = await createEvening([cast.bob]);
     emitted.length = 0;
-    // Absent : détail et listes du profil jumeau. Témoin : l hôte la voit.
+    // Non invité : absent (détail et listes). Témoin : l hôte la voit.
     expect(shape(await detailOf(cast.alice2, created.id))).toEqual(NOT_FOUND);
     expect(await idsOf(cast.alice2, 'upcoming')).toEqual([]);
     expect(await idsOf(cast.alice2, 'invites')).toEqual([]);
     expect(await idsOf(cast.alice, 'upcoming')).toEqual([created.id]);
 
-    // Invitation refusée dans les deux sens, même corps que pour un non-ami.
-    expect(await addAs(created.id, [cast.alice2.pid])).toEqual(NOT_FRIEND);
-    expect(shape(await as(app, cast.alice2, 'POST', EVENINGS, { body: draft({ guests: [cast.alice.pid] }) }))).toEqual(NOT_FRIEND);
-    expect(guestPidsOf((await detailOf(cast.alice, created.id)).body)).toEqual(sorted(cast.alice, cast.bob));
-    expect(frames()).toEqual([]);
+    // Le profil du foyer s'invite sans être ami ; un non-ami d'un autre compte reste refusé, même corps.
+    expect(await addAs(created.id, [cast.carol.pid])).toEqual(NOT_FRIEND);
+    expect(await addAs(created.id, [cast.alice2.pid])).toMatchObject({ status: 204 });
+    expect(guestPidsOf((await detailOf(cast.alice, created.id)).body)).toEqual(sorted(cast.alice, cast.alice2, cast.bob));
+    expect(await idsOf(cast.alice2, 'invites')).toEqual([created.id]);
+    expect(frames('evening_invite')).toEqual([{ pids: [cast.alice2.pid], event: expect.objectContaining({ type: 'evening_invite', eveningId: created.id }) }]);
 
-    // Témoin : un ami adulte, lui, peut être ajouté.
+    // Témoin : un ami adulte peut aussi être ajouté.
     await befriend(app, cast.alice, cast.carol);
     expect(await addAs(created.id, [cast.carol.pid])).toMatchObject({ status: 204 });
-    expect(frames('evening_invite')).toEqual([{ pids: [cast.carol.pid], event: expect.objectContaining({ type: 'evening_invite', eveningId: created.id }) }]);
   });
 });
 

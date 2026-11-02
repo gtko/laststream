@@ -197,7 +197,7 @@ Le contrat v3 (`docs/social-v3-contract.md`) est hors dépôt. Cette section dé
 
 ### Soirées planifiées (LAST-198)
 
-Soirées ponctuelles ou séries hebdomadaires entre amis, sous `/user/social/evenings*`, avec le profil agissant (`X-Profile-Id`). Un profil enfant reçoit 403 `kid_profile` sur les onze routes. Une soirée n'est visible que de son hôte et de ses invités non retirés. Code : `src/user/social-evenings-{store,routes,live,validation}.ts` ; types `Evening` et `EveningEvent` dans `@laststream/protocol` v0.4.0.
+Soirées ponctuelles ou séries hebdomadaires entre amis et membres du foyer (autres profils adultes du même compte, y compris ceux rattachés par invitation foyer ; LAST-1611), sous `/user/social/evenings*`, avec le profil agissant (`X-Profile-Id`). Un profil enfant reçoit 403 `kid_profile` sur les onze routes. Une soirée n'est visible que de son hôte et de ses invités non retirés. Code : `src/user/social-evenings-{store,routes,live,validation}.ts` ; types `Evening` et `EveningEvent` dans `@laststream/protocol` v0.4.0.
 
 **Routes**
 
