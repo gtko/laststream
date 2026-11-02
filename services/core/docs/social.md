@@ -208,7 +208,7 @@ Soirées ponctuelles ou séries hebdomadaires entre amis et membres du foyer (au
 | POST | `/evenings` | Crée une soirée ; `recurrence` (`weekly`, `interval` 1 ou 2, `until`) crée une série | 201 ; 400 ; 403 `not_friend` ; 429 `too_many_evenings` |
 | PATCH | `/evenings/:id` | Titre ou début, sur `scope` `occurrence` ou `series` (`scope` seul : 400) | 204 ; 403 `not_host` ; 409 `evening_closed` |
 | DELETE | `/evenings/:id?scope=` | `occurrence` annule ; `series` arrête la série | 204 ; 400 (`series` sur une ponctuelle) ; 403 `not_host` |
-| POST | `/evenings/:id/guests` | Ajoute des amis (`pids`, 1 à 19) | 204 ; 400 ; 403 `not_friend` ou `not_host` |
+| POST | `/evenings/:id/guests` | Ajoute des amis ou des membres du foyer (`pids`, 1 à 19) | 204 ; 400 ; 403 `not_friend` ou `not_host` |
 | DELETE | `/evenings/:id/guests/:pid` | Retire un invité ; pid inconnu : 204 sans effet ; l'hôte ne se retire pas | 204 ; 400 (hôte) ; 403 `not_host` |
 | PUT | `/evenings/:id/response` | Ma réponse : `yes`, `maybe` ou `no` | 204 ; 403 `not_host` ; 409 `evening_closed` |
 | POST | `/evenings/:id/leave` | `occurrence` met « non » ; `series` retire mes occurrences futures et ne me génère plus | 204 ; 400 ; 403 `not_host` ; 409 |

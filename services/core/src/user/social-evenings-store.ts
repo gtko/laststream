@@ -8,8 +8,8 @@ import type { SqlDb, SqlParam } from './sql.js';
  * sociaux (SQLite Node ou Durable Object), requêtes paramétrées, identifiants publics seulement (pid).
  *
  * Droits : une soirée n'est visible que de son hôte et de ses invités non retirés. Seul l'hôte modifie, annule ou
- * invite ; un invité répond ou quitte. Un invité doit être un ami accepté : pour tout autre profil (en attente, bloqué
- * dans un sens ou dans l'autre, enfant, inconnu, membre du foyer), la réponse est la même, `not_friend`.
+ * invite ; un invité répond ou quitte. Un invité doit être un ami accepté ou un autre profil adulte du même compte (foyer) : pour tout
+ * autre profil (en attente, bloqué dans un sens ou dans l'autre, enfant, inconnu), la réponse est la même, `not_friend`.
  *
  * L'hôte figure parmi les invités de sa soirée, avec la réponse « yes ». Les méthodes sont synchrones et reçoivent
  * l'instant `now` (ms) : ni horloge ni dépendance Cloudflare ici. `tick` renvoie les rappels à émettre et l'instant du

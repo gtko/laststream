@@ -29,7 +29,7 @@ import { parseWith, UserApiError } from './validation.js';
  * Routes des soirées planifiées (LAST-198, lot L2), montées sous `/user` : `/social/evenings*`. Profil agissant : en-tête
  * `X-Profile-Id`, comme les autres routes sociales ; un profil enfant reçoit 403 `kid_profile` sur les onze routes.
  *
- * Droits : un non-participant reçoit 404 `evening_not_found` (jamais 403). Un profil qui n'est pas mon ami, ou qui est en
+ * Droits : un non-participant reçoit 404 `evening_not_found` (jamais 403). Un profil qui n'est ni mon ami ni un profil adulte de mon foyer, ou qui est en
  * attente ou bloqué, reçoit le même corps 403 `not_friend`. Les réponses de mutation sont sans corps (204), sauf la création
  * (201 avec la soirée).
  *
@@ -242,7 +242,7 @@ export function registerSocialEveningRoutes(router: App, deps: AppDeps, backend:
   // Création et modification
 
   /**
-   * Crée une soirée (ponctuelle, ou série si `recurrence`). 201 avec la soirée. 403 `not_friend` si un invité n'est pas mon ami,
+   * Crée une soirée (ponctuelle, ou série si `recurrence`). 201 avec la soirée. 403 `not_friend` si un invité n'est ni mon ami ni un profil adulte de mon foyer,
    * 400 `invalid_body`, 429 `too_many_evenings` au-delà de 10 soirées à venir (5 séries actives).
    */
   router.post('/social/evenings', async (c) => {
