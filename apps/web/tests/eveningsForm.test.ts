@@ -167,13 +167,13 @@ describe('feuille de création', () => {
     setAccount(null);
     expect(ui.openEveningForm()).toBeNull();
   });
-  it('invités : amis acceptés seulement (ni foyer), recherche, plafond de 19', () => {
+  it('invités : amis acceptés et foyer, recherche, plafond de 19', () => {
     const st = social.getState();
+    st.household = [] as any;
     st.friends = Array.from({ length: 21 }, (_, i) => person('f' + i, 'Ami' + String(i).padStart(2, '0'))) as any;
     ui.openEveningForm();
     const boxes = () => Array.from(dialog()!.querySelectorAll<HTMLInputElement>('input[name="guest"]'));
     expect(boxes()).toHaveLength(21);
-    expect(dialog()!.textContent).not.toContain('Maison');
     setVal('[data-evf-search]', 'ami05');
     expect(Array.from(dialog()!.querySelectorAll('[data-evf-name]')).filter((li) => !(li as HTMLElement).hidden)).toHaveLength(1);
     setVal('[data-evf-search]', 'zzz');
@@ -183,10 +183,26 @@ describe('feuille de création', () => {
     expect(q('[data-evf-count]').textContent).toBe('19 / 19');
     expect(boxes().filter((b) => !b.checked).every((b) => b.disabled)).toBe(true);
   });
+  it('foyer : proposé avec la mention « Foyer », trouvé par la recherche, sans doublon avec un ami', () => {
+    const st = social.getState();
+    st.friends = [person('f1', 'Ami'), person('h1', 'Oli')] as any;
+    st.household = [person('h1', 'Oli', { household: true }), person('h2', 'Maison', { household: true })] as any;
+    ui.openEveningForm();
+    const boxes = Array.from(dialog()!.querySelectorAll<HTMLInputElement>('input[name="guest"]'));
+    expect(boxes.map((b) => b.value).sort()).toEqual(['f1', 'h1', 'h2']);
+    const row = (pid: string) => dialog()!.querySelector(`input[value="${pid}"]`)!.closest('li')!;
+    expect(row('h1').textContent).toContain('Foyer');
+    expect(row('h2').textContent).toContain('Foyer');
+    expect(row('f1').textContent).not.toContain('Foyer');
+    setVal('[data-evf-search]', 'oli');
+    expect(Array.from(dialog()!.querySelectorAll('[data-evf-name]')).filter((li) => !(li as HTMLElement).hidden)).toHaveLength(1);
+    expect(q('[data-evf-nomatch]').hidden).toBe(true);
+  });
   it('sans ami : message qui renvoie vers la page Amis, la création reste possible', () => {
     social.getState().friends = [] as any;
+    social.getState().household = [] as any;
     ui.openEveningForm();
-    expect(dialog()!.textContent).toMatch(/Aucun ami à inviter/);
+    expect(dialog()!.textContent).toMatch(/Personne à inviter/);
     expect(dialog()!.querySelector('input[name="guest"]')).toBeNull();
   });
   it('formulaire invalide : aucun appel, erreurs liées aux champs, focus sur le premier', () => {

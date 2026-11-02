@@ -1,5 +1,5 @@
 /* Feuille « Planifier une soirée » et « Modifier la soirée » (LAST-199, lot B) : titre, date et heure (fuseau du navigateur envoyé en
- * `tz`), récurrence, invités (amis acceptés, hors foyer, 19 au plus, recherche courte). La validation reprend les plafonds du serveur
+ * `tz`), récurrence, invités (amis acceptés et foyer, 19 au plus, recherche courte). La validation reprend les plafonds du serveur
  * (data/eveningForm.ts) ; un seul envoi à la fois (bouton désactivé pendant l'appel) ; une réponse qui arrive après un changement de
  * profil ou la fermeture de la feuille n'écrit plus rien. En modification : titre, horaire et invités, sur l'occurrence ou la série. */
 import { auth } from '../data/auth';
@@ -19,24 +19,26 @@ const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').tri
 
 const REPEATS = [['once', 'Une fois'], ['weekly', 'Chaque semaine'], ['biweekly', 'Toutes les 2 semaines']];
 
-/** Personnes invitables : mes amis acceptés (jamais le foyer), puis les invités actuels qui ne sont plus dans la liste (à retirer). */
+/** Personnes invitables : mes amis acceptés et mon foyer (sans doublon, `household` vrai pour le foyer), puis les invités actuels qui ne sont plus dans la liste (à retirer). */
 function candidates(evening) {
   const seen = new Set();
   const list = [];
   const add = (p) => { if (p && p.pid && !seen.has(p.pid)) { seen.add(p.pid); list.push(p); } };
-  socialState().friends.filter((f) => !f.household).forEach(add);
+  const st = socialState();
+  (st.household || []).forEach((p) => add({ ...p, household: true }));
+  st.friends.forEach((f) => add(f));
   if (evening) evening.guests.forEach((g) => add(g.profile));
   return list.sort((a, b) => friendName(a).localeCompare(friendName(b), 'fr'));
 }
 
 function friendsHTML(list, picked) {
-  if (!list.length) return '<p class="evf-empty">Aucun ami à inviter pour l’instant. Ajoute des amis depuis la page Amis : tu pourras aussi inviter plus tard.</p>';
-  return '<input class="evf-input evf-search" type="search" data-evf-search autocomplete="off" placeholder="Chercher un ami" aria-label="Chercher un ami à inviter">' +
+  if (!list.length) return '<p class="evf-empty">Personne à inviter pour l’instant. Ajoute des amis depuis la page Amis : tu pourras aussi inviter plus tard.</p>';
+  return '<input class="evf-input evf-search" type="search" data-evf-search autocomplete="off" placeholder="Chercher un ami ou un proche" aria-label="Chercher un ami ou un proche à inviter">' +
     '<ul class="evf-friends">' + list.map((f) => {
       const name = friendName(f);
-      return '<li data-evf-name="' + esc(norm(name)) + '"><label class="evf-friend">' + avatarHTML(f, 'ss-av-m') + '<span class="evf-fn">' + esc(name) + '</span>' +
+      return '<li data-evf-name="' + esc(norm(name)) + '"><label class="evf-friend">' + avatarHTML(f, 'ss-av-m') + '<span class="evf-fn">' + esc(name) + '</span>' + (f.household ? '<span class="evf-tag">Foyer</span>' : '') +
         '<input type="checkbox" name="guest" value="' + esc(f.pid) + '"' + (picked.has(f.pid) ? ' checked' : '') + ' aria-label="Inviter ' + esc(name) + '"><span class="evf-chk" aria-hidden="true"></span></label></li>';
-    }).join('') + '</ul><p class="evf-empty" data-evf-nomatch hidden>Aucun ami ne correspond.</p>';
+    }).join('') + '</ul><p class="evf-empty" data-evf-nomatch hidden>Personne ne correspond.</p>';
 }
 
 const field = (id, label, control, extra = '') =>

@@ -97,6 +97,7 @@
 .evf-friend:hover { background: var(--surface-2); }
 .evf-friend:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: -2px; }
 .evf-fn { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: 15px; font-weight: 600; }
+.evf-tag { flex: 0 0 auto; font-size: 12px; font-weight: 600; color: var(--dim); }
 .evf-friend input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .evf-chk { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; border: 2px solid var(--input-border); box-sizing: border-box; }
 .evf-friend input:checked ~ .evf-chk { background: var(--accent); border-color: var(--accent); }
