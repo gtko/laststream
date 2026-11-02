@@ -37,7 +37,7 @@ function friendsHTML(list, picked) {
     '<ul class="evf-friends">' + list.map((f) => {
       const name = friendName(f);
       return '<li data-evf-name="' + esc(norm(name)) + '"><label class="evf-friend">' + avatarHTML(f, 'ss-av-m') + '<span class="evf-fn">' + esc(name) + '</span>' + (f.household ? '<span class="evf-tag">Foyer</span>' : '') +
-        '<input type="checkbox" name="guest" value="' + esc(f.pid) + '"' + (picked.has(f.pid) ? ' checked' : '') + ' aria-label="Inviter ' + esc(name) + '"><span class="evf-chk" aria-hidden="true"></span></label></li>';
+        '<input type="checkbox" name="guest" value="' + esc(f.pid) + '"' + (picked.has(f.pid) ? ' checked' : '') + ' aria-label="Inviter ' + esc(name) + (f.household ? ' (foyer)' : '') + '"><span class="evf-chk" aria-hidden="true"></span></label></li>';
     }).join('') + '</ul><p class="evf-empty" data-evf-nomatch hidden>Personne ne correspond.</p>';
 }
 
