@@ -1,6 +1,6 @@
 {
   "name": "laststream-app",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Laststream : application web (interface du prototype, backend lastAddon).",

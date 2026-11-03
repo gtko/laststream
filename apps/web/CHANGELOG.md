@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 (2026-11-04)
+
+- Lecteur : les réactions emoji des amis s'affichent en direct, en grand (plus grand en plein écran), avec le nom de l'auteur et une file d'attente (LAST-1614, #152).
+- Lecteur : la bulle de message s'empile sous le bandeau de salle au lieu de passer derrière (LAST-1614, #152).
+
 ## 0.1.1 (2026-11-01)
 
 - Android : « Suivant » et « Continuer » dans le lecteur natif chargent l'épisode suivant sans fermer le lecteur à la main (LAST-1045, #147).
