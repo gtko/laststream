@@ -11,6 +11,7 @@ import { bindEpisodeFold } from './epfold.js';
 import { formatClock } from './progress';
 import { skipLabel } from './skip';
 import { createMiniView } from './miniview.js';
+import { createReactionQueue } from './reactionFx';
 import { createNoteMenu, createReactPanel, fadeFutureMarkers, nearestMarker, noteFlashEl, renderNoteMarkers } from './notesView';
 import { createCinemaIndicator, createCinemaMenu, createCinemaSummary } from './cinemaView';
 import { bucketAt } from './playbackSocial';
@@ -119,6 +120,24 @@ export function createPlayerUI(h) {
   flash.className = 'lp-nf-box';
   flash.setAttribute('role', 'status');
   flash.setAttribute('aria-live', 'polite');
+  // Réactions emoji des amis : grands emojis flottants au-dessus de la vidéo, en file (LAST-1614).
+  const fx = document.createElement('div');
+  fx.className = 'lp-rx';
+  fx.setAttribute('aria-hidden', 'true');
+  const fxQueue = createReactionQueue(({ emoji, name }) => {
+    const item = document.createElement('div');
+    item.className = 'lp-rx-i';
+    item.style.setProperty('--rx-x', 8 + Math.round(Math.random() * 78) + '%');
+    const e = document.createElement('span');
+    e.className = 'lp-rx-e';
+    e.textContent = emoji;
+    const w = document.createElement('span');
+    w.className = 'lp-rx-w';
+    w.textContent = name;
+    item.append(e, w);
+    fx.append(item);
+    setTimeout(() => item.remove(), 4300);
+  });
   let reactPos = 0;
   const flashTimers = new Set();
   const react = createReactPanel({
@@ -166,7 +185,7 @@ export function createPlayerUI(h) {
   const cinemaInd = createCinemaIndicator();
   const cinemaSum = createCinemaSummary(() => { cinemaSum.hide(); }, (pos) => h.seekTo(pos));
   const heat = q('.lp-heat');
-  root.append(flash, react.el, noteMenu.el, cinemaMenu.el, cinemaInd.el, cinemaSum.el);
+  root.append(fx, flash, react.el, noteMenu.el, cinemaMenu.el, cinemaInd.el, cinemaSum.el);
   // Le panneau s’arrête au-dessus de la barre de contrôles : sa hauteur réelle est lue par le CSS (--lp-bar-h).
   const bottomBar = q('.lp-bottom');
   const syncBarHeight = () => root.style.setProperty('--lp-bar-h', bottomBar.offsetHeight + 'px');
@@ -412,7 +431,7 @@ export function createPlayerUI(h) {
      */
     hide(instant = false) {
       const finish = () => { root.hidden = true; root.classList.remove('is-closing'); };
-      api.closeMark(false); api.closePanel(true); api.setPauseScreen(null); api.closeReact(false); api.closeNoteMenu(false); flash.replaceChildren();
+      api.closeMark(false); api.closePanel(true); api.setPauseScreen(null); api.closeReact(false); api.closeNoteMenu(false); flash.replaceChildren(); fxQueue.clear(); fx.replaceChildren();
       if (cancelEnter) { cancelEnter(); cancelEnter = null; root.classList.remove('is-entering'); }
       if (root.hidden) return Promise.resolve(true);
       root.classList.remove('is-mpv', 'is-video');
@@ -612,6 +631,7 @@ export function createPlayerUI(h) {
     isReactOpen: () => react.isOpen(),
     /** Bulle brève à la lecture d'une note : elle disparaît seule après ~4 s et ne capte pas les clics. */
     showNoteFlash(note) {
+      if (note.kind === 'emoji') { fxQueue.push({ emoji: note.body, name: note.author.handle.name }); return; }
       const node = noteFlashEl(note);
       flash.append(node);
       while (flash.childElementCount > 3) flash.firstElementChild.remove();

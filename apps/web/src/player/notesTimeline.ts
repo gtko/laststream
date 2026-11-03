@@ -6,6 +6,10 @@ import type { Note } from '../data/socialV2Api';
 
 /** Saut maximal (s) entre deux relevés pour compter comme une lecture normale : au-delà, c'est un seek ou un saut. */
 export const MAX_JUMP = 3;
+/** Écart maximal (s) entre la lecture et une réaction reçue en direct pour qu'elle s'affiche tout de suite. */
+export const LIVE_WINDOW_SEC = 30;
+/** Âge maximal (ms) d'une note pour compter comme « en direct » (au-delà : rattrapage de liste ou horloge très décalée). */
+const LIVE_MAX_AGE_MS = 30_000;
 /** Retour en arrière minimal (s) qui relâche les notes de la zone revisitée. */
 const REWIND_MIN = 0.5;
 /** Distance (en % de la durée) en dessous de laquelle deux notes forment un même marqueur. */
@@ -67,6 +71,19 @@ export function crossing(prevPos: number, curPos: number, notes: readonly Note[]
   if (step <= 0 || step > (opts.maxJump ?? MAX_JUMP)) return [];
   const fired = opts.fired;
   return uniqueNotes(notes).filter((n) => n.pos > prevPos && n.pos <= curPos && !(fired && fired.has(n.id)));
+}
+
+/**
+ * Une note qui vient d'arriver par le canal en direct doit-elle s'afficher tout de suite ? Oui si c'est une réaction
+ * nouvelle (id inconnu : pas une édition), d'un autre profil, toute fraîche, et posée près de la position de lecture
+ * (quelqu'un qui regarde avec nous). Sinon elle reste un marqueur, montré au franchissement de sa position.
+ */
+export function liveFlashDue(note: Pick<Note, 'id' | 'pos' | 'createdAt' | 'author'>, time: number, ctx: { now: number; mePid?: string | null; known: readonly Pick<Note, 'id'>[] }): boolean {
+  if (!Number.isFinite(time) || !Number.isFinite(note.pos)) return false;
+  if (ctx.mePid && note.author.pid === ctx.mePid) return false;
+  if (ctx.known.some((n) => n.id === note.id)) return false;
+  if (Math.abs(ctx.now - note.createdAt) > LIVE_MAX_AGE_MS) return false;
+  return Math.abs(note.pos - time) <= LIVE_WINDOW_SEC;
 }
 
 /**
