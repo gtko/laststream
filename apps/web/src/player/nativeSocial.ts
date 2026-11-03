@@ -16,12 +16,12 @@ export const NATIVE_QUICK: readonly string[] = QUICK_EMOJIS.slice(0, FAN_COUNT);
 export const NATIVE_MORE: readonly string[] = [...MORE_EMOJIS, ...QUICK_EMOJIS.slice(FAN_COUNT)];
 const ALLOWED_REACTIONS: ReadonlySet<string> = new Set([...NATIVE_QUICK, ...NATIVE_MORE]);
 
-export function viewerOf(id: string, name: string): NativeViewer {
+function viewerOf(id: string, name: string): NativeViewer {
   return { id, name, initial: initialOf(name) };
 }
 
 /** Note du store au format du natif. `meId` (profil connecté) marque les notes qui sont à moi. */
-export function toNativeNote(n: Note, meId: string | null | undefined): NativeNote {
+function toNativeNote(n: Note, meId: string | null | undefined): NativeNote {
   return {
     id: n.id,
     pos: n.pos,
@@ -33,7 +33,7 @@ export function toNativeNote(n: Note, meId: string | null | undefined): NativeNo
 }
 
 /** Liste complète des marqueurs au format du natif (le regroupement des voisins se fait côté natif). */
-export function toNativeNotes(list: readonly Note[], meId: string | null | undefined): NativeNote[] {
+function toNativeNotes(list: readonly Note[], meId: string | null | undefined): NativeNote[] {
   return list.map((n) => toNativeNote(n, meId));
 }
 

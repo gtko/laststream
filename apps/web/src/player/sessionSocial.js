@@ -269,7 +269,7 @@ function syncNativeNotes(nt) {
  * Couche sociale au natif (emojis, spectateurs, activation) et marqueurs en retard : appelé à chaque relevé lent et à chaque
  * changement du store. N'envoie que ce qui a changé.
  */
-export function syncNativeSocial(p = S.P) {
+function syncNativeSocial(p = S.P) {
   const eng = nativeEngineOf(p);
   if (!eng) return;
   if (p.notes) syncNativeNotes(p.notes);
