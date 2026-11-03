@@ -168,6 +168,11 @@ object PlayerHub {
     @Volatile var enterPipOnStart = false
     val machine = MiniMachine()
 
+    /** État de la couche sociale (LAST-1612) : désactivé tant que le JS n'a pas appelé `setSocial`. */
+    @Volatile var social = SocialState()
+    /** Affichage social du plein écran, s'il est ouvert. */
+    @Volatile var socialOverlay: SocialOverlay? = null
+
     /** Écouteur de test (instrumenté) : reçoit les mêmes évènements que le JS. */
     @Volatile var listener: ((String, JSObject) -> Unit)? = null
 

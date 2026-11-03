@@ -70,6 +70,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private lateinit var titleView: TextView
     private lateinit var subtitleView: TextView
     private lateinit var scrubber: ScrubberView
+    private var social: SocialOverlay? = null
     private lateinit var timeView: TextView
     private lateinit var playIcon: FrameLayout
     private lateinit var bigPlay: FrameLayout
@@ -189,6 +190,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         handler.removeCallbacksAndMessages(null)
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) { }
         if (PlayerHub.activity === this) PlayerHub.activity = null
+        if (PlayerHub.socialOverlay === social) PlayerHub.socialOverlay = null
+        social?.destroy()
         if (::core.isInitialized && !handedOff) {
             if (!closedSent && !silentClose && isFinishing) emitClosed()
             // `pending` n'est effacé que s'il est encore le nôtre : après un épisode suivant, il appartient au prochain média.
@@ -317,6 +320,14 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             setOnFocusChangeListener { _, f -> skipLabel.setTextColor(if (f) Tokens.BG else Tokens.TEXT); (getChildAt(0) as ImageView).setColorFilter(if (f) Tokens.BG else Color.WHITE) }
         }
         ui.addView(skipButton, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(40); bottomMargin = kit.dp(40) })
+
+        social = SocialOverlay(
+            this, kit, ui, controls, scrubber,
+            position = { lastPos }, duration = { lastDur },
+            seek = { seekTo(it) },
+            interact = { scheduleHide() },
+        )
+        PlayerHub.socialOverlay = social
 
         buildNextCard()
         buildPanel()
@@ -721,6 +732,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     }
 
     private fun updateMarks() {
+        social?.refresh()
         val d = lastDur
         if (d <= 0) { scrubber.setMarks(emptyList()); return }
         scrubber.setMarks(segments.filter { it.kind != "postcredits" }.map { (it.start / d).coerceIn(0.0, 1.0) to (it.end / d).coerceIn(0.0, 1.0) })
