@@ -20,3 +20,8 @@ export function isTypingIn(root: Element, active: Element | null): boolean {
   if (!active || !root.contains(active)) return false;
   return active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button', 'submit'].includes(active.type)) || (active as HTMLElement).isContentEditable;
 }
+
+/** Le survol ne compte que pour une vraie souris : sur écran tactile `:hover` reste collé au dernier élément touché. */
+export function hasMouse(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches;
+}

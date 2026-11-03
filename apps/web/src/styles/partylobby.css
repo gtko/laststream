@@ -273,7 +273,7 @@ body.has-party-lobby { overflow: hidden; }
 /* Android portrait : vidéo en haut, bandeau, chat dessous, barre d'emojis, champ de message. */
 @media (max-width: 767px) and (orientation: portrait) {
   /* Mobile portrait : la bande de salle est une zone de mise en page sous la vidéo, pas une surcouche : jamais masquée. */
-  .lp:not(.is-ui) .ps-band, .lp:not(.is-ui) .ps-event { opacity: 1; visibility: visible; pointer-events: auto; }
+  .lp.lp:not(.is-ui) .ps-band, .lp.lp:not(.is-ui) .ps-event { opacity: 1; visibility: visible; pointer-events: auto; }
   .lp.has-party-panel { bottom: auto; height: 56.25vw; }
   .lp-party { position: fixed; top: calc(56.25vw + 64px); right: 0; bottom: 0; left: 0; width: auto; height: auto; padding: 0 0 8px; gap: 0; border: 0; background: var(--bg); backdrop-filter: none; overflow: hidden; z-index: 7; }
   .lp-party .wp-close { display: none; }

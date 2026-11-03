@@ -16,7 +16,7 @@ import { createCinemaIndicator, createCinemaMenu, createCinemaSummary } from './
 import { bucketAt } from './playbackSocial';
 import { createMarkBar } from './markbar';
 import { markCovered } from './backdrop';
-import { isTypingIn, OVERLAY_HOVER_SELECTOR, UI_IDLE_MS, WAKE_EVENT } from './idle';
+import { hasMouse, isTypingIn, OVERLAY_HOVER_SELECTOR, UI_IDLE_MS, WAKE_EVENT } from './idle';
 
 const btn = (act, icon, label, extra = '', cls = '') => '<button type="button" class="lp-btn' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + icon + '</button>';
 const tbtn = (act, icon, label, extra = '') => '<button type="button" class="lp-tbtn" data-act="' + act + '"' + extra + '>' + icon + '<span>' + esc(label) + '</span></button>';
@@ -191,7 +191,7 @@ export function createPlayerUI(h) {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
       if (panelName || !last || last.paused || dragging || document.activeElement === vs || react.isOpen() || noteMenu.isOpen() || mark.isOpen() || cinemaMenu.isOpen() || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
-      if (isTypingIn(root, document.activeElement) || root.querySelector(':is(' + OVERLAY_HOVER_SELECTOR + '):hover')) { wake(); return; }
+      if (isTypingIn(root, document.activeElement) || root.querySelector(':is(' + OVERLAY_HOVER_SELECTOR + '):focus-within') || (hasMouse() && root.querySelector(':is(' + OVERLAY_HOVER_SELECTOR + '):hover'))) { wake(); return; }
       root.classList.remove('is-ui');
     }, UI_IDLE_MS);
   }

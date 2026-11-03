@@ -1,4 +1,5 @@
 // Masquage unique des surcouches du lecteur après UI_IDLE_MS d'inactivité (LAST-1613) : minuterie, réveil, exceptions.
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MiniState } from '../src/player/mini';
 import { requestWake, UI_IDLE_MS } from '../src/player/idle';
@@ -25,7 +26,7 @@ beforeEach(() => {
   ui.setPhase('ready');
   play(false);
 });
-afterEach(() => { vi.useRealTimers(); document.body.innerHTML = ''; });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.innerHTML = ''; });
 
 describe('masquage après 10 s', () => {
   it('le délai est de 10 s', () => { expect(UI_IDLE_MS).toBe(10_000); });
@@ -84,6 +85,7 @@ describe('exceptions', () => {
 
   it('rien n\'est masqué tant que la souris survole une surcouche', () => {
     const chip = root().querySelector('.lp-watchchip') as HTMLElement;
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
     const spy = vi.spyOn(root(), 'querySelector').mockImplementation(((sel: string) => (sel.endsWith(':hover') ? chip : Element.prototype.querySelector.call(root(), sel))) as never);
     vi.advanceTimersByTime(UI_IDLE_MS * 2);
     expect(visible()).toBe(true);
@@ -92,10 +94,33 @@ describe('exceptions', () => {
     expect(visible()).toBe(false);
   });
 
+  it('écran tactile : un :hover collé ne retient pas les surcouches', () => {
+    const chip = root().querySelector('.lp-watchchip') as HTMLElement;
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    vi.spyOn(root(), 'querySelector').mockImplementation(((sel: string) => (sel.endsWith(':hover') ? chip : Element.prototype.querySelector.call(root(), sel))) as never);
+    vi.advanceTimersByTime(UI_IDLE_MS);
+    expect(visible()).toBe(false);
+  });
+
+  it('une surcouche qui contient le focus clavier n’est pas masquée', () => {
+    const chip = root().querySelector('.lp-watchchip') as HTMLElement;
+    vi.spyOn(root(), 'querySelector').mockImplementation(((sel: string) => (sel.endsWith(':focus-within') ? chip : Element.prototype.querySelector.call(root(), sel))) as never);
+    vi.advanceTimersByTime(UI_IDLE_MS * 2);
+    expect(visible()).toBe(true);
+  });
+
   it('une nouvelle puce « regarde aussi » réaffiche les surcouches', () => {
     vi.advanceTimersByTime(UI_IDLE_MS);
     expect(visible()).toBe(false);
     ui.setFriendChip({ initial: 'O', color: '#fff', name: 'Olivier', pos: 71 } as never);
     expect(visible()).toBe(true);
+  });
+});
+
+describe('CSS', () => {
+  it('l’exception mobile portrait de la bande de salle l’emporte sur le masquage (spécificité)', () => {
+    const css = readFileSync('src/styles/partylobby.css', 'utf8');
+    expect(css).toMatch(/\.lp\.lp:not\(\.is-ui\) \.ps-band/);
+    expect(css.indexOf('.lp.lp:not(.is-ui) .ps-band')).toBeGreaterThan(css.indexOf('orientation: portrait'));
   });
 });

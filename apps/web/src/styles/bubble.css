@@ -9,7 +9,7 @@
 .lp-bubble-vig.is-in { animation: lp-vig-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .lp-bubble {
   position: absolute; top: 22px; left: 22px; z-index: 6; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px;
-  width: 400px; max-width: calc(100% - 44px); color: #fff; font-size: 14px; pointer-events: none; transition: top 0.25s ease;
+  width: 400px; max-width: calc(100% - 44px); color: #fff; font-size: 14px; pointer-events: none; transition: top 0.25s ease, opacity 0.3s ease, visibility 0s;
 }
 .lp.is-ui .lp-bubble { top: 92px; }
 .lp-bubble[hidden], .lp-bubble-vig[hidden], .lp-bubble-form[hidden], .lp-bubble-err[hidden], .lp-bubble-stack[hidden] { display: none; }
