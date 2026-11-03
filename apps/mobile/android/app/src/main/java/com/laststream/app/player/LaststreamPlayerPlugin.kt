@@ -169,7 +169,7 @@ class LaststreamPlayerPlugin : Plugin() {
     @PluginMethod
     fun setNotes(call: PluginCall) {
         PlayerHub.social = PlayerHub.social.copy(notes = SocialLogic.parseNotes(call.data.optJSONArray("notes")))
-        main.post { PlayerHub.socialOverlay?.refresh() }
+        main.post { PlayerHub.socialOverlay?.refreshMarkers() }
         call.resolve()
     }
 

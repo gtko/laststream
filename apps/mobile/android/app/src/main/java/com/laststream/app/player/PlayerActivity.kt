@@ -190,6 +190,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         handler.removeCallbacksAndMessages(null)
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) { }
         if (PlayerHub.activity === this) PlayerHub.activity = null
+        // Fermeture définitive : l'état social (désactivé par défaut) ne doit pas fuiter vers le prochain lecteur ; la réduction en vignette le garde.
+        if (SocialLogic.shouldResetOnDestroy(isFinishing, handedOff, PlayerHub.socialOverlay === social)) PlayerHub.social = SocialState()
         if (PlayerHub.socialOverlay === social) PlayerHub.socialOverlay = null
         social?.destroy()
         if (::core.isInitialized && !handedOff) {
@@ -732,7 +734,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     }
 
     private fun updateMarks() {
-        social?.refresh()
+        social?.refreshMarkers()
         val d = lastDur
         if (d <= 0) { scrubber.setMarks(emptyList()); return }
         scrubber.setMarks(segments.filter { it.kind != "postcredits" }.map { (it.start / d).coerceIn(0.0, 1.0) to (it.end / d).coerceIn(0.0, 1.0) })

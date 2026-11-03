@@ -283,6 +283,12 @@ export function syncNativeSocial(p = S.P) {
   eng.setSocial(payload);
 }
 
+/** Barrière côté JS (défense en profondeur) : jamais de note ni de réponse si le social est coupé (enfant, invisible, cinéma). */
+function nativeSocialOn() {
+  const st = getSocialState();
+  return nativeSocialOf({ available: socialLive, kid: isKidProfile(), status: st.status, cinema: cinemaOn(st.cinema, Date.now()) }, []).enabled;
+}
+
 /** Messages entrants au natif (bulles) : règles de la bulle web, rien quand les bulles sont masquées (mode cinéma). */
 function pushNativeMessages(p, st) {
   const eng = nativeEngineOf(p);
@@ -294,11 +300,13 @@ function pushNativeMessages(p, st) {
 
 /** Réaction posée dans le natif : même chemin que « Réagir ici » (note optimiste, 429 affiché en toast). */
 export function onNativeReact(d) {
+  if (!nativeSocialOn()) return;
   handleNativeReact(d, { react: (pos, emoji) => postReact({ pos, kind: 'emoji', body: emoji }) });
 }
 
 /** Réponse rapide dans le natif à un message affiché : même envoi que la bulle web. */
 export function onNativeReply(d) {
+  if (!nativeSocialOn()) return;
   handleNativeReply(d, {
     messageOf: (id) => knownMessages(getSocialState()).find((m) => m.id === id),
     send: sendSocialMessage,
@@ -343,6 +351,7 @@ export function startSocialPlayback(p, social) {
   };
   const pr = getSocialState().prefs;
   if (pr) applyPolicy(pr); else { onSocialChange(getSocialState()); loadPrefs().then(applyPolicy, () => undefined); }
+  syncNativeSocial(p);
 }
 
 /** Fin de session : abonnement retiré, mode cinéma levé sans résumé (les messages restent non lus dans la discussion). */

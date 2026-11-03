@@ -121,6 +121,13 @@ class SocialLogicTest {
         assertNull(SocialLogic.parseMessage(JSONObject("""{"id":"m1","body":"x"}""")))
     }
 
+    @Test fun resetOnlyOnFinalClose() {
+        assertTrue(SocialLogic.shouldResetOnDestroy(finishing = true, handedOff = false, ownsOverlay = true))
+        assertFalse(SocialLogic.shouldResetOnDestroy(finishing = true, handedOff = true, ownsOverlay = true))
+        assertFalse(SocialLogic.shouldResetOnDestroy(finishing = false, handedOff = false, ownsOverlay = true))
+        assertFalse(SocialLogic.shouldResetOnDestroy(finishing = true, handedOff = false, ownsOverlay = false))
+    }
+
     @Test fun defaultStateIsDisabled() {
         assertFalse(SocialState().enabled)
         assertFalse(SocialLogic.parseState(JSONObject("{}"), SocialState()).enabled)

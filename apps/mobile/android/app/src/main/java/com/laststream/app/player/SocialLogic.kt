@@ -129,8 +129,13 @@ object SocialLogic {
     /** Anti-spam : une réaction toutes les `REACT_COOLDOWN_MS`. */
     fun allowReaction(nowMs: Long, lastMs: Long?): Boolean = lastMs == null || nowMs - lastMs >= REACT_COOLDOWN_MS
 
+    val REPLY_EMOJIS = listOf("😂", "❤️")
+
+    /** Fin d'activité : l'état social ne se remet à zéro que si l'écran se ferme pour de bon (pas lors d'un passage en vignette). */
+    fun shouldResetOnDestroy(finishing: Boolean, handedOff: Boolean, ownsOverlay: Boolean) = finishing && !handedOff && ownsOverlay
+
     /** Seules les réponses prévues partent vers le JS. */
-    fun isReplyEmoji(e: String) = e == "😂" || e == "❤️"
+    fun isReplyEmoji(e: String) = e in REPLY_EMOJIS
 }
 
 /** File des bulles : 3 au plus (la plus ancienne cède la place), 6 s de vie, identifiant déjà présent ignoré. */

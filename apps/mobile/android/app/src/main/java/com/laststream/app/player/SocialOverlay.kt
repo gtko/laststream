@@ -36,6 +36,8 @@ class SocialOverlay(
     private val bubbles = BubbleQueue()
     private var lastReactAt: Long? = null
     private var moreOpen = false
+    private var renderedQuick: List<String>? = null
+    private var renderedMore: List<String>? = null
 
     private val quickRow = pill()
     private val moreRow = pill().apply { visibility = View.GONE }
@@ -56,7 +58,7 @@ class SocialOverlay(
         controls.addView(dock, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = kit.dp(158) })
         // Sous la barre haute (≈ 92 dp), côté droit : les boutons réduire / PiP / réglages restent libres.
         controls.addView(avatars, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { topMargin = kit.dp(84); rightMargin = kit.dp(24) })
-        ui.addView(bubbleBox, FrameLayout.LayoutParams(kit.dp(300), -2, Gravity.TOP or Gravity.START).apply { topMargin = kit.dp(84); leftMargin = kit.dp(24) })
+        ui.addView(bubbleBox, FrameLayout.LayoutParams(kit.dp(300), -2, Gravity.TOP or Gravity.START).apply { topMargin = kit.dp(96); leftMargin = kit.dp(24) })
         scrubber.onMarkerTap = { m -> seek(m.pos); interact() }
         refresh()
     }
@@ -90,24 +92,37 @@ class SocialOverlay(
             bubbleBox.visibility = View.GONE
             bubbles.clear()
             moreOpen = false
+            renderedQuick = null
+            renderedMore = null
             scrubber.setMarkers(emptyList())
             return
         }
-        quickRow.removeAllViews()
-        s.quick.forEach { e -> quickRow.addView(emojiButton(e) { react(e) }) }
-        if (s.more.isNotEmpty()) {
-            quickRow.addView(emojiButton("＋", "Plus d'emojis") { toggleMore() }.apply {
-                setTextColor(Tokens.ACCENT)
-                typeface = kit.title(800)
-            })
-        } else moreOpen = false
-        moreRow.removeAllViews()
-        s.more.forEach { e -> moreRow.addView(emojiButton(e) { react(e) }) }
-        applyMore()
+        // Les rangées ne sont reconstruites que si les listes changent : le focus D-pad survit aux mises à jour de notes.
+        if (s.quick != renderedQuick || s.more != renderedMore) {
+            renderedQuick = s.quick
+            renderedMore = s.more
+            quickRow.removeAllViews()
+            s.quick.forEach { e -> quickRow.addView(emojiButton(e) { react(e) }) }
+            if (s.more.isNotEmpty()) {
+                quickRow.addView(emojiButton("＋", "Plus d'emojis") { toggleMore() }.apply {
+                    setTextColor(Tokens.ACCENT)
+                    typeface = kit.title(800)
+                })
+            } else moreOpen = false
+            moreRow.removeAllViews()
+            s.more.forEach { e -> moreRow.addView(emojiButton(e) { react(e) }) }
+            applyMore()
+        }
         dock.visibility = if (s.quick.isEmpty()) View.GONE else View.VISIBLE
         renderAvatars(s.viewers)
-        scrubber.setMarkers(SocialLogic.groupMarkers(s.notes, duration()))
+        refreshMarkers()
         renderBubbles()
+    }
+
+    /** Mise à jour des seuls marqueurs de la barre (nouvelles notes, durée connue). */
+    fun refreshMarkers() {
+        val s = PlayerHub.social
+        scrubber.setMarkers(if (s.enabled) SocialLogic.groupMarkers(s.notes, duration()) else emptyList())
     }
 
     private fun toggleMore() { moreOpen = !moreOpen; applyMore(); interact() }
@@ -182,9 +197,9 @@ class SocialOverlay(
         body.addView(kit.text(m.from.name.ifBlank { "?" }, 13f, Tokens.ACCENT, 800, sora = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
         body.addView(kit.text(m.body, 14f, Tokens.TEXT, 600).apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.END; setPadding(0, kit.dp(2), 0, 0) })
         val replies = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, kit.dp(4), 0, 0) }
-        listOf("😂", "❤️").forEach { e ->
+        SocialLogic.REPLY_EMOJIS.forEach { e ->
             replies.addView(emojiButton(e, "Répondre $e") {
-                PlayerHub.emit("reply", JSObject().put("messageId", m.id).put("emoji", e))
+                if (SocialLogic.isReplyEmoji(e)) PlayerHub.emit("reply", JSObject().put("messageId", m.id).put("emoji", e))
                 bubbles.remove(m.id)
                 renderBubbles()
             }.apply { setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f); layoutParams = LinearLayout.LayoutParams(kit.dp(40), kit.dp(34)) })
