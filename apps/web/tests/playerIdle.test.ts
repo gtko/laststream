@@ -64,6 +64,18 @@ describe('masquage après 10 s', () => {
 });
 
 describe('exceptions', () => {
+  it('la reprise après une pause relance les 10 s', () => {
+    play(true);
+    vi.advanceTimersByTime(UI_IDLE_MS * 3);
+    expect(visible()).toBe(true);
+    play(false);
+    expect(visible()).toBe(true);
+    vi.advanceTimersByTime(UI_IDLE_MS - 1);
+    expect(visible()).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(visible()).toBe(false);
+  });
+
   it('rien n\'est masqué en pause', () => {
     play(true);
     vi.advanceTimersByTime(UI_IDLE_MS * 3);
@@ -102,11 +114,15 @@ describe('exceptions', () => {
     expect(visible()).toBe(false);
   });
 
-  it('une surcouche qui contient le focus clavier n’est pas masquée', () => {
-    const chip = root().querySelector('.lp-watchchip') as HTMLElement;
-    vi.spyOn(root(), 'querySelector').mockImplementation(((sel: string) => (sel.endsWith(':focus-within') ? chip : Element.prototype.querySelector.call(root(), sel))) as never);
+  it('le focus clavier dans une surcouche retient, un focus laissé par un clic souris non', () => {
+    const btn = root().querySelector('.lp-bottom [data-role="play"]') as HTMLElement;
+    btn.focus();
+    const spy = vi.spyOn(btn, 'matches').mockImplementation(((sel: string) => sel === ':focus-visible') as never);
     vi.advanceTimersByTime(UI_IDLE_MS * 2);
     expect(visible()).toBe(true);
+    spy.mockImplementation((() => false) as never);
+    vi.advanceTimersByTime(UI_IDLE_MS);
+    expect(visible()).toBe(false);
   });
 
   it('une nouvelle puce « regarde aussi » réaffiche les surcouches', () => {

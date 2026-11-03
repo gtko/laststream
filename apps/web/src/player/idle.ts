@@ -25,3 +25,9 @@ export function isTypingIn(root: Element, active: Element | null): boolean {
 export function hasMouse(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches;
 }
+
+/** Vrai si le focus *clavier* est dans une surcouche : un bouton cliqué à la souris garde le focus sans `:focus-visible` et ne doit rien retenir. */
+export function keyboardFocusInOverlay(root: Element, active: Element | null): boolean {
+  if (!active || !root.contains(active) || !active.closest(OVERLAY_HOVER_SELECTOR)) return false;
+  try { return active.matches(':focus-visible'); } catch { return false; }
+}
