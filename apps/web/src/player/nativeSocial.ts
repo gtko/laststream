@@ -33,7 +33,7 @@ function toNativeNote(n: Note, meId: string | null | undefined): NativeNote {
 }
 
 /** Liste complète des marqueurs au format du natif (le regroupement des voisins se fait côté natif). */
-function toNativeNotes(list: readonly Note[], meId: string | null | undefined): NativeNote[] {
+export function toNativeNotes(list: readonly Note[], meId: string | null | undefined): NativeNote[] {
   return list.map((n) => toNativeNote(n, meId));
 }
 
