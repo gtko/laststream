@@ -466,6 +466,10 @@ export class NativeEngine extends Emitter {
     on('nextEpisode', () => this.emit('next'));
     on('trackChanged', (d) => this.emit('trackChanged', d));
     on('miniChanged', (d) => this.emit('mini', !!d.mini));
+    // Couche sociale (LAST-1612) : réaction et réponse posées dans le natif, erreur à afficher.
+    on('react', (d) => this.emit('react', d));
+    on('reply', (d) => this.emit('reply', d));
+    on('socialError', (d) => this.emit('socialError', d));
   }
 
   setState(d) {
@@ -529,6 +533,16 @@ export class NativeEngine extends Emitter {
   setSubtitleTrack(id) { this.plugin.setSubtitleTrack({ id: id === null ? -1 : Number(id) }).catch(() => {}); }
   addSubtitles(list) { if (list.length) this.plugin.addSubtitles({ subtitles: list }).catch(() => {}); }
   update(patch) { this.plugin.update(patch).catch(() => {}); }
+  /** Couche sociale (LAST-1612) : envois facultatifs, un APK ancien sans ces méthodes ignore l'appel. */
+  setSocial(s) { this.optional('setSocial', s); }
+  setNotes(notes) { this.optional('setNotes', { notes }); }
+  pushMessage(m) { this.optional('pushMessage', m); }
+  optional(name, arg) {
+    try {
+      const fn = this.plugin[name];
+      if (typeof fn === 'function') Promise.resolve(fn.call(this.plugin, arg)).catch(() => {});
+    } catch (_) { /* méthode absente ou refusée : sans effet */ }
+  }
   nativeCues() { return []; }
   supportsSecondary() { return false; } // un seul sous-titre libVLC à la fois
   supportsPip() { return false; }

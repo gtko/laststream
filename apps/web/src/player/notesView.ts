@@ -144,9 +144,9 @@ export function noteFlashEl(note: Note): HTMLElement {
 }
 
 /** Emojis supplémentaires derrière le « + » (la rangée rapide reste QUICK_EMOJIS). */
-const MORE_EMOJIS: readonly string[] = ['👍', '😮', '😢', '🥹', '😍', '🙌', '💀', '🍿'];
+export const MORE_EMOJIS: readonly string[] = ['👍', '😮', '😢', '🥹', '😍', '🙌', '💀', '🍿'];
 /** Éventail tactile : les cinq premiers emojis rapides (maquette Android). */
-const FAN_COUNT = 5;
+export const FAN_COUNT = 5;
 const EMOJI_LABEL: Record<string, string> = {
   '😂': 'rire', '🔥': 'feu', '😱': 'choc', '😭': 'larmes', '❤️': 'cœur', '👏': 'bravo', '🤯': 'esprit soufflé',
 };

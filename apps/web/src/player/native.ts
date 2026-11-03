@@ -53,6 +53,18 @@ export interface NativeEpisodes {
 
 export interface NativeTrack { id: number; label: string; lang: string; selected: boolean }
 
+/** Spectateur ou auteur d'une note, affiché par le natif (avatars, marqueurs, bulles). `avatarUrl` absent : initiale. */
+export interface NativeViewer { id: string; name: string; initial?: string; avatarUrl?: string }
+
+/** Marqueur de la barre : `pos` en secondes ; `mine` : posé par le profil connecté. */
+export interface NativeNote { id: string; pos: number; kind: 'emoji' | 'text'; body: string; by: NativeViewer; mine: boolean }
+
+/** Couche sociale du lecteur natif. `enabled` faux : rien du social n'apparaît (profil enfant, statut invisible, mode cinéma). */
+export interface NativeSocial { enabled: boolean; quick: string[]; more: string[]; viewers: NativeViewer[] }
+
+/** Message entrant affiché en bulle (haut gauche) par le natif, six secondes, file de trois. */
+export interface NativeMessage { id: string; from: NativeViewer; body: string }
+
 interface NativeEvents {
   progress: { position: number; duration: number };
   state: { position: number; duration: number; paused: boolean; buffering: boolean; rate: number; ended?: boolean };
@@ -67,6 +79,12 @@ interface NativeEvents {
   trackChanged: { kind: 'audio' | 'sub'; id: number; lang: string; label: string };
   /** Le lecteur natif passe en vignette flottante (true) ou revient en plein écran (false). */
   miniChanged: { mini: boolean };
+  /** Réaction posée depuis le natif à la position `pos` (secondes) : le JS la poste comme « Réagir ici ». */
+  react: { emoji: string; pos: number };
+  /** Réponse rapide à un message affiché en bulle. */
+  reply: { messageId: string; emoji: '😂' | '❤️' };
+  /** Erreur à afficher côté web. */
+  socialError: { message: string };
 }
 
 export interface LaststreamPlayerPlugin {
@@ -86,6 +104,12 @@ export interface LaststreamPlayerPlugin {
   minimize(): Promise<{ mini: boolean }>;
   /** Agrandit la vignette en plein écran. */
   expand(): Promise<{ mini: boolean }>;
+  /** Couche sociale. Optionnelle : un APK ancien ne la connaît pas, l'appel est alors refusé sans effet. */
+  setSocial?(options: NativeSocial): Promise<void>;
+  /** Remplace la liste complète des marqueurs. */
+  setNotes?(options: { notes: NativeNote[] }): Promise<void>;
+  /** Affiche une bulle de message entrant. */
+  pushMessage?(options: NativeMessage): Promise<void>;
   addListener<E extends keyof NativeEvents>(event: E, fn: (data: NativeEvents[E]) => void): Promise<PluginListenerHandle>;
 }
 
