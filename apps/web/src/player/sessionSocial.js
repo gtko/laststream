@@ -6,7 +6,7 @@ import { getHeatmap, getMissed } from '../data/socialV3Api';
 import { endCinema, getState as getSocialState, loadPrefs, onNote, onNoteRemoved, sendMessage as sendSocialMessage, setCinemaHidden, startCinema, subscribe as subscribeSocial } from '../data/socialStore';
 import { openShareDialog } from '../ui/socialHooks.js';
 import { cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, startPolicy, toggleElement, untilFor } from './playbackSocial';
-import { clusterNotes, crossing, mediaKey, rearmed, upsertNotes } from './notesTimeline';
+import { clusterNotes, crossing, liveFlashDue, mediaKey, rearmed, upsertNotes } from './notesTimeline';
 import { seekTo } from './sessionActions.js';
 import { resolveMedia } from './sessionPlay.js';
 import { S, notesAllowed } from './sessionState.js';
@@ -92,7 +92,11 @@ export function startNotes(p) {
   S.ui.setNotesAvailable(true);
   nt.unsub = onNote((m, note) => {
     if (p.notes !== nt || mediaKey(m) !== nt.key) return;
+    // Réaction d'un ami arrivée en direct près de notre position : affichée tout de suite (sinon seulement au franchissement).
+    const me = getSocialState().me;
+    const due = liveFlashDue(note, p.engine ? p.engine.state().time : NaN, { now: Date.now(), mePid: me ? me.pid : null, known: nt.list });
     putNotes(nt, [note]);
+    if (due) { nt.fired.add(note.id); S.ui.showNoteFlash(note); }
   });
   const unsubRemoved = onNoteRemoved((m, id) => {
     if (p.notes !== nt || mediaKey(m) !== nt.key || !nt.list.some((n) => n.id === id)) return;
