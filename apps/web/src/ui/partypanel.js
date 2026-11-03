@@ -8,6 +8,7 @@ import { CHAT_MAX_CHARS, DEFAULT_SETTINGS, PARTY_WAIT_MAX_MS, partyErrorText } f
 import { UserApiError } from '../data/userApi';
 import { toast } from './dom.js';
 import { LI } from '../player/icons.js';
+import { requestWake } from '../player/idle';
 import { shareBase } from './invites.js';
 import { esc } from './util.js';
 import { avatarAttrs } from './avatar-art.js';
@@ -404,6 +405,7 @@ function showEvent(c, ev) {
   eventEl.innerHTML = avatarHTML(who) + '<span class="ps-event-t"></span>';
   eventEl.querySelector('.ps-event-t').textContent = eventText(ev) + ' · pour tout le monde';
   eventEl.hidden = false;
+  requestWake(eventEl);
   clearTimeout(eventTimer);
   eventTimer = setTimeout(() => { eventEl.hidden = true; }, 4000);
 }
@@ -446,6 +448,8 @@ function updateSync() {
   if (!el) return;
   const sync = syncText(partyBridge.controller ? partyBridge.controller.drift : null);
   if (el.textContent !== sync.text) el.textContent = sync.text;
+  // Passage à « désynchronisé » : réaffiche le bandeau (une fois par bascule, pas à chaque seconde).
+  if (!sync.ok && !el.classList.contains('is-off')) requestWake(band);
   el.classList.toggle('is-off', !sync.ok);
 }
 

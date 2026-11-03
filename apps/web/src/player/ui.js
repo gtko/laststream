@@ -16,6 +16,7 @@ import { createCinemaIndicator, createCinemaMenu, createCinemaSummary } from './
 import { bucketAt } from './playbackSocial';
 import { createMarkBar } from './markbar';
 import { markCovered } from './backdrop';
+import { isTypingIn, OVERLAY_HOVER_SELECTOR, UI_IDLE_MS, WAKE_EVENT } from './idle';
 
 const btn = (act, icon, label, extra = '', cls = '') => '<button type="button" class="lp-btn' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + icon + '</button>';
 const tbtn = (act, icon, label, extra = '') => '<button type="button" class="lp-tbtn" data-act="' + act + '"' + extra + '>' + icon + '<span>' + esc(label) + '</span></button>';
@@ -184,18 +185,20 @@ export function createPlayerUI(h) {
   let pauseInfo = null;
   let markList = [];
 
-  // ---------- Contrôles : masquage après 3 s d'inactivité ----------
+  // ---------- Surcouches : masquage après UI_IDLE_MS d'inactivité (horloge unique, voir idle.ts) ----------
   function wake() {
     root.classList.add('is-ui');
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
       if (panelName || !last || last.paused || dragging || document.activeElement === vs || react.isOpen() || noteMenu.isOpen() || mark.isOpen() || cinemaMenu.isOpen() || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
+      if (isTypingIn(root, document.activeElement) || root.querySelector(':is(' + OVERLAY_HOVER_SELECTOR + '):hover')) { wake(); return; }
       root.classList.remove('is-ui');
-    }, 3000);
+    }, UI_IDLE_MS);
   }
   root.addEventListener('mousemove', wake);
   root.addEventListener('pointerdown', wake);
   root.addEventListener('touchstart', wake, { passive: true });
+  root.addEventListener(WAKE_EVENT, wake);
 
   // ---------- Clics, double-touche ----------
   const side = (e) => {
@@ -503,6 +506,7 @@ export function createPlayerUI(h) {
     },
     /** `st` : état du moteur (voir engines.js). */
     update(st, marks) {
+      const resumed = !!last && last.paused && !st.paused;
       last = st;
       mini.update(st);
       const dur = st.duration || 0;
@@ -532,6 +536,7 @@ export function createPlayerUI(h) {
       setIcon(q('[data-role="full"]'), (st.fullscreen !== undefined ? st.fullscreen : document.fullscreenElement === root) ? LI.fullExit : LI.full);
       q('[data-role="pip"]').classList.toggle('is-active', !!st.pip);
       if (st.paused) root.classList.add('is-ui');
+      else if (resumed) wake();
       // Écran de pause : après 8 s à l'arrêt (hors panneau ouvert).
       if (st.paused && pauseInfo && !panelName) {
         if (!pauseTimer) pauseTimer = setTimeout(() => { if (last && last.paused && !panelName) q('.lp-pause').hidden = false; }, 8000);
@@ -668,7 +673,7 @@ export function createPlayerUI(h) {
       go.textContent = 'Se caler sur elle';
       go.setAttribute('aria-label', 'Se caler sur ' + info.name + ' à ' + formatClock(info.pos));
       go.dataset.pos = String(info.pos);
-      if (first) chip.classList.add('is-in');
+      if (first) { chip.classList.add('is-in'); wake(); }
     },
     setSocialButtons({ cinema, share }) {
       cinemaBtn.hidden = !cinema;
