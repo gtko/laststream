@@ -315,10 +315,10 @@ describe('création (POST)', () => {
     expect((await as(app, cast.alice, 'POST', EVENINGS, { body: draft() })).status).toBe(201);
   });
 
-  it('non-ami et foyer : 403 not_friend ; un ami accepté passe (témoin)', async () => {
+  it('non-ami : 403 not_friend ; un ami accepté et un profil du foyer passent', async () => {
     expect((await createInviting(cast.bob)).status).toBe(201);
     expect(await createInviting(cast.carol)).toEqual(NOT_FRIEND);
-    expect(await createInviting(cast.alice2)).toEqual(NOT_FRIEND);
+    expect((await createInviting(cast.alice2)).status).toBe(201);
   });
 
   it('demande en attente : même refus que pour un non-ami', async () => {

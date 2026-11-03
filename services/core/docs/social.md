@@ -197,7 +197,7 @@ Le contrat v3 (`docs/social-v3-contract.md`) est hors dépôt. Cette section dé
 
 ### Soirées planifiées (LAST-198)
 
-Soirées ponctuelles ou séries hebdomadaires entre amis, sous `/user/social/evenings*`, avec le profil agissant (`X-Profile-Id`). Un profil enfant reçoit 403 `kid_profile` sur les onze routes. Une soirée n'est visible que de son hôte et de ses invités non retirés. Code : `src/user/social-evenings-{store,routes,live,validation}.ts` ; types `Evening` et `EveningEvent` dans `@laststream/protocol` v0.4.0.
+Soirées ponctuelles ou séries hebdomadaires entre amis et membres du foyer (autres profils adultes du même compte, y compris ceux rattachés par invitation foyer ; LAST-1611), sous `/user/social/evenings*`, avec le profil agissant (`X-Profile-Id`). Un profil enfant reçoit 403 `kid_profile` sur les onze routes. Une soirée n'est visible que de son hôte et de ses invités non retirés. Code : `src/user/social-evenings-{store,routes,live,validation}.ts` ; types `Evening` et `EveningEvent` dans `@laststream/protocol` v0.4.0.
 
 **Routes**
 
@@ -208,7 +208,7 @@ Soirées ponctuelles ou séries hebdomadaires entre amis, sous `/user/social/eve
 | POST | `/evenings` | Crée une soirée ; `recurrence` (`weekly`, `interval` 1 ou 2, `until`) crée une série | 201 ; 400 ; 403 `not_friend` ; 429 `too_many_evenings` |
 | PATCH | `/evenings/:id` | Titre ou début, sur `scope` `occurrence` ou `series` (`scope` seul : 400) | 204 ; 403 `not_host` ; 409 `evening_closed` |
 | DELETE | `/evenings/:id?scope=` | `occurrence` annule ; `series` arrête la série | 204 ; 400 (`series` sur une ponctuelle) ; 403 `not_host` |
-| POST | `/evenings/:id/guests` | Ajoute des amis (`pids`, 1 à 19) | 204 ; 400 ; 403 `not_friend` ou `not_host` |
+| POST | `/evenings/:id/guests` | Ajoute des amis ou des membres du foyer (`pids`, 1 à 19) | 204 ; 400 ; 403 `not_friend` ou `not_host` |
 | DELETE | `/evenings/:id/guests/:pid` | Retire un invité ; pid inconnu : 204 sans effet ; l'hôte ne se retire pas | 204 ; 400 (hôte) ; 403 `not_host` |
 | PUT | `/evenings/:id/response` | Ma réponse : `yes`, `maybe` ou `no` | 204 ; 403 `not_host` ; 409 `evening_closed` |
 | POST | `/evenings/:id/leave` | `occurrence` met « non » ; `series` retire mes occurrences futures et ne me génère plus | 204 ; 400 ; 403 `not_host` ; 409 |

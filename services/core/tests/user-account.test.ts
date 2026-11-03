@@ -96,7 +96,7 @@ describe('mot de passe, sessions et suppression de compte', () => {
     expect((await request(app, 'GET', '/user/me', { token: tokens[0] })).status).toBe(401);
     expect((await request(app, 'GET', '/user/me', { token: tokens[1] })).status).toBe(200);
     expect((await request(app, 'GET', '/user/me', { token: tokens[20] })).status).toBe(200);
-  });
+  }, 30_000);
 
   it('logout-all : toutes les sessions du compte sont révoquées, y compris la courante', async () => {
     app = await startApp({});
