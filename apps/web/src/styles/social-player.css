@@ -44,7 +44,7 @@
 .lp-watchchip {
   position: absolute; top: 22px; right: 22px; z-index: 5; display: flex; align-items: center; gap: 10px; height: 44px;
   padding: 0 6px 0 8px; border-radius: 12px; background: rgba(23, 21, 31, 0.88); border: 1px solid #33303f; font-size: 13px;
-  transition: top 0.25s ease;
+  transition: top 0.25s ease, opacity 0.3s ease, visibility 0s;
 }
 .lp.is-ui .lp-watchchip { top: 72px; }
 .lp-watchchip[hidden], .lp.lp-hide-friendsPresence .lp-watchchip { display: none; }

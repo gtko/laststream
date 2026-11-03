@@ -74,6 +74,14 @@
 /* Masquage automatique des contrôles. */
 .lp:not(.is-ui) .lp-top, .lp:not(.is-ui) .lp-bottom { opacity: 0; pointer-events: none; }
 .lp:not(.is-ui) .lp-bottom { transform: translateY(8px); }
+/* Surcouches sociales : même horloge (LAST-1613), fondu puis retrait du focus ; visibility attend la fin du fondu. */
+.lp-watchchip, .lp-bubble, .ps-band, .ps-event { transition: top 0.25s ease, opacity 0.3s ease, visibility 0s; }
+.lp:not(.is-ui) .lp-watchchip, .lp:not(.is-ui) .lp-bubble, .lp:not(.is-ui) .ps-band, .lp:not(.is-ui) .ps-event {
+  opacity: 0; visibility: hidden; pointer-events: none; transition: top 0.25s ease, opacity 0.3s ease, visibility 0s 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-watchchip, .lp-bubble, .ps-band, .ps-event, .lp:not(.is-ui) .lp-watchchip, .lp:not(.is-ui) .lp-bubble, .lp:not(.is-ui) .ps-band, .lp:not(.is-ui) .ps-event { transition: none; }
+}
 
 /* Chargement, erreurs */
 .lp-loading { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; background: rgba(0, 0, 0, 0.62); padding: 24px; pointer-events: none; }

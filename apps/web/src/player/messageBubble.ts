@@ -1,5 +1,6 @@
 import { MESSAGE_MAX, type SocialState } from '../data/socialStore';
 import type { Message, SocialMe, Status } from '../data/socialV2Api';
+import { requestWake } from './idle';
 import { FALLBACK_COLOR, safeColor } from './notesTimeline';
 import { advanceBubble, emptyQueue, initialOf, isTouchLayout, pushBubble, type BubbleQueue } from './playbackSocial';
 
@@ -255,6 +256,7 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
     lastFrom = m.from;
     vig.hidden = false;
     root.hidden = false;
+    requestWake(root);
     for (const [node, cls] of [[vig, 'is-in'], [av, 'is-in'], [who.parentElement as HTMLElement, 'is-in'], [text, 'is-in']] as Array<[HTMLElement, string]>) replay(node, cls);
     paintStack();
     armTimer();
