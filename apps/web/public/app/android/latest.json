@@ -1,8 +1,8 @@
 {
-  "versionCode": 2026102702,
-  "versionName": "2026.10.27.2",
-  "url": "https://app.laststream.app/app/android/laststream-2026102702.apk",
-  "sha256": "bc97a892db581f6dd4b13c2b516ff59908c711a47b3a6b526fd32f495ef54d53",
-  "size": 46284148,
-  "notes": "Adresse officielle app.laststream.app (l'ancienne ne répond plus). Réinstaller cette version."
+  "versionCode": 2026110201,
+  "versionName": "2026.11.02.1",
+  "url": "https://app.laststream.app/app/android/laststream-2026110201.apk",
+  "sha256": "cba10a4478e407342f1823e0ed822a8767618cd253bcad02834ad51fad2ec0f7",
+  "size": 48262560,
+  "notes": "Correctif : Suivant et Continuer ferment le lecteur et chargent l'épisode suivant"
 }
