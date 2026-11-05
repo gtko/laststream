@@ -14,11 +14,11 @@ import { advanceBubble, emptyQueue, initialOf, isTouchLayout, pushBubble, type B
 export const BUBBLE_MS = 6_000;
 export const BUBBLE_TEXT_MAX = 120;
 /** Un message plus ancien que ça, par rapport à l'ouverture du lecteur, n'est pas « nouveau » (horloges désalignées comprises). */
-const RECENT_MS = 30_000;
-const SEND_FAILED = 'Message non envoyé, réessaie plus tard';
-const SEND_LIMIT = 'Trop de messages : réessaie dans une minute';
+export const RECENT_MS = 30_000;
+export const SEND_FAILED = 'Message non envoyé, réessaie plus tard';
+export const SEND_LIMIT = 'Trop de messages : réessaie dans une minute';
 /** Réponses par emoji de la maquette. */
-const REPLY_EMOJIS: ReadonlyArray<{ e: string; label: string }> = [{ e: '😂', label: 'rire' }, { e: '❤️', label: 'cœur' }];
+export const REPLY_EMOJIS: ReadonlyArray<{ e: string; label: string }> = [{ e: '😂', label: 'rire' }, { e: '❤️', label: 'cœur' }];
 
 export interface BubbleDeps {
   getState(): SocialState;

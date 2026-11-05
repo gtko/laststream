@@ -154,4 +154,31 @@ class LaststreamPlayerPlugin : Plugin() {
             call.resolve(JSObject().put("mini", PlayerHub.mini != null))
         }
     }
+
+    // ---------- Couche sociale (LAST-1612) : le JS fait tout le réseau, le natif n'affiche que ----------
+
+    /** `{ enabled, quick[], more[], viewers[] }` ; `enabled=false` masque tout le social. */
+    @PluginMethod
+    fun setSocial(call: PluginCall) {
+        PlayerHub.social = SocialLogic.parseState(call.data, PlayerHub.social)
+        main.post { PlayerHub.socialOverlay?.refresh() }
+        call.resolve()
+    }
+
+    /** `{ notes[] }` : remplace la liste complète des marqueurs de la barre. */
+    @PluginMethod
+    fun setNotes(call: PluginCall) {
+        PlayerHub.social = PlayerHub.social.copy(notes = SocialLogic.parseNotes(call.data.optJSONArray("notes")))
+        main.post { PlayerHub.socialOverlay?.refreshMarkers() }
+        call.resolve()
+    }
+
+    /** `{ id, from, body }` : une bulle en haut à gauche. */
+    @PluginMethod
+    fun pushMessage(call: PluginCall) {
+        val m = SocialLogic.parseMessage(call.data)
+        if (m == null) { call.reject("message invalide", "bad_request"); return }
+        main.post { PlayerHub.socialOverlay?.pushMessage(m) }
+        call.resolve()
+    }
 }

@@ -3,7 +3,10 @@ import { relayableUrl } from '../relay/sourceUrl';
 import { setPresenceMedia } from './presenceV2';
 import { deleteNote, getNotes, postNote, updateNote } from '../data/socialV2Api';
 import { getHeatmap, getMissed } from '../data/socialV3Api';
-import { endCinema, getState as getSocialState, loadPrefs, onNote, onNoteRemoved, sendMessage as sendSocialMessage, setCinemaHidden, startCinema, subscribe as subscribeSocial } from '../data/socialStore';
+import { cinemaOn, endCinema, getState as getSocialState, loadPrefs, onNote, onNoteRemoved, sendMessage as sendSocialMessage, setCinemaHidden, startCinema, subscribe as subscribeSocial } from '../data/socialStore';
+import { isKidProfile } from '../data/auth';
+import { knownMessages } from './messageBubble';
+import { freshIncoming, handleNativeReact, handleNativeReply, nativeSocialOf, toNativeMessage, toNativeNotes, watchingViewers } from './nativeSocial';
 import { openShareDialog } from '../ui/socialHooks.js';
 import { cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, startPolicy, toggleElement, untilFor } from './playbackSocial';
 import { clusterNotes, crossing, liveFlashDue, mediaKey, rearmed, upsertNotes } from './notesTimeline';
@@ -76,11 +79,13 @@ function noteMediaOf(p) {
 function putNotes(nt, notes) {
   nt.list = upsertNotes(nt.list, notes);
   nt.version += 1;
+  syncNativeNotes(nt);
 }
 
 function removeNote(nt, id) {
   nt.list = nt.list.filter((n) => n.id !== id);
   nt.version += 1;
+  syncNativeNotes(nt);
 }
 
 /** Charge les notes du média lu et écoute celles qui arrivent en direct. Erreurs silencieuses : la lecture n'en dépend pas. */
@@ -241,6 +246,78 @@ export function deleteReaction(id) {
   });
 }
 
+// ---------- Pont natif Android (LAST-1612) : le lecteur natif affiche le social, le web garde le réseau ----------
+
+/** Moteur natif de la session, ou null : le pont ne lui parle que lorsqu'il est actif. */
+const nativeEngineOf = (p) => (p && p.engine && p.engine.kind === 'native' ? p.engine : null);
+const nativeMeId = () => (getSocialState().me ? getSocialState().me.pid : null);
+/** Social disponible pour le titre lu (réglé par startSocialPlayback). */
+let socialLive = false;
+/** Messages déjà traités pour le natif, et début du mode : mêmes principes que la bulle web. */
+let nativeSeen = new Set();
+let nativeSince = 0;
+/** Dernière charge utile `setSocial` envoyée (comparée par contenu) et dernière version des marqueurs envoyée. */
+let nativeSocialKey = '';
+let nativeNotesSent = { nt: null, version: -1 };
+
+/** Marqueurs au natif, seulement quand la liste a changé. Sans moteur natif, rien. */
+function syncNativeNotes(nt) {
+  const p = S.P;
+  const eng = p && p.notes === nt ? nativeEngineOf(p) : null;
+  if (!eng || (nativeNotesSent.nt === nt && nativeNotesSent.version === nt.version)) return;
+  nativeNotesSent = { nt, version: nt.version };
+  eng.setNotes(toNativeNotes(nt.list, nativeMeId()));
+}
+
+/**
+ * Couche sociale au natif (emojis, spectateurs, activation) et marqueurs en retard : appelé à chaque relevé lent et à chaque
+ * changement du store. N'envoie que ce qui a changé.
+ */
+function syncNativeSocial(p = S.P) {
+  const eng = nativeEngineOf(p);
+  if (!eng) return;
+  if (p.notes) syncNativeNotes(p.notes);
+  const now = Date.now();
+  const st = getSocialState();
+  const viewers = socialLive && !socialHidden().has('friendsPresence') ? watchingViewers(st, presenceMediaOf(p), now, eng.state().duration) : [];
+  const payload = nativeSocialOf({ available: socialLive, kid: isKidProfile(), status: st.status, cinema: cinemaOn(st.cinema, now) }, viewers);
+  const key = JSON.stringify(payload);
+  if (key === nativeSocialKey) return;
+  nativeSocialKey = key;
+  eng.setSocial(payload);
+}
+
+/** Barrière côté JS (défense en profondeur) : jamais de note ni de réponse si le social est coupé (enfant, invisible, cinéma). */
+function nativeSocialOn() {
+  const st = getSocialState();
+  return nativeSocialOf({ available: socialLive, kid: isKidProfile(), status: st.status, cinema: cinemaOn(st.cinema, Date.now()) }, []).enabled;
+}
+
+/** Messages entrants au natif (bulles) : règles de la bulle web, rien quand les bulles sont masquées (mode cinéma). */
+function pushNativeMessages(p, st) {
+  const eng = nativeEngineOf(p);
+  if (!eng || !socialLive) return;
+  const fresh = freshIncoming(st, nativeSeen, nativeSince);
+  if (socialHidden().has('bubbles')) return;
+  for (const m of fresh) eng.pushMessage(toNativeMessage(m, st));
+}
+
+/** Réaction posée dans le natif : même chemin que « Réagir ici » (note optimiste, 429 affiché en toast). */
+export function onNativeReact(d) {
+  if (!nativeSocialOn()) return;
+  handleNativeReact(d, { react: (pos, emoji) => postReact({ pos, kind: 'emoji', body: emoji }) });
+}
+
+/** Réponse rapide dans le natif à un message affiché : même envoi que la bulle web. */
+export function onNativeReply(d) {
+  if (!nativeSocialOn()) return;
+  handleNativeReply(d, {
+    messageOf: (id) => knownMessages(getSocialState()).find((m) => m.id === id),
+    send: sendSocialMessage,
+    error: (message) => S.ui.toast(message, 3500),
+  });
+}
+
 // ---------- Social pendant la lecture (Social v3) : mode cinéma, anti-spoiler, « regarde aussi » ----------
 
 /** Éléments sociaux masqués par le réglage « messages seulement » du profil (le mode cinéma s'y ajoute). */
@@ -257,6 +334,9 @@ const antiSpoilerOn = () => { const pr = getSocialState().prefs; return pr ? pr.
 
 export function startSocialPlayback(p, social) {
   stopSocialPlayback(true);
+  socialLive = !!social;
+  nativeSeen = new Set(knownMessages(getSocialState()).map((m) => m.id));
+  nativeSince = Date.now();
   S.ui.setSocialButtons({ cinema: social, share: social && !!presenceMediaOf(p) });
   if (!social) return;
   const c0 = getSocialState().cinema;
@@ -275,11 +355,15 @@ export function startSocialPlayback(p, social) {
   };
   const pr = getSocialState().prefs;
   if (pr) applyPolicy(pr); else { onSocialChange(getSocialState()); loadPrefs().then(applyPolicy, () => undefined); }
+  syncNativeSocial(p);
 }
 
 /** Fin de session : abonnement retiré, mode cinéma levé sans résumé (les messages restent non lus dans la discussion). */
 export function stopSocialPlayback(silent) {
   if (socialUnsub) { socialUnsub(); socialUnsub = null; }
+  socialLive = false;
+  nativeSocialKey = '';
+  nativeNotesSent = { nt: null, version: -1 };
   if (cinemaEndsOnTeardown(silent, getSocialState().cinema.active)) { cinemaQuietEnd = true; endCinema(); cinemaQuietEnd = false; }
   cinemaSince = null;
   quietHidden = [];
@@ -297,6 +381,8 @@ export function stopSocialPlayback(silent) {
 function onSocialChange(st) {
   const p = S.P;
   if (!p) return;
+  pushNativeMessages(p, st);
+  syncNativeSocial(p);
   const c = st.cinema;
   if (c.active) cinemaSince = c.since;
   else if (cinemaSince !== null) {
@@ -369,6 +455,7 @@ export function socialTick(p, st) {
 
 /** Relevé lent (1 s) : puce « regarde aussi ». */
 export function friendChipTick(p, st) {
+  syncNativeSocial(p);
   if (!p.notes) return;
   if (socialHidden().has('friendsPresence')) { S.ui.setFriendChip(null); chipPid = ''; return; }
   const peers = friendsWatching(getSocialState(), presenceMediaOf(p), Date.now(), st.duration);
