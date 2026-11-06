@@ -31,7 +31,7 @@ export const PARTY_WAIT_MAX_MS = 45_000;
 /** Signalisation WebRTC : donnée opaque de 16 Ko au plus (UTF-8), trame de 64 Kio au plus. */
 export const RTC_MAX_DATA_BYTES = 16 * 1024;
 export const RTC_MAX_FRAME_CHARS = 64 * 1024;
-export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉', '😱', '🤯'] as const;
+export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉', '😱', '🤯', '😭', '🥹', '😍', '🙌', '💀', '🍿'] as const;
 
 /** Préparation : état déclaré par chaque participant avant le départ (message `status`). */
 export const PREP_STATUSES = ['searching', 'ready', 'buffering'] as const;
@@ -186,6 +186,8 @@ export type ClientMessage =
   | { t: 'sync' }
   | { t: 'ctl'; action: 'play' | 'pause' | 'seek' | 'sync'; pos: number }
   | { t: 'episode'; season: number; episode: number; fingerprint: Fingerprint | null }
+  /** Source : empreinte de la version choisie (null si inconnue) et langue de la release, facultative. */
+  | { t: 'source'; fingerprint: Fingerprint | null; language?: string }
   /** `pos` : position du film (s) au moment de l'envoi, ou null. */
   | { t: 'chat'; text: string; pos: number | null }
   /** Réaction signée par son auteur ; `pos` : position du film (s), ou null. */
@@ -232,6 +234,8 @@ export type ServerMessage =
   | { t: 'pong'; c: number; s: number }
   | { t: 'state'; state: PlaybackState; serverTime: number; by: string }
   | { t: 'media'; media: PartyMedia; fingerprint: Fingerprint | null; state: PlaybackState; serverTime: number }
+  /** Source diffusée à tous : empreinte de la version choisie (null si inconnue), langue, et pseudo de l'auteur (`by`). */
+  | { t: 'source'; fingerprint: Fingerprint | null; language: string; by: string }
   | { t: 'join'; participant: Participant }
   | { t: 'leave'; user: string }
   | { t: 'chat'; line: ChatLine }

@@ -30,7 +30,7 @@ export const PARTY_WAIT_MAX_MS = 45_000;
 /** Signalisation WebRTC : donnée opaque de 16 Ko au plus (UTF-8), trame de 64 Kio au plus. */
 export const RTC_MAX_DATA_BYTES = 16 * 1024;
 export const RTC_MAX_FRAME_CHARS = 64 * 1024;
-export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉', '😱', '🤯'];
+export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉', '😱', '🤯', '😭', '🥹', '😍', '🙌', '💀', '🍿'];
 /** Préparation : état déclaré par chaque participant avant le départ (message `status`). */
 export const PREP_STATUSES = ['searching', 'ready', 'buffering'];
 /** Réglages du salon, modifiés par l'hôte (`settings`). Les défauts reproduisent le comportement antérieur. */
