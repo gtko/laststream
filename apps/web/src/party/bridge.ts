@@ -214,9 +214,10 @@ class PartyBridge {
   /** Lance la lecture du titre du salon avec la source la plus proche de l'hôte (départ du salon d'attente). */
   async launchRoom(): Promise<void> {
     const room = this.client?.room ?? this.room;
-    if (!room || !this.launcher) return;
+    if (!room) return;
     const req = requestOfRoom(room, this.client?.room?.media ?? room.media);
     if (!req) throw new UserApiError(0, 'media_unsupported');
+    if (!this.launcher) throw new UserApiError(0, 'player_unavailable');
     await this.launcher(req, this.launchOptions());
   }
 
@@ -263,7 +264,8 @@ class PartyBridge {
     if (!room) return;
     const req = requestOfRoom(room);
     if (!req) throw new UserApiError(0, 'media_unsupported');
-    if (!this.launcher) return;
+    // Le lanceur est posé au chargement de sessionLoader.js : absent, on le dit plutôt que de rendre la main en silence.
+    if (!this.launcher) throw new UserApiError(0, 'player_unavailable');
     await this.launcher(req, this.launchOptions());
   }
 
