@@ -66,6 +66,7 @@ const fakeParty = () => {
   return {
     status: 'open',
     settings: {} as Record<string, unknown>,
+    participants: [{ username: 'Lou' }] as Array<{ username: string }>,
     sendReact: vi.fn((_emoji: string, _pos?: number | null) => true),
     on(ev: string, fn: Handler) { handlers[ev] = fn; return () => { delete handlers[ev]; }; },
   };
@@ -171,6 +172,25 @@ describe('réaction de salon (LAST-1615)', () => {
     postReact({ pos: 100, kind: 'text', body: 'bien vu' });
     expect(client.sendReact).not.toHaveBeenCalled();
     expect(h.postNote).toHaveBeenCalledWith(expect.objectContaining({ kind: 'text', body: 'bien vu' }));
+  });
+});
+
+describe('écho et filtre de salon (LAST-1615)', () => {
+  it('un ami hors du salon, sur le même titre : son emoji s’affiche encore', () => {
+    startNotes(S.P);
+    h.live.cb!(MEDIA, note('srv-ami', 100, { author: { pid: 'p-zed', handle: { name: 'Zed', tag: 'D4E5', full: 'Zed#D4E5' }, avatarColor: '#7b5bf5' } as Note['author'] }));
+    expect(flash).toHaveBeenCalledTimes(1);
+  });
+
+  it('titre sans notes (notesAllowed faux) : l’écho du salon arrive au natif, et se débranche à la fin de la session', () => {
+    h.allowed.value = false;
+    const eng = { kind: 'native', state: () => ({ time: 100, duration: 7200 }), pushMessage: vi.fn(), setNotes: vi.fn(), setSocial: vi.fn() };
+    S.P = { ...player(), engine: eng };
+    startNotes(S.P);
+    handlers.react({ user: 'bob', by: 'bob', emoji: '🔥', at: 1, pos: null });
+    expect(eng.pushMessage).toHaveBeenCalledTimes(1);
+    stopNotes(S.P);
+    expect(handlers.react).toBeUndefined();
   });
 });
 

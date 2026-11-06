@@ -21,7 +21,7 @@ describe('startNotes : bouton « Réagir »', () => {
   it('en salon actif, il reste visible même quand les notes ne sont pas permises', () => {
     const setNotesAvailable = vi.fn();
     (S as any).ui = { setNotesAvailable };
-    partyBridge.client = { status: 'open' } as never;
+    partyBridge.client = { status: 'open', on: () => () => undefined } as never;
     startNotes({} as never); // hors mode serveur : notesAllowed() est faux
     expect(setNotesAvailable).toHaveBeenLastCalledWith(true);
   });

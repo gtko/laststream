@@ -90,9 +90,23 @@ function removeNote(nt, id) {
   syncNativeNotes(nt);
 }
 
+/** Vrai si l'auteur de la note est dans le salon actif (ou est moi) : sa réaction y a déjà son écho. */
+function fromRoom(note) {
+  const me = getSocialState().me;
+  if (me && note.author.pid === me.pid) return true;
+  const c = partyBridge.client;
+  const h = note.author.handle;
+  return !!c && (c.participants || []).some((q) => q.username === h.name || q.username === h.full);
+}
+
 /** Charge les notes du média lu et écoute celles qui arrivent en direct. Erreurs silencieuses : la lecture n'en dépend pas. */
 export function startNotes(p) {
   const media = notesAllowed() ? noteMediaOf(p) : null;
+  // Écho des réactions de salon suivi pour tout titre lu, avec ou sans notes (LAST-1615) ; retiré à la fin de la session (stopNotes).
+  if (p.partyEcho) p.partyEcho();
+  const unsubParty = partyBridge.onChange(bindPartyReact);
+  bindPartyReact();
+  p.partyEcho = () => { unsubParty(); unbindPartyReact(); p.partyEcho = null; };
   // En salon, « Réagir » reste visible sans notes : la réaction de salon marche sans note (seul le salon actif la garde).
   if (!media) { S.ui.setNotesAvailable(partyBridge.isActive()); return; }
   const nt = { media, key: mediaKey(media), list: [], fired: new Set(), last: null, version: 0, renderKey: '', unsub: null };
@@ -100,8 +114,9 @@ export function startNotes(p) {
   S.ui.setNotesAvailable(true);
   nt.unsub = onNote((m, note) => {
     if (p.notes !== nt || mediaKey(m) !== nt.key) return;
-    // En salon, une réaction emoji du flux social n'est pas affichée : l'écho du salon la montre déjà. Elle reste un marqueur (LAST-1615).
-    if (partyBridge.isActive() && note.kind === 'emoji') { nt.fired.add(note.id); putNotes(nt, [note]); return; }
+    // En salon, l'emoji d'un participant du salon n'est pas affiché : l'écho du salon le montre déjà. Il reste un marqueur ; celui d'un
+    // ami hors salon, sur le même titre, s'affiche comme d'habitude (LAST-1615).
+    if (partyBridge.isActive() && note.kind === 'emoji' && fromRoom(note)) { nt.fired.add(note.id); putNotes(nt, [note]); return; }
     // Réaction d'un ami arrivée en direct près de notre position : affichée tout de suite (sinon seulement au franchissement).
     const me = getSocialState().me;
     const due = liveFlashDue(note, p.engine ? p.engine.state().time : NaN, { now: Date.now(), mePid: me ? me.pid : null, known: nt.list });
@@ -113,11 +128,8 @@ export function startNotes(p) {
     removeNote(nt, id);
     loadHeat(p);
   });
-  // Écho des réactions de salon suivi tant que le titre a ses notes (LAST-1615).
-  const unsubParty = partyBridge.onChange(bindPartyReact);
-  bindPartyReact();
   const unsubNote = nt.unsub;
-  nt.unsub = () => { unsubNote(); unsubRemoved(); unsubParty(); unbindPartyReact(); };
+  nt.unsub = () => { unsubNote(); unsubRemoved(); };
   loadHeat(p);
   getNotes(media).then(({ notes }) => {
     if (p.notes === nt) putNotes(nt, notes);
@@ -126,6 +138,7 @@ export function startNotes(p) {
 
 /** Fin de session ou changement de média : désabonnement, marqueurs et popover retirés. */
 export function stopNotes(p) {
+  if (p && p.partyEcho) p.partyEcho();
   const nt = p && p.notes;
   if (!nt) return;
   p.notes = null;
