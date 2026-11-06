@@ -93,7 +93,8 @@ function removeNote(nt, id) {
 /** Charge les notes du média lu et écoute celles qui arrivent en direct. Erreurs silencieuses : la lecture n'en dépend pas. */
 export function startNotes(p) {
   const media = notesAllowed() ? noteMediaOf(p) : null;
-  if (!media) { S.ui.setNotesAvailable(false); return; }
+  // En salon, « Réagir » reste visible sans notes : la réaction de salon marche sans note (seul le salon actif la garde).
+  if (!media) { S.ui.setNotesAvailable(partyBridge.isActive()); return; }
   const nt = { media, key: mediaKey(media), list: [], fired: new Set(), last: null, version: 0, renderKey: '', unsub: null };
   p.notes = nt;
   S.ui.setNotesAvailable(true);

@@ -47,13 +47,17 @@ export function sourceLabel(v: SourceView): string {
   return sourceLangTag(v) + ' · ' + (v.quality || v.group);
 }
 
-/** Code de langue d'une source (vocabulaire du salon : fr, en…, vo, multi) : la langue de la release envoyée au salon. */
-export function sourceLangCode(v: SourceView): string {
-  if (v.hasFrench) return 'fr';
+/**
+ * Code de langue d'une source pour le salon (fr, en, vo…), ou null : une source multi ou de langue inconnue ne change pas la
+ * langue du salon. Le serveur n'accepte que 2 ou 3 lettres : un autre code ferait refuser tout le message `source`.
+ */
+export function sourceLangCode(v: SourceView): string | null {
   const langs = v.info?.languages ?? [];
-  if (langs.includes('multi')) return 'multi';
-  if (langs.includes('original') || langs.length === 0) return 'vo';
-  return langs[0].toLowerCase();
+  if (langs.includes('multi')) return null; // hasFrench vaut aussi pour une source multi
+  if (v.hasFrench) return 'fr';
+  if (langs.includes('original')) return 'vo';
+  const code = (langs[0] ?? '').toLowerCase();
+  return /^[a-z]{2,3}$/.test(code) ? code : null;
 }
 
 /** Avis d'une source de repli hors de la langue du salon (même texte que le repli de failover), ou null si elle suit la langue du salon. */
@@ -106,6 +110,11 @@ export function chooseSource(views: readonly SourceView[], opts: SourceChoiceOpt
   const inLang = lang ? playable.filter((v) => !!v.info && matchesLanguage(v.info, lang)) : playable;
   const best = bestSource(inLang);
   return best ? { view: best, motif: 'language' } : { view: null, motif: 'languageFallback' };
+}
+
+/** Raison affichée d'un choix de salon : la version de l'hôte (empreinte ou même libellé), sinon la langue du salon. */
+export function choiceReason(motif: ChoiceMotif): string {
+  return motif === 'fingerprint' || motif === 'host' ? 'Même version que l’hôte du salon' : 'Source dans la langue du salon';
 }
 
 /** Vrai si la source ne suit pas la langue du salon (failover hors langue). Hors salon (`roomLanguage` null) : faux. */

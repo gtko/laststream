@@ -9,12 +9,13 @@ import { onPartyInvite, subscribe as socialSubscribe } from '../data/socialStore
 import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
 import { partyBridge } from '../party/bridge';
-import { pickByFingerprint } from '../party/fingerprint';
 import { endReasonText, joinLinkOf } from '../party/join';
 import {
-  CONTROL_OPTIONS, countdownLeft, eventText, initialsOf, launchText, LOBBY_EMOJIS, prepView, qualityLabel, REACTION_OPTIONS, readySummary, readyText,
-  startWithoutText, voteShare, WAIT_LATE_OPTIONS,
+  buildSourceRows, CONTROL_OPTIONS, countdownLeft, eventText, hostSourceLine, initialsOf, launchText, LOBBY_EMOJIS, noSourceInRoomLanguage, prepView,
+  REACTION_OPTIONS, readySummary, readyText, SOURCE_BADGE_TEXT, sourceLanguageWarning, sourceSearchText, startWithoutText, voteShare, WAIT_LATE_OPTIONS,
 } from '../party/lobbyModel';
+import { bestSource, chooseSource, roomLangOf, sourceLabel } from '../party/sourceChoice';
+import { sourceKeyOf } from '../sources/info';
 import { CHAT_MAX_CHARS, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } from '../party/protocol';
 import { loadSources, pollSources } from '../sources/load';
 import { avatarAttrs } from './avatar-art.js';
@@ -58,6 +59,9 @@ let lastVoteOptions = [];
 let feed = [];
 let prep = { phase: 'idle', quality: '' };
 let prepRun = 0;
+/** Sources du participant : liste reçue (progressive), choix explicite (clé stable), source retenue et libellé déjà annoncé au salon. */
+const freshSources = () => ({ views: [], loaded: null, searching: false, explicit: '', selected: null, declared: '' });
+let src = freshSources();
 let picker = null;
 let socialOff = null;
 let opener = null;
@@ -139,11 +143,44 @@ function mainHTML() {
     '<p class="pl-sub">Chacun lit avec sa propre source' + (room && room.language ? ' · ' + esc(String(room.language).toUpperCase()) + ' conseillé par l’hôte' : '') + '</p></div></header>' +
     '<section class="pl-body">' + status +
     '<div class="pl-row"><div class="pl-lb pl-grow">Participants · ' + list.length + ' / ' + max + '</div><span class="pl-ready" aria-live="polite">' + esc(readyText(sum)) + '</span></div>' +
-    '<ul class="pl-grid" aria-label="Participants">' + cards + invite + '</ul>' + prepNoteHTML() +
+    '<ul class="pl-grid" aria-label="Participants">' + cards + invite + '</ul>' + prepNoteHTML() + sourcesHTML() +
     '<div class="pl-sets">' + seg('control', 'Qui contrôle la lecture', CONTROL_OPTIONS, s.control, host) +
     seg('waitLate', 'Attendre les retardataires', WAIT_LATE_OPTIONS, s.waitLate, host) +
     seg('reactions', 'Réactions à l’écran', REACTION_OPTIONS, s.reactions, host) + '</div>' +
     '<div class="pl-foot">' + footerHTML(sum) + '</div></section>' + countdownHTML();
+}
+
+const roomLang = () => (client && client.room ? roomLangOf(client.room.language, '') : null);
+/** Libellé de la version lue par l'hôte (son « prêt » porte la source) ; null pour l'hôte lui-même. */
+const hostLabelOf = () => {
+  if (!client || isHost()) return null;
+  const h = client.participants.find((p) => p.host);
+  return h && h.quality ? h.quality : null;
+};
+
+/** « Ma source » : les sources trouvées (langue, qualité), celle qui sera lancée au départ, et ce qui la rapproche de l'hôte. */
+function sourcesHTML() {
+  if (prep.phase === 'idle') return '';
+  const lang = roomLang();
+  const hostLabel = hostLabelOf();
+  const rows = buildSourceRows(src.views, { selectedKey: src.selected ? sourceKeyOf(src.selected) : '', hostLabel, roomLanguage: lang });
+  if (!rows.length && !src.searching) return '';
+  const hostLine = hostSourceLine(hostLabel);
+  const roomName = client.room && client.room.language ? String(client.room.language).toUpperCase() : '';
+  const warn = sourceLanguageWarning(src.selected, lang, roomName);
+  const banner = !src.searching && noSourceInRoomLanguage(src.views, lang)
+    ? '<p class="pl-src-banner" role="status"><span>Aucune source en ' + esc(roomName || 'cette langue') + ' pour l’instant.</span> <button type="button" class="pl-link-btn" data-pl-retry>Réessayer la recherche</button></p>'
+    : '';
+  const focusable = rows.some((r) => r.selected) ? '' : rows[0] && rows[0].key;
+  const list = rows.map((r) => '<button type="button" role="radio" class="pl-src-row' + (r.selected ? ' on' : '') + '" aria-checked="' + (r.selected ? 'true' : 'false') + '"' +
+    ' data-pl-source data-key="' + esc(r.key) + '" tabindex="' + (r.selected || r.key === focusable ? '0' : '-1') + '">' +
+    '<span class="pl-src-dot" aria-hidden="true"></span><span class="pl-src-main"><b>' + esc(r.label) + '</b>' + (r.meta ? '<span class="pl-src-meta">' + esc(r.meta) + '</span>' : '') + '</span>' +
+    (r.badge ? '<span class="pl-src-badge is-' + r.badge + '">' + esc(SOURCE_BADGE_TEXT[r.badge]) + '</span>' : '') + '</button>').join('');
+  return '<section class="pl-src" aria-labelledby="pl-src-t"><div class="pl-row"><div class="pl-lb pl-grow" id="pl-src-t">Ma source</div>' +
+    '<span class="pl-src-status" role="status">' + esc(sourceSearchText(rows.length, src.searching)) + '</span></div>' +
+    (hostLine ? '<p class="pl-src-host">' + esc(hostLine) + '</p>' : '') + banner +
+    '<div class="pl-src-list" role="radiogroup" aria-labelledby="pl-src-t">' + list + '</div>' +
+    (warn ? '<p class="pl-src-warn" role="alert">' + esc(warn) + '</p>' : '') + '</section>';
 }
 
 function prepNoteHTML() {
@@ -217,8 +254,8 @@ function paintMain() {
 
 /** Repère stable d'un contrôle du salon, pour lui rendre le focus après un nouveau rendu. */
 function focusKey(el) {
-  for (const a of ['plSet', 'plStart', 'plStartNow', 'plCopy', 'plInviteTile', 'plChange', 'plLeave', 'plRetry']) {
-    if (el.dataset && a in el.dataset) return '[data-' + a.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()) + ']' + (a === 'plSet' ? '[data-value="' + el.dataset.value + '"]' : '');
+  for (const a of ['plSource', 'plSet', 'plStart', 'plStartNow', 'plCopy', 'plInviteTile', 'plChange', 'plLeave', 'plRetry']) {
+    if (el.dataset && a in el.dataset) return '[data-' + a.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()) + ']' + (a === 'plSet' ? '[data-value="' + el.dataset.value + '"]' : a === 'plSource' ? '[data-key="' + String(el.dataset.key).replace(/["\\]/g, '\\$&') + '"]' : '');
   }
   return '';
 }
@@ -248,32 +285,64 @@ function seedFeed() {
 }
 
 // ---------- Préparation (recherche de source) ----------
-/** Cherche la source de ce participant (celle de l'hôte si son empreinte est connue) puis se déclare prêt avec sa qualité. */
+/**
+ * Source retenue : le choix explicite du participant, sinon la version de l'hôte, sinon la meilleure dans la langue du salon (sans
+ * source dans cette langue, la meilleure : l'avertissement le dit). Se déclare prêt avec ce libellé dès qu'une source existe.
+ */
+function applyChoice() {
+  const c = client;
+  if (!c || !c.room) return;
+  const explicit = src.explicit ? src.views.find((v) => sourceKeyOf(v) === src.explicit) : null;
+  const choice = chooseSource(src.views, { explicit, fingerprint: c.room.fingerprint, hostLabel: hostLabelOf(), roomLanguage: roomLang() });
+  const view = choice.view || bestSource(src.views);
+  src.selected = view;
+  if (!view) return;
+  const label = sourceLabel(view).slice(0, 40);
+  prep = { phase: 'ready', quality: label };
+  if (src.declared === label) return;
+  src.declared = label;
+  c.sendReady(true, label);
+  c.sendStatus('ready');
+}
+
+/** Choix explicite d'une source : il prime sur la présélection ; l'hôte l'annonce tout de suite pour que les autres s'alignent. */
+function chooseSourceKey(key) {
+  const view = src.views.find((v) => sourceKeyOf(v) === key);
+  if (!view || !client) return;
+  src.explicit = key;
+  applyChoice();
+  if (isHost()) partyBridge.announceSource(view);
+  renderSoon();
+}
+
+/** Cherche les sources du titre et rend la liste au fur et à mesure ; se déclare prêt dès qu'une source est retenue. */
 async function prepare() {
   const run = ++prepRun;
   const c = client;
   if (!c || !c.room) return;
   const alive = () => run === prepRun && client === c && root;
   prep = { phase: 'searching', quality: '' };
+  src = { ...freshSources(), explicit: src.explicit, searching: true };
   c.sendReady(false, null);
   c.sendStatus('searching');
   const req = roomRequest();
-  if (!req) { prep = { phase: 'none', quality: '' }; renderSoon(); return; }
-  let view = null;
+  if (!req) { src.searching = false; prep = { phase: 'none', quality: '' }; renderSoon(); return; }
+  const take = (loaded) => { src.loaded = loaded; src.views = loaded.views; applyChoice(); renderSoon(); };
   try {
     let loaded = await loadSources(req);
-    for (let i = 0; i < SEARCH_POLL_MAX && !loaded.views.length && loaded.pending.length && alive(); i++) {
+    if (!alive()) return;
+    take(loaded);
+    for (let i = 0; i < SEARCH_POLL_MAX && loaded.pending.length && alive(); i++) {
       await new Promise((resolve) => setTimeout(resolve, SEARCH_POLL_MS));
+      if (!alive()) return;
       loaded = await pollSources(req, loaded);
+      if (!alive()) return;
+      take(loaded);
     }
-    view = pickByFingerprint(loaded.views, c.room.fingerprint) || loaded.views[0] || null;
-  } catch { view = null; }
+  } catch { /* recherche interrompue : la liste déjà reçue reste */ }
   if (!alive()) return;
-  if (!view) { prep = { phase: 'none', quality: '' }; renderSoon(); return; }
-  const quality = qualityLabel(view);
-  prep = { phase: 'ready', quality };
-  c.sendReady(true, quality || null);
-  c.sendStatus('ready');
+  src.searching = false;
+  if (!src.selected) prep = { phase: 'none', quality: '' };
   renderSoon();
 }
 
@@ -303,9 +372,11 @@ function syncCountdownTimer() {
 function launch() {
   if (launched || !client) return;
   launched = true;
+  // La source retenue est lancée telle quelle, sans seconde recherche ; sans liste, le départ cherche comme avant.
+  const choice = src.selected && src.loaded ? { view: src.selected, loaded: src.loaded } : null;
   closeLobby(true);
   togglePartyPanel(true);
-  partyBridge.launchRoom().catch((err) => {
+  partyBridge.launchRoom(choice).catch((err) => {
     toast(err && err.code === 'media_unsupported' ? 'Ce salon ne peut pas être lu depuis cette application.' : 'Lancement de la lecture impossible.');
   });
 }
@@ -316,11 +387,13 @@ function bind(c) {
   on('welcome', () => {
     seedFeed();
     if (c.state && c.state.playing) { launch(); return; }
-    void prepare();
+    // Reconnexion : un choix existant est conservé et redéclaré, la recherche ne repart pas.
+    if (src.selected && src.explicit) { src.declared = ''; applyChoice(); } else void prepare();
     syncCountdownTimer();
     renderSoon();
   });
-  on('participants', () => renderSoon());
+  on('participants', () => { applyChoice(); renderSoon(); });
+  on('source', () => { applyChoice(); renderSoon(); });
   on('settings', () => renderSoon());
   on('countdown', (at) => {
     if (at === null && c.state && c.state.playing) { launch(); return; }
@@ -348,6 +421,7 @@ function bind(c) {
     const won = lastVoteOptions.find((o) => o.tmdbId === media.tmdbId && (o.type === media.type));
     if (c.room && won) c.room = { ...c.room, title: won.title, poster: null };
     pushSys('Le titre est maintenant « ' + (won ? won.title : c.room ? c.room.title : '…') + ' »');
+    src = freshSources(); // nouveau titre ou épisode : le choix de source ne vaut plus
     void prepare();
     renderSoon();
   });
@@ -421,6 +495,7 @@ export async function openLobby(partyId, from) {
   lastVoteOptions = [];
   invitedPids.clear();
   prep = { phase: 'idle', quality: '' };
+  src = freshSources();
   opener = from instanceof HTMLElement ? from : (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const current = partyBridge.client;
   if (current && current.room && current.room.id === partyId && current.status !== 'closed') partyBridge.lobby = true;
@@ -604,6 +679,8 @@ function onClick(e) {
   if (tabBtn) { tab = tabBtn.dataset.plTab; paintSide(); return; }
   if (t.closest('[data-pl-invite-tile]')) { tab = 'friends'; paintSide(); const b = root.querySelector('#pl-tab-friends'); if (b) b.focus(); return; }
   if (t.closest('[data-pl-copy]')) { void copyInvite(); return; }
+  const source = t.closest('[data-pl-source]');
+  if (source) { chooseSourceKey(source.dataset.key); return; }
   if (t.closest('[data-pl-retry]')) { void prepare(); renderSoon(); return; }
   if (t.closest('[data-pl-start]')) { client.startPlayback(COUNTDOWN_DEFAULT_SEC); return; }
   if (t.closest('[data-pl-start-now]')) { client.startPlayback(1); return; }
@@ -658,15 +735,16 @@ function onSubmit(e) {
 /** Flèches dans un groupe de boutons radio (réglages) ou d'onglets ; Échap ferme le sélecteur de titre. */
 function onKey(e) {
   if (e.key === 'Escape' && picker) { e.stopPropagation(); closePicker(); return; }
-  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+  if (!vertical && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   const t = e.target instanceof Element ? e.target : null;
   const group = t && t.closest('[role="radiogroup"], [role="tablist"]');
-  if (!group || !t) return;
+  if (!group || !t || (vertical && group.getAttribute('role') !== 'radiogroup')) return;
   const items = [...group.querySelectorAll('[role="radio"]:not(:disabled), [role="tab"]')];
   const i = items.indexOf(t);
   if (i < 0) return;
   e.preventDefault();
-  const next = items[(i + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length];
+  const next = items[(i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
   next.focus();
   next.click();
 }

@@ -23,6 +23,7 @@ import { buildPartySubtitles, type LoadedSubtitle } from './subtitles';
 import { partyCreateErrorText } from './createError';
 import { sourceLabel, sourceLangCode } from './sourceChoice';
 import type { SourceView } from '../sources/info';
+import type { LoadedSources } from '../sources/load';
 
 /* Lien entre le salon (client WebSocket, contrôleur de synchronisation) et le lecteur. Un seul salon actif à la fois.
  * Le lecteur (player/session.js) appelle `sessionOpened`, `viewReady`, `tick`, `sessionClosed` ; l'interface appelle
@@ -74,6 +75,15 @@ export interface LaunchOptions {
   partyFingerprint?: Fingerprint | null;
   /** Libellé de la version de l'hôte (sourceLabel) : le participant prend la même langue et la même résolution. */
   hostLabel?: string | null;
+  /** Source choisie dans le salon d'attente : lancée telle quelle, sans seconde recherche (`chosenLoaded` : la liste qui la contient). */
+  chosen?: SourceView | null;
+  chosenLoaded?: LoadedSources | null;
+}
+
+/** Choix du salon d'attente transmis au départ. */
+export interface LaunchChoice {
+  view: SourceView;
+  loaded: LoadedSources;
 }
 
 export type LaunchFn = (request: { type: 'movie' | 'tv'; id: string; name: string; season: number | null; episode: number | null; key: string }, opts: LaunchOptions) => Promise<unknown>;
@@ -229,14 +239,15 @@ class PartyBridge {
   }
 
   /** Lance la lecture du titre du salon avec la source la plus proche de l'hôte (départ du salon d'attente). */
-  async launchRoom(): Promise<void> {
+  async launchRoom(choice?: LaunchChoice | null): Promise<void> {
     const room = this.client?.room ?? this.room;
     if (!room || !this.launcher) return;
     const req = requestOfRoom(room, this.client?.room?.media ?? room.media);
     if (!req) throw new UserApiError(0, 'media_unsupported');
     this.holdLaunch();
     try {
-      await this.launcher(req, this.launchOptions());
+      // Choix du salon d'attente : lancé directement (sans seconde recherche), avec les options de salon intactes.
+      await this.launcher(req, { ...this.launchOptions(), ...(choice ? { chosen: choice.view, chosenLoaded: choice.loaded } : {}) });
     } catch (err) {
       this.releaseLaunch();
       throw err;
@@ -663,11 +674,22 @@ class PartyBridge {
    * source). Une fois par version : la trame déjà envoyée, puis l'écho du salon, évitent le doublon. Jamais de lien.
    */
   private syncSource(c: PartyClient, a: SessionAdapter): void {
-    if (!a.view) return;
-    const fp = shareableFingerprintOf(a.view);
+    if (a.view) this.shareSource(c, a.view as SourceView);
+  }
+
+  /** Hôte, salon d'attente : la source qu'il vient de choisir est annoncée tout de suite, pour que les autres s'alignent avant le départ. */
+  announceSource(view: SourceView): void {
+    const c = this.client;
+    if (c && c.room && c.isHost) this.shareSource(c, view);
+  }
+
+  private shareSource(c: PartyClient, view: SourceView): void {
+    const fp = shareableFingerprintOf(view);
     const key = JSON.stringify(fp);
     if (key === this.sentSource || sameFingerprint(c.room?.fingerprint, fp)) return;
-    if (c.sendSource(fp, sourceLangCode(a.view as SourceView))) this.sentSource = key;
+    // Source multi ou de langue inconnue : aucune langue envoyée, la langue du salon ne change pas.
+    const lang = sourceLangCode(view);
+    if (c.sendSource(fp, lang ?? undefined)) this.sentSource = key;
   }
 
   /** Appelé à chaque pas de la boucle du lecteur (250 ms, ou 1 s boucle d'interface arrêtée). */

@@ -21,7 +21,7 @@ import { isNativePlayer } from './native';
 import { connectShell } from './shell';
 import { debrid } from '../sources/debridClient';
 import { partyBridge } from '../party/bridge';
-import { LANG_WAIT_MS, bestSource, chooseSource, languageFallbackNotice, roomLangOf } from '../party/sourceChoice';
+import { LANG_WAIT_MS, bestSource, choiceReason, chooseSource, languageChanged, languageFallbackNotice, roomLangOf, sourceLabel } from '../party/sourceChoice';
 import { notYetAiredMessage, showSourcesPanel } from './sessionActions.js';
 import { switchToView, withoutBad } from './sessionFailover.js';
 import { pollMoreSources, syncNative } from './sessionNative.js';
@@ -58,10 +58,36 @@ export async function playBest(request, opener, opts = {}) {
   p.clipArmed = false;
   p.launchOpts = opts;
   p.noLaunchCache = !!opts.prefer; // salon : chacun suit la version de l'hôte, sans toucher à la source mémorisée
+  // Salon : la source choisie dans le salon d'attente est lancée telle quelle, sans seconde recherche (le failover habituel reste).
+  if (opts.chosen && (await playChosen(p, request, opts))) return;
   S.ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
   // Titre téléchargé : lu depuis l'appareil, sans recherche de source ni serveur de streaming (sauf salon : chacun suit la version de l'hôte).
   if (!opts.prefer && !opts.picker && !p.addon && (await playDownloaded(p, request))) return;
   await searchAndPlay(p, request, opts);
+}
+
+/**
+ * Salon : lance la source choisie dans le salon d'attente avec la liste déjà chargée (repli, panneau Sources), sans recherche.
+ * Faux (la recherche habituelle prend le relais) si le choix n'est plus jouable. Hors de la langue du salon, l'avis le dit.
+ */
+async function playChosen(p, request, opts) {
+  const token = p.token;
+  const view = opts.chosen;
+  if (!view || !view.playable) return false;
+  const loaded = opts.chosenLoaded || null;
+  const views = loaded && loaded.views.includes(view) ? loaded.views : [view];
+  try { if (userStore.loadProgress) await userStore.loadProgress(request.key); } catch (_) { /* progression distante facultative */ }
+  if (!S.P || S.P.token !== token) return true;
+  if (loaded) { request.imdb = loaded.imdb; p.imdb = loaded.imdb; }
+  p.views = views;
+  p.pending = loaded ? loaded.pending : [];
+  p.loaded = loaded;
+  p.ranked = [...views];
+  const roomLang = opts.partyLang ? roomLangOf(opts.partyLang, originalLangOf(p)) : null;
+  const notice = languageChanged(view, roomLang) ? 'Lecture hors langue du salon : ' + sourceLabel(view) : '';
+  S.ui.setLoading(p.meta.title || 'Lecture', 'Source choisie dans le salon…', loaderExtra(2, { source: sourceLine(view) + (view.status === 'cached' ? ' ⚡' : '') }));
+  await continueWith(view, { resume: p.resumeMode, notice });
+  return true;
 }
 
 /** Lit la copie téléchargée du titre si elle existe et se lit sur cette plateforme ; faux sinon (la recherche de sources prend le relais). */
@@ -229,7 +255,7 @@ export async function searchAndPlay(p, request, opts) {
       // Navigateur : seules les sources compatibles sont choisies (comme recommendFor).
       const pool = compatCtx.web ? usable.filter((v) => webCompatOf(v, compatCtx).level === 'ok') : usable;
       const choice = chooseSource(pool, { fingerprint: opts.partyFingerprint, hostLabel: opts.hostLabel, roomLanguage: roomLang });
-      if (choice.view) return { view: choice.view, languageFallback: false, reason: choice.motif === 'fingerprint' ? 'Même version que l’hôte du salon' : 'Source dans la langue du salon', party: choice.motif === 'fingerprint' };
+      if (choice.view) return { view: choice.view, languageFallback: false, reason: choiceReason(choice.motif), party: choice.motif === 'fingerprint' };
       const best = bestSource(pool);
       return best ? { view: best, languageFallback: true, reason: languageFallbackNotice(best, opts.partyLang) } : null;
     }
@@ -272,6 +298,6 @@ export function playSource(request, views, view, opener, opts = {}) {
 }
 
 // Salon (watch party) : le pont lance les épisodes demandés par l'hôte avec la source la plus proche de son empreinte.
-partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer, partyLang: o.partyLang, partyFingerprint: o.partyFingerprint, hostLabel: o.hostLabel });
+partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer, partyLang: o.partyLang, partyFingerprint: o.partyFingerprint, hostLabel: o.hostLabel, chosen: o.chosen, chosenLoaded: o.chosenLoaded });
 partyBridge.adapter = () => partyAdapter();
 partyBridge.switcher = (view, allow) => switchToView(view, allow);
