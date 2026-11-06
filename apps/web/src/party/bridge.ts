@@ -66,6 +66,10 @@ export interface LaunchOptions {
   resume: 'none';
   /** Choix de la source : la version la plus proche de l'empreinte du salon. */
   prefer: (views: readonly FingerprintSource[]) => FingerprintSource | null;
+  /** Langue du salon (`room.language`) : la lecture suit cette langue, pas les préférences personnelles. */
+  partyLang?: string | null;
+  /** Empreinte de la version de l'hôte, pour choisir la même version (chaque participant lit avec SA source). */
+  partyFingerprint?: Fingerprint | null;
 }
 
 export type LaunchFn = (request: { type: 'movie' | 'tv'; id: string; name: string; season: number | null; episode: number | null; key: string }, opts: LaunchOptions) => Promise<unknown>;
@@ -268,7 +272,14 @@ class PartyBridge {
   }
 
   private launchOptions(): LaunchOptions {
-    return { resume: 'none', prefer: (views) => pickByFingerprint(views, this.client?.room?.fingerprint ?? this.room?.fingerprint ?? null) };
+    // Salon : langue imposée par le salon et empreinte de la version de l'hôte (chacun lit dans la langue du salon).
+    const room = this.client?.room ?? this.room;
+    return {
+      resume: 'none',
+      prefer: (views) => pickByFingerprint(views, this.client?.room?.fingerprint ?? this.room?.fingerprint ?? null),
+      partyLang: room?.language,
+      partyFingerprint: room?.fingerprint ?? null,
+    };
   }
 
   leave(): void {

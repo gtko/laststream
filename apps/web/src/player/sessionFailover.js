@@ -13,7 +13,8 @@ import { shellHasLibvlc } from './shell';
 import { searchAndPlay, searchInstead } from './session.js';
 import { loaderExtra } from './sessionOpen.js';
 import { playView, releaseLocal } from './sessionPlay.js';
-import { S, badKey, MAX_ATTEMPTS } from './sessionState.js';
+import { S, badKey, MAX_ATTEMPTS, originalLangOf } from './sessionState.js';
+import { languageChanged, roomLangOf, sourceLabel } from '../party/sourceChoice';
 import { expandPlayer } from './sessionUi.js';
 
 
@@ -111,7 +112,11 @@ export function failover(reason) {
     return;
   }
   const next = options[0];
-  const label = [next.quality, next.sourceType, next.langs.map((l) => l.label).join('/')].filter(Boolean).join(' · ');
+  // Salon : une source de repli hors de la langue du salon est annoncée, jamais lue en silence.
+  const roomLang = roomLangOf(p.launchOpts && p.launchOpts.partyLang, originalLangOf(p));
+  const label = languageChanged(next, roomLang)
+    ? sourceLabel(next) + ' · hors langue du salon'
+    : [next.quality, next.sourceType, next.langs.map((l) => l.label).join('/')].filter(Boolean).join(' · ');
   S.ui.toast('Source indisponible, essai de la suivante : ' + label, 5000);
   playView(next, time > 5 ? time : p.startAt || 0);
 }
