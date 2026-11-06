@@ -14,6 +14,7 @@ export function socialErrorText(err: unknown): string {
     case 'banned': return 'Tu as été exclu de ce salon.';
     case 'party_unavailable': return 'Les watch parties ne sont pas disponibles sur ce serveur.';
     case 'too_many_rooms': return 'Trois salons ouverts au plus : termine-en un d’abord.';
+    case 'player_unavailable': return 'Le lecteur est indisponible : recharge la page.';
     default: return 'Erreur (' + err.code + ').';
   }
 }

@@ -1,6 +1,7 @@
 /* Point d'entrée léger du lecteur pour l'interface : le lecteur (session.js et tout ce qu'il tire, dont mediabunny)
  * est chargé par `import()` au premier appel, pas au démarrage de l'application (LAST-129). */
 import { toast } from '../ui/dom.js';
+import { partyBridge } from '../party/bridge';
 
 let mod = null;
 let pending = null;
@@ -57,3 +58,14 @@ async function launch(name, args) {
 
 export const playBest = (...args) => launch('playBest', args);
 export const playSource = (...args) => launch('playSource', args);
+
+// Salon (watch party) : le pont lance les épisodes demandés par l'hôte avec la source la plus proche de son empreinte.
+// Posé au chargement de ce module, et non à celui du lecteur : « Rejoindre » fonctionne avant la première lecture.
+// Un lancement annulé pendant le chargement du lecteur quitte le salon, sauf si un autre salon a été rejoint entre-temps.
+partyBridge.launcher = async (request, o) => {
+  const g = generation;
+  const c = partyBridge.client;
+  const r = await playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer });
+  if (g !== generation && partyBridge.client === c) partyBridge.leave();
+  return r;
+};
