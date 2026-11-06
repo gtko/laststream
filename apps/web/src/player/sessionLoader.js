@@ -61,4 +61,11 @@ export const playSource = (...args) => launch('playSource', args);
 
 // Salon (watch party) : le pont lance les épisodes demandés par l'hôte avec la source la plus proche de son empreinte.
 // Posé au chargement de ce module, et non à celui du lecteur : « Rejoindre » fonctionne avant la première lecture.
-partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer });
+// Un lancement annulé pendant le chargement du lecteur quitte le salon, sauf si un autre salon a été rejoint entre-temps.
+partyBridge.launcher = async (request, o) => {
+  const g = generation;
+  const c = partyBridge.client;
+  const r = await playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer });
+  if (g !== generation && partyBridge.client === c) partyBridge.leave();
+  return r;
+};

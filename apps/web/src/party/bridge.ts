@@ -527,7 +527,7 @@ class PartyBridge {
     const sameEp = a && a.cur.season === (m.media.season ?? null) && a.cur.episode === (m.media.episode ?? null) && a.req.id === String(m.media.tmdbId);
     if (sameEp) return;
     const req = requestOfRoom(room, m.media);
-    if (req) void this.launcher(req, this.launchOptions());
+    if (req) void this.launcher(req, this.launchOptions()).catch(() => undefined);
   }
 
   // ---- Appels du lecteur ----
