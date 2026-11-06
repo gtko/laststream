@@ -41,8 +41,13 @@ describe('chooseSource : ordre des règles', () => {
     expect(urlOf(c)).toBe(EN_1080.url);
   });
   it('le libellé de l’hôte retient la même langue et la même résolution', () => {
-    const c = chooseSource(toSourceViews([FR_720, FR_1080, EN_1080]), { hostLabel: 'VF · 1080p', roomLanguage: 'en' });
+    const c = chooseSource(toSourceViews([FR_720, FR_1080, EN_1080]), { hostLabel: 'VF · 1080p', roomLanguage: 'fr' });
     expect(c.motif).toBe('host');
+    expect(urlOf(c)).toBe(FR_1080.url);
+  });
+  it('un hôte en repli hors de la langue du salon n’entraîne pas un participant qui a une source dans la langue (LAST-1615)', () => {
+    const c = chooseSource(toSourceViews([FR_1080, EN_1080]), { hostLabel: 'VO EN · 1080p', roomLanguage: 'fr' });
+    expect(c.motif).toBe('language');
     expect(urlOf(c)).toBe(FR_1080.url);
   });
   it('aucune source dans la langue du salon : pas de choix, motif languageFallback', () => {

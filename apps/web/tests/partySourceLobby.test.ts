@@ -80,10 +80,16 @@ describe('modèle de la liste', () => {
   const [fr1080, fr720, en720] = views(stream(1), stream(2, { resolution: '720p', height: 720, score: 40 }), stream(3, { resolution: '720p', height: 720, languages: ['en'], score: 30 }));
   it('lignes triées, sélection, pastilles hôte et autre langue', () => {
     const rows = buildSourceRows([en720, fr720, fr1080], { selectedKey: sourceKeyOf(fr720), hostLabel: 'VF · 720p', roomLanguage: 'fr' });
+    // La ligne sélectionnée reste en tête, le reste suit par score.
+    expect(rows.map((r) => r.label)).toEqual(['VF · 720p', 'VF · 1080p', 'VO EN · 720p']);
+    expect(rows.map((r) => r.selected)).toEqual([true, false, false]);
+    expect(rows.map((r) => r.badge)).toEqual(['host', null, 'other']);
+    expect(rows[1].meta).toContain('En cache');
+  });
+  it('ordre stable : sans sélection, meilleure source d’abord ; l’avertissement de compatibilité suit la fonction fournie', () => {
+    const rows = buildSourceRows([en720, fr720, fr1080], { selectedKey: '', hostLabel: null, roomLanguage: 'fr', compat: (v) => (v === fr720 ? 'Format MKV non pris en charge' : null) });
     expect(rows.map((r) => r.label)).toEqual(['VF · 1080p', 'VF · 720p', 'VO EN · 720p']);
-    expect(rows.map((r) => r.selected)).toEqual([false, true, false]);
-    expect(rows.map((r) => r.badge)).toEqual([null, 'host', 'other']);
-    expect(rows[0].meta).toContain('En cache');
+    expect(rows.map((r) => r.warn)).toEqual([null, 'Format MKV non pris en charge', null]);
   });
   it('textes : hôte, recherche, avertissement, absence de langue', () => {
     expect(hostSourceLine('VF · 1080p')).toBe('Hôte : VF · 1080p');

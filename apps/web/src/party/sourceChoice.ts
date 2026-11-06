@@ -91,7 +91,7 @@ export function bestSource(views: readonly SourceView[]): SourceView | null {
 
 /**
  * Source d'une watch party, dans l'ordre : choix explicite du participant, version de l'hôte (empreinte), même langue et
- * résolution que le libellé de l'hôte, puis meilleure source dans la langue du salon. Sans source dans cette langue :
+ * résolution que le libellé de l'hôte (jamais hors de la langue du salon : un hôte en repli VO n'y entraîne pas un participant qui a une VF), puis meilleure source dans la langue du salon. Sans source dans cette langue :
  * `languageFallback`, à l'appelant d'annoncer la langue lue. Seules les sources jouables sont retenues.
  */
 export function chooseSource(views: readonly SourceView[], opts: SourceChoiceOptions): SourceChoice {
@@ -103,7 +103,7 @@ export function chooseSource(views: readonly SourceView[], opts: SourceChoiceOpt
   const byFingerprint = pickByFingerprint(playable, opts.fingerprint);
   if (byFingerprint) return { view: byFingerprint, motif: 'fingerprint' };
   if (opts.hostLabel) {
-    const host = bestSource(playable.filter((v) => sourceLabel(v) === opts.hostLabel));
+    const host = bestSource(playable.filter((v) => sourceLabel(v) === opts.hostLabel && !languageChanged(v, opts.roomLanguage)));
     if (host) return { view: host, motif: 'host' };
   }
   const lang = opts.roomLanguage;

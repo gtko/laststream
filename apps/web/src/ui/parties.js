@@ -18,7 +18,7 @@ import { state } from './state.js';
 import { joinErrorMessage } from './socialChat.js';
 import { esc, rewriteKeepingFocus } from './util.js';
 
-const LANGS = [['', 'Toutes'], ['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien']];
+const LANGS = [['', 'Toutes'], ['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['vo', 'VO']];
 const KINDS = [['', 'Tout'], ['movie', 'Films'], ['series', 'Séries']];
 let filter = { language: '', kind: '' };
 let cursor = null;

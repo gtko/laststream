@@ -156,6 +156,8 @@ export interface SourceRow {
   selected: boolean;
   /** `host` : même version que l'hôte ; `other` : autre langue que le salon ; null sinon. */
   badge: 'host' | 'other' | null;
+  /** Pourquoi cette source ne passe pas dans ce navigateur (ligne d'avertissement), null si elle passe. */
+  warn: string | null;
 }
 
 const SOURCE_ROWS_MAX = 8;
@@ -163,15 +165,15 @@ export const SOURCE_BADGE_TEXT = { host: 'Même version que l’hôte', other: '
 
 const STATUS_TEXT: Record<string, string> = { cached: 'En cache', uncached: 'À la demande', direct: 'Direct' };
 
-/** Lignes jouables, meilleure source d'abord (au plus SOURCE_ROWS_MAX) ; la sélectionnée reste toujours visible. */
+/** Lignes jouables, la sélectionnée en tête puis la meilleure source d'abord (au plus SOURCE_ROWS_MAX). */
 export function buildSourceRows(
   views: readonly SourceView[],
-  opts: { selectedKey: string; hostLabel: string | null; roomLanguage: Lang | null },
+  opts: { selectedKey: string; hostLabel: string | null; roomLanguage: Lang | null; compat?: (v: SourceView) => string | null },
 ): SourceRow[] {
   const ranked = views.filter((v) => v.playable).sort((a, b) => b.score - a.score || a.index - b.index);
-  const shown = ranked.slice(0, SOURCE_ROWS_MAX);
+  // La ligne sélectionnée reste en tête : un nouveau sondage ne déplace pas une ligne sous le doigt.
   const picked = ranked.find((v) => sourceKeyOf(v) === opts.selectedKey);
-  if (picked && !shown.includes(picked)) shown[shown.length - 1] = picked;
+  const shown = (picked ? [picked, ...ranked.filter((v) => v !== picked)] : ranked).slice(0, SOURCE_ROWS_MAX);
   return shown.map((v) => {
     const label = sourceLabel(v);
     const badge = opts.hostLabel && label === opts.hostLabel ? 'host' : languageChanged(v, opts.roomLanguage) ? 'other' : null;
@@ -181,6 +183,7 @@ export function buildSourceRows(
       meta: [STATUS_TEXT[v.status] ?? '', v.sizeLabel].filter(Boolean).join(' · '),
       selected: sourceKeyOf(v) === opts.selectedKey,
       badge,
+      warn: opts.compat?.(v) ?? null,
     };
   });
 }

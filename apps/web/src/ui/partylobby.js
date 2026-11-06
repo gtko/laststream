@@ -15,7 +15,10 @@ import {
   REACTION_OPTIONS, readySummary, readyText, SOURCE_BADGE_TEXT, sourceLanguageWarning, sourceSearchText, startWithoutText, voteShare, WAIT_LATE_OPTIONS,
 } from '../party/lobbyModel';
 import { bestSource, chooseSource, roomLangOf, sourceLabel } from '../party/sourceChoice';
+import { badSources, sourceKey as badSourceKey } from '../player/memory';
 import { sourceKeyOf } from '../sources/info';
+import { webCompatContext } from '../sources/load';
+import { webCompatOf } from '../sources/webCompat';
 import { CHAT_MAX_CHARS, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } from '../party/protocol';
 import { loadSources, pollSources } from '../sources/load';
 import { avatarAttrs } from './avatar-art.js';
@@ -33,6 +36,10 @@ const MAX_PARTICIPANTS_FALLBACK = 20;
 const GUEST_SLOTS = 4;
 const SEARCH_POLL_MAX = 8;
 const SEARCH_POLL_MS = 2000;
+/** Écart toléré entre l'échéance du compte à rebours et l'instant où `countdown: null` arrive (horloges, réseau). */
+const COUNTDOWN_TOLERANCE_MS = 1000;
+/** Délai avant d'envoyer au salon un choix de source (flèches enchaînées : seul le dernier part). */
+const DECLARE_DELAY_MS = 300;
 
 const ICON = {
   back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>',
@@ -54,6 +61,10 @@ let linkBusy = false;
 let renderQueued = false;
 let countTimer = 0;
 let launched = false;
+/** Compte à rebours vu dans ce salon : échéance (heure du serveur) tant qu'il court, et drapeau pour retenir la lecture au départ. */
+let countdownDue = null;
+let countdownSeen = false;
+let declareTimer = 0;
 let myVote = '';
 let lastVoteOptions = [];
 let feed = [];
@@ -158,12 +169,26 @@ const hostLabelOf = () => {
   return h && h.quality ? h.quality : null;
 };
 
+/** Identifiants opaques des lignes de sources : la clé d'une source peut contenir un lien (jeton de débrideur), le DOM ne reçoit que « s1 », « s2 »… */
+const rowIds = new Map();
+const rowKeys = new Map();
+function rowIdOf(key) {
+  let id = rowIds.get(key);
+  if (!id) { id = 's' + (rowIds.size + 1); rowIds.set(key, id); rowKeys.set(id, key); }
+  return id;
+}
+
 /** « Ma source » : les sources trouvées (langue, qualité), celle qui sera lancée au départ, et ce qui la rapproche de l'hôte. */
 function sourcesHTML() {
   if (prep.phase === 'idle') return '';
   const lang = roomLang();
   const hostLabel = hostLabelOf();
-  const rows = buildSourceRows(src.views, { selectedKey: src.selected ? sourceKeyOf(src.selected) : '', hostLabel, roomLanguage: lang });
+  const ctx = webCompatContext();
+  const rows = buildSourceRows(src.views, {
+    selectedKey: src.selected ? sourceKeyOf(src.selected) : '', hostLabel, roomLanguage: lang,
+    compat: (v) => { const w = webCompatOf(v, ctx); return w.level === 'ok' ? null : w.reason; },
+  });
+  const found = src.views.filter((v) => v.playable).length;
   if (!rows.length && !src.searching) return '';
   const hostLine = hostSourceLine(hostLabel);
   const roomName = client.room && client.room.language ? String(client.room.language).toUpperCase() : '';
@@ -171,13 +196,13 @@ function sourcesHTML() {
   const banner = !src.searching && noSourceInRoomLanguage(src.views, lang)
     ? '<p class="pl-src-banner" role="status"><span>Aucune source en ' + esc(roomName || 'cette langue') + ' pour l’instant.</span> <button type="button" class="pl-link-btn" data-pl-retry>Réessayer la recherche</button></p>'
     : '';
-  const focusable = rows.some((r) => r.selected) ? '' : rows[0] && rows[0].key;
+  const focusable = rows.some((r) => r.selected) ? '' : rows[0] && rowIdOf(rows[0].key);
   const list = rows.map((r) => '<button type="button" role="radio" class="pl-src-row' + (r.selected ? ' on' : '') + '" aria-checked="' + (r.selected ? 'true' : 'false') + '"' +
-    ' data-pl-source data-key="' + esc(r.key) + '" tabindex="' + (r.selected || r.key === focusable ? '0' : '-1') + '">' +
-    '<span class="pl-src-dot" aria-hidden="true"></span><span class="pl-src-main"><b>' + esc(r.label) + '</b>' + (r.meta ? '<span class="pl-src-meta">' + esc(r.meta) + '</span>' : '') + '</span>' +
+    ' data-pl-source data-key="' + rowIdOf(r.key) + '" tabindex="' + (r.selected || rowIdOf(r.key) === focusable ? '0' : '-1') + '">' +
+    '<span class="pl-src-dot" aria-hidden="true"></span><span class="pl-src-main"><b>' + esc(r.label) + '</b>' + (r.meta ? '<span class="pl-src-meta">' + esc(r.meta) + '</span>' : '') + (r.warn ? '<span class="pl-src-compat">' + esc(r.warn) + '</span>' : '') + '</span>' +
     (r.badge ? '<span class="pl-src-badge is-' + r.badge + '">' + esc(SOURCE_BADGE_TEXT[r.badge]) + '</span>' : '') + '</button>').join('');
   return '<section class="pl-src" aria-labelledby="pl-src-t"><div class="pl-row"><div class="pl-lb pl-grow" id="pl-src-t">Ma source</div>' +
-    '<span class="pl-src-status" role="status">' + esc(sourceSearchText(rows.length, src.searching)) + '</span></div>' +
+    '<span class="pl-src-status" role="status">' + esc(sourceSearchText(found, src.searching)) + '</span></div>' +
     (hostLine ? '<p class="pl-src-host">' + esc(hostLine) + '</p>' : '') + banner +
     '<div class="pl-src-list" role="radiogroup" aria-labelledby="pl-src-t">' + list + '</div>' +
     (warn ? '<p class="pl-src-warn" role="alert">' + esc(warn) + '</p>' : '') + '</section>';
@@ -289,29 +314,58 @@ function seedFeed() {
  * Source retenue : le choix explicite du participant, sinon la version de l'hôte, sinon la meilleure dans la langue du salon (sans
  * source dans cette langue, la meilleure : l'avertissement le dit). Se déclare prêt avec ce libellé dès qu'une source existe.
  */
-function applyChoice() {
+function applyChoice(opts = {}) {
   const c = client;
   if (!c || !c.room) return;
-  const explicit = src.explicit ? src.views.find((v) => sourceKeyOf(v) === src.explicit) : null;
-  const choice = chooseSource(src.views, { explicit, fingerprint: c.room.fingerprint, hostLabel: hostLabelOf(), roomLanguage: roomLang() });
-  const view = choice.view || bestSource(src.views);
+  const choice = currentChoice();
+  const view = choice.view || bestSource(eligibleViews(src.views));
   src.selected = view;
   if (!view) return;
   const label = sourceLabel(view).slice(0, 40);
   prep = { phase: 'ready', quality: label };
   if (src.declared === label) return;
+  if (opts.defer) { declareSoon(); return; }
   src.declared = label;
   c.sendReady(true, label);
   c.sendStatus('ready');
 }
 
+/** Sources choisies d'office : celles que le navigateur lit (comme player/session.js), sans les mémorisées en échec ; toute la liste si rien ne reste. */
+function eligibleViews(views) {
+  const req = roomRequest();
+  const bad = req ? badSources(req.key + ':' + (req.season ?? '') + ':' + (req.episode ?? '')) : new Map();
+  const good = views.filter((v) => !bad.has(badSourceKey(v)));
+  const usable = good.length ? good : views;
+  const ctx = webCompatContext();
+  const compatible = ctx.web ? usable.filter((v) => webCompatOf(v, ctx).level === 'ok') : usable;
+  return compatible.length ? compatible : views;
+}
+
+/** Choix courant : l'explicite du participant (même hors sources compatibles), sinon la présélection parmi les sources compatibles. */
+function currentChoice() {
+  const c = client;
+  const explicit = src.explicit ? src.views.find((v) => sourceKeyOf(v) === src.explicit) : null;
+  return chooseSource(explicit ? src.views : eligibleViews(src.views), { explicit, fingerprint: c.room.fingerprint, hostLabel: hostLabelOf(), roomLanguage: roomLang() });
+}
+
+/** Annonce au salon le dernier choix, 300 ms après la dernière sélection (une flèche enchaînée ne sature pas la limite de débit). */
+function declareSoon() {
+  clearTimeout(declareTimer);
+  declareTimer = setTimeout(() => {
+    declareTimer = 0;
+    if (!client) return;
+    applyChoice();
+    if (isHost() && src.selected) partyBridge.announceSource(src.selected);
+  }, DECLARE_DELAY_MS);
+}
+
 /** Choix explicite d'une source : il prime sur la présélection ; l'hôte l'annonce tout de suite pour que les autres s'alignent. */
-function chooseSourceKey(key) {
-  const view = src.views.find((v) => sourceKeyOf(v) === key);
+function chooseSourceKey(id) {
+  const key = rowKeys.get(id);
+  const view = key ? src.views.find((v) => sourceKeyOf(v) === key) : null;
   if (!view || !client) return;
   src.explicit = key;
-  applyChoice();
-  if (isHost()) partyBridge.announceSource(view);
+  applyChoice({ defer: true });
   renderSoon();
 }
 
@@ -358,25 +412,33 @@ function tickCountdown() {
   if (!root || !client) return;
   const left = countdownLeft(client.countdownAt, sNow());
   if (left === null) return;
-  if (left <= 0) { launch(); return; }
+  if (left <= 0) { launch(true); return; }
   renderSoon();
 }
 
 function syncCountdownTimer() {
   const counting = client && client.countdownAt !== null;
+  if (counting) { countdownDue = client.countdownAt; countdownSeen = true; }
   if (counting && !countTimer) countTimer = setInterval(tickCountdown, 250);
   if (!counting && countTimer) { clearInterval(countTimer); countTimer = 0; }
 }
 
-/** Fin du compte à rebours (ou salon déjà en lecture) : le salon d'attente se ferme et chacun lance sa lecture. */
-function launch() {
+/**
+ * Fin du compte à rebours (ou salon déjà en lecture) : le salon d'attente se ferme et chacun lance sa lecture. `hold` : vrai après un
+ * compte à rebours vu dans ce salon (la lecture attend les sources), faux à l'arrivée en cours de film.
+ */
+function launch(hold) {
   if (launched || !client) return;
   launched = true;
+  clearTimeout(declareTimer);
+  declareTimer = 0;
   // La source retenue est lancée telle quelle, sans seconde recherche ; sans liste, le départ cherche comme avant.
-  const choice = src.selected && src.loaded ? { view: src.selected, loaded: src.loaded } : null;
+  let choice = src.selected && src.loaded ? { view: src.selected, loaded: src.loaded } : null;
+  // Sans choix explicite et sans source dans la langue du salon alors que la recherche continue : la recherche reprend, avec son attente.
+  if (choice && !src.explicit && (src.searching || src.loaded.pending.length) && currentChoice().motif === 'languageFallback') choice = null;
   closeLobby(true);
   togglePartyPanel(true);
-  partyBridge.launchRoom(choice).catch((err) => {
+  partyBridge.launchRoom(choice, { hold: !!hold }).catch((err) => {
     toast(err && err.code === 'media_unsupported' ? 'Ce salon ne peut pas être lu depuis cette application.' : 'Lancement de la lecture impossible.');
   });
 }
@@ -386,7 +448,7 @@ function bind(c) {
   const on = (event, fn) => { offs.push(c.on(event, fn)); };
   on('welcome', () => {
     seedFeed();
-    if (c.state && c.state.playing) { launch(); return; }
+    if (c.state && c.state.playing) { launch(false); return; }
     // Reconnexion : un choix existant est conservé et redéclaré, la recherche ne repart pas.
     if (src.selected && src.explicit) { src.declared = ''; applyChoice(); } else void prepare();
     syncCountdownTimer();
@@ -396,12 +458,19 @@ function bind(c) {
   on('source', () => { applyChoice(); renderSoon(); });
   on('settings', () => renderSoon());
   on('countdown', (at) => {
-    if (at === null && c.state && c.state.playing) { launch(); return; }
+    if (at === null) {
+      const due = countdownDue;
+      countdownDue = null;
+      // Le serveur envoie `countdown: null` à l'expiration, puis `state` en lecture : l'un ou l'autre peut manquer (alarme devancée par
+      // le pas de 250 ms, participant qui arrive avant l'alarme). Échéance atteinte : le départ a lieu ; annulé avant : rien ne part.
+      if ((c.state && c.state.playing) || (due !== null && sNow() >= due - COUNTDOWN_TOLERANCE_MS)) { launch(true); return; }
+      countdownSeen = false;
+    }
     syncCountdownTimer();
     if (at !== null) pushSys('Départ dans quelques secondes…');
     renderSoon();
   });
-  on('state', (st) => { if (st && st.playing && c.countdownAt === null && c.status === 'open') launch(); });
+  on('state', (st) => { if (st && st.playing && c.countdownAt === null && c.status === 'open') launch(countdownSeen); });
   on('chat', (line) => { if (!feed.some((f) => f.kind === 'chat' && f.line.id === line.id)) feed.push({ kind: 'chat', line, at: line.at }); renderSoon(); });
   on('removed', ({ messageId }) => { feed = feed.filter((f) => !(f.kind === 'chat' && f.line.id === messageId)); renderSoon(); });
   on('event', (ev) => {
@@ -470,6 +539,8 @@ function mount() {
 }
 
 function closeLobby(keepClient) {
+  clearTimeout(declareTimer);
+  declareTimer = 0;
   clearInterval(countTimer);
   countTimer = 0;
   prepRun += 1;
@@ -490,6 +561,8 @@ export async function openLobby(partyId, from) {
   if (isKidProfile() || !isServerMode()) return;
   if (root) closeLobby(true);
   launched = false;
+  countdownDue = null;
+  countdownSeen = false;
   tab = 'chat';
   myVote = '';
   lastVoteOptions = [];
@@ -515,7 +588,7 @@ export async function openLobby(partyId, from) {
   // Une connexion déjà ouverte a reçu sa bienvenue : le salon d'attente démarre sans la réécouter.
   if (client.you) {
     seedFeed();
-    if (client.state && client.state.playing && client.countdownAt === null) { launch(); return; }
+    if (client.state && client.state.playing && client.countdownAt === null) { launch(false); return; }
     void prepare();
     syncCountdownTimer();
   }
@@ -740,6 +813,8 @@ function onKey(e) {
   const t = e.target instanceof Element ? e.target : null;
   const group = t && t.closest('[role="radiogroup"], [role="tablist"]');
   if (!group || !t || (vertical && group.getAttribute('role') !== 'radiogroup')) return;
+  // Touche maintenue : une seule sélection (chaque flèche clique la ligne et peut envoyer des messages au salon).
+  if (e.repeat) { e.preventDefault(); return; }
   const items = [...group.querySelectorAll('[role="radio"]:not(:disabled), [role="tab"]')];
   const i = items.indexOf(t);
   if (i < 0) return;

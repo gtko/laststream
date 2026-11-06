@@ -128,7 +128,7 @@ describe('salon d’attente : Ma source', () => {
     await open(c);
     radios()[1].click();
     await vi.waitFor(() => expect(checked()).toEqual(['VO EN · 720p']));
-    expect(c.sendReady).toHaveBeenLastCalledWith(true, 'VO EN · 720p');
+    await vi.waitFor(() => expect(c.sendReady).toHaveBeenLastCalledWith(true, 'VO EN · 720p'));
     c.sendReady.mockClear();
     c.emit('welcome', {});
     await vi.waitFor(() => expect(c.sendReady).toHaveBeenCalledWith(true, 'VO EN · 720p'));
@@ -176,7 +176,7 @@ describe('salon d’attente : Ma source', () => {
     expect(mocks.loadSources).toHaveBeenCalledTimes(1);
   });
 
-  it('hôte : son choix est annoncé tout de suite au salon (source + langue), sans lien', async () => {
+  it('hôte : son choix est annoncé au salon (source + langue) après le délai de sélection, sans lien', async () => {
     mocks.loadSources.mockResolvedValue(loadedOf([FR_1080, EN_720]));
     const c = fakeClient(true);
     await open(c);
@@ -198,12 +198,155 @@ describe('salon d’attente : Ma source', () => {
     first.focus();
     first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     await vi.waitFor(() => expect(checked()).toEqual(['VF · 720p']));
-    await vi.waitFor(() => expect(document.activeElement).toBe(radios()[1]));
-    expect(radios()[1].tabIndex).toBe(0);
+    // La ligne choisie passe en tête : le focus la suit.
+    await vi.waitFor(() => expect(document.activeElement).toBe(radios()[0]));
+    expect(radios()[0].tabIndex).toBe(0);
     // Une mise à jour de l’hôte repeint l’écran : le focus reste sur la même source.
     c.participants[0].quality = 'VF · 1080p';
     c.emit('participants', c.participants);
     await vi.waitFor(() => expect(lobby()!.querySelector('.pl-src-host')).not.toBeNull());
-    expect(document.activeElement).toBe(radios()[1]);
+    expect(document.activeElement).toBe(radios()[0]);
+  });
+});
+
+const clickLabel = (text: string) => radios().find((r) => r.querySelector('b')!.textContent === text)!.click();
+/** Vues du chargement dont les sources de `urls` ne passent pas dans le navigateur (son DTS / TrueHD). */
+const blockedLoaded = (streams: unknown[], urls: string[]) => {
+  const l = loadedOf(streams);
+  return { ...l, views: l.views.map((v) => (urls.includes(v.stream.url as string) ? { ...v, appAudio: 'unsupported' as const } : v)) };
+};
+
+describe('salon d’attente : départ synchronisé (LAST-1615)', () => {
+  async function setup() {
+    mocks.loadSources.mockResolvedValue(loadedOf([FR_1080]));
+    const c = fakeClient(false);
+    let now = 10_000;
+    c.serverNow = () => now;
+    const launchRoom = vi.spyOn(partyBridge, 'launchRoom').mockResolvedValue(undefined);
+    await open(c);
+    return { c, launchRoom, setNow: (t: number) => { now = t; } };
+  }
+
+  it('countdown null puis state en lecture : le départ retient la lecture, une seule fois', async () => {
+    const { c, launchRoom, setNow } = await setup();
+    c.countdownAt = 12_000;
+    c.emit('countdown', 12_000);
+    setNow(12_050);
+    c.countdownAt = null;
+    c.state = { playing: true, pos: 0, at: 12_000, rev: 2 };
+    c.emit('countdown', null);
+    c.emit('state', c.state);
+    expect(launchRoom).toHaveBeenCalledTimes(1);
+    expect(launchRoom.mock.calls[0][1]).toEqual({ hold: true });
+  });
+
+  it('countdown null sans state (un participant a envoyé buf false avant l’alarme) : le départ a lieu quand même, avec retenue', async () => {
+    const { c, launchRoom, setNow } = await setup();
+    c.countdownAt = 12_000;
+    c.emit('countdown', 12_000);
+    setNow(12_020);
+    c.countdownAt = null;
+    c.emit('countdown', null);
+    expect(launchRoom).toHaveBeenCalledTimes(1);
+    expect(launchRoom.mock.calls[0][1]).toEqual({ hold: true });
+  });
+
+  it('compte à rebours annulé par l’hôte avant l’échéance : rien ne part', async () => {
+    const { c, launchRoom, setNow } = await setup();
+    c.countdownAt = 15_000;
+    c.emit('countdown', 15_000);
+    setNow(11_000);
+    c.countdownAt = null;
+    c.emit('countdown', null);
+    expect(launchRoom).not.toHaveBeenCalled();
+  });
+
+  it('arrivée en cours de film : le départ ne retient rien', async () => {
+    mocks.loadSources.mockResolvedValue(loadedOf([FR_1080]));
+    const c = fakeClient(false);
+    c.state = { playing: true, pos: 600, at: Date.now(), rev: 5 };
+    const launchRoom = vi.spyOn(partyBridge, 'launchRoom').mockResolvedValue(undefined);
+    partyBridge.client = c;
+    await mod.openLobby('r1');
+    expect(launchRoom).toHaveBeenCalledTimes(1);
+    expect(launchRoom.mock.calls[0][1]).toEqual({ hold: false });
+  });
+});
+
+describe('salon d’attente : critères de la source (LAST-1615)', () => {
+  it('départ pendant la recherche, sans choix explicite, avec un repli hors langue : la recherche reprend (aucune source imposée)', async () => {
+    mocks.loadSources.mockResolvedValue(loadedOf([EN_720], ['torrentio']));
+    mocks.pollSources.mockReturnValue(new Promise(() => undefined));
+    const c = fakeClient(false);
+    const launchRoom = vi.spyOn(partyBridge, 'launchRoom').mockResolvedValue(undefined);
+    await open(c);
+    c.state = { playing: true, pos: 0, at: 0, rev: 2 };
+    c.emit('state', c.state);
+    expect(launchRoom).toHaveBeenCalledTimes(1);
+    expect(launchRoom.mock.calls[0][0]).toBeNull();
+  });
+
+  it('navigateur : une source qui ne passe pas n’est jamais présélectionnée d’office', async () => {
+    mocks.loadSources.mockResolvedValue(blockedLoaded([FR_1080, FR_720], [FR_1080.url]));
+    await open(fakeClient(false));
+    expect(checked()).toEqual(['VF · 720p']);
+    expect(lobby()!.querySelector('.pl-src-compat')!.textContent).toContain('Son DTS / TrueHD');
+  });
+
+  it('navigateur : le choix explicite d’une source qui ne passe pas reste possible (avertissement sur la ligne)', async () => {
+    mocks.loadSources.mockResolvedValue(blockedLoaded([FR_1080, FR_720], [FR_1080.url]));
+    await open(fakeClient(false));
+    clickLabel('VF · 1080p');
+    await vi.waitFor(() => expect(checked()).toEqual(['VF · 1080p']));
+    expect(radios()[0].textContent).toContain('Son DTS / TrueHD');
+  });
+
+  it('navigateur : si aucune source ne passe, la liste entière sert de repli', async () => {
+    mocks.loadSources.mockResolvedValue(blockedLoaded([FR_1080, FR_720], [FR_1080.url, FR_720.url]));
+    await open(fakeClient(false));
+    expect(checked()).toEqual(['VF · 1080p']);
+  });
+
+  it('aucun lien dans le DOM : l’identifiant des lignes est opaque', async () => {
+    mocks.loadSources.mockResolvedValue(loadedOf([FR_1080, EN_720]));
+    await open(fakeClient(false));
+    const html = lobby()!.querySelector('.pl-src')!.outerHTML;
+    expect(html).not.toMatch(/https?:|\/play\/|u:/);
+    expect(radios().every((r) => /^s\d+$/.test(r.dataset.key ?? ''))).toBe(true);
+  });
+
+  it('le compteur annonce les sources jouables, pas les 8 lignes affichées', async () => {
+    mocks.loadSources.mockResolvedValue(loadedOf(Array.from({ length: 10 }, (_, i) => stream(i + 1))));
+    await open(fakeClient(false));
+    expect(radios()).toHaveLength(8);
+    await vi.waitFor(() => expect(lobby()!.querySelector('.pl-src-status')!.textContent).toBe('10 sources trouvées'));
+  });
+});
+
+describe('salon d’attente : envois au salon (LAST-1615)', () => {
+  it('sélections enchaînées : seul le dernier choix part au salon, après environ 300 ms', async () => {
+    mocks.loadSources.mockResolvedValue(loadedOf([FR_1080, FR_720, EN_720]));
+    const c = fakeClient(false);
+    await open(c);
+    c.sendReady.mockClear();
+    c.sendStatus.mockClear();
+    clickLabel('VF · 720p');
+    await vi.waitFor(() => expect(checked()).toEqual(['VF · 720p']));
+    clickLabel('VO EN · 720p');
+    await vi.waitFor(() => expect(checked()).toEqual(['VO EN · 720p']));
+    expect(c.sendReady).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(c.sendReady).toHaveBeenCalledWith(true, 'VO EN · 720p'));
+    expect(c.sendReady).toHaveBeenCalledTimes(1);
+    expect(c.sendStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('touche fléchée maintenue : la répétition est ignorée', async () => {
+    mocks.loadSources.mockResolvedValue(loadedOf([FR_1080, FR_720, EN_720]));
+    await open(fakeClient(false));
+    const first = radios()[0];
+    first.focus();
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, repeat: true }));
+    await new Promise((r) => setTimeout(r, 60));
+    expect(checked()).toEqual(['VF · 1080p']);
   });
 });
