@@ -11,6 +11,7 @@ import {
   parseFingerprint,
   type PlaybackState,
   type RoomData,
+  REACTIONS,
   ROOM_MAX_AGE_MS,
   type ServerMessage,
 } from '../src/party/protocol.js';
@@ -951,6 +952,107 @@ describe('watch party enrichie (S4)', () => {
     expect(parseClientMessage(JSON.stringify({ t: 'ready', ready: true, quality: '  ' }))).toEqual({ t: 'ready', ready: true, quality: null });
     expect(parseClientMessage(JSON.stringify({ t: 'chat', text: 'hé' }))).toEqual({ t: 'chat', text: 'hé', pos: null });
     expect(parseClientMessage(JSON.stringify({ t: 'settings', waitLate: '10s' }))).toEqual({ t: 'settings', waitLate: '10s' });
+  });
+});
+
+describe('source de l’hôte : empreinte et langue du salon (LAST-1615)', () => {
+  const fp = { fileName: 'Severance.S01E02.2160p.mkv', size: 4_000_000_000, hash: 'abcdef12' };
+
+  it('seul l’hôte change la source : un autre participant reçoit not_host, rien ne change', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    const before = fx.data.meta.fingerprint;
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'source', fingerprint: fp, language: 'en' })))).toEqual(['not_host']);
+    expect(fx.data.meta.fingerprint).toEqual(before);
+    expect(fx.data.meta.language).toBe('fr');
+  });
+
+  it('diffusion par destinataire : membres et hôte reçoivent l’empreinte, un invité fingerprint null, auteur = pseudo de l’hôte', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    fx.core.join({ ...fx.member('guest:g1', 'visiteur'), guest: true });
+    const effects = fx.core.handle('a-host', msg({ t: 'source', fingerprint: fp, language: 'en' }));
+    expect(sent(effects, 'a-host')).toEqual([{ t: 'source', fingerprint: fp, language: 'en', by: 'host' }]);
+    expect(sent(effects, 'a-bob')).toEqual([{ t: 'source', fingerprint: fp, language: 'en', by: 'host' }]);
+    expect(sent(effects, 'guest:g1')).toEqual([{ t: 'source', fingerprint: null, language: 'en', by: 'host' }]);
+    expect(broadcasts(effects)).toEqual([]);
+    expect(fx.data.meta).toMatchObject({ fingerprint: fp, language: 'en' });
+  });
+
+  it('ne touche ni à la lecture (rev inchangé) ni au compte à rebours', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 30 }));
+    fx.data.countdownAt = T0 + 5_000;
+    const state = { ...fx.data.state };
+    fx.core.handle('a-host', msg({ t: 'source', fingerprint: fp, language: 'en' }));
+    expect(fx.data.state).toEqual(state);
+    expect(fx.data.state.rev).toBe(1);
+    expect(fx.data.countdownAt).toBe(T0 + 5_000);
+  });
+
+  it('rien n’est envoyé si l’empreinte et la langue sont déjà celles du salon', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    expect(fx.core.handle('a-host', msg({ t: 'source', fingerprint: fx.data.meta.fingerprint, language: 'fr' }))).toEqual([]);
+    fx.core.handle('a-host', msg({ t: 'source', fingerprint: fp, language: 'en' }));
+    expect(fx.core.handle('a-host', msg({ t: 'source', fingerprint: fp, language: 'en' }))).toEqual([]);
+  });
+
+  it('langue omise : la diffusion porte la langue déjà en place, qui ne change pas', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    const effects = fx.core.handle('a-host', msg({ t: 'source', fingerprint: fp }));
+    expect(sent(effects, 'a-bob')).toEqual([{ t: 'source', fingerprint: fp, language: 'fr', by: 'host' }]);
+    expect(fx.data.meta.language).toBe('fr');
+  });
+
+  it('arrivant tardif : welcome porte la nouvelle empreinte et la langue ; un invité reçoit fingerprint null', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host');
+    fx.core.handle('a-host', msg({ t: 'source', fingerprint: fp, language: 'en' }));
+    const bobWelcome = sent(fx.core.join(fx.member('a-bob')), 'a-bob').find((m) => m.t === 'welcome');
+    expect(bobWelcome).toMatchObject({ t: 'welcome', room: { fingerprint: fp, language: 'en' } });
+    const guestWelcome = sent(fx.core.join({ ...fx.member('guest:g1', 'visiteur'), guest: true }), 'guest:g1').find((m) => m.t === 'welcome');
+    expect(guestWelcome).toMatchObject({ t: 'welcome', room: { fingerprint: null, language: 'en' } });
+  });
+
+  it('langue invalide : message refusé à l’analyse (le salon répond invalid_message)', () => {
+    for (const language of ['<script>', 'english', 'f', 42]) {
+      expect(parseClientMessage(JSON.stringify({ t: 'source', fingerprint: null, language }))).toBeUndefined();
+    }
+    expect(parseClientMessage(JSON.stringify({ t: 'source', fingerprint: null, language: 'pt-BR' }))).toEqual({ t: 'source', fingerprint: null, language: 'pt-BR' });
+  });
+
+  it('empreinte de source : nom de fichier ressemblant à une URL refusé, empreinte invalide ramenée à null', () => {
+    for (const fileName of ['https://exemple.test/film.mkv', '//cdn.test/film.mkv', 'www.exemple.test/film.mkv', 'magnet:?xt=urn:btih:abc', 'HTTP://X/y']) {
+      expect(parseClientMessage(JSON.stringify({ t: 'source', fingerprint: { fileName, size: 1, hash: null }, language: 'fr' }))).toBeUndefined();
+    }
+    expect(parseClientMessage(JSON.stringify({ t: 'source', fingerprint: 'n’importe quoi' }))).toEqual({ t: 'source', fingerprint: null });
+    expect(parseClientMessage(JSON.stringify({ t: 'source', fingerprint: { fileName: 'Film.2024.mkv', size: 1, hash: null } }))).toEqual({
+      t: 'source',
+      fingerprint: { fileName: 'Film.2024.mkv', size: 1, hash: null },
+    });
+  });
+
+  it('débit : source partage la fenêtre de prep (20 par 10 s, puis refus, puis fermeture CLOSE.rateLimited)', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host');
+    const change = msg({ t: 'source', fingerprint: null, language: 'en' });
+    for (let i = 0; i < 20; i++) fx.core.handle('a-host', change);
+    expect(errors(fx.core.handle('a-host', change))).toEqual(['rate_limited']);
+    for (let i = 0; i < 19; i++) fx.core.handle('a-host', change);
+    expect(fx.core.handle('a-host', change)).toEqual([{ kind: 'close', to: 'a-host', code: CLOSE.rateLimited, reason: 'rate_limited' }]);
+  });
+
+  it('react accepte chaque emoji de REACTIONS, y compris les derniers ajoutés', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    for (const emoji of REACTIONS) {
+      // Fenêtre de débit des réactions (10 par 10 s) : on la laisse se vider entre deux emojis.
+      fx.clock.now += 10_001;
+      expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'react', emoji, pos: null })))).toEqual([{ t: 'react', user: 'bob', by: 'bob', emoji, at: fx.clock.now, pos: null }]);
+    }
   });
 });
 

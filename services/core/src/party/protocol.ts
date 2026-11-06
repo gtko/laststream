@@ -144,6 +144,11 @@ export function parseFingerprint(raw: unknown): Fingerprint | null {
   return { fileName, size: size === undefined ? null : Math.trunc(size), hash };
 }
 
+/** Langue de release (`source`) : même format que la création de salon (LANGUAGE dans routes.ts). */
+const SOURCE_LANGUAGE = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/;
+/** Nom de fichier ressemblant à une URL (schéma, `//`, `www.`) : refusé dans une empreinte de source. */
+const URL_LIKE_NAME = /:\/\/|^\/\/|^www\.|^[a-z][a-z0-9+.-]*:/i;
+
 /** Identifiant de connexion (pair WebRTC) : base64url ou UUID, 1 à 64 caractères. */
 const PEER_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -216,6 +221,13 @@ export function parseClientMessage(text: string): ClientMessage | undefined {
       const episode = finiteNumber(raw.episode, 0, 10_000);
       if (season === undefined || episode === undefined || !Number.isInteger(season) || !Number.isInteger(episode)) return undefined;
       return { t: 'episode', season, episode, fingerprint: parseFingerprint(raw.fingerprint) };
+    }
+    case 'source': {
+      // Source de l'hôte : empreinte (nom de fichier jamais une URL) et langue facultative (absente ou nulle : inchangée).
+      const fingerprint = parseFingerprint(raw.fingerprint);
+      if (fingerprint !== null && fingerprint.fileName !== null && URL_LIKE_NAME.test(fingerprint.fileName)) return undefined;
+      if (raw.language === undefined || raw.language === null) return { t: 'source', fingerprint };
+      return typeof raw.language === 'string' && SOURCE_LANGUAGE.test(raw.language) ? { t: 'source', fingerprint, language: raw.language } : undefined;
     }
     case 'chat': {
       const pos = optionalPos(raw.pos);

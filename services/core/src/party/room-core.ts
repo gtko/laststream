@@ -8,6 +8,7 @@ import {
   INVITE_WINDOW_MS,
   type ChatLine,
   type ClientMessage,
+  type Fingerprint,
   EMPTY_ROOM_TTL_MS,
   ENTRIES_PER_WINDOW,
   ENTRY_WINDOW_MS,
@@ -735,6 +736,19 @@ export class RoomCore {
         // Un invité ne reçoit pas l'empreinte de version (nom de fichier, taille, hash) : envoi par destinataire, sans diffusion.
         return [...this.members.values()].map((m): Effect => ({ kind: 'send', to: m.accountId, msg: m.guest === true ? { ...media, fingerprint: null } : media }));
       }
+      case 'source': {
+        // Source de l'hôte (empreinte et langue) : le salon l'enregistre sans toucher à la lecture (ni rev ni compte à rebours).
+        if (!isHost) return this.err(accountId, 'not_host');
+        const meta = this.data.meta;
+        // Langue omise : celle du salon reste en place.
+        const language = message.language ?? meta.language;
+        if (sameFingerprint(meta.fingerprint, message.fingerprint) && language === meta.language) return [];
+        meta.fingerprint = message.fingerprint;
+        meta.language = language;
+        this.dirty.add('room');
+        // Envoi par destinataire, comme `episode` : un invité ne reçoit jamais l'empreinte de version.
+        return [...this.members.values()].map((m): Effect => ({ kind: 'send', to: m.accountId, msg: { t: 'source', fingerprint: m.guest === true ? null : message.fingerprint, language: language ?? '', by: member.username } }));
+      }
       case 'chat': {
         if (this.data.muted.includes(accountId)) return this.err(accountId, 'muted');
         const filtered = filterChat(message.text);
@@ -1054,6 +1068,12 @@ function isMeshSignal(message: ClientMessage): boolean {
   return message.t === 'rtc' && message.data.m === 'mesh';
 }
 
+/** Empreintes identiques champ à champ (null compris). */
+function sameFingerprint(a: Fingerprint | null, b: Fingerprint | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.fileName === b.fileName && a.size === b.size && a.hash === b.hash;
+}
+
 function rateKind(message: ClientMessage): string {
   if (isMeshSignal(message)) return 'mesh';
   switch (message.t) {
@@ -1069,6 +1089,7 @@ function rateKind(message: ClientMessage): string {
       return 'admin';
     case 'ready':
     case 'status':
+    case 'source':
       return 'prep';
     default:
       return message.t;
