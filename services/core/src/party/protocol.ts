@@ -146,8 +146,8 @@ export function parseFingerprint(raw: unknown): Fingerprint | null {
 
 /** Langue de release (`source`) : même format que la création de salon (LANGUAGE dans routes.ts). */
 const SOURCE_LANGUAGE = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/;
-/** Nom de fichier ressemblant à une URL (schéma, `//`, `www.`) : refusé dans une empreinte de source. */
-const URL_LIKE_NAME = /:\/\/|^\/\/|^www\.|^[a-z][a-z0-9+.-]*:/i;
+/** Nom de fichier ressemblant à une URL (`://`, début en `//`, `www.` ou `magnet:`) : refusé dans une empreinte de source. Un simple deux-points (« Dune: Part Two.mkv ») passe. Même motif côté app (fingerprint.ts). */
+const URL_LIKE_NAME = /:\/\/|^\/\/|^www\.|^magnet:/i;
 
 /** Identifiant de connexion (pair WebRTC) : base64url ou UUID, 1 à 64 caractères. */
 const PEER_ID = /^[A-Za-z0-9_-]{1,64}$/;

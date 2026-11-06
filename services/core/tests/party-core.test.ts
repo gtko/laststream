@@ -1035,6 +1035,14 @@ describe('source de l’hôte : empreinte et langue du salon (LAST-1615)', () =>
     });
   });
 
+  it('empreinte de source : un nom avec deux-points (« Dune: Part Two.mkv ») passe, langue comprise (LAST-1615)', () => {
+    expect(parseClientMessage(JSON.stringify({ t: 'source', fingerprint: { fileName: 'Dune: Part Two.mkv', size: 1, hash: null }, language: 'fr' }))).toEqual({
+      t: 'source',
+      fingerprint: { fileName: 'Dune: Part Two.mkv', size: 1, hash: null },
+      language: 'fr',
+    });
+  });
+
   it('débit : source partage la fenêtre de prep (20 par 10 s, puis refus, puis fermeture CLOSE.rateLimited)', () => {
     const fx = makeRoom();
     joined(fx, 'a-host');
