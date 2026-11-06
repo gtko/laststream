@@ -13,7 +13,7 @@ import {
   audioKnown, chooseCompatibleSource, compatWarning, fileCodecsOf, guestStatuses, isCompatibleSource, isStreamable, verdictOf, type FileCodecs, type GuestVerdict, type SourceLike,
 } from './compat';
 import { codecCacheKey, getCodecs, probeSource, probeUrl, putCodecs } from './headerCodecs';
-import { fingerprintOf, pickByFingerprint, sameFingerprint, shareableFingerprintOf, type FingerprintSource } from './fingerprint';
+import { pickByFingerprint, sameFingerprint, shareableFingerprintOf, type FingerprintSource } from './fingerprint';
 import { partyErrorText } from './protocol';
 import type { RangeSource } from '../relay/host';
 import { RelayError } from '../relay/protocol';
@@ -106,7 +106,7 @@ export function requestOfRoom(room: PartyRoom, media: PartyMedia = room.media): 
 export function roomBodyOf(a: SessionAdapter, visibility: PartyVisibility, profileId: string, language: string) {
   const type = a.req.type === 'tv' ? 'series' : 'movie';
   const media: CreatePartyMedia = { type, tmdbId: Number(a.req.id), ...(type === 'series' ? { season: a.cur.season ?? a.req.season ?? 1, episode: a.cur.episode ?? a.req.episode ?? 1 } : {}) };
-  const fp = fingerprintOf(a.view);
+  const fp = shareableFingerprintOf(a.view);
   return {
     profileId, visibility, title: a.req.name, poster: a.poster || null, language, media, ...(fp ? { fingerprint: fp } : {}),
   };
@@ -239,16 +239,22 @@ class PartyBridge {
   }
 
   /** Lance la lecture du titre du salon avec la source la plus proche de l'hôte (départ du salon d'attente). */
-  async launchRoom(choice?: LaunchChoice | null): Promise<void> {
+  async launchRoom(choice?: LaunchChoice | null, opts: { hold?: boolean } = {}): Promise<void> {
     const room = this.client?.room ?? this.room;
     if (!room) return;
     const req = requestOfRoom(room, this.client?.room?.media ?? room.media);
     if (!req) throw new UserApiError(0, 'media_unsupported');
     if (!this.launcher) throw new UserApiError(0, 'player_unavailable');
-    this.holdLaunch();
+    // `hold` : départ après un compte à rebours vu dans ce salon. L'arrivée en cours de film (welcome) ne retient rien.
+    if (opts.hold) this.holdLaunch();
+    const held = this.launchTimer;
     try {
       // Choix du salon d'attente : lancé directement (sans seconde recherche), avec les options de salon intactes.
       await this.launcher(req, { ...this.launchOptions(), ...(choice ? { chosen: choice.view, chosenLoaded: choice.loaded } : {}) });
+      // Le lanceur a rendu la main sans source prête (panneau Sources, recherche vide) : `viewReady` ne viendra pas, le salon n'attend plus.
+      // Seulement si c'est encore CETTE retenue (un autre lancement a pu la remplacer ou `viewReady` l'avoir déjà libérée).
+      const a = this.adapter?.() ?? null;
+      if (held !== null && this.launchTimer === held && (!a || !a.ready)) this.releaseLaunch();
     } catch (err) {
       this.releaseLaunch();
       throw err;
@@ -257,12 +263,13 @@ class PartyBridge {
 
   /**
    * Départ du salon (compte à rebours écoulé) : ce participant se déclare non prêt, pour que le salon retienne la lecture le temps
-   * que sa source se charge (`viewReady` le libère). Aucune attente pour un salon déjà en lecture (arrivée en cours de film), un
-   * serveur sans réglages v3, ou le réglage « attendre les retardataires » à off. Passé LAUNCH_HOLD_MAX_MS, il se déclare prêt.
+   * que sa source se charge (`viewReady` le libère). L'appelant décide de la retenue (`hold`, voir `launchRoom`) : on ne lit plus
+   * `state.playing`, que le serveur passe déjà à vrai à l'expiration. Aucune attente pour un serveur sans réglages v3 ou le réglage
+   * « attendre les retardataires » à off. Passé LAUNCH_HOLD_MAX_MS, il se déclare prêt.
    */
   private holdLaunch(): void {
     const c = this.client;
-    if (!c || !c.v3 || c.settings.waitLate === 'off' || c.state?.playing || this.launchTimer !== null) return;
+    if (!c || !c.v3 || c.settings.waitLate === 'off' || this.launchTimer !== null) return;
     c.sendBuffering(false, 0);
     this.launchTimer = setTimeout(() => this.releaseLaunch(), LAUNCH_HOLD_MAX_MS);
   }
@@ -649,7 +656,7 @@ class PartyBridge {
         this.announced = tag;
         // Épisode suivant décidé par l'hôte : son lecteur fait foi pour le salon à la prochaine mesure (sauf bascule).
         if (!a.switching) this.controller?.arm();
-        c.changeEpisode(s, e, fingerprintOf(a.view) ?? undefined);
+        c.changeEpisode(s, e, shareableFingerprintOf(a.view) ?? undefined);
       }
     } else {
       c.requestSync();

@@ -288,6 +288,13 @@ describe('empreinte partagée', () => {
     expect(shareableFingerprintOf({ filename: 'https://exemple.test/a.mkv' } as any)).toBeNull();
   });
 
+  it('un nom avec deux-points (« Dune: Part Two.mkv ») est gardé, un lien magnet ou www. est retiré (LAST-1615)', () => {
+    expect(shareableFingerprintOf({ filename: 'Dune: Part Two.mkv', sizeBytes: 5 } as any)).toEqual({ fileName: 'Dune: Part Two.mkv', size: 5, hash: null });
+    expect(shareableFingerprintOf({ filename: 'magnet:?xt=urn:btih:abc', sizeBytes: 5 } as any)).toEqual({ fileName: null, size: 5, hash: null });
+    expect(shareableFingerprintOf({ filename: 'www.exemple.test/a.mkv', sizeBytes: 5 } as any)).toEqual({ fileName: null, size: 5, hash: null });
+    expect(shareableFingerprintOf({ filename: '//cdn.test/a.mkv', sizeBytes: 5 } as any)).toEqual({ fileName: null, size: 5, hash: null });
+  });
+
   it('comparaison : les champs à null comptent', () => {
     expect(sameFingerprint(null, null)).toBe(true);
     expect(sameFingerprint({ fileName: 'a', size: 1, hash: null }, { fileName: 'a', size: 1, hash: null })).toBe(true);

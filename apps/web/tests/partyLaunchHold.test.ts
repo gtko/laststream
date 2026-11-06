@@ -37,6 +37,7 @@ function fakeClient(over: Record<string, unknown> = {}) {
     sendStatus: vi.fn(() => true),
     requestSync: vi.fn(() => true),
     changeEpisode: vi.fn(() => true),
+    sendSource: vi.fn(() => true),
     close: vi.fn(),
     ...over,
   };
@@ -129,21 +130,84 @@ describe('départ du salon d’attente (LAST-1615, L4)', () => {
     expect(client.control).toHaveBeenCalledWith('play', 12);
   });
 
-  it('départ : le participant se déclare non prêt, puis prêt quand sa source est chargée', async () => {
+  it('départ après un compte à rebours : le participant se déclare non prêt, puis prêt quand sa source est chargée', async () => {
     const client = fakeClient();
-    const pb = await install(client, async () => undefined);
-    await pb.launchRoom();
+    let done!: () => void;
+    const pb = await install(client, () => new Promise<void>((r) => { done = r; }));
+    const run = pb.launchRoom(null, { hold: true });
     expect(client.sendBuffering).toHaveBeenCalledWith(false, 0);
     expect(client.sendBuffering).not.toHaveBeenCalledWith(true, 0);
     pb.viewReady(adapterOf(player(0, true)));
     expect(client.sendBuffering).toHaveBeenLastCalledWith(true, 0);
+    done();
+    await run;
+  });
+
+  it('le salon déjà en lecture à l’expiration (state diffusé avant le départ) retient quand même', async () => {
+    const client = fakeClient({ state: { playing: true, pos: 0, at: 1000, rev: 2 } });
+    const pb = await install(client, () => new Promise<void>(() => undefined));
+    void pb.launchRoom(null, { hold: true });
+    expect(client.sendBuffering).toHaveBeenCalledWith(false, 0);
+  });
+
+  it('lanceur rendu sans source prête (panneau Sources) : le salon n’attend plus', async () => {
+    const client = fakeClient();
+    const pb = await install(client, async () => undefined);
+    await pb.launchRoom(null, { hold: true });
+    expect(client.sendBuffering).toHaveBeenCalledWith(false, 0);
+    expect(client.sendBuffering).toHaveBeenLastCalledWith(true, 0);
+  });
+
+  it('lanceur rendu pendant le chargement d’une source (adapter présent mais pas prêt) : même libération', async () => {
+    const client = fakeClient();
+    const pb = await install(client, async () => undefined);
+    pb.adapter = () => adapterOf(player(0, true), { ready: false });
+    await pb.launchRoom(null, { hold: true });
+    expect(client.sendBuffering).toHaveBeenLastCalledWith(true, 0);
+  });
+
+  it('lanceur rendu avec une source prête : la retenue reste jusqu’à viewReady', async () => {
+    const client = fakeClient();
+    const pb = await install(client, async () => undefined);
+    pb.adapter = () => adapterOf(player(0, true));
+    await pb.launchRoom(null, { hold: true });
+    expect(client.sendBuffering).not.toHaveBeenCalledWith(true, 0);
+  });
+
+  it('retenue d’un lancement plus récent : la fin d’un ancien lanceur ne la libère pas', async () => {
+    const client = fakeClient();
+    const finish: Array<() => void> = [];
+    const pb = await install(client, () => new Promise<void>((r) => { finish.push(r); }));
+    const first = pb.launchRoom(null, { hold: true });
+    pb.leave();
+    pb.client = client as any;
+    pb.controller = new PartyController(client as any, () => clock);
+    const second = pb.launchRoom(null, { hold: true });
+    client.sendBuffering.mockClear();
+    finish[0]();
+    await first;
+    expect(client.sendBuffering).not.toHaveBeenCalledWith(true, 0);
+    finish[1]();
+    await second;
+  });
+
+  it('changement d’épisode : l’empreinte envoyée ne contient jamais de lien', async () => {
+    const client = fakeClient({ room: { ...room, media: { type: 'series', tmdbId: 42, season: 1, episode: 1 } } });
+    const pb = await install(client);
+    const next = adapterOf(player(12, false), {
+      req: { type: 'tv', id: '42', name: 'Film', season: 1, episode: 2, key: 'tv:42' },
+      cur: { season: 1, episode: 2 },
+      view: { filename: 'https://exemple.test/a.mkv', sizeBytes: 5 },
+    });
+    pb.viewReady(next);
+    expect(client.changeEpisode).toHaveBeenCalledWith(1, 2, { fileName: null, size: 5, hash: null });
   });
 
   it('plafond de 45 s : sans source prête, le participant se déclare prêt pour ne pas bloquer le salon', async () => {
     const client = fakeClient();
-    const pb = await install(client, async () => undefined);
+    const pb = await install(client, () => new Promise<void>(() => undefined));
     vi.useFakeTimers();
-    await pb.launchRoom();
+    void pb.launchRoom(null, { hold: true });
     vi.advanceTimersByTime(44_999);
     expect(client.sendBuffering).not.toHaveBeenCalledWith(true, 0);
     vi.advanceTimersByTime(1);
@@ -154,28 +218,30 @@ describe('départ du salon d’attente (LAST-1615, L4)', () => {
     const client = fakeClient({ settings: { control: 'all', waitLate: 'off', reactions: 'on' } });
     const pb = await install(client, async () => undefined);
     vi.useFakeTimers();
-    await pb.launchRoom();
+    await pb.launchRoom(null, { hold: true });
     vi.advanceTimersByTime(45_000);
     expect(client.sendBuffering).not.toHaveBeenCalled();
   });
 
-  it('salon déjà en lecture (arrivée en cours de film) ou serveur sans réglages v3 : aucune attente', async () => {
+  it('arrivée en cours de film (sans retenue demandée) ou serveur sans réglages v3 : aucune attente', async () => {
     const playing = fakeClient({ state: { playing: true, pos: 30, at: 1000, rev: 4 } });
     const pb = await install(playing, async () => undefined);
     await pb.launchRoom();
     expect(playing.sendBuffering).not.toHaveBeenCalled();
+    await pb.launchRoom(null, { hold: false });
+    expect(playing.sendBuffering).not.toHaveBeenCalled();
     pb.leave();
     const old = fakeClient({ v3: false });
     const pb2 = await install(old, async () => undefined);
-    await pb2.launchRoom();
+    await pb2.launchRoom(null, { hold: true });
     expect(old.sendBuffering).not.toHaveBeenCalled();
   });
 
   it('leave() annule le plafond : rien n’est envoyé après la sortie', async () => {
     const client = fakeClient();
-    const pb = await install(client, async () => undefined);
+    const pb = await install(client, () => new Promise<void>(() => undefined));
     vi.useFakeTimers();
-    await pb.launchRoom();
+    void pb.launchRoom(null, { hold: true });
     pb.leave();
     vi.advanceTimersByTime(60_000);
     expect(client.sendBuffering).not.toHaveBeenCalledWith(true, 0);
@@ -184,7 +250,7 @@ describe('départ du salon d’attente (LAST-1615, L4)', () => {
   it('lancement en échec : le participant ne retient plus le salon', async () => {
     const client = fakeClient();
     const pb = await install(client, async () => { throw new Error('boom'); });
-    await expect(pb.launchRoom()).rejects.toThrow('boom');
+    await expect(pb.launchRoom(null, { hold: true })).rejects.toThrow('boom');
     expect(client.sendBuffering).toHaveBeenLastCalledWith(true, 0);
   });
 });
