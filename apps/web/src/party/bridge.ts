@@ -241,9 +241,10 @@ class PartyBridge {
   /** Lance la lecture du titre du salon avec la source la plus proche de l'hôte (départ du salon d'attente). */
   async launchRoom(choice?: LaunchChoice | null): Promise<void> {
     const room = this.client?.room ?? this.room;
-    if (!room || !this.launcher) return;
+    if (!room) return;
     const req = requestOfRoom(room, this.client?.room?.media ?? room.media);
     if (!req) throw new UserApiError(0, 'media_unsupported');
+    if (!this.launcher) throw new UserApiError(0, 'player_unavailable');
     this.holdLaunch();
     try {
       // Choix du salon d'attente : lancé directement (sans seconde recherche), avec les options de salon intactes.
@@ -323,7 +324,8 @@ class PartyBridge {
     if (!room) return;
     const req = requestOfRoom(room);
     if (!req) throw new UserApiError(0, 'media_unsupported');
-    if (!this.launcher) return;
+    // Le lanceur est posé au chargement de sessionLoader.js : absent, on le dit plutôt que de rendre la main en silence.
+    if (!this.launcher) throw new UserApiError(0, 'player_unavailable');
     await this.launcher(req, this.launchOptions());
   }
 
@@ -597,7 +599,7 @@ class PartyBridge {
     const sameEp = a && a.cur.season === (m.media.season ?? null) && a.cur.episode === (m.media.episode ?? null) && a.req.id === String(m.media.tmdbId);
     if (sameEp) return;
     const req = requestOfRoom(room, m.media);
-    if (req) void this.launcher(req, this.launchOptions());
+    if (req) void this.launcher(req, this.launchOptions()).catch(() => undefined);
   }
 
   // ---- Appels du lecteur ----

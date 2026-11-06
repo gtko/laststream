@@ -297,7 +297,6 @@ export function playSource(request, views, view, opener, opts = {}) {
   return startSession(request, views, view, { opener, resume: opts.resume || 'ask' });
 }
 
-// Salon (watch party) : le pont lance les épisodes demandés par l'hôte avec la source la plus proche de son empreinte.
-partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer, partyLang: o.partyLang, partyFingerprint: o.partyFingerprint, hostLabel: o.hostLabel, chosen: o.chosen, chosenLoaded: o.chosenLoaded });
+// Salon (watch party) : le pont se branche sur le titre en cours et la bascule de source ; le lanceur est posé par sessionLoader.js.
 partyBridge.adapter = () => partyAdapter();
 partyBridge.switcher = (view, allow) => switchToView(view, allow);
