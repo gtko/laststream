@@ -144,6 +144,20 @@ describe('annulation pendant le premier chargement du lecteur', () => {
     expect(detail().querySelector('[data-wp-msg]')!.textContent).toBe('');
   });
 
+  it('lancement terminé, salon toujours actif : le bouton ne reste pas figé pour le retour sur la page', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const { partyBridge, m } = await freshJoinPage(gate);
+    (detail().querySelector('[data-wp-join]') as HTMLButtonElement).click();
+    await tick(80);
+    release();
+    await tick(80);
+    expect(m.playBest).toHaveBeenCalledTimes(1);
+    expect(partyBridge.isActive()).toBe(true);
+    expect((detail().querySelector('[data-wp-join]') as HTMLButtonElement).disabled).toBe(false);
+    expect(detail().querySelector('[data-wp-msg]')!.textContent).toBe('');
+  });
+
   it('un autre salon rejoint pendant le chargement reste connecté', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });

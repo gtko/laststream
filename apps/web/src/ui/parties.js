@@ -289,8 +289,9 @@ async function joinFromPage(id, btn) {
   if (msg) msg.textContent = 'Connexion au salon…';
   try {
     await partyBridge.joinAndPlay(id, userStore.currentProfile().id);
-    // Annulé pendant le chargement du lecteur (retour arrière) : le salon est quitté, le bouton redevient utilisable.
-    if (!partyBridge.isActive()) { btn.disabled = false; if (msg) msg.textContent = ''; }
+    // Lancement terminé ou annulé (retour arrière) : le bouton redevient utilisable pour le retour sur cette page.
+    btn.disabled = false;
+    if (msg) msg.textContent = '';
   } catch (err) {
     btn.disabled = false;
     partyBridge.leave();
