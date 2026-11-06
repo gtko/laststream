@@ -126,6 +126,9 @@ type Listener = () => void;
 /** Adresse WebSocket d'un ticket : `wsPath` est relatif à l'adresse du serveur (http -> ws, https -> wss). */
 export const socketUrl = (base: string, wsPath: string): string => base.replace(/\/+$/, '').replace(/^http/i, 'ws') + wsPath;
 
+/** Plafond du départ d'un salon : passé ce délai sans source prête, le participant se déclare prêt pour ne pas bloquer le salon. */
+const LAUNCH_HOLD_MAX_MS = 45_000;
+
 class PartyBridge {
   client: PartyClient | null = null;
   controller: PartyController | null = null;
@@ -217,7 +220,33 @@ class PartyBridge {
     if (!room || !this.launcher) return;
     const req = requestOfRoom(room, this.client?.room?.media ?? room.media);
     if (!req) throw new UserApiError(0, 'media_unsupported');
-    await this.launcher(req, this.launchOptions());
+    this.holdLaunch();
+    try {
+      await this.launcher(req, this.launchOptions());
+    } catch (err) {
+      this.releaseLaunch();
+      throw err;
+    }
+  }
+
+  /**
+   * Départ du salon (compte à rebours écoulé) : ce participant se déclare non prêt, pour que le salon retienne la lecture le temps
+   * que sa source se charge (`viewReady` le libère). Aucune attente pour un salon déjà en lecture (arrivée en cours de film), un
+   * serveur sans réglages v3, ou le réglage « attendre les retardataires » à off. Passé LAUNCH_HOLD_MAX_MS, il se déclare prêt.
+   */
+  private holdLaunch(): void {
+    const c = this.client;
+    if (!c || !c.v3 || c.settings.waitLate === 'off' || c.state?.playing || this.launchTimer !== null) return;
+    c.sendBuffering(false, 0);
+    this.launchTimer = setTimeout(() => this.releaseLaunch(), LAUNCH_HOLD_MAX_MS);
+  }
+
+  /** Source prête (ou plafond atteint) : le salon ne retient plus ce participant. Sans effet hors départ. */
+  private releaseLaunch(): void {
+    if (this.launchTimer === null) return;
+    clearTimeout(this.launchTimer);
+    this.launchTimer = null;
+    this.client?.sendBuffering(true, 0);
   }
 
   /** Rejoint un salon existant (le lecteur est lancé par l'appelant si besoin, voir `joinAndPlay`). */
@@ -255,6 +284,8 @@ class PartyBridge {
   lobby = false;
   /** Préparation déjà déclarée (prêt) pour la connexion en cours : posée au lancement d'une lecture hors salon d'attente. */
   private readyDeclared = false;
+  /** Départ en cours : minuteur du plafond, tant que ce participant retient le salon (voir `holdLaunch`). */
+  private launchTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Rejoint un salon et lance la lecture du titre (ou de l'épisode) en cours, avec la source la plus proche de l'hôte. */
   async joinAndPlay(roomId: string, profileId: string): Promise<void> {
@@ -280,6 +311,8 @@ class PartyBridge {
     this.pendingInvites = [];
     this.announced = '';
     this.readyDeclared = false;
+    if (this.launchTimer !== null) clearTimeout(this.launchTimer);
+    this.launchTimer = null;
     this.lobby = false;
     this.stopRelay();
     if (c) c.close();
@@ -560,10 +593,11 @@ class PartyBridge {
     if (!c || !c.room) return;
     this.controller?.reset();
     this.declareReady(c, a);
+    // Source prête : le salon ne retient plus ce participant (départ, voir launchRoom).
+    this.releaseLaunch();
     if (c.isHost) {
-      // Le lecteur de l'hôte vient de démarrer : son état s'aligne sur le salon à la prochaine mesure. Pas pour une bascule :
-      // le salon garde la main (son état ne doit pas être écrasé par celui d'un lecteur qui repart).
-      if (!a.switching) this.controller?.arm();
+      // Le lecteur de l'hôte qui démarre ne réaligne pas le salon : un départ de salon d'attente le cale sur son état, comme les
+      // autres participants. L'alignement sur le lecteur de l'hôte se fait à la création du salon et au changement d'épisode.
       const m = c.room.media;
       const s = a.cur.season ?? null;
       const e = a.cur.episode ?? null;
@@ -571,6 +605,8 @@ class PartyBridge {
       const tag = a.req.key + ':' + s + ':' + e;
       if (differs && s !== null && e !== null && this.announced !== tag) {
         this.announced = tag;
+        // Épisode suivant décidé par l'hôte : son lecteur fait foi pour le salon à la prochaine mesure (sauf bascule).
+        if (!a.switching) this.controller?.arm();
         c.changeEpisode(s, e, fingerprintOf(a.view) ?? undefined);
       }
     } else {
