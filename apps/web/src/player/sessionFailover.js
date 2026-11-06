@@ -14,7 +14,7 @@ import { searchAndPlay, searchInstead } from './session.js';
 import { loaderExtra } from './sessionOpen.js';
 import { playView, releaseLocal } from './sessionPlay.js';
 import { S, badKey, MAX_ATTEMPTS, originalLangOf } from './sessionState.js';
-import { languageChanged, roomLangOf, sourceLabel } from '../party/sourceChoice';
+import { languageChanged, partyFallbackNotice, roomLangOf, sourceLabel } from '../party/sourceChoice';
 import { expandPlayer } from './sessionUi.js';
 
 
@@ -32,7 +32,11 @@ export function nextCandidate(p, tried) {
   const bad = new Set(badSources(badKey(p)).keys());
   const skip = new Set([...p.tried, ...tried.map((c) => c.view.index)]);
   const v = pickRaceCandidate(fallbackPool(p), first.view, skip, bad, sourceKey);
-  return v ? { view: v, direct: false } : null;
+  if (!v) return null;
+  // Salon : une source de repli hors de la langue du salon est annoncée, jamais lue en silence (comme au repli).
+  const notice = partyFallbackNotice(v, roomLangOf(p.launchOpts && p.launchOpts.partyLang, originalLangOf(p)));
+  if (notice) S.ui.toast(notice, 5000);
+  return { view: v, direct: false };
 }
 
 export function recordRace(p, win) {

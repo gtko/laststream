@@ -228,7 +228,7 @@ export async function searchAndPlay(p, request, opts) {
     if (roomLang) {
       // Navigateur : seules les sources compatibles sont choisies (comme recommendFor).
       const pool = compatCtx.web ? usable.filter((v) => webCompatOf(v, compatCtx).level === 'ok') : usable;
-      const choice = chooseSource(pool, { fingerprint: opts.partyFingerprint, roomLanguage: roomLang });
+      const choice = chooseSource(pool, { fingerprint: opts.partyFingerprint, hostLabel: opts.hostLabel, roomLanguage: roomLang });
       if (choice.view) return { view: choice.view, languageFallback: false, reason: choice.motif === 'fingerprint' ? 'Même version que l’hôte du salon' : 'Source dans la langue du salon', party: choice.motif === 'fingerprint' };
       const best = bestSource(pool);
       return best ? { view: best, languageFallback: true, reason: languageFallbackNotice(best, opts.partyLang) } : null;
@@ -272,6 +272,6 @@ export function playSource(request, views, view, opener, opts = {}) {
 }
 
 // Salon (watch party) : le pont lance les épisodes demandés par l'hôte avec la source la plus proche de son empreinte.
-partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer, partyLang: o.partyLang, partyFingerprint: o.partyFingerprint });
+partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer, partyLang: o.partyLang, partyFingerprint: o.partyFingerprint, hostLabel: o.hostLabel });
 partyBridge.adapter = () => partyAdapter();
 partyBridge.switcher = (view, allow) => switchToView(view, allow);

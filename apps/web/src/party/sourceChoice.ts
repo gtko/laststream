@@ -47,6 +47,20 @@ export function sourceLabel(v: SourceView): string {
   return sourceLangTag(v) + ' · ' + (v.quality || v.group);
 }
 
+/** Code de langue d'une source (vocabulaire du salon : fr, en…, vo, multi) : la langue de la release envoyée au salon. */
+export function sourceLangCode(v: SourceView): string {
+  if (v.hasFrench) return 'fr';
+  const langs = v.info?.languages ?? [];
+  if (langs.includes('multi')) return 'multi';
+  if (langs.includes('original') || langs.length === 0) return 'vo';
+  return langs[0].toLowerCase();
+}
+
+/** Avis d'une source de repli hors de la langue du salon (même texte que le repli de failover), ou null si elle suit la langue du salon. */
+export function partyFallbackNotice(v: SourceView, roomLanguage: Lang | null): string | null {
+  return languageChanged(v, roomLanguage) ? 'Source indisponible, essai de la suivante : ' + sourceLabel(v) + ' · hors langue du salon' : null;
+}
+
 /** Code de langue du salon (`vo` ou `original` : la langue d'origine du titre) vers la langue des sources. Null si le salon n'en a pas. */
 export function roomLangOf(roomLanguage: string | null | undefined, originalLang = ''): Lang | null {
   const code = (roomLanguage ?? '').trim().toLowerCase();
