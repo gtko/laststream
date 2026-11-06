@@ -4,6 +4,7 @@ import { isKidProfile } from '../data/auth';
 import { partyVisibilityChoices, partyBridge } from '../party/bridge';
 import { endReasonText, joinLinkOf } from '../party/join';
 import { CONTROL_OPTIONS, eventText, formatTimecode, initialsOf, isPlaybackEvent, REACTION_OPTIONS, STAGE_EMOJIS, syncText, WAIT_LATE_OPTIONS } from '../party/lobbyModel';
+import { partyReactLimit } from '../party/reactLimit';
 import { CHAT_MAX_CHARS, DEFAULT_SETTINGS, PARTY_WAIT_MAX_MS, partyErrorText } from '../party/protocol';
 import { UserApiError } from '../data/userApi';
 import { toast } from './dom.js';
@@ -746,8 +747,11 @@ function onClick(e) {
   }
   const react = t.closest('[data-wp-react]');
   if (react && c) {
+    // Une réaction de salon par seconde (LAST-1615) : au-delà, ignorée sans erreur.
+    if (!partyReactLimit.ready()) return;
     const pos = partyBridge.position();
-    if (pos === null) c.sendReact(react.dataset.wpReact); else c.sendReact(react.dataset.wpReact, pos);
+    const sent = pos === null ? c.sendReact(react.dataset.wpReact) : c.sendReact(react.dataset.wpReact, pos);
+    if (sent) partyReactLimit.sent();
     return;
   }
   const set = t.closest('[data-wp-set]');

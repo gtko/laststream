@@ -62,6 +62,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('réactions de salon : une par seconde (LAST-1615)', () => {
+  it('le bouton d’emoji n’envoie qu’une réaction par seconde, la suivante est ignorée sans erreur', () => {
+    const sendReact = vi.fn(() => true);
+    partyBridge.client = { ...fakeClient(false, hostParticipants()), sendReact } as any;
+    panel.togglePartyPanel(true);
+    const btn = panelOf().querySelector<HTMLButtonElement>('[data-wp-react]')!;
+    btn.click();
+    btn.click();
+    expect(sendReact).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('participants : avatar et pastille d’état', () => {
   it('chaque participant a une initiale colorée ; une couleur claire donne une initiale sombre', () => {
     partyBridge.client = fakeClient(true, hostParticipants()) as any;

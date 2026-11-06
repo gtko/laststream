@@ -96,6 +96,14 @@ export function replyOf(d: unknown): { messageId: string; emoji: string } | null
   return { messageId: r.messageId, emoji: r.emoji };
 }
 
+/** Réaction de salon reçue (écho du salon) au format de bulle du natif (LAST-1615) ; null si elle est incomplète. */
+export function partyReactMessageOf(d: unknown, id: string): NativeMessage | null {
+  const r = (d ?? {}) as { by?: unknown; user?: unknown; emoji?: unknown };
+  const by = typeof r.by === 'string' && r.by !== '' ? r.by : typeof r.user === 'string' ? r.user : '';
+  if (by === '' || typeof r.emoji !== 'string' || r.emoji === '') return null;
+  return { id, from: viewerOf(by, by), body: truncateText(r.emoji) };
+}
+
 /** Ce que le pont appelle côté web : réaction (postReact), message retrouvé, envoi (socialStore), erreur affichée. */
 export interface NativeSocialHandlers {
   react(pos: number, emoji: string): void;
