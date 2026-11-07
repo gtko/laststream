@@ -44,6 +44,14 @@ Android, puis release GitHub publiée avec bannière, changelog et assets (insta
 Le label `release:skip` sur la PR désactive la release. Pas de build macOS. Relance manuelle des builds d'un tag existant :
 Actions → Release → Run workflow avec `tag` = `vX.Y.Z` (sans nouveau bump).
 
+Reprise et limites :
+
+- Si l'étape `prepare` échoue après le push du tag, « Re-run » ne refait rien : `main` pointe déjà sur le commit `release: vX.Y.Z`.
+  Relancer via Actions → Release → Run workflow avec `tag` = `vX.Y.Z` (rejoue les builds et la publication, sans nouveau bump).
+- Deux merges très rapprochés peuvent être livrés dans la même release : le second n'apparaît pas dans le changelog et ses labels
+  `release:*` sont ignorés.
+- Les PR venant de forks ne déclenchent pas de release ; leur commit est repris dans le changelog de la release suivante.
+
 Réglages requis sur le dépôt :
 
 - Secrets : `ANDROID_DEBUG_KEYSTORE_B64` (keystore de signature de l'APK, en base64) et `LASTSTREAM_UPDATE_SIGNING_KEY` (clé ed25519

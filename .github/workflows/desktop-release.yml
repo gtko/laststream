@@ -9,6 +9,7 @@ name: Desktop release
 # Appelable aussi en workflow_call depuis release.yml (releases automatiques, tag vX.Y.Z) : deps=artifact prepare ui.zip et
 # lastaddon.zip dans le job stage-deps (aucune release brouillon requise) ; publish=false laisse release.yml publier la release,
 # ce workflow n'exposant alors que l'artefact desktop-release (installeur, .sha256, latest.json, latest.json.sig).
+# Dans ce mode (publish=false), seul l'installeur x64 est construit : pas de build ARM64, et seuls les binaires LFS x64 sont telecharges.
 # Les tags vX.Y.Z et desktop-vX.Y.Z sont acceptes.
 # Le televersement R2 reste manuel (upload.ps1) : aucun jeton Cloudflare dans ce workflow.
 # Pas d'Authenticode (decision produit) : l'installeur n'est pas signe de code.
@@ -35,6 +36,11 @@ on:
         required: false
         type: boolean
         default: true
+    secrets:
+      # Appele par release.yml avec ce seul secret (au lieu de secrets: inherit). Facultatif : en workflow_dispatch, il vient du depot.
+      LASTSTREAM_UPDATE_SIGNING_KEY:
+        description: 'Cle ed25519 de signature de latest.json'
+        required: false
 
 # Lecture seule par defaut. Les jobs qui ecrivent sont explicites ci-dessous.
 permissions:
@@ -126,7 +132,7 @@ jobs:
       working-directory: apps/web
       run: |
         npm ci
-        npm run build
+        npm run build:ci
     - name: Bundle the core (lastaddon)
       shell: bash
       working-directory: services/core
@@ -165,12 +171,40 @@ jobs:
       # Avant le checkout, apps/desktop n'existe pas encore : racine du workspace.
       working-directory: .
     - name: checkout
+      # Mode manuel (publish absent) : tous les binaires Git LFS, comme avant.
+      if: ${{ format('{0}', inputs.publish) != 'false' }}
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         ref: ${{ format('refs/tags/{0}', inputs.tag) }}
         persist-credentials: false
         # Binaires du bundle (bin/, server.js, archives libmpv) : Git LFS.
         lfs: true
+    - name: checkout (publish=false, x64 only)
+      # Appel depuis release.yml : pas de LFS au checkout (smudge coupe), les seuls binaires x64 sont telecharges a l'etape suivante.
+      if: ${{ format('{0}', inputs.publish) == 'false' }}
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      env:
+        GIT_LFS_SKIP_SMUDGE: '1'
+      with:
+        ref: ${{ format('refs/tags/{0}', inputs.tag) }}
+        persist-credentials: false
+        lfs: false
+    - name: Binaires x64 (Git LFS, publish=false)
+      if: ${{ format('{0}', inputs.publish) == 'false' }}
+      # Racine du depot (defaults.run pointe sur apps/desktop). Jeton passe ici seulement, comme dans desktop-ci.yml.
+      working-directory: .
+      shell: bash
+      env:
+        LFS_TOKEN: ${{ github.token }}
+      run: |
+        auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
+        echo "::add-mask::$auth"
+        GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+          git lfs pull --include="apps/desktop/bin/**,apps/desktop/server.js,apps/desktop/libmpv-2_x64.zip"
+        # Garde : un pointeur non telecharge serait copie dans le bundle sans erreur.
+        for f in apps/desktop/bin/* apps/desktop/server.js apps/desktop/libmpv-2_x64.zip; do
+          if head -c 40 "$f" | grep -q '^version https://git-lfs'; then echo "::error::$f reste un pointeur LFS"; exit 1; fi
+        done
     - name: Check the tag matches the versions (Cargo.toml, Cargo.lock, Laststream.iss)
       shell: bash
       run: |
@@ -196,6 +230,8 @@ jobs:
       run: cargo build --release --locked --target x86_64-pc-windows-msvc
     # pwsh et non bash : Git Bash met /usr/bin/link devant le link.exe MSVC et casse l'edition de liens ARM64.
     - name: Build ARM64 release (binary only, no installer)
+      # Absent du mode publish=false (release.yml ne publie que l'installeur x64). format() : inputs.publish est vide en workflow_dispatch.
+      if: ${{ format('{0}', inputs.publish) != 'false' }}
       shell: pwsh
       run: |
         rustup target add aarch64-pc-windows-msvc
@@ -251,6 +287,7 @@ jobs:
         path: apps/desktop/dist/installer/Laststream-Setup-*.exe
         if-no-files-found: error
     - name: Upload the ARM64 binary (not published)
+      if: ${{ format('{0}', inputs.publish) != 'false' }}
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: arm64-binary

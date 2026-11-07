@@ -28,7 +28,8 @@ concurrency:
 
 jobs:
   prepare:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && !contains(github.event.pull_request.labels.*.name, 'release:skip')) }}
+    # PR venant d'un fork : pas de release (la branche n'est pas dans le depot, pas de secrets). workflow_dispatch reste autorise.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && !contains(github.event.pull_request.labels.*.name, 'release:skip') && github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -54,8 +55,9 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: 22
+    # resvg-js livre son binaire precompile par optionalDependencies : aucun script d'installation a executer.
     - name: Install the release scripts
-      run: npm ci
+      run: npm ci --ignore-scripts
       working-directory: scripts/release
     - name: Guard against a release commit on top of main
       id: guard
@@ -79,7 +81,7 @@ jobs:
         PR_AUTHOR: ${{ github.event.pull_request.user.login }}
       run: |
         set -euo pipefail
-        last_tag="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+        last_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
         echo "last_tag=$last_tag" >> "$GITHUB_OUTPUT"
         echo "Dernier tag : ${last_tag:-aucun}"
         : > raw.jsonl
@@ -109,7 +111,7 @@ jobs:
         node scripts/release/changelog.mjs --version "$version" --date "$date_utc" --prs prs.json --out CHANGELOG.md --section-out section.md
         node scripts/release/banner.mjs --version "$version" --date "$date_utc" --highlights highlights.json --out banner.png
         # Tags v* deja crees aujourd'hui (UTC), avant celui-ci : suffixe du versionCode Android.
-        tags_today="$(git for-each-ref --format='%(creatordate:short)' 'refs/tags/v*' | grep -c "^${date_utc}$" || true)"
+        tags_today="$(git for-each-ref --format='%(creatordate:short)' 'refs/tags/v[0-9]*' | grep -c "^${date_utc}$" || true)"
         version_code="$(node scripts/release/android-version.mjs --date "$date_utc" --tags-today "$tags_today")"
         {
           echo "version=$version"
@@ -146,7 +148,7 @@ jobs:
       run: |
         set -euo pipefail
         {
-          echo "![Laststream v${VERSION}](https://github.com/gtko/laststream/releases/download/v${VERSION}/banner.png)"
+          echo "![Laststream v${VERSION}](https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/banner.png)"
           echo
           cat section.md
           echo
@@ -170,7 +172,7 @@ jobs:
         git rev-parse -q --verify "refs/tags/${INPUT_TAG}" > /dev/null || { echo "::error::Le tag $INPUT_TAG n'existe pas"; exit 1; }
         # versionCode recalcule comme a la creation du tag : date du tag et rang du tag parmi ceux du meme jour.
         date_utc="$(git for-each-ref --format='%(creatordate:short)' "refs/tags/${INPUT_TAG}")"
-        tags_before="$(git for-each-ref --sort=creatordate --format='%(creatordate:short) %(refname:short)' 'refs/tags/v*' \
+        tags_before="$(git for-each-ref --sort=creatordate --format='%(creatordate:short) %(refname:short)' 'refs/tags/v[0-9]*' \
           | awk -v d="$date_utc" -v t="$INPUT_TAG" '$2 == t { print n + 0; found = 1; exit } $1 == d { n++ } END { if (!found) print n + 0 }')"
         version_code="$(node scripts/release/android-version.mjs --date "$date_utc" --tags-today "$tags_before")"
         {
@@ -206,7 +208,9 @@ jobs:
       tag: ${{ needs.prepare.outputs.tag }}
       deps: artifact
       publish: false
-    secrets: inherit
+    # Secret explicite (pas de heritage) : seul le secret de signature de latest.json est passe au workflow reutilisable.
+    secrets:
+      LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
 
   android:
     needs: prepare
@@ -253,7 +257,7 @@ jobs:
       working-directory: apps/web
       run: |
         npm ci
-        npm run build
+        npm run build:ci
     - name: Capacitor sync
       working-directory: apps/mobile
       run: |
