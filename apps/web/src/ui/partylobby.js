@@ -70,8 +70,8 @@ let lastVoteOptions = [];
 let feed = [];
 let prep = { phase: 'idle', quality: '' };
 let prepRun = 0;
-/** Sources du participant : liste reçue (progressive), choix explicite (clé stable), source retenue et libellé déjà annoncé au salon. */
-const freshSources = () => ({ views: [], loaded: null, searching: false, explicit: '', selected: null, declared: '' });
+/** Sources du participant : liste reçue (progressive), choix explicite (clé stable), source retenue, libellé déjà annoncé au salon et ordre des lignes déjà affichées (elles ne bougent plus). */
+const freshSources = () => ({ views: [], loaded: null, searching: false, explicit: '', selected: null, declared: '', order: [] });
 let src = freshSources();
 let picker = null;
 let socialOff = null;
@@ -185,7 +185,7 @@ function sourcesHTML() {
   const hostLabel = hostLabelOf();
   const ctx = webCompatContext();
   const rows = buildSourceRows(src.views, {
-    selectedKey: src.selected ? sourceKeyOf(src.selected) : '', hostLabel, roomLanguage: lang,
+    selectedKey: src.selected ? sourceKeyOf(src.selected) : '', hostLabel, roomLanguage: lang, order: src.order,
     compat: (v) => { const w = webCompatOf(v, ctx); return w.level === 'ok' ? null : w.reason; },
   });
   const found = src.views.filter((v) => v.playable).length;
@@ -323,8 +323,9 @@ function applyChoice(opts = {}) {
   if (!view) return;
   const label = sourceLabel(view).slice(0, 40);
   prep = { phase: 'ready', quality: label };
-  if (src.declared === label) return;
+  // Un choix explicite de même libellé que la présélection est tout de même annoncé (l'hôte aligne les autres sur sa source).
   if (opts.defer) { declareSoon(); return; }
+  if (src.declared === label) return;
   src.declared = label;
   c.sendReady(true, label);
   c.sendStatus('ready');
@@ -376,7 +377,7 @@ async function prepare() {
   if (!c || !c.room) return;
   const alive = () => run === prepRun && client === c && root;
   prep = { phase: 'searching', quality: '' };
-  src = { ...freshSources(), explicit: src.explicit, searching: true };
+  src = { ...freshSources(), explicit: src.explicit, order: src.order, searching: true };
   c.sendReady(false, null);
   c.sendStatus('searching');
   const req = roomRequest();
@@ -567,6 +568,8 @@ export async function openLobby(partyId, from) {
   myVote = '';
   lastVoteOptions = [];
   invitedPids.clear();
+  rowIds.clear();
+  rowKeys.clear();
   prep = { phase: 'idle', quality: '' };
   src = freshSources();
   opener = from instanceof HTMLElement ? from : (document.activeElement instanceof HTMLElement ? document.activeElement : null);

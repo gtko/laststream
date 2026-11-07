@@ -80,16 +80,32 @@ describe('modèle de la liste', () => {
   const [fr1080, fr720, en720] = views(stream(1), stream(2, { resolution: '720p', height: 720, score: 40 }), stream(3, { resolution: '720p', height: 720, languages: ['en'], score: 30 }));
   it('lignes triées, sélection, pastilles hôte et autre langue', () => {
     const rows = buildSourceRows([en720, fr720, fr1080], { selectedKey: sourceKeyOf(fr720), hostLabel: 'VF · 720p', roomLanguage: 'fr' });
-    // La ligne sélectionnée reste en tête, le reste suit par score.
-    expect(rows.map((r) => r.label)).toEqual(['VF · 720p', 'VF · 1080p', 'VO EN · 720p']);
-    expect(rows.map((r) => r.selected)).toEqual([true, false, false]);
-    expect(rows.map((r) => r.badge)).toEqual(['host', null, 'other']);
-    expect(rows[1].meta).toContain('En cache');
+    // La sélection ne change pas l'ordre : les lignes restent par score.
+    expect(rows.map((r) => r.label)).toEqual(['VF · 1080p', 'VF · 720p', 'VO EN · 720p']);
+    expect(rows.map((r) => r.selected)).toEqual([false, true, false]);
+    expect(rows.map((r) => r.badge)).toEqual([null, 'host', 'other']);
+    expect(rows[0].meta).toContain('En cache');
   });
   it('ordre stable : sans sélection, meilleure source d’abord ; l’avertissement de compatibilité suit la fonction fournie', () => {
     const rows = buildSourceRows([en720, fr720, fr1080], { selectedKey: '', hostLabel: null, roomLanguage: 'fr', compat: (v) => (v === fr720 ? 'Format MKV non pris en charge' : null) });
     expect(rows.map((r) => r.label)).toEqual(['VF · 1080p', 'VF · 720p', 'VO EN · 720p']);
     expect(rows.map((r) => r.warn)).toEqual([null, 'Format MKV non pris en charge', null]);
+  });
+  it('un nouveau sondage ne déplace pas les lignes déjà affichées : les nouvelles viennent à la suite (LAST-1615)', () => {
+    const o = { selectedKey: '', hostLabel: null, roomLanguage: 'fr' as const, order: [] as string[] };
+    expect(buildSourceRows([fr720, en720], o).map((r) => r.label)).toEqual(['VF · 720p', 'VO EN · 720p']);
+    // fr1080 arrive et passerait en tête par score : il se place après les lignes déjà vues.
+    expect(buildSourceRows([fr1080, fr720, en720], o).map((r) => r.label)).toEqual(['VF · 720p', 'VO EN · 720p', 'VF · 1080p']);
+    expect(buildSourceRows([en720, fr1080, fr720], o).map((r) => r.label)).toEqual(['VF · 720p', 'VO EN · 720p', 'VF · 1080p']);
+  });
+  it('la sélection hors des 8 lignes affichées reste visible, à la dernière place (LAST-1615)', () => {
+    const many = views(...Array.from({ length: 10 }, (_, i) => stream(i + 1, { score: 100 - i })));
+    const o = { selectedKey: sourceKeyOf(many[9]), hostLabel: null, roomLanguage: 'fr' as const, order: [] as string[] };
+    const rows = buildSourceRows(many, o);
+    expect(rows).toHaveLength(8);
+    expect(rows[7].key).toBe(sourceKeyOf(many[9]));
+    expect(rows[7].selected).toBe(true);
+    expect(rows.slice(0, 7).map((r) => r.key)).toEqual(many.slice(0, 7).map((v) => sourceKeyOf(v)));
   });
   it('textes : hôte, recherche, avertissement, absence de langue', () => {
     expect(hostSourceLine('VF · 1080p')).toBe('Hôte : VF · 1080p');

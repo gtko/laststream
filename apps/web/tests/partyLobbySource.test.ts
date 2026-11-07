@@ -188,6 +188,26 @@ describe('salon d’attente : Ma source', () => {
     expect(c.sendReady).toHaveBeenLastCalledWith(true, 'VO EN · 720p');
   });
 
+  it('hôte : un autre fichier de même libellé que la présélection est annoncé au salon (LAST-1615)', async () => {
+    const SAME_1080 = stream(4, { score: 10 }); // « VF · 1080p » aussi, mais moins bien classé
+    mocks.loadSources.mockResolvedValue(loadedOf([FR_1080, SAME_1080]));
+    const c = fakeClient(true);
+    await open(c);
+    expect(labels()).toEqual(['VF · 1080p', 'VF · 1080p']);
+    radios()[1].click();
+    await vi.waitFor(() => expect(c.sendSource).toHaveBeenCalledTimes(1));
+  });
+
+  it('les identifiants opaques des lignes repartent de s1 à chaque ouverture du salon (LAST-1615)', async () => {
+    mocks.loadSources.mockResolvedValue(loadedOf([FR_1080, EN_720]));
+    await open(fakeClient(false));
+    expect(radios().map((r) => r.dataset.key)).toEqual(['s1', 's2']);
+    mocks.loadSources.mockResolvedValue(loadedOf([EN_720]));
+    partyBridge.client = fakeClient(false);
+    await mod.openLobby('r1');
+    await vi.waitFor(() => expect(radios().map((r) => r.dataset.key)).toEqual(['s1']));
+  });
+
   it('clavier : flèches entre les sources, le focus reste sur la source choisie après chaque nouveau rendu', async () => {
     mocks.loadSources.mockResolvedValue(loadedOf([FR_1080, FR_720, EN_720]));
     const c = fakeClient(false);
@@ -198,15 +218,36 @@ describe('salon d’attente : Ma source', () => {
     first.focus();
     first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     await vi.waitFor(() => expect(checked()).toEqual(['VF · 720p']));
-    // La ligne choisie passe en tête : le focus la suit.
-    await vi.waitFor(() => expect(document.activeElement).toBe(radios()[0]));
-    expect(radios()[0].tabIndex).toBe(0);
+    // La ligne choisie garde sa place : le focus reste dessus.
+    await vi.waitFor(() => expect(document.activeElement).toBe(radios()[1]));
+    expect(radios()[1].tabIndex).toBe(0);
+    expect(labels()).toEqual(['VF · 1080p', 'VF · 720p', 'VO EN · 720p']);
+    // Une flèche de plus atteint la 3e ligne (elle ne revient pas sur la première).
+    (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await vi.waitFor(() => expect(checked()).toEqual(['VO EN · 720p']));
+    await vi.waitFor(() => expect(document.activeElement).toBe(radios()[2]));
     // Une mise à jour de l’hôte repeint l’écran : le focus reste sur la même source.
     c.participants[0].quality = 'VF · 1080p';
     c.emit('participants', c.participants);
     await vi.waitFor(() => expect(lobby()!.querySelector('.pl-src-host')).not.toBeNull());
-    expect(document.activeElement).toBe(radios()[0]);
+    expect(document.activeElement).toBe(radios()[2]);
   });
+
+  it('la ligne cliquée ne change pas de position (LAST-1615)', async () => {
+    mocks.loadSources.mockResolvedValue(loadedOf([FR_1080, FR_720, EN_720]));
+    await open(fakeClient(false));
+    radios()[2].click();
+    await vi.waitFor(() => expect(checked()).toEqual(['VO EN · 720p']));
+    expect(labels()).toEqual(['VF · 1080p', 'VF · 720p', 'VO EN · 720p']);
+  });
+
+  it('un nouveau sondage ne déplace pas les lignes déjà affichées (LAST-1615)', async () => {
+    mocks.loadSources.mockResolvedValue(loadedOf([FR_720], ['torrentio']));
+    mocks.pollSources.mockResolvedValue(loadedOf([FR_1080, FR_720]));
+    await open(fakeClient(false));
+    expect(labels()).toEqual(['VF · 720p']);
+    await vi.waitFor(() => expect(labels()).toEqual(['VF · 720p', 'VF · 1080p']), { timeout: 4500, interval: 100 });
+  }, 8000);
 });
 
 const clickLabel = (text: string) => radios().find((r) => r.querySelector('b')!.textContent === text)!.click();

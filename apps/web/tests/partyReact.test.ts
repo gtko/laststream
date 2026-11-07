@@ -182,6 +182,21 @@ describe('écho et filtre de salon (LAST-1615)', () => {
     expect(flash).toHaveBeenCalledTimes(1);
   });
 
+  // Le salon donne le nom d'affichage du participant (« compte » ou « compte · profil »), jamais un pid : le filtre le rapproche du handle de l'ami.
+  it('un ami du salon connu sous « compte · profil » ou en autre casse : son emoji a déjà son écho, il n’est pas doublé', () => {
+    client.participants = [{ username: 'Greg · lou' }];
+    startNotes(S.P);
+    h.live.cb!(MEDIA, note('srv-ami', 100));
+    expect(flash).not.toHaveBeenCalled();
+  });
+
+  it('un nom qui ne fait que contenir celui de l’ami ne le fait pas passer pour présent dans le salon', () => {
+    client.participants = [{ username: 'Louis' }, { username: 'Greg · Loulou' }];
+    startNotes(S.P);
+    h.live.cb!(MEDIA, note('srv-ami', 100));
+    expect(flash).toHaveBeenCalledTimes(1);
+  });
+
   it('titre sans notes (notesAllowed faux) : l’écho du salon arrive au natif, et se débranche à la fin de la session', () => {
     h.allowed.value = false;
     const eng = { kind: 'native', state: () => ({ time: 100, duration: 7200 }), pushMessage: vi.fn(), setNotes: vi.fn(), setSocial: vi.fn() };

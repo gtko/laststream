@@ -90,13 +90,25 @@ function removeNote(nt, id) {
   syncNativeNotes(nt);
 }
 
+/**
+ * Noms sous lesquels un participant du salon peut être reconnu. Le salon ne porte aucun pid : `username` est le nom d'affichage
+ * du serveur (« compte » ou « compte · profil »), pas le handle social. On compare en minuscules le nom entier et la partie
+ * après « · » (le profil). Risque restant : deux personnes de même nom se confondent (l'écho de l'une cache l'emoji de l'autre).
+ */
+function roomNames(username) {
+  const name = String(username || '').trim().toLowerCase();
+  const dot = name.lastIndexOf(' · ');
+  return dot === -1 ? [name] : [name, name.slice(dot + 3).trim()];
+}
+
 /** Vrai si l'auteur de la note est dans le salon actif (ou est moi) : sa réaction y a déjà son écho. */
 function fromRoom(note) {
   const me = getSocialState().me;
   if (me && note.author.pid === me.pid) return true;
   const c = partyBridge.client;
   const h = note.author.handle;
-  return !!c && (c.participants || []).some((q) => q.username === h.name || q.username === h.full);
+  const wanted = [h.name, h.full].map((n) => String(n || '').trim().toLowerCase());
+  return !!c && (c.participants || []).some((q) => roomNames(q.username).some((n) => n && wanted.includes(n)));
 }
 
 /** Charge les notes du média lu et écoute celles qui arrivent en direct. Erreurs silencieuses : la lecture n'en dépend pas. */

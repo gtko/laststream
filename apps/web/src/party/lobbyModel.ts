@@ -165,15 +165,26 @@ export const SOURCE_BADGE_TEXT = { host: 'Même version que l’hôte', other: '
 
 const STATUS_TEXT: Record<string, string> = { cached: 'En cache', uncached: 'À la demande', direct: 'Direct' };
 
-/** Lignes jouables, la sélectionnée en tête puis la meilleure source d'abord (au plus SOURCE_ROWS_MAX). */
+/**
+ * Lignes jouables, au plus SOURCE_ROWS_MAX. Une ligne ne change jamais de place sous le doigt ni sous le focus : `opts.order`
+ * garde l'ordre des clés déjà affichées (la meilleure source d'abord au premier sondage), les nouvelles viennent à la suite. Le
+ * tableau est mis à jour sur place ; l'appelant le garde le temps du titre et le vide quand le titre change. Une sélection qui
+ * sort des lignes affichées prend la dernière place.
+ */
 export function buildSourceRows(
   views: readonly SourceView[],
-  opts: { selectedKey: string; hostLabel: string | null; roomLanguage: Lang | null; compat?: (v: SourceView) => string | null },
+  opts: { selectedKey: string; hostLabel: string | null; roomLanguage: Lang | null; compat?: (v: SourceView) => string | null; order?: string[] },
 ): SourceRow[] {
-  const ranked = views.filter((v) => v.playable).sort((a, b) => b.score - a.score || a.index - b.index);
-  // La ligne sélectionnée reste en tête : un nouveau sondage ne déplace pas une ligne sous le doigt.
-  const picked = ranked.find((v) => sourceKeyOf(v) === opts.selectedKey);
-  const shown = (picked ? [picked, ...ranked.filter((v) => v !== picked)] : ranked).slice(0, SOURCE_ROWS_MAX);
+  const byKey = new Map<string, SourceView>();
+  for (const v of [...views].filter((x) => x.playable).sort((a, b) => b.score - a.score || a.index - b.index)) {
+    if (!byKey.has(sourceKeyOf(v))) byKey.set(sourceKeyOf(v), v);
+  }
+  const order = opts.order ?? [];
+  for (const key of byKey.keys()) if (!order.includes(key)) order.push(key);
+  const keys = order.filter((key) => byKey.has(key));
+  const top = keys.slice(0, SOURCE_ROWS_MAX);
+  if (byKey.has(opts.selectedKey) && !top.includes(opts.selectedKey)) top[top.length - 1] = opts.selectedKey;
+  const shown = top.map((key) => byKey.get(key)!);
   return shown.map((v) => {
     const label = sourceLabel(v);
     const badge = opts.hostLabel && label === opts.hostLabel ? 'host' : languageChanged(v, opts.roomLanguage) ? 'other' : null;
