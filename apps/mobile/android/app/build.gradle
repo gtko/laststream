@@ -4,7 +4,12 @@ apply plugin: 'kotlin-android'
 // versionCode = AAAAMMJJNN : la date du jour puis un compteur (01 à 99) incrémenté à chaque build (assemble*/bundle*), gardé dans
 // version-counter.properties (non versionné). Debug et release d'une même commande partagent le même numéro. Les mises à jour en un
 // tap (LaststreamUpdate) comparent ce numéro à celui de scripts/publish-android.mjs.
+// Pilotage par la CI : si -PlsVersionCode=<entier> ET -PlsVersionName=<chaîne> sont fournis, ils remplacent ce calcul et
+// version-counter.properties n'est ni lu ni écrit (la CI pose elle-même son numéro).
 def laststreamVersion() {
+    if (project.hasProperty('lsVersionCode') && project.hasProperty('lsVersionName')) {
+        return [code: project.property('lsVersionCode').toString().toInteger(), name: project.property('lsVersionName').toString()]
+    }
     def today = new Date().format('yyyyMMdd')
     def counter = file('version-counter.properties')
     def props = new Properties()
