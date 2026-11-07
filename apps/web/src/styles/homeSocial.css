@@ -1,0 +1,57 @@
+/* Accueil social (LAST-194) : « Ensemble, ce soir », « Ce que regardent tes amis », « Coups de cœur de tes amis ». */
+.hsr-slot { display: contents; }
+.hsr-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.hsr-sec .row-link { color: var(--dim); font-size: 14px; text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
+.hsr-sec .row-link:hover { color: var(--text); }
+
+.hsr-tonight { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.hsr-card { display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.hsr-card-add { border-style: dashed; border-color: var(--input-border); justify-content: center; align-items: flex-start; background: transparent; }
+.hsr-top { display: flex; gap: 14px; min-width: 0; }
+.hsr-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.hsr-t { font-family: var(--ff-title); font-size: 17px; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
+.hsr-sub { margin: 0; font-size: 14px; line-height: 1.45; color: var(--dim); }
+.hsr-eye { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+.hsr-live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.hsr-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; animation: hsr-pulse 1.6s ease-in-out infinite; }
+@keyframes hsr-pulse { 50% { opacity: 0.35; } }
+.hsr-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hsr-btn { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+
+.hsr-img { flex: none; width: 64px; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; display: grid; place-items: center; background: var(--surface-2); }
+.hsr-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hsr-img.no-img span { padding: 4px; font-size: 10px; font-weight: 700; line-height: 1.2; text-align: center; color: #fff; overflow-wrap: anywhere; }
+.hsr-av, .hsr-who { flex: none; width: 28px; height: 28px; margin-left: -8px; border-radius: 50%; border: 2px solid var(--surface); box-sizing: border-box; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; color: #fff; }
+.hsr-who { background: #3b3750; margin-left: 0; }
+.hsr-stack { display: inline-flex; padding-left: 8px; }
+
+.hsr-po { flex: 0 0 160px; width: 160px; display: flex; flex-direction: column; gap: 6px; color: inherit; text-decoration: none; border-radius: 10px; }
+.hsr-po .hsr-img { width: 100%; }
+.hsr-who-tag { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; min-width: 0; }
+.hsr-who-tag .hsr-av { margin-left: 0; border-color: transparent; }
+.hsr-pt { font-size: 14px; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.hsr-pm { font-size: 13px; color: var(--dim); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hsr-reco { flex: 0 0 160px; width: 160px; display: flex; flex-direction: column; gap: 8px; }
+.hsr-quote { margin: 0; font-size: 13px; line-height: 1.45; color: var(--soft); overflow-wrap: anywhere; }
+.hsr-quote b { color: var(--text); }
+
+.hsr-po:focus-visible, .hsr-btn:focus-visible, .hsr-sec .row-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
+@media (prefers-reduced-motion: reduce) { .hsr-live i { animation: none; } }
+@media (max-width: 640px) { .hsr-tonight { grid-template-columns: 1fr; } }
+
+/* ---------- « Reprendre la lecture » : avance des amis (LAST-195) ---------- */
+.cont-friend { font-size: 12px; font-weight: 600; line-height: 1.3; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cont-card.has-mark .cont-info { bottom: 28px; }
+.cont-mark {
+  position: absolute; z-index: 6; bottom: 6px; left: clamp(11px, var(--p, 0%), calc(100% - 11px)); transform: translateX(-50%);
+  width: 20px; height: 20px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--bg); pointer-events: none;
+  display: grid; place-items: center; font-size: 10px; font-weight: 700; line-height: 1; color: #fff;
+}
+
+/* ---------- Accueil mobile (moins de 768 px) : carte « regarde en ce moment » ---------- */
+.hsr-mobile:empty { display: none; }
+.hsr-mobile { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 8px; }
+.hsr-mlive { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.hsr-mjoin { width: 100%; }
+@media (min-width: 768px) { .hsr-mobile { display: none; } }
+@media (max-width: 767px) { .hsr-room { display: none; } }

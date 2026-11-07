@@ -1,0 +1,24 @@
+/* Bannière des annonces (application utilisateur, hors console d'administration). Couleurs : jetons globaux de styles.css uniquement.
+ * Pleine largeur en haut de la page, sans transform : sa hauteur est publiée dans --ann-h (announcement-banner.js), que la barre
+ * du haut, la navigation des réglages et le corps de page utilisent pour se décaler (0px quand il n'y a pas de bannière). */
+.ann-banner {
+  position: fixed; z-index: 390; top: 0; left: 0; right: 0; display: flex; align-items: flex-start; gap: 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) max(10px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--surface); border-bottom: 1px solid var(--line-2);
+  box-shadow: 0 14px 40px color-mix(in srgb, var(--bg) 80%, transparent);
+}
+.ann-banner.is-warning {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+.ann-body { flex: 1; min-width: 0; }
+.ann-kind { margin: 0 0 2px; font-size: 11.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.ann-banner.is-warning .ann-kind { color: var(--accent-hover); }
+.ann-title { margin: 0; font-weight: 800; font-size: 14.5px; line-height: 1.35; color: var(--text); overflow-wrap: anywhere; }
+.ann-msg { margin: 3px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
+.ann-close {
+  flex: none; width: 36px; height: 36px; border-radius: 50%; border: 0; background: transparent; color: var(--muted);
+  font-size: 22px; line-height: 1; cursor: pointer;
+}
+.ann-close:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.ann-close:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }

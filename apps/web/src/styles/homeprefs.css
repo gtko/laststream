@@ -1,0 +1,19 @@
+/* Panneau « Accueil et recommandations » (ui/homeprefs.js) : titres masqués en une ligne (la vue détaillée est sur #/hidden,
+ * voir hidden.css), genres exclus en puces. Les puces (.set-chip), badges et boutons viennent de settings.css. */
+
+.hm-info { margin: 0; padding: 12px 0; font-size: 14px; line-height: 1.55; color: var(--soft); }
+
+/* Titres masqués : une ligne, « Gérer » à droite (ou l'état vide, sans bouton) */
+.hm-line { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 16px; padding: 14px 0; }
+.hm-line-t { margin: 0; min-width: 0; font-size: 15px; line-height: 1.4; color: var(--text); }
+.hm-line.is-empty .hm-line-t { color: var(--dim); }
+
+/* Genres exclus */
+.hm-aside { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+[data-genres-reset]:disabled { opacity: 0.4; }
+.set-card-b > .set-chips { padding: 12px 0 14px; }
+
+@media (max-width: 760px) {
+  .set-card-h:has(.hm-aside) { flex-direction: column; gap: 10px; }
+  .hm-aside { justify-content: flex-start; }
+}

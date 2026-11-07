@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "checkJs": false,
+    "isolatedModules": true,
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src/data/**/*.ts", "src/downloads/**/*.ts","src/player/**/*.ts", "src/sources/**/*.ts", "src/thumbs/**/*.ts", "src/relay/*.ts", "src/relay/player/**/*.ts", "src/observability/**/*.ts", "tests/**/*.ts", "src/env.d.ts"],
+  "exclude": ["archive/**"]
+}

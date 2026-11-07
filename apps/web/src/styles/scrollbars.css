@@ -1,0 +1,13 @@
+/* Barres de défilement fines et transparentes : invisibles au repos, révélées au survol
+   du conteneur ou pendant qu'il défile (.is-scrolling, posé par ui/scrollbars.js).
+   La barre de la page s'affiche en défilant ou quand la souris approche du bord droit. */
+:root { --sb-thumb: color-mix(in srgb, var(--text) 24%, transparent); }
+
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+:not(html):hover, .is-scrolling, html.sb-near { scrollbar-color: var(--sb-thumb) transparent; }
+
+/* Chromium < 121 (pas de scrollbar-color) */
+::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border: 2px solid transparent; border-radius: 8px; background-clip: padding-box; }
+:not(html):hover::-webkit-scrollbar-thumb, .is-scrolling::-webkit-scrollbar-thumb, html.sb-near::-webkit-scrollbar-thumb { background-color: var(--sb-thumb); }
