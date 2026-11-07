@@ -1,0 +1,138 @@
+/* Port du prototype (voir tools/port-prototype.mjs). */
+import { canonFromFiche, canonSummary, seedCanon } from '../data/series';
+import { canonical } from './seasons.js';
+import { fetchServerMeta, tmdb } from '../data/lt';
+import { getRegion, getVideoLang } from '../data/prefs';
+import { isVoVideo, sortVideos, trailerLang } from '../data/trailers';
+import { availOf, certLabel, certification, pickLogo, register, toItem, trailerFields, videoLanguages, videosOf } from './catalog.js';
+import { IMG } from './constants.js';
+import { names } from './util.js';
+
+export const fullCache = new Map();
+export const STATUS_FR = {
+  Released: 'Sorti', 'Returning Series': 'En cours', Ended: 'Terminée', Canceled: 'Annulée',
+  'In Production': 'En production', 'Post Production': 'En postproduction', Planned: 'Prévu', Rumored: 'Rumeur',
+};
+export const VIDEO_TYPE = {
+  Trailer: ['Bande-annonce', 0], Teaser: ['Teaser', 1], Featurette: ['Featurette', 2],
+  'Behind the Scenes': ['Making-of', 3], Clip: ['Extrait', 4], Bloopers: ['Bêtisier', 5], 'Opening Credits': ['Générique', 6],
+};
+
+export function frReleaseDate(raw) {
+  const fr = ((raw.release_dates && raw.release_dates.results) || []).find((x) => x.iso_3166_1 === getRegion().code);
+  if (!fr) return '';
+  const dates = (fr.release_dates || []).filter((d) => d.release_date);
+  const th = dates.filter((d) => d.type === 3 || d.type === 2);
+  const pool = (th.length ? th : dates).map((d) => d.release_date.slice(0, 10)).sort();
+  return pool[0] || '';
+}
+
+export function buildModel(type, id, raw, en, canon) {
+  const sum = canon ? canonSummary(canon, new Date().toISOString().slice(0, 10)) : null;
+  const isTv = type === 'tv';
+  const crew = (raw.credits && raw.credits.crew) || [];
+  const uniq = (list) => Array.from(new Set(list));
+  const pref = trailerLang();
+  const videos = sortVideos(((raw.videos && raw.videos.results) || [])
+    .filter((v) => v.site === 'YouTube' && v.key && VIDEO_TYPE[v.type]), (v) => VIDEO_TYPE[v.type][1], pref)
+    .slice(0, 14)
+    .map((v) => ({ key: v.key, name: v.name || '', label: VIDEO_TYPE[v.type][0], vo: isVoVideo(v, pref) }));
+  const recs = ((raw.recommendations && raw.recommendations.results) || []);
+  const sims = ((raw.similar && raw.similar.results) || []);
+  const recList = (recs.length ? recs : sims).filter((r) => r.poster_path && (r.release_date || r.first_air_date || '9999').slice(0, 10) <= new Date().toISOString().slice(0, 10)).slice(0, 20).map((r) => register(toItem(r, type)));
+  const runtime = isTv
+    ? Number((raw.episode_run_time || [])[0]) || Number(raw.last_episode_to_air && raw.last_episode_to_air.runtime) || 0
+    : Number(raw.runtime) || 0;
+  const origLang = raw.original_language || '';
+  const spoken = uniq([origLang, ...((raw.spoken_languages || []).map((l) => l.iso_639_1))].filter(Boolean));
+  return {
+    type, id: String(id), key: type + ':' + id,
+    name: raw.title || raw.name || raw.original_title || raw.original_name || 'Sans titre',
+    original: raw.original_title || raw.original_name || '',
+    tagline: raw.tagline || (en && en.tagline) || '',
+    overview: raw.overview || (en && en.overview) || '',
+    year: String(raw.release_date || raw.first_air_date || '').slice(0, 4),
+    backdropPath: raw.backdrop_path || '',
+    posterPath: raw.poster_path || '',
+    logo: pickLogo(raw.images && raw.images.logos, 'w780'),
+    ...trailerFields(raw.videos && raw.videos.results),
+    videos,
+    genres: (raw.genres || []).map((g) => g.name),
+    // Identifiants et origine TMDB : reconnaissance d'un anime (data/anime.ts) pour les réglages de langue.
+    genreIds: (raw.genres || []).map((g) => g.id),
+    origLangCode: origLang,
+    originCountry: raw.origin_country || (raw.production_countries || []).map((c) => c.iso_3166_1),
+    minutes: runtime,
+    certRaw: certification(raw, type),
+    cinemaSince: type === 'movie' ? availOf(raw).cinemaSince : null,
+    cert: certLabel(certification(raw, type)),
+    // Numérotation canonique de lastAddon quand elle existe ; sinon saisons TMDB.
+    canon: canon || null,
+    seasons: sum
+      ? (sum.seasons.filter((s) => s.season_number > 0).length ? sum.seasons.filter((s) => s.season_number > 0) : sum.seasons)
+      : ((raw.seasons || []).filter((s) => s.season_number > 0).length ? (raw.seasons || []).filter((s) => s.season_number > 0) : (raw.seasons || [])),
+    nSeasons: sum ? sum.nSeasons : raw.number_of_seasons || 0,
+    nEpisodes: sum ? sum.nEpisodes : raw.number_of_episodes || 0,
+    status: STATUS_FR[raw.status] || raw.status || '',
+    next: sum
+      ? (sum.next ? { airDate: sum.next.airDate, code: 'S' + sum.next.season + ' · É' + sum.next.episode, name: sum.next.name, season: sum.next.season, episode: sum.next.episode } : null)
+      : raw.next_episode_to_air
+      ? { airDate: raw.next_episode_to_air.air_date || '', code: 'S' + raw.next_episode_to_air.season_number + ' · É' + raw.next_episode_to_air.episode_number, name: raw.next_episode_to_air.name || '', season: raw.next_episode_to_air.season_number, episode: raw.next_episode_to_air.episode_number }
+      : null,
+    lastAired: sum ? sum.lastAired : raw.last_episode_to_air ? { season_number: raw.last_episode_to_air.season_number, episode_number: raw.last_episode_to_air.episode_number } : null,
+    tvdbId: (raw.external_ids && raw.external_ids.tvdb_id) || null,
+    imdbId: raw.imdb_id || (raw.external_ids && raw.external_ids.imdb_id) || '',
+    vote: raw.vote_average || 0,
+    cast: ((raw.credits && raw.credits.cast) || []).slice(0, 15).map((p) => ({ id: p.id, name: p.name, role: p.character || '', photo: IMG('w185', p.profile_path) })),
+    directors: isTv ? (raw.created_by || []).map((p) => ({ id: p.id, name: p.name })) : crew.filter((p) => p.job === 'Director').map((p) => ({ id: p.id, name: p.name })),
+    writers: isTv ? [] : (() => { const seen = new Set(); return crew.filter((p) => ['Screenplay', 'Writer', 'Story'].includes(p.job)).filter((p) => !seen.has(p.id) && seen.add(p.id)).slice(0, 3).map((p) => ({ id: p.id, name: p.name })); })(),
+    countries: (raw.production_countries || []).map((c) => names('region', c.iso_3166_1)).concat(!(raw.production_countries || []).length ? (raw.origin_country || []).map((c) => names('region', c)) : []),
+    origLang: origLang ? names('language', origLang) : '',
+    spoken: spoken.map((c) => names('language', c)),
+    companies: (raw.production_companies || []).map((c) => c.name).slice(0, 5),
+    networks: (raw.networks || []).map((c) => c.name).slice(0, 4),
+    budget: raw.budget || 0,
+    revenue: raw.revenue || 0,
+    releaseFR: isTv ? raw.first_air_date || '' : frReleaseDate(raw) || raw.release_date || '',
+    lastAir: isTv ? raw.last_air_date || '' : '',
+    collection: raw.belongs_to_collection ? { id: raw.belongs_to_collection.id, name: raw.belongs_to_collection.name } : null,
+    recs: recList,
+    homepage: raw.homepage || '',
+  };
+}
+
+/** Langue des épisodes de la fiche serveur (route /meta, sans paramètre de langue : défaut fr-FR côté lastAddon). */
+const SERVER_META_LANG = 'fr-FR';
+
+/**
+ * Modèle complet d'un titre (TMDB). `opts.server` : demande aussi la fiche serveur, lancée en parallèle de TMDB ; ses
+ * notes, son membre TVDB et ses épisodes remplacent alors les appels séparés (`model.serverMeta`, null si indisponible).
+ */
+export function fetchFull(type, id, opts = {}) {
+  const key = type + ':' + id;
+  if (!fullCache.has(key)) {
+    const append = (type === 'tv' ? 'videos,images,credits,external_ids,content_ratings' : 'videos,images,credits,external_ids,release_dates,watch/providers') + ',recommendations,similar';
+    const p = (async () => {
+      const serverP = opts.server ? fetchServerMeta(type === 'tv' ? 'series' : 'movie', id).catch(() => null) : null;
+      const raw = await tmdb(type + '/' + id, { append_to_response: append, include_image_language: 'fr,en,null', include_video_language: videoLanguages() });
+      raw.videos = { results: await videosOf(raw, type, id) };
+      const serverMeta = serverP ? await serverP : null;
+      // Épisodes de la fiche : seulement dans la langue du serveur, pour que la numérotation et les textes restent ceux demandés.
+      if (type === 'tv' && serverMeta && getVideoLang().tag === SERVER_META_LANG) {
+        const seeded = canonFromFiche(serverMeta.episodes);
+        if (seeded) seedCanon(id, SERVER_META_LANG, seeded);
+      }
+      const canon = type === 'tv' ? await canonical(id) : null;
+      let en = null;
+      if (!raw.overview || !raw.tagline) {
+        try { en = await tmdb(type + '/' + id, { language: 'en-US' }); } catch (_) { /* repli silencieux */ }
+      }
+      const model = buildModel(type, id, raw, en, canon);
+      model.serverMeta = serverMeta;
+      return model;
+    })();
+    p.catch(() => fullCache.delete(key));
+    fullCache.set(key, p);
+  }
+  return fullCache.get(key);
+}

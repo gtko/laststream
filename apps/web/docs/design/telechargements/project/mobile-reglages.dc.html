@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Réglages stockage mobile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@600;700&display=swap">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0c0b11;color:#f4f2f7;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+h1,h2,h3,h4,p,ul{margin:0;padding:0}ul{list-style:none}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 18px;border-radius:10px;border:0;font:600 15px 'Plus Jakarta Sans',system-ui,sans-serif;position:relative;overflow:hidden;white-space:nowrap;color:#f4f2f7;background:none}
+.btn-p{background:#ff5a36;color:#0c0b11}.btn-g{background:rgba(255,255,255,.14)}
+.ib{width:44px;height:44px;border-radius:50%;background:rgba(12,11,17,.6);border:0;color:#f4f2f7;display:inline-flex;align-items:center;justify-content:center;padding:0;flex:none}
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:72px;display:flex;align-items:center;justify-content:space-around;background:#0c0b11;border-top:1px solid #24212e}
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:56px;height:52px;font-size:11px;font-weight:500;color:#a19dae;position:relative;text-decoration:none}
+.tab.cur{color:#f4f2f7}.tab .ic{width:22px;height:22px}
+.badge{position:absolute;top:0;right:4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#ff5a36;color:#0c0b11;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.chip{display:inline-flex;padding:4px 10px;border-radius:6px;background:#24212e;color:#e4e0ec;font-size:12px;font-weight:600}
+.card{background:#17151f;border:1px solid #24212e;border-radius:14px}
+.item{display:flex;align-items:center;gap:12px;min-height:56px;padding:6px 16px;border-top:1px solid #24212e}
+.item:first-child{border-top:0}
+.lbl{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:2px}
+.t{font-size:15px;font-weight:600;color:#f4f2f7}
+.h{font-size:13px;line-height:1.4;color:#a19dae}
+.seg{display:flex;gap:4px;padding:4px;background:#0c0b11;border:1px solid #2a2735;border-radius:12px}
+.seg button{flex:1 1 0;min-height:44px;border:0;border-radius:9px;background:none;color:#c9c4d6;font:600 13px 'Plus Jakarta Sans',system-ui,sans-serif;padding:0 2px}
+.seg button.sel{background:#ff5a36;color:#0c0b11}
+.sw{width:56px;height:44px;border:0;background:none;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.sw .trk{width:48px;height:28px;border-radius:14px;background:#2a2735;box-shadow:inset 0 0 0 1.5px #6b6680;position:relative;display:block}
+.sw .trk::after{content:"";position:absolute;top:4px;left:4px;width:20px;height:20px;border-radius:50%;background:#c9c4d6}
+.sw[aria-checked="true"] .trk{background:#ff5a36;box-shadow:none}
+.sw[aria-checked="true"] .trk::after{left:24px;background:#0c0b11}
+.nav{display:flex;align-items:center;gap:6px;color:#c9c4d6;font-size:14px;flex:none}
+</style>
+</helmet>
+<div style="position:relative;width:390px;height:844px;overflow:hidden;background:#0c0b11">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"></path></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v5M14 11v5"></path></symbol>
+</defs></svg>
+
+<div style="padding:48px 16px 0;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;gap:8px;margin-left:-8px">
+<button class="ib" style="background:none" aria-label="Retour"><svg class="ic" aria-hidden="true"><use href="#i-back"></use></svg></button>
+<div style="display:flex;flex-direction:column;gap:2px">
+<p style="font-size:12px;color:#a19dae">Réglages › Lecture</p>
+<h1 style="font:700 24px/1.15 'Sora',system-ui,sans-serif">Stockage</h1>
+</div>
+</div>
+
+<section class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px" aria-label="Espace utilisé">
+<div style="display:flex;align-items:baseline;justify-content:space-between">
+<h2 style="font-size:15px;font-weight:600">Espace utilisé</h2>
+<p style="font-size:13px;color:#c9c4d6">18,4 Go sur 50 Go</p>
+</div>
+<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:#2a2735;gap:2px">
+<div style="width:22.4%;background:#ff5a36"></div>
+<div style="width:14.4%;background:#c9c4d6"></div>
+</div>
+<div style="display:flex;gap:24px;font-size:13px;color:#c9c4d6">
+<span style="display:inline-flex;align-items:center;gap:8px"><i style="width:10px;height:10px;border-radius:3px;background:#ff5a36;display:block"></i>Films 11,2 Go</span>
+<span style="display:inline-flex;align-items:center;gap:8px"><i style="width:10px;height:10px;border-radius:3px;background:#c9c4d6;display:block"></i>Séries 7,2 Go</span>
+</div>
+</section>
+
+<section class="card" aria-label="Réglages de téléchargement">
+<div class="item" style="flex-direction:column;align-items:stretch;gap:10px;padding:12px 16px">
+<div class="lbl"><h3 class="t">Limite d’espace</h3></div>
+<div class="seg" role="group" aria-label="Limite d’espace">
+<button aria-pressed="false">5</button>
+<button aria-pressed="false">10</button>
+<button aria-pressed="false">20</button>
+<button class="sel" aria-pressed="true">50 Go</button>
+<button aria-pressed="false" style="flex:1.7">Sans limite</button>
+</div>
+</div>
+<div class="item">
+<div class="lbl"><h3 class="t">Télécharger en Wi-Fi seulement</h3></div>
+<button class="sw" role="switch" aria-checked="true" aria-label="Télécharger en Wi-Fi seulement"><span class="trk"></span></button>
+</div>
+<div class="item">
+<div class="lbl"><h3 class="t">Supprimer après visionnage</h3><p class="h">Retire le fichier quand tu as fini le titre.</p></div>
+<button class="sw" role="switch" aria-checked="false" aria-label="Supprimer après visionnage"><span class="trk"></span></button>
+</div>
+<a class="item" href="#" style="color:inherit;text-decoration:none">
+<div class="lbl"><h3 class="t">Qualité par défaut</h3></div>
+<span class="nav">1080p<svg class="ic" aria-hidden="true"><use href="#i-chev"></use></svg></span>
+</a>
+<a class="item" href="#" style="color:inherit;text-decoration:none">
+<div class="lbl"><h3 class="t">Langues par défaut</h3><p class="h">Français, sous-titres français</p></div>
+<span class="nav"><svg class="ic" aria-hidden="true"><use href="#i-chev"></use></svg></span>
+</a>
+</section>
+
+<button class="card" style="display:flex;align-items:center;gap:12px;min-height:56px;padding:0 16px;color:#ff8f80;font:600 15px 'Plus Jakarta Sans',system-ui,sans-serif;text-align:left;width:100%">
+<svg class="ic" aria-hidden="true"><use href="#i-trash"></use></svg>Supprimer tous les téléchargements
+</button>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,198 @@
+/* Saisons et épisodes pour le panneau du lecteur : réponse canonique de lastAddon (/lt/series/:tmdbId/episodes) ou saison TMDB. */
+import { episodeParts, partLabel, type EpisodePart } from '../data/episodeParts';
+
+export interface EpisodeInfo {
+  episode: number;
+  name: string;
+  runtime: number | null;
+  overview: string;
+  still: string;
+  airDate: string;
+  /** Déjà diffusé à la date donnée. */
+  aired: boolean;
+  /** Lisible : diffusé, ou diffusion dans les 14 prochains jours (« peut-être déjà en ligne », la recherche de sources décide). */
+  playable: boolean;
+  /** Identifiant de flux `<imdb>:<saison>:<épisode>` selon la numérotation du serveur ; absent si l'IMDb est inconnu. */
+  streamId?: string;
+  /** Partie d'une émission diffusée en plusieurs épisodes (« Partie 1/2 »), d'après le titre. */
+  part?: EpisodePart;
+  /** Épisode filler ou récapitulatif d'un anime (lastAddon, d'après MyAnimeList). */
+  filler?: EpisodeFiller;
+}
+
+type EpisodeFiller = 'filler' | 'recap';
+
+export interface SeasonInfo {
+  season: number;
+  count: number;
+}
+
+export interface CanonicalSeries {
+  seasons: SeasonInfo[];
+  episodes: Map<number, EpisodeInfo[]>;
+}
+
+/** Jour civil de l'appareil (AAAA-MM-JJ) : l'épisode diffusé ce jour-là est diffusé, même avant minuit UTC. */
+export const localDay = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 86_400_000;
+
+/** Fenêtre « peut-être déjà en ligne » : les épisodes diffusés dans les 14 prochains jours sont lisibles. */
+const SOON_WINDOW_DAYS = 14;
+
+/** Un épisode sans date est considéré comme diffusé (les séries anciennes n'en ont pas toujours). */
+export function isAired(airDate: string, today: string = localDay(new Date())): boolean {
+  return !airDate || airDate <= today;
+}
+
+/** Jours entre `today` et `airDate` (AAAA-MM-JJ) ; null si une des deux dates n'est pas exploitable. */
+function daysUntil(airDate: string, today: string = localDay(new Date())): number | null {
+  if (!ISO_DAY.test(airDate) || !ISO_DAY.test(today)) return null;
+  const diff = Math.round((Date.parse(airDate) - Date.parse(today)) / DAY_MS);
+  return Number.isFinite(diff) ? diff : null;
+}
+
+/**
+ * Diffusion dans les 1 à 14 jours qui suivent `today` : l'épisode peut déjà être en ligne (streaming avant la TV).
+ * Aujourd'hui ou passé : c'est `isAired`, pas ce cas. Sans date, ou au-delà de 14 jours : false.
+ */
+export function playableSoon(airDate: string, today: string = localDay(new Date())): boolean {
+  const d = daysUntil(airDate, today);
+  return d !== null && d >= 1 && d <= SOON_WINDOW_DAYS;
+}
+
+/** Lisible maintenant : diffusé, ou diffusion proche (voir `playableSoon`). */
+export function isPlayable(airDate: string, today: string = localDay(new Date())): boolean {
+  return isAired(airDate, today) || playableSoon(airDate, today);
+}
+
+/**
+ * Épisode suivant pour l'enchaînement automatique. Un épisode connu mais pas encore diffusé n'est jamais lancé
+ * automatiquement (lancement manuel seulement). Épisode non chargé : inchangé, la recherche de sources décide.
+ */
+export function autoNextEpisode(
+  next: { season: number; episode: number } | null, episodes: ReadonlyMap<number, readonly EpisodeInfo[]>, skipFillers = false,
+): { season: number; episode: number } | null {
+  if (!next) return null;
+  const info = (episodes.get(next.season) ?? []).find((e) => e.episode === next.episode);
+  if (info && skipFillers && info.filler) return nextCanon(next, episodes);
+  return !info || info.aired ? next : null;
+}
+
+/**
+ * Premier épisode qui n'est ni filler ni récap à partir de `from` (inclus), dans l'ordre des saisons chargées.
+ * S'arrête sur un épisode pas encore diffusé (aucun lancement automatique) ; null au bout de la liste chargée.
+ */
+function nextCanon(
+  from: { season: number; episode: number }, episodes: ReadonlyMap<number, readonly EpisodeInfo[]>,
+): { season: number; episode: number } | null {
+  for (const season of [...episodes.keys()].sort((a, b) => a - b)) {
+    if (season < from.season) continue;
+    for (const e of episodes.get(season) ?? []) {
+      if (season === from.season && e.episode < from.episode) continue;
+      if (e.filler) continue;
+      return e.aired ? { season, episode: e.episode } : null;
+    }
+  }
+  return null;
+}
+
+/** Épisodes filler et récap de la réponse `{ fillers: [{ season, episode, kind }] }` de lastAddon, par clé « saison:épisode ». */
+export function fillerKinds(resp: unknown): Map<string, EpisodeFiller> {
+  const out = new Map<string, EpisodeFiller>();
+  const list = (resp as { fillers?: unknown } | null)?.fillers;
+  if (!Array.isArray(list)) return out;
+  for (const raw of list) {
+    const f = raw as { season?: unknown; episode?: unknown; kind?: unknown } | null;
+    if (!f || typeof f.season !== 'number' || typeof f.episode !== 'number' || (f.kind !== 'filler' && f.kind !== 'recap')) continue;
+    out.set(f.season + ':' + f.episode, f.kind);
+  }
+  return out;
+}
+
+/** Marque les épisodes filler et récap d'après la réponse de lastAddon (voir fillerKinds). */
+export function applyFillers(episodes: ReadonlyMap<number, readonly EpisodeInfo[]>, resp: unknown): void {
+  for (const [key, kind] of fillerKinds(resp)) {
+    const [season, episode] = key.split(':').map(Number);
+    const info = episodes.get(season)?.find((e) => e.episode === episode);
+    if (info) info.filler = kind;
+  }
+}
+
+/** Marque les épisodes qui sont les parties d'une même émission (la liste est celle d'une saison, triée). */
+export function markParts(list: EpisodeInfo[]): EpisodeInfo[] {
+  episodeParts(list).forEach((part, i) => { if (part) list[i].part = part; });
+  return list;
+}
+
+/**
+ * Partie suivante de la même émission quand l'épisode donné n'en est pas la dernière (« Partie 1/2 » → « Partie 2/2 ») :
+ * la suite directe, à lancer sans que la lecture ne paraisse coupée.
+ */
+export function nextPart(episodes: readonly EpisodeInfo[] | undefined, episode: number): EpisodeInfo | null {
+  const cur = episodes?.find((e) => e.episode === episode);
+  if (!cur?.part || cur.part.index >= cur.part.total) return null;
+  const next = episodes!.find((e) => e.episode === episode + 1);
+  return next?.part && next.part.index === cur.part.index + 1 ? next : null;
+}
+
+/**
+ * Libellés de la carte de fin d'épisode. `continues` : l'épisode suivant est la suite directe de l'épisode en cours
+ * (« Partie 1/2 » → « Partie 2/2 ») ; sinon c'est un épisode ordinaire, qui garde « Épisode suivant » même s'il est
+ * lui-même la première partie d'une autre émission.
+ */
+export function nextCardLabels(continues: boolean, next: Pick<EpisodeInfo, 'part'> | undefined): { kicker: string; playLabel: string } {
+  const part = next?.part;
+  if (!part) return { kicker: '', playLabel: '' };
+  return continues
+    ? { kicker: `${partLabel(part)} · suite de l’émission`, playLabel: `Lire la partie ${part.index}` }
+    : { kicker: `Épisode suivant · ${partLabel(part)}`, playLabel: '' };
+}
+
+/** Réponse canonique `{ seasons: [{ number, episodeCount }], episodes: [{ season, episode, name… }] }` ; null si inexploitable. */
+export function normalizeCanonical(resp: unknown, today: string = localDay(new Date())): CanonicalSeries | null {
+  const r = resp as { seasons?: unknown; episodes?: unknown } | null;
+  if (!r || !Array.isArray(r.episodes) || !r.episodes.length) return null;
+  const episodes = new Map<number, EpisodeInfo[]>();
+  for (const raw of r.episodes) {
+    const e = raw as { season?: unknown; episode?: unknown; name?: unknown; overview?: unknown; airDate?: unknown; runtime?: unknown; still?: unknown; streamId?: unknown } | null;
+    if (!e || typeof e.season !== 'number' || typeof e.episode !== 'number' || e.season < 1) continue;
+    const airDate = typeof e.airDate === 'string' ? e.airDate : '';
+    const list = episodes.get(e.season) ?? [];
+    list.push({
+      episode: e.episode, name: typeof e.name === 'string' ? e.name : '', runtime: typeof e.runtime === 'number' ? e.runtime : null,
+      overview: typeof e.overview === 'string' ? e.overview : '', still: typeof e.still === 'string' ? e.still : '', airDate,
+      aired: isAired(airDate, today), playable: isPlayable(airDate, today),
+      ...(typeof e.streamId === 'string' && e.streamId !== '' ? { streamId: e.streamId } : {}),
+    });
+    episodes.set(e.season, list);
+  }
+  episodes.forEach((list) => list.sort((a, b) => a.episode - b.episode));
+  episodes.forEach(markParts);
+  const seasons = [...episodes.entries()].map(([season, list]) => ({ season, count: list.length })).sort((a, b) => a.season - b.season);
+  return seasons.length ? { seasons, episodes } : null;
+}
+
+/** Filtre de recherche : numéro (« 5 », « é5 ») ou morceau du titre, sans accents ni casse. */
+export function filterEpisodes(list: readonly EpisodeInfo[], query: string): EpisodeInfo[] {
+  const strip = (t: string): string => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const q = strip(query.trim());
+  if (!q) return [...list];
+  const num = /^(?:e|ep|episode)?\s*(\d+)$/.exec(q);
+  return list.filter((e) => (num ? e.episode === Number(num[1]) : strip(e.name).includes(q) || strip(e.overview).includes(q)));
+}
+
+/** Premier épisode lisible (diffusé ou bientôt disponible) et non vu, en partant de la saison donnée puis les suivantes. */
+export function firstUnseen(
+  seasons: readonly SeasonInfo[], episodes: ReadonlyMap<number, readonly EpisodeInfo[]>, fromSeason: number, seen: (season: number, episode: number) => boolean,
+  skipFillers = false,
+): { season: number; episode: number } | null {
+  for (const s of [...seasons].sort((a, b) => a.season - b.season)) {
+    if (s.season < fromSeason) continue;
+    for (const e of episodes.get(s.season) ?? []) {
+      if (e.playable && !(skipFillers && e.filler) && !seen(s.season, e.episode)) return { season: s.season, episode: e.episode };
+    }
+  }
+  return null;
+}

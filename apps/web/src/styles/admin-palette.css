@@ -1,0 +1,155 @@
+/* Palette de commandes de la console d'administration (Ctrl/Cmd+K ou « / »), reproduite de la maquette « Plateforme + palette Ctrl K ».
+ * Couleurs : jetons globaux de styles.css ; les trois valeurs propres à la palette sont définies une seule fois ici. */
+
+.adm-pal-layer {
+  --adm-pal-scrim: rgba(8, 7, 12, 0.66);
+  --adm-pal-active: #26202e;
+  --adm-pal-faint: #8d889c;
+  --adm-pal-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 120px 16px 16px;
+  background: var(--adm-pal-scrim);
+  font-family: var(--ff-body);
+}
+
+.adm-pal {
+  display: flex;
+  flex-direction: column;
+  width: 620px;
+  max-width: 100%;
+  max-height: calc(100vh - 136px);
+  max-height: calc(100dvh - 136px);
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--adm-pal-shadow);
+  overflow: hidden;
+  color: var(--text);
+}
+
+.adm-pal-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.adm-pal-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+
+.adm-pal-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.adm-pal-head:focus-within { box-shadow: inset 0 -3px 0 var(--accent); }
+.adm-pal-input::placeholder { color: var(--adm-pal-faint); }
+
+.adm-pal-kbd {
+  flex: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line-2);
+  color: var(--dim);
+}
+
+.adm-pal-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(60vh, 480px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+}
+
+.adm-pal-group-title {
+  padding: 10px 10px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--adm-pal-faint);
+}
+
+.adm-pal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--soft);
+  cursor: pointer;
+}
+
+.adm-pal-item.is-active {
+  background: var(--adm-pal-active);
+  color: var(--text);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.adm-pal-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adm-pal-hint {
+  flex: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--adm-pal-faint);
+  white-space: nowrap;
+}
+
+.adm-pal-empty {
+  margin: 0;
+  padding: 18px 12px;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+/* Message d'action quand la palette n'a pas de toast de l'application (repli). */
+.adm-pal-status {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 1001;
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  color: var(--text);
+  font-size: 14px;
+  box-shadow: var(--adm-pal-shadow);
+}
+
+@media (max-width: 640px) {
+  .adm-pal-layer { padding-top: 72px; }
+}

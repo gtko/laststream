@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Fiche film mobile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@600;700&display=swap">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0c0b11;color:#f4f2f7;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+h1,h2,h3,h4,p,ul{margin:0;padding:0}ul{list-style:none}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 18px;border-radius:10px;border:0;font:600 15px 'Plus Jakarta Sans',system-ui,sans-serif;position:relative;overflow:hidden;white-space:nowrap;color:#f4f2f7;background:none}
+.btn-p{background:#ff5a36;color:#0c0b11}.btn-g{background:rgba(255,255,255,.14)}
+.ib{width:44px;height:44px;border-radius:50%;background:rgba(12,11,17,.6);border:0;color:#f4f2f7;display:inline-flex;align-items:center;justify-content:center;padding:0;flex:none}
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:72px;display:flex;align-items:center;justify-content:space-around;background:#0c0b11;border-top:1px solid #24212e}
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:56px;height:52px;font-size:11px;font-weight:500;color:#a19dae;position:relative;text-decoration:none}
+.tab.cur{color:#f4f2f7}.tab .ic{width:22px;height:22px}
+.badge{position:absolute;top:0;right:4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#ff5a36;color:#0c0b11;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.chip{display:inline-flex;padding:4px 10px;border-radius:6px;background:#24212e;color:#e4e0ec;font-size:12px;font-weight:600}
+</style>
+</helmet>
+<div style="position:relative;width:390px;height:844px;overflow:hidden;background:#0c0b11">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"></path></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"></path></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"></path></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"></path></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3.5"></circle><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6M16 6.5a3.5 3.5 0 0 1 0 6.5M18 14.2c1.9.8 3 2.6 3 5.8"></path></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"></path></symbol>
+</defs></svg>
+
+<div style="height:330px;background:#2a2338;position:relative">
+<button class="ib" style="position:absolute;left:12px;top:12px" aria-label="Retour"><svg class="ic" aria-hidden="true"><use href="#i-back"></use></svg></button>
+<div style="position:absolute;left:0;right:0;bottom:0;height:150px;background:rgba(12,11,17,.72)"></div>
+<div style="position:absolute;left:16px;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px">
+<h1 style="font:700 30px/1.1 'Sora',system-ui,sans-serif">Le Phare de Brume</h1>
+<p style="font-size:14px;color:#c9c4d6">2024 · 1 h 52 · Thriller · 16+</p>
+</div>
+</div>
+
+<div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;gap:8px">
+<button class="btn btn-p" style="flex:1 1 0"><svg class="ic" aria-hidden="true"><use href="#i-play"></use></svg>Lire</button>
+<button class="btn btn-g" style="flex:1 1 0"><svg class="ic" aria-hidden="true"><use href="#i-dl"></use></svg>Télécharger</button>
+<button class="ib" style="background:rgba(255,255,255,.14)" aria-label="Ajouter à Ma liste"><svg class="ic" aria-hidden="true"><use href="#i-plus"></use></svg></button>
+</div>
+<p style="font-size:13px;color:#a19dae;text-align:center">1080p · 4,2 Go · français, sous-titres français</p>
+<p style="font-size:15px;line-height:1.55;color:#e4e0ec;margin-top:6px">Un gardien de phare isolé par la tempête découvre qu’il n’est pas seul sur l’île. Synopsis du titre tel qu’il s’affiche déjà sur la fiche.</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip">Thriller</span><span class="chip">Mystère</span><span class="chip">Drame</span></div>
+<ul style="display:flex;gap:10px;margin-top:6px;overflow:hidden">
+<li style="width:96px;height:140px;border-radius:8px;background:#3b4a6b;flex:none"></li>
+<li style="width:96px;height:140px;border-radius:8px;background:#5b3a6b;flex:none"></li>
+<li style="width:96px;height:140px;border-radius:8px;background:#2f6f73;flex:none"></li>
+<li style="width:96px;height:140px;border-radius:8px;background:#7a4a2f;flex:none"></li>
+</ul>
+</div>
+
+<nav class="tabbar" aria-label="Navigation principale">
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-home"></use></svg>Accueil</a>
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-search"></use></svg>Rechercher</a>
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-users"></use></svg>Amis</a>
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-list"></use></svg>Ma liste</a>
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-dl"></use></svg>Téléchargés</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+/* Bulle de message entrant (lecteur, haut gauche) — Social v3. Transparente, texte à forte ombre, ombre radiale de coin
+ * (≤ rgba(0,0,0,.42)), arrivée animée : l'ombre s'ouvre, l'avatar rebondit, le texte glisse du flou au net. Le champ de
+ * réponse et les emojis n'apparaissent qu'au survol / au focus (desktop) ou au toucher (mobile). */
+.lp-bubble-vig {
+  position: absolute; left: 0; top: 0; z-index: 5; width: 620px; height: 300px; max-width: 100%; pointer-events: none;
+  background: radial-gradient(ellipse 100% 100% at 0 0, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 0.26) 35%, rgba(0, 0, 0, 0.08) 62%, rgba(0, 0, 0, 0) 80%);
+  transform-origin: 0 0;
+}
+.lp-bubble-vig.is-in { animation: lp-vig-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.lp-bubble {
+  position: absolute; top: 22px; left: 22px; z-index: 6; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px;
+  width: 400px; max-width: calc(100% - 44px); color: #fff; font-size: 14px; pointer-events: none; transition: top 0.25s ease, opacity 0.3s ease, visibility 0s;
+}
+.lp.is-ui .lp-bubble { top: 92px; }
+/* Bandeau de salle (.ps-band : 52 px, top 20 px, 72 px avec l'interface) : la bulle s'empile dessous au lieu de passer derrière. */
+.lp:has(.ps-band:not([hidden])) .lp-bubble { top: 84px; }
+.lp.is-ui:has(.ps-band:not([hidden])) .lp-bubble { top: 136px; }
+.lp-bubble[hidden], .lp-bubble-vig[hidden], .lp-bubble-form[hidden], .lp-bubble-err[hidden], .lp-bubble-stack[hidden] { display: none; }
+.lp.is-mini .lp-bubble, .lp.is-mini .lp-bubble-vig { display: none; }
+
+.lp-bubble-card {
+  box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 16px;
+  background: transparent; pointer-events: auto; transition: background 0.2s;
+}
+.lp-bubble-card.is-open { background: rgba(23, 21, 31, 0.72); }
+.lp-bubble-main {
+  display: flex; gap: 10px; align-items: flex-start; min-width: 0; margin: 0; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.lp-bubble-main:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); border-radius: 10px; }
+.lp-bubble-av {
+  flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 28%; color: #fff;
+  font-family: Sora, sans-serif; font-weight: 800; font-size: 16px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+}
+.lp-bubble-av { position: relative; background-size: cover; background-position: center; overflow: hidden; }
+.lp-bubble-av-s { width: 26px; height: 26px; font-size: 11px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7); }
+.lp-bubble-col, .lp-bubble-head { display: flex; min-width: 0; }
+.lp-bubble-col { flex: 1; flex-direction: column; gap: 3px; }
+.lp-bubble-head { justify-content: space-between; gap: 8px; font-size: 13px; }
+.lp-bubble-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-bubble-when { flex: none; color: #e4e0ec; }
+.lp-bubble-txt { min-width: 0; overflow-wrap: anywhere; font-size: 16px; font-weight: 500; }
+.lp-bubble-head, .lp-bubble-txt, .lp-bubble-stack { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 6px rgba(0, 0, 0, 0.85), 0 0 16px rgba(0, 0, 0, 0.6); }
+
+.lp-bubble-av.is-in { animation: lp-av-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) 0.12s both; }
+.lp-bubble-head.is-in { animation: lp-txt-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.22s both; }
+.lp-bubble-txt.is-in { animation: lp-txt-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.32s both; }
+.lp-bubble-stack.is-in { animation: lp-txt-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.5s both; }
+@keyframes lp-vig-in { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+@keyframes lp-av-in { from { opacity: 0; transform: scale(0.4) rotate(-12deg); } to { opacity: 1; transform: none; } }
+@keyframes lp-txt-in { from { opacity: 0; transform: translateX(-18px); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
+
+/* Réponse : champ, deux emojis, masquer. */
+.lp-bubble-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lp-bubble-in {
+  flex: 1 1 140px; min-width: 0; height: 36px; padding: 0 10px; border-radius: 9px; border: 1px solid #3a3647;
+  background: rgba(12, 11, 17, 0.85); color: #f4f2f7; font: inherit; font-size: 13px;
+}
+.lp-bubble-in:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
+.lp-bubble-send, .lp-bubble-emo, .lp-bubble-x {
+  display: grid; place-items: center; height: 36px; min-width: 36px; padding: 0 8px; border: 0; border-radius: 9px;
+  background: rgba(47, 43, 59, 0.9); color: inherit; font: inherit; font-size: 16px; cursor: pointer;
+}
+.lp-bubble-send { background: var(--accent); color: #0c0b11; }
+.lp-bubble-send:disabled { opacity: 0.4; cursor: default; }
+.lp-bubble-send:focus-visible, .lp-bubble-emo:focus-visible, .lp-bubble-x:focus-visible, .lp-bubble-open:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.lp-bubble-err { flex: 1 0 100%; margin: 0; color: #ffb4b4; font-size: 12px; }
+.lp-bubble-hint { flex: 1 0 100%; margin: 0; color: #c9c4d6; font-size: 11px; }
+.lp-bubble-open { display: none; flex: 1 0 100%; padding: 6px 0 0; border: 0; background: none; color: #ff9b82; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+
+/* Message suivant, empilé dessous, en transparence. */
+.lp-bubble-stack { display: flex; align-items: center; gap: 8px; margin-left: 12px; font-size: 14px; opacity: 0.85; min-width: 0; }
+.lp-bubble-stack .lp-bubble-who { flex: none; max-width: 40%; }
+.lp-bubble-stack-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Version tactile (Android paysage) : carte pleine, toucher pour répondre. */
+@media (pointer: coarse), (max-width: 767px) {
+  .lp-bubble { top: 14px; left: 14px; width: 300px; }
+  .lp.is-ui .lp-bubble { top: 64px; }
+  .lp-bubble-vig { width: 420px; height: 200px; }
+  .lp-bubble-card { padding: 10px; border-radius: 14px; background: rgba(23, 21, 31, 0.94); border: 1px solid #33303f; }
+  .lp-bubble-card.is-open { background: rgba(23, 21, 31, 0.94); }
+  .lp-bubble-av { width: 34px; height: 34px; font-size: 14px; }
+  .lp-bubble-head { font-size: 12px; justify-content: flex-start; }
+  .lp-bubble-when::before { content: '· '; }
+  .lp-bubble-txt { font-size: 13px; font-weight: 400; }
+  .lp-bubble-head, .lp-bubble-txt { text-shadow: none; }
+  .lp-bubble-hint { display: none; }
+  .lp-bubble-open { display: block; }
+  .lp-bubble-emo, .lp-bubble-send, .lp-bubble-x { height: 44px; min-width: 44px; }
+  .lp-bubble-in { height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-bubble { transition: none; }
+  .lp-bubble-vig.is-in, .lp-bubble-av.is-in, .lp-bubble-head.is-in, .lp-bubble-txt.is-in, .lp-bubble-stack.is-in { animation: none; }
+}

@@ -1,0 +1,44 @@
+/* Vue TV de #/downloads (ODY-234), d'après docs/design/telechargements/project/tv-telechargements.dc.html.
+ * Tout est limité à <html data-device="tv"> : le rendu mobile et bureau n'est pas touché. Grandes cibles, texte lisible à 3 m,
+ * focus très visible (télécommande : le focus est le seul repère). */
+[data-device="tv"] .dl-page { max-width: none; padding: 20px 48px 72px; gap: 14px; }
+[data-device="tv"] .dl-h1 { font-size: 34px; }
+[data-device="tv"] .dl-sec-t { font-family: var(--ff-title); font-size: 24px; font-weight: 700; }
+[data-device="tv"] .dl-space-l { font-size: 24px; }
+[data-device="tv"] .dl-space-n, [data-device="tv"] .dl-banner { font-size: 20px; }
+[data-device="tv"] .dl-list { display: flex; flex-direction: column; gap: 10px; }
+[data-device="tv"] .dl-row { min-height: 104px; padding: 10px 20px; gap: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+[data-device="tv"] .dl-row:last-child { border-bottom: 1px solid var(--line); }
+[data-device="tv"] .dl-poster { width: 64px; height: 84px; border-radius: 8px; }
+[data-device="tv"] .dl-ttl { font-size: 26px; font-weight: 700; }
+[data-device="tv"] .dl-sub { font-size: 22px; }
+[data-device="tv"] .dl-tag { font-size: 22px; padding: 6px 16px; }
+[data-device="tv"] .dl-tag svg { width: 24px; height: 24px; }
+[data-device="tv"] .dl-err { font-size: 20px; }
+[data-device="tv"] .dl-bar { height: 6px; }
+[data-device="tv"] .dl-acts { gap: 14px; }
+/* Cibles d'au moins 64 px de haut (boutons) ; pastilles et icônes agrandies. */
+[data-device="tv"] .dl-acts .btn, [data-device="tv"] .dl-head-acts .btn, [data-device="tv"] .dl-banner .btn, [data-device="tv"] .dl-state .btn {
+  min-height: 64px; min-width: 160px; padding: 0 24px; font-size: 24px; border-radius: 12px;
+}
+[data-device="tv"] .dl-acts .btn svg, [data-device="tv"] .dl-head-acts .btn svg { width: 28px; height: 28px; }
+[data-device="tv"] .dl-pill { width: 64px; height: 64px; }
+[data-device="tv"] .dl-ring { inset: -1.5px; width: 64px; height: 64px; }
+[data-device="tv"] .dl-pill svg:not(.dl-ring) { width: 28px; height: 28px; }
+[data-device="tv"] .dl-ibtn { width: 64px; height: 64px; border-radius: 12px; }
+[data-device="tv"] .dl-ibtn svg { width: 28px; height: 28px; }
+[data-device="tv"] .dl-link { font-size: 20px; padding: 10px 6px; }
+/* Focus : anneau accent épais, décalé, sur chaque cible ; la rangée qui le contient se met en avant. */
+[data-device="tv"] .dl-page :is(button, a[href]):focus-visible, [data-device="tv"] .dl-page :is(button, a[href]):focus {
+  outline: 4px solid var(--accent); outline-offset: 4px;
+}
+[data-device="tv"] .dl-row:focus-within { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); }
+[data-device="tv"] .dl-tv-hint { position: fixed; right: 48px; bottom: 14px; font-size: 22px; color: var(--dim); pointer-events: none; }
+/* Fiche : « Télécharger la saison », grande cible au D-pad (même gabarit que les boutons de tv-fiche). */
+[data-device="tv"] .dl-season { min-height: 64px; padding: 0 28px; font-size: 24px; border-radius: 12px; }
+[data-device="tv"] .dl-season svg { width: 28px; height: 28px; }
+[data-device="tv"] .dl-season:focus, [data-device="tv"] .dl-season:focus-visible { outline: 4px solid var(--accent); outline-offset: 4px; }
+/* Pastille d'épisode de la fiche, d'après tv-fiche : 40 px, bord 2 px, en bas à droite de la vignette (360 x 202 px) à 10 px des bords. */
+[data-device="tv"] .ep .dl-ep { width: 40px; height: 40px; border-width: 2px; top: 152px; right: 10px; }
+[data-device="tv"] .ep .dl-ep .dl-ring { inset: -2px; width: 40px; height: 40px; }
+[data-device="tv"] .ep .dl-ep svg:not(.dl-ring) { width: 22px; height: 22px; }

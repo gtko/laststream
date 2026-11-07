@@ -1,0 +1,162 @@
+/* Notes de la timeline du lecteur (Social v2) : marqueurs sur la barre, aperçu au survol ou au focus, bulle à la lecture,
+ * popover « Réagir ici ». Couche distincte des chapitres (.lp-marks reste intact). Aucun élément ne capte les clics hors
+ * de ses marqueurs, de son popover et de ses boutons. */
+
+/* ---------- Marqueurs sur la piste ---------- */
+.lp-notes { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.lp-note {
+  position: absolute; top: 50%; width: 14px; height: 14px; margin: 0; padding: 0;
+  transform: translate(-50%, -50%); box-sizing: border-box; border: 0; border-radius: 50%;
+  background: transparent; color: inherit; font: inherit; line-height: normal; text-align: left;
+  pointer-events: auto; cursor: pointer;
+}
+.lp-note:focus { outline: none; }
+.lp-note:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.lp-note-dot {
+  position: absolute; inset: 0; box-sizing: border-box; border-radius: 50%;
+  border: 2px solid rgba(12, 11, 17, 0.9); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.lp-note-n {
+  position: absolute; left: 50%; bottom: calc(100% + 2px); transform: translateX(-50%);
+  padding: 2px 5px; border-radius: 7px; background: rgba(12, 11, 17, 0.92); border: 1px solid var(--line-2);
+  color: var(--text); font-size: 11px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums;
+}
+/* Aperçu : affiché au survol ou au focus du marqueur, au-dessus de la barre. */
+.lp-note-card {
+  display: none; position: absolute; bottom: calc(100% + 14px); left: 50%; transform: translateX(-50%);
+  box-sizing: border-box; width: max-content; min-width: 180px; max-width: min(300px, 70vw); padding: 8px 10px;
+  border-radius: 10px; background: rgba(12, 11, 17, 0.94); border: 1px solid var(--line-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); color: var(--text); cursor: default;
+}
+.lp-note:hover .lp-note-card, .lp-note:focus-visible .lp-note-card { display: block; }
+.lp-note.is-left .lp-note-card { left: 0; transform: none; }
+.lp-note.is-right .lp-note-card { left: auto; right: 0; transform: none; }
+/* L'aperçu de la note remplace celui de la position (sinon les deux se chevauchent). */
+.lp-seek:has(.lp-note:hover) .lp-hover, .lp-seek:has(.lp-note:focus-visible) .lp-hover { display: none; }
+.lp-nc-h { display: block; margin-bottom: 4px; color: var(--soft); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.lp-nc-r { display: flex; align-items: baseline; gap: 6px; min-width: 0; margin-top: 4px; font-size: 13px; line-height: 1.35; }
+.lp-nc-d { flex: none; align-self: center; width: 8px; height: 8px; border-radius: 50%; }
+.lp-nc-w { flex: none; font-weight: 800; }
+.lp-nc-t { min-width: 0; overflow-wrap: anywhere; color: var(--soft); }
+.lp-nc-r.is-emoji .lp-nc-t { font-size: 20px; line-height: 1; }
+.lp-nc-m { display: block; margin-top: 4px; color: var(--dim); font-size: 12px; }
+
+/* ---------- Bulle brève à la lecture (~4 s, sans bloquer les contrôles) ---------- */
+.lp-nf-box {
+  position: absolute; left: clamp(20px, 4vw, 64px); bottom: calc(var(--lp-bar-h, 110px) + 18px); z-index: 5;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  max-width: min(420px, calc(100% - 40px)); pointer-events: none;
+}
+.lp-nf { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; animation: lp-nf-life 4s ease both; }
+.lp-nf-b {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 8px 14px; border-radius: 14px;
+  background: rgba(12, 11, 17, 0.92); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  font-size: 15px;
+}
+.lp-nf-d { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+.lp-nf-w { font-size: 12px; font-weight: 800; color: var(--soft); }
+.lp-nf-b .lp-nf-w { color: var(--text); font-size: 13px; white-space: nowrap; }
+.lp-nf-t { min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.lp-nf-e {
+  display: inline-block; font-size: 44px; line-height: 1; filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.5));
+  animation: lp-nf-pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+}
+@keyframes lp-nf-life {
+  0% { opacity: 0; transform: translateY(10px); }
+  8%, 82% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+@keyframes lp-nf-pop {
+  0% { transform: scale(0.3); }
+  60% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+/* ---------- Popover « Réagir ici » ---------- */
+.lp-react {
+  position: absolute; right: clamp(20px, 4vw, 64px); bottom: calc(var(--lp-bar-h, 110px) + 16px); z-index: 7;
+  display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; width: min(380px, calc(100% - 40px));
+  padding: 14px; border-radius: 16px; background: rgba(17, 15, 24, 0.97); border: 1px solid var(--line-2);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.lp-react[hidden] { display: none; }
+.lp-react-t { margin: 0; color: var(--soft); font-size: 14px; font-weight: 700; }
+.lp-react-clock { color: var(--text); font-variant-numeric: tabular-nums; }
+.lp-react-emo { display: flex; flex-wrap: wrap; gap: 6px; }
+.lp-react-e {
+  display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border-radius: 12px;
+  border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.06); font-size: 24px; line-height: 1; cursor: pointer;
+}
+.lp-react-e:hover, .lp-react-e:focus-visible { background: rgba(255, 255, 255, 0.16); outline: none; box-shadow: 0 0 0 2px var(--accent); }
+.lp-react-f { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lp-react-in {
+  flex: 1 1 180px; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit;
+}
+.lp-react-in:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
+.lp-react-c { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.lp-react-send { min-height: 44px; }
+@media (max-width: 640px) {
+  .lp-react { left: 16px; right: 16px; width: auto; }
+}
+/* Menu Modifier / Supprimer de ses réactions : même place et même gabarit que « Réagir ici ». */
+.lp-notemenu {
+  position: absolute; right: clamp(20px, 4vw, 64px); bottom: calc(var(--lp-bar-h, 110px) + 16px); z-index: 7;
+  display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; width: min(380px, calc(100% - 40px));
+  padding: 14px; border-radius: 16px; background: rgba(17, 15, 24, 0.97); border: 1px solid var(--line-2);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.lp-notemenu[hidden] { display: none; }
+.lp-nm-t { margin: 0; color: var(--soft); font-size: 14px; font-weight: 700; }
+.lp-nm-clock { color: var(--text); font-variant-numeric: tabular-nums; }
+.lp-nm-sub { margin: 0; color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+.lp-nm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lp-nm-w { flex: 1 1 120px; min-width: 0; color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+.lp-nm-w.is-emoji { font-size: 24px; line-height: 1; }
+.lp-nm-c { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.lp-nm-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.lp-nm-b {
+  min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, 0.06); color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+}
+.lp-nm-b:hover { background: rgba(255, 255, 255, 0.16); }
+.lp-nm-b:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.lp-nm-b.is-danger { border-color: var(--danger); color: var(--danger-text); }
+.lp-nm-b.is-primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.lp-note.is-mine::after { content: ''; position: absolute; inset: -15px; }
+@media (max-width: 640px) {
+  .lp-notemenu { left: 16px; right: 16px; width: auto; }
+}/* Mini-lecteur : pas de bulle ni de popover sur la vignette. */
+.lp.is-mini .lp-nf-box, .lp.is-mini .lp-react, .lp.is-mini .lp-notemenu { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .lp-nf, .lp-nf-e { animation: none; }
+}
+
+/* ---------- Réactions emoji des amis, en grand (LAST-1614) : file de flottants au-dessus de la vidéo ---------- */
+.lp-rx { position: absolute; inset: 0; z-index: 6; overflow: hidden; pointer-events: none; }
+.lp-rx-i {
+  position: absolute; left: var(--rx-x, 50%); bottom: calc(var(--lp-bar-h, 110px) + 24px);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  animation: lp-rx-rise 4.2s cubic-bezier(0.2, 0.6, 0.3, 1) both;
+}
+.lp-rx-e {
+  font-size: clamp(64px, 14vh, 160px); line-height: 1;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55));
+}
+.lp-rx-w {
+  max-width: 14em; padding: 2px 8px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: clamp(11px, 1.6vh, 15px); font-weight: 800; color: #fff; background: rgba(12, 11, 17, 0.7);
+}
+.lp:fullscreen .lp-rx-e, .lp.is-fullscreen .lp-rx-e { font-size: clamp(96px, 20vh, 240px); }
+.lp.lp-hide-notes .lp-rx, .lp.is-mini .lp-rx { display: none; }
+@keyframes lp-rx-rise {
+  0% { opacity: 0; transform: translateY(20px) scale(0.4); }
+  10% { opacity: 1; transform: translateY(0) scale(1.15); }
+  18% { transform: translateY(-4vh) scale(1); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-38vh) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-rx-i { animation: lp-rx-fade 3s ease both; }
+  @keyframes lp-rx-fade { 0%, 100% { opacity: 0; } 12%, 80% { opacity: 1; } }
+}

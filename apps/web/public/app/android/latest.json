@@ -1,0 +1,8 @@
+{
+  "versionCode": 2026110201,
+  "versionName": "2026.11.02.1",
+  "url": "https://app.laststream.app/app/android/laststream-2026110201.apk",
+  "sha256": "cba10a4478e407342f1823e0ed822a8767618cd253bcad02834ad51fad2ec0f7",
+  "size": 48262560,
+  "notes": "Correctif : Suivant et Continuer ferment le lecteur et chargent l'épisode suivant"
+}

@@ -1,0 +1,263 @@
+/* Invitations sur un profil du foyer (contrat invitations v3, partie A) : panneau « Inviter sur ce profil », indicateur dans
+ * l’éditeur de profil, liste « Invitations du foyer » des réglages. Couleurs et polices : jetons de styles.css. */
+
+.hh-back {
+  --hh-ok: #19c3a6;
+  --hh-ok-ink: #0c0b11;
+  --hh-soft: #ff9a80;
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  background: rgba(8, 7, 12, 0.6);
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+}
+
+.hh-panel {
+  margin: 48px 48px 48px auto;
+  width: min(470px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 28px;
+  border-radius: 26px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--ff-body);
+  box-shadow: 0 40px 120px -30px rgba(0, 0, 0, 0.8);
+  animation: hhSlide 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.hh-panel :focus-visible,
+.hh-row :focus-visible,
+.hh-list :focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+
+/* En-tête : avatar avec pastille clé, nom du profil, fermer */
+.hh-head { display: flex; align-items: center; gap: 16px; }
+.hh-who { position: relative; flex: none; width: 72px; height: 72px; }
+.hh-av {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  background-size: cover;
+  background-position: center;
+  font-family: var(--ff-title);
+  font-weight: 800;
+  font-size: 30px;
+  color: var(--on-accent);
+}
+.hh-key {
+  position: absolute;
+  right: -10px;
+  bottom: -10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  animation: hhKey 1s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both;
+}
+.hh-titles { flex: 1; min-width: 0; }
+.hh-eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hh-soft); }
+.hh-title { margin: 4px 0 0; font-family: var(--ff-title); font-size: 24px; font-weight: 800; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.hh-x {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+}
+.hh-x:hover { background: var(--line); color: var(--text); }
+.hh-x svg { width: 20px; height: 20px; }
+
+.hh-lead { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.hh-sec { display: flex; flex-direction: column; }
+.hh-label { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--dim); }
+
+/* Boutons : 48 px partout */
+.hh-btn {
+  box-sizing: border-box;
+  min-height: 48px;
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--soft);
+  font-family: var(--ff-body);
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+.hh-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.hh-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.hh-btn svg { flex: none; }
+
+.hh-ttls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.hh-ttl { border-color: var(--line-2); color: var(--soft); background: transparent; }
+.hh-ttl[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+
+/* Lien : champ monospace et bouton Copier */
+.hh-linkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 6px 0 16px;
+  border-radius: 14px;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  color: var(--accent);
+}
+.hh-link {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--soft);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.hh-link::placeholder { color: var(--dim); font-family: var(--ff-body); }
+.hh-copy { flex: none; width: 104px; padding: 0 16px; background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.hh-copy.is-done { background: var(--hh-ok); color: var(--hh-ok-ink); }
+.hh-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.hh-regen { margin-top: 8px; }
+.hh-soft { background: var(--line); border-color: var(--line); color: var(--text); }
+.hh-soft.is-done { background: var(--hh-ok); border-color: var(--hh-ok); color: var(--hh-ok-ink); font-weight: 700; }
+.hh-msg { margin: 8px 0 0; font-size: 13px; color: var(--dim); }
+.hh-msg:empty { display: none; }
+.hh-msg.is-error { color: var(--hh-soft); }
+
+/* Anneau de temps restant */
+.hh-time {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.hh-ring { flex: none; width: 56px; height: 56px; }
+.hh-ring-bg { fill: none; stroke: var(--line-2); stroke-width: 5; }
+.hh-ring-fg {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1.2s ease;
+}
+.hh-time-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.hh-time-main { margin: 0; font-family: var(--ff-title); font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.hh-time-sub { margin: 0; font-size: 13px; color: var(--dim); }
+
+.hh-checks { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--muted); }
+.hh-checks li { display: flex; align-items: center; gap: 10px; }
+.hh-checks svg { flex: none; color: var(--hh-ok); }
+
+/* Pied : deux colonnes égales */
+.hh-foot { margin-top: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.hh-revoke { border-color: #5a3030; color: var(--hh-soft); background: transparent; }
+.hh-done { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
+
+/* Indicateur dans l’éditeur d’un profil */
+.hh-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.hh-row-state { margin: 0; font-size: 13px; color: var(--hh-soft); }
+.hh-row-btn { width: 100%; height: 48px; min-height: 48px; }
+.hh-row-help { margin: 8px 0 0; font-size: 13px; color: var(--hh-soft); }
+
+/* Liste « Invitations du foyer » (réglages) */
+.hh-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.hh-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--bg);
+  font-size: 14px;
+}
+.hh-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+.hh-item.is-pending .hh-dot { background: var(--accent); }
+.hh-item.is-used .hh-dot { background: var(--hh-ok); }
+.hh-item-name { font-weight: 600; min-width: 70px; overflow-wrap: anywhere; }
+.hh-item-state { flex: 1; min-width: 0; color: var(--muted); }
+.hh-item.is-expired .hh-item-state,
+.hh-item.is-revoked .hh-item-state { color: var(--dim); }
+.hh-item-rev { color: var(--hh-soft); }
+
+@keyframes hhSlide {
+  from { transform: translateX(48px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes hhKey {
+  0% { transform: rotate(-70deg) scale(0.6); opacity: 0; }
+  55% { transform: rotate(14deg) scale(1.05); opacity: 1; }
+  100% { transform: none; }
+}
+
+/* Téléphone : feuille qui monte du bas, sans défilement horizontal */
+@media (max-width: 640px) {
+  .hh-back { justify-content: center; align-items: flex-end; }
+  .hh-panel {
+    margin: 0;
+    width: 100%;
+    max-height: 92vh;
+    max-height: 92dvh;
+    padding: 22px 16px calc(22px + env(safe-area-inset-bottom, 0px));
+    border-radius: 22px 22px 0 0;
+    border-bottom: 0;
+  }
+  .hh-ttls { grid-template-columns: minmax(0, 1fr); }
+  .hh-linkbox { flex-wrap: wrap; height: auto; padding: 10px 10px 10px 16px; }
+  .hh-link { flex-basis: 100%; order: 1; }
+  .hh-copy { order: 2; margin-left: auto; }
+  .hh-linkbox > svg { order: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hh-back *, .hh-back, .hh-row *, .hh-list * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Relay invité e2e</title>
+  <style>
+    html, body { margin: 0; background: #111; color: #eee; font: 14px system-ui, sans-serif; }
+    canvas { display: block; width: 640px; max-width: 100%; height: auto; background: #000; }
+    .bar { display: flex; gap: 8px; padding: 8px 12px; }
+    pre { margin: 0; padding: 0 12px 12px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <canvas id="screen" width="320" height="240"></canvas>
+  <div class="bar">
+    <button id="play" type="button">Lecture</button>
+    <button id="pause" type="button">Pause</button>
+    <button id="seek" type="button">+5 s</button>
+  </div>
+  <pre id="status">invité : démarrage</pre>
+  <script type="module" src="./guest.ts"></script>
+</body>
+</html>

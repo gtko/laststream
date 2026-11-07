@@ -1,0 +1,91 @@
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+// versionCode = AAAAMMJJNN : la date du jour puis un compteur (01 à 99) incrémenté à chaque build (assemble*/bundle*), gardé dans
+// version-counter.properties (non versionné). Debug et release d'une même commande partagent le même numéro. Les mises à jour en un
+// tap (LaststreamUpdate) comparent ce numéro à celui de scripts/publish-android.mjs.
+def laststreamVersion() {
+    def today = new Date().format('yyyyMMdd')
+    def counter = file('version-counter.properties')
+    def props = new Properties()
+    if (counter.exists()) counter.withInputStream { props.load(it) }
+    int n = props.getProperty('date') == today ? props.getProperty('n', '0').toInteger() : 0
+    def building = gradle.startParameter.taskNames.any { it.toLowerCase().contains('assemble') || it.toLowerCase().contains('bundle') }
+    if (building || n == 0) n = Math.min(n + 1, 99)
+    if (building) {
+        props.setProperty('date', today)
+        props.setProperty('n', String.valueOf(n))
+        counter.withOutputStream { props.store(it, 'Compteur de build du jour (genere)') }
+    }
+    return [code: (today + String.format('%02d', n)).toInteger(), name: new Date().format('yyyy.MM.dd') + '.' + n]
+}
+def lsVersion = laststreamVersion()
+
+android {
+    namespace "com.laststream.app"
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.laststream.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode lsVersion.code
+        versionName lsVersion.name
+        // libVLC pèse une centaine de Mo par architecture : seuls les téléphones, tablettes et boîtiers Android TV ARM sont ciblés.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+            // Tests instrumentés sur émulateur x86_64 : ./gradlew connectedDebugAndroidTest -PwithX86
+            if (project.hasProperty('withX86')) abiFilters 'x86_64'
+        }
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    kotlinOptions { jvmTarget = '21' }
+    packagingOptions { jniLibs { useLegacyPackaging = true } }
+    testOptions { unitTests.returnDefaultValues = true }
+    buildTypes {
+        release {
+            // APK de test installable : signé avec la clé de debug tant qu'aucune clé de publication n'existe.
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    implementation "androidx.core:core-ktx:$androidxCoreVersion"
+    // Moteur de lecture natif (décodage matériel, HEVC / AV1 / DTS / TrueHD / AC3 / EAC3).
+    implementation 'org.videolan.android:libvlc-all:3.6.5'
+    testImplementation "junit:junit:$junitVersion"
+    testImplementation 'org.json:json:20240303'
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
