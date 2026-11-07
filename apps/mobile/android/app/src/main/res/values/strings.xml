@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Laststream</string>
-    <string name="title_activity_main">Laststream</string>
-    <string name="package_name">com.laststream.app</string>
-    <string name="custom_url_scheme">com.laststream.app</string>
-</resources>
