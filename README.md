@@ -9,7 +9,7 @@ Mono-repo de Laststream : applications, services Cloudflare et contrat partagé.
 | `apps/mobile` | Application Android (Capacitor, interface chargée depuis le serveur) | `gtko/laststream-app` (`android/`) | APK publiée dans R2 (`apps/web/scripts/publish-android.mjs`) |
 | `apps/desktop` | Application Windows (Rust, mpv) | `gtko/laststream-shell-ng` | tag `desktop-vX.Y.Z` + workflow « Desktop release » |
 | `apps/site` | Site vitrine www.laststream.app | `gtko/laststream-site` | Workers Builds (laststream-www, dossier racine `apps/site`) |
-| `services/core` | Worker lastaddon-core : API, salons, sert `apps/web` | `gtko/lastaddon` | tag `core-vX.Y.Z` → workflow « Core deploy » |
+| `services/core` | Worker lastaddon-core : API, salons, sert `apps/web` | `gtko/lastaddon` | Workers Builds (dossier racine `services/core`, build `npm run build:cloudflare`) |
 | `services/edge` | Worker laststream-edge : app.laststream.app, APK/EXE depuis R2 | `gtko/laststream-edge` | Workers Builds (dossier racine `services/edge`) |
 | `packages/protocol` | `@laststream/protocol` : types partagés web/serveur | `gtko/laststream-protocol` | dépendance locale (`file:../../packages/protocol`) |
 

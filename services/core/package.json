@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc-app.tsbuildinfo -p tsconfig.json && tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc-test.tsbuildinfo -p tsconfig.test.json",
     "test": "vitest run",
     "test:workers": "vitest run -c vitest.workers.config.ts",
+    "build:cloudflare": "node scripts/build-cloudflare.mjs",
     "deploy:worker": "node scripts/deploy-worker.mjs",
     "release": "node scripts/release.mjs",
     "tv:live": "tsx scripts/tv-live-check.ts",

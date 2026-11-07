@@ -3,7 +3,13 @@
 Mono-repo : chaque service a ses tags préfixés, `core-vX.Y.Z` (services/core) et `edge-vX.Y.Z` (services/edge), posés sur `main`.
 On ne déploie que depuis un tag du service posé sur la pointe de `main`. Les scripts refusent tout le reste. Dans la suite, `vX.Y.Z`
 désigne `core-vX.Y.Z` (ou `edge-vX.Y.Z` pour l'edge) ; `npm run release -- X.Y.Z` crée le tag préfixé, et le Worker reçoit la version
-sans préfixe (`--tag vX.Y.Z`, `LASTADDON_RELEASE`). Un push de tag `core-v*` lance le workflow « Core deploy » (`.github/workflows/core-deploy.yml`).
+sans préfixe (`--tag vX.Y.Z`, `LASTADDON_RELEASE`).
+
+**Déploiement automatique** : Cloudflare Workers Builds relie lastaddon-core à `gtko/laststream` (branche `main`, dossier racine
+`services/core`, commande de build `npm run build:cloudflare`, commande de déploiement `npx wrangler deploy`, chemins surveillés
+`services/core/*`, `apps/web/*`, `packages/protocol/*`). Chaque push sur `main` qui touche ces dossiers redéploie le Worker avec
+l'interface du même commit, sans la garde ni le verrou ci-dessous (LAST-150) et sans `LASTADDON_RELEASE` : `/health` affiche alors
+la version de `MANIFEST`. La procédure par tag qui suit reste celle d'un déploiement à la main depuis un PC.
 La garde est dans `scripts/lib/deploy-guard.mjs` (copie identique dans `services/edge/scripts/lib/`) ; tests : `tests/deploy-guard.test.ts`.
 
 ## Procédure

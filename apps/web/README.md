@@ -112,12 +112,6 @@ Le projet natif est dans `apps/mobile` (`android/`, `capacitor.config.json`, `np
 
 L'interface web n'a pas de Worker à elle : son build (`dist/`) est copié dans le Worker Cloudflare **lastaddon-core** (`services/core` du mono-repo), qui la sert en Workers Assets sur `core.laststream.app`. `app.laststream.app` passe par **laststream-edge** (`services/edge`), qui relaie vers lastaddon-core (Service Binding `CORE`).
 
-Un merge sur `main` ne déploie pas l'interface : Web CI (`.github/workflows/web-ci.yml` à la racine) ne fait que les vérifications. Le déploiement part d'une release du serveur, qui embarque l'interface du même commit (procédure complète : `services/core/docs/deploiement.md`) :
-
-```bash
-cd services/core
-git switch main && git pull
-npm run release -- X.Y.Z    # tag core-vX.Y.Z poussé → workflow « Core deploy » (build de apps/web + deploy:worker)
-```
+Chaque push sur `main` qui touche `apps/web`, `services/core` ou `packages/protocol` redéploie lastaddon-core avec l'interface du même commit : Cloudflare Workers Builds (dossier racine `services/core`) lance `npm run build:cloudflare` (build de `apps/web` copié dans `worker-ui/`), puis `npx wrangler deploy`. Procédure complète : `services/core/docs/deploiement.md`.
 
 À la main, depuis un PC : `npm run build` dans `apps/web`, puis `git checkout core-vX.Y.Z` et `npm run deploy:worker` dans `services/core` (`--dry-run` : vérifications seules). La garde refuse si le mono-repo n'est pas propre, ou si HEAD n'est pas un tag `core-vX.Y.Z` égal à `origin/main`. Elle ne vérifie pas que `dist/` vient de ce commit : reconstruire juste avant.
