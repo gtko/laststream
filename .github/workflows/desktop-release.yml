@@ -6,15 +6,35 @@ name: Desktop release
 # apps/desktop/scripts/stage-release-deps.ps1 et posees sur la release brouillon du tag. Ce workflow ne lit aucun autre depot,
 # n'a aucun jeton inter-depots et ne telecharge que les trois fichiers de la release.
 # Produit l'installeur, son SHA-256, le flux latest.json signe (ed25519) et publie la release.
+# Appelable aussi en workflow_call depuis release.yml (releases automatiques, tag vX.Y.Z) : deps=artifact prepare ui.zip et
+# lastaddon.zip dans le job stage-deps (aucune release brouillon requise) ; publish=false laisse release.yml publier la release,
+# ce workflow n'exposant alors que l'artefact desktop-release (installeur, .sha256, latest.json, latest.json.sig).
+# Les tags vX.Y.Z et desktop-vX.Y.Z sont acceptes.
 # Le televersement R2 reste manuel (upload.ps1) : aucun jeton Cloudflare dans ce workflow.
 # Pas d'Authenticode (decision produit) : l'installeur n'est pas signe de code.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag deja pousse a publier, format desktop-vX.Y.Z (ex. desktop-v1.0.25)'
+        description: 'Tag deja pousse a publier, format desktop-vX.Y.Z ou vX.Y.Z (ex. desktop-v1.0.25)'
         required: true
         type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Tag deja pousse, format vX.Y.Z ou desktop-vX.Y.Z'
+        required: true
+        type: string
+      deps:
+        description: "Source des dependances : 'release' (assets de la release brouillon) ou 'artifact' (stage-deps dans ce run)"
+        required: false
+        type: string
+        default: release
+      publish:
+        description: 'true : publie la release ; false : expose seulement l artefact desktop-release'
+        required: false
+        type: boolean
+        default: true
 
 # Lecture seule par defaut. Les jobs qui ecrivent sont explicites ci-dessous.
 permissions:
@@ -27,6 +47,8 @@ concurrency:
 
 jobs:
   fetch-deps:
+    # Sauté avec deps=artifact (stage-deps le remplace). En workflow_dispatch, inputs.deps est vide : mode release.
+    if: ${{ inputs.deps != 'artifact' }}
     # contents: write : une release brouillon n'est lisible qu'avec un acces en ecriture (non verifie sur ce depot).
     runs-on: windows-latest
     timeout-minutes: 15
@@ -41,7 +63,7 @@ jobs:
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
-        if ($env:RELEASE_TAG -notmatch '^desktop-v[0-9]+\.[0-9]+\.[0-9]+\z') { throw "Tag invalide '$env:RELEASE_TAG' : format desktop-vX.Y.Z attendu (ex. desktop-v1.0.25)." }
+        if ($env:RELEASE_TAG -notmatch '^(desktop-)?v[0-9]+\.[0-9]+\.[0-9]+\z') { throw "Tag invalide '$env:RELEASE_TAG' : format vX.Y.Z ou desktop-vX.Y.Z attendu (ex. desktop-v1.0.25)." }
     - name: Download the staged dependencies from the release
       shell: pwsh
       run: |
@@ -58,7 +80,9 @@ jobs:
       run: |
         $ErrorActionPreference = 'Stop'
         $deps = Get-Content -LiteralPath deps/deps.json -Raw | ConvertFrom-Json
-        if ($deps.tag -ne $env:RELEASE_TAG) { throw "deps.json vise $($deps.tag), pas $env:RELEASE_TAG : restager avec la bonne version." }
+        # deps.json porte toujours desktop-vX.Y.Z, meme quand le tag publie est vX.Y.Z.
+        $expectedTag = if ($env:RELEASE_TAG.StartsWith('desktop-')) { $env:RELEASE_TAG } else { "desktop-$env:RELEASE_TAG" }
+        if ($deps.tag -ne $expectedTag) { throw "deps.json vise $($deps.tag), pas $expectedTag : restager avec la bonne version." }
         foreach ($name in 'ui.zip', 'lastaddon.zip') {
           $entry = $deps.files.$name
           $actual = (Get-FileHash -LiteralPath (Join-Path deps $name) -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -71,8 +95,62 @@ jobs:
         path: deps
         if-no-files-found: error
 
+  stage-deps:
+    # deps=artifact : equivalent CI de stage-release-deps.ps1, sans release brouillon ni poste local.
+    if: ${{ inputs.deps == 'artifact' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+    - name: Validate the tag input and extract the version
+      id: ver
+      shell: bash
+      run: |
+        if ! [[ "$RELEASE_TAG" =~ ^(desktop-)?v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+          echo "::error::Tag invalide '$RELEASE_TAG' : format vX.Y.Z ou desktop-vX.Y.Z attendu"
+          exit 1
+        fi
+        echo "version=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+    - name: checkout
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        ref: ${{ format('refs/tags/{0}', inputs.tag) }}
+        persist-credentials: false
+    - name: Setup Node 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Build the web app (ui)
+      shell: bash
+      working-directory: apps/web
+      run: |
+        npm ci
+        npm run build
+    - name: Bundle the core (lastaddon)
+      shell: bash
+      working-directory: services/core
+      run: |
+        npm ci
+        npm run bundle
+    # Doit rester aligne sur Node v22 LTS et son SHA-256 (voir l'en-tete de stage-deps-ci.mjs).
+    - name: Stage ui.zip, lastaddon.zip and deps.json
+      shell: bash
+      env:
+        VERSION: ${{ steps.ver.outputs.version }}
+      run: |
+        node apps/desktop/scripts/stage-deps-ci.mjs --version "$VERSION" --web-dist apps/web/dist           --core-bundle services/core/dist-bundle --node-version v22.23.4           --node-sha256 dccc52de28d8df2ee22d2062424f8c563070d95d8ad70c54c4bf01d590dec14f --out deps-staged
+    - name: Upload the staged dependencies
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: release-deps
+        path: deps-staged
+        if-no-files-found: error
+
   build:
-    needs: fetch-deps
+    needs: [fetch-deps, stage-deps]
+    # fetch-deps ou stage-deps est saute selon deps ; l'autre doit avoir reussi.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:
@@ -98,7 +176,7 @@ jobs:
       run: |
         node scripts/windows-manifest.mjs check
         cargo_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
-        if [ "$RELEASE_TAG" != "desktop-v$cargo_version" ]; then
+        if [ "$RELEASE_TAG" != "desktop-v$cargo_version" ] && [ "$RELEASE_TAG" != "v$cargo_version" ]; then
           echo "::error::Le tag $RELEASE_TAG ne correspond pas a la version $cargo_version de Cargo.toml"
           exit 1
         fi
@@ -230,7 +308,20 @@ jobs:
         node scripts/sign-update.mjs release/latest.json
         if ($LASTEXITCODE -ne 0) { throw 'Signature de latest.json echouee (secret absent ou invalide)' }
         if (-not (Test-Path -LiteralPath release/latest.json.sig)) { throw 'latest.json.sig absent apres signature' }
+    # Toujours expose : release.yml (publish=false) y prend l'installeur et le flux signe pour publier la release.
+    - name: Expose the signed assets as an artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: desktop-release
+        path: |
+          apps/desktop/release/Laststream-Setup-*.exe
+          apps/desktop/release/Laststream-Setup-*.exe.sha256
+          apps/desktop/release/latest.json
+          apps/desktop/release/latest.json.sig
+        if-no-files-found: error
     - name: Upload the assets to the release
+      # format() : inputs.publish est vide en workflow_dispatch (publication par defaut), 'false' seulement si l'appelant le demande.
+      if: ${{ format('{0}', inputs.publish) != 'false' }}
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
@@ -239,6 +330,7 @@ jobs:
         gh release upload $env:RELEASE_TAG $assets --clobber
         if ($LASTEXITCODE -ne 0) { throw "gh release upload a echoue (code $LASTEXITCODE)" }
     - name: Publish the release (draft -> public)
+      if: ${{ format('{0}', inputs.publish) != 'false' }}
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'

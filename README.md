@@ -33,3 +33,23 @@ hébergés par GitHub : web, core et edge sur `ubuntu-latest`, desktop sur `wind
 
 Préfixés par projet : `core-vX.Y.Z`, `edge-vX.Y.Z`, `desktop-vX.Y.Z`, `site-vX.Y.Z`, `protocol-vX.Y.Z`, `web-vX.Y.Z`.
 Les tags des anciens dépôts ont été renommés ainsi à l'import (ex. `v0.4.3` de lastaddon → `core-v0.4.3`).
+Les releases automatiques du produit (installeur Windows + APK Android) portent le tag non préfixé `vX.Y.Z`.
+
+### Releases automatiques
+
+Le workflow `.github/workflows/release.yml` se déclenche à chaque PR fusionnée sur `main` : bump de version (patch par défaut,
+label `release:minor` ou `release:major` sur la PR pour monter d'un cran), `CHANGELOG.md` à la racine, commit `release: vX.Y.Z`
+et tag annoté `vX.Y.Z` sur `main`, build de l'installeur Windows (`desktop-release.yml` appelé en `workflow_call`) et de l'APK
+Android, puis release GitHub publiée avec bannière, changelog et assets (installeur, `latest.json` + `.sig`, APK).
+Le label `release:skip` sur la PR désactive la release. Pas de build macOS. Relance manuelle des builds d'un tag existant :
+Actions → Release → Run workflow avec `tag` = `vX.Y.Z` (sans nouveau bump).
+
+Réglages requis sur le dépôt :
+
+- Secrets : `ANDROID_DEBUG_KEYSTORE_B64` (keystore de signature de l'APK, en base64) et `LASTSTREAM_UPDATE_SIGNING_KEY` (clé ed25519
+  de signature de `latest.json`).
+- Settings → Actions → General → Workflow permissions : « Read and write permissions ».
+- Si `main` est protégée, autoriser GitHub Actions à contourner la protection (bypass) : le workflow pousse le commit de release
+  et le tag directement.
+
+Le téléversement R2 et l'activation de l'auto-update restent manuels (`apps/desktop/scripts/upload.ps1`).

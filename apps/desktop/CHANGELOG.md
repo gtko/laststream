@@ -1,5 +1,7 @@
 # Changelog
 
+Suite : voir /CHANGELOG.md (releases automatiques vX.Y.Z).
+
 ## 1.0.32 (2026-11-07)
 
 - Interface mise à jour (laststream-app 0.1.5) : watch party corrigée (rejoindre un salon, choix de la source avant le départ, langue du salon respectée, réactions en direct).
