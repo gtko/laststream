@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "laststream-edge",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  // Identifiant de version Cloudflare exposé à l'exécution (CF_VERSION_METADATA) : sert de release aux événements Sentry.
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+  // Sentry actif si le secret SENTRY_DSN est posé (wrangler secret put SENTRY_DSN, hors de ce fichier) : remonte les appels sortants refusés par la garde et les exceptions non gérées.
+  // Application : Worker « lastaddon-core » appelé par Service Binding (toutes les routes).
+  "services": [{ "binding": "CORE", "service": "lastaddon-core" }],
+  // APK Android publiés (mise à jour en un tap) : /app/android/<fichier>.apk.
+  "r2_buckets": [{ "binding": "APP_FILES", "bucket_name": "laststream-app-files" }],
+  // LASTSTREAM_ROUTE : verrou de déploiement (scripts/deploy.mjs), non utilisé par le Worker.
+  "kv_namespaces": [
+    { "binding": "LASTSTREAM_ROUTE", "id": "7b2471b0347c4620b96b2d54a6142ed0" }
+  ]
+}

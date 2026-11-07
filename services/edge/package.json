@@ -1,0 +1,12 @@
+{
+  "name": "laststream-edge",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "Worker Cloudflare à adresse fixe qui relaie vers lastaddon-core (Service Binding)",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "deploy": "node scripts/deploy.mjs",
+    "release": "node scripts/release.mjs"
+  }
+}
