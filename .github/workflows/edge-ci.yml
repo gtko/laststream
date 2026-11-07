@@ -1,21 +1,23 @@
-name: CI
+name: Edge CI
+
+# Relais laststream-edge (services/edge).
 
 on:
   push:
-    branches: [master]
+    branches: [main]
+    paths: ['services/edge/**', '.github/workflows/edge-ci.yml']
   pull_request:
-    branches: [master]
+    branches: [main]
+    paths: ['services/edge/**', '.github/workflows/edge-ci.yml']
 
 permissions:
   contents: read
 
-# Runner Windows uniquement : pwsh charge le profil PowerShell de l'utilisateur, qui bloque quand la sortie est redirigée.
-# Retirer ce bloc si runs-on repasse sur ubuntu-latest (pas de cmd sous Linux).
 defaults:
   run:
-    shell: cmd
+    working-directory: services/edge
 
-# PR : un nouveau push annule le run en cours. master : le run en cours va au bout, seul le plus récent en attente est conservé.
+# PR : un nouveau push annule le run en cours. main : le run en cours va au bout, seul le plus récent en attente est conservé.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -23,11 +25,12 @@ concurrency:
 jobs:
   check:
     name: Tests et compilation Wrangler à blanc
-    runs-on: [self-hosted, laststream-local]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       # Node 22, comme la CI de lastaddon (le code de production tourne sur workerd).

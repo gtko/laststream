@@ -4,11 +4,11 @@
   Prepare les archives de dependances d'une version (ui.zip, lastaddon.zip, deps.json) et les depose sur la release brouillon du tag.
 
 .DESCRIPTION
-  A lancer en local par le mainteneur, depuis ce depot (checkout principal ou worktree). Les depots voisins sont lus dans
-  l'espace de travail, parent du checkout principal : ..\laststream-app et ..\lastaddon. Aucun jeton inter-depots : ni ici,
+  A lancer en local par le mainteneur, depuis le mono-repo (checkout principal ou worktree). L'interface et le serveur sont
+  lus dans le meme depot : apps\web et services\core. Aucun jeton inter-depots : ni ici,
   ni dans release.yml, qui ne lit que la release du tag.
 
-  1. Verifie que laststream-app et lastaddon sont propres, sur main, et egaux a origin/main (git fetch).
+  1. Verifie que le mono-repo est propre, sur main, et egal a origin/main (git fetch).
   2. ui.zip : npm run build dans laststream-app ; le contenu de dist\ est range sous ui\.
   3. lastaddon.zip : npm run bundle dans lastaddon (dist-bundle\lastaddon.cjs) et node.exe, ranges sous lastaddon\.
   4. deps.json : commits des deux depots, SHA-256 et taille des archives, version et SHA-256 de node.exe.
@@ -17,10 +17,10 @@
   node.exe : copie locale de dist\laststream-desktop\lastaddon\node.exe (Node.js v22.23.3 win-x64 selon deps.json).
   Aucun depot ne le fournit et son origine n'est pas tracee : le script le prend tel quel et enregistre sa version et son SHA-256.
 
-  Le tag vX.Y.Z doit deja etre pousse sur origin (--verify-tag).
+  Le tag desktop-vX.Y.Z doit deja etre pousse sur origin (--verify-tag).
 
 .PARAMETER Version
-  X.Y.Z. Doit correspondre a Cargo.toml de ce depot ; le tag est vX.Y.Z. Avec -DryRun, un ecart n'est qu'un avertissement.
+  X.Y.Z. Doit correspondre a Cargo.toml de apps\desktop ; le tag est desktop-vX.Y.Z. Avec -DryRun, un ecart n'est qu'un avertissement.
 
 .PARAMETER DryRun
   Fait tout, sauf l'appel a gh release (rien n'est envoye).
@@ -38,15 +38,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$tag = "v$Version"
+$tag = "desktop-v$Version"
 
-# Checkout principal du depot shell (un worktree pointe vers le depot principal par git-common-dir), puis espace de travail.
-$shellRoot = Split-Path -Parent (git -C $PSScriptRoot rev-parse --path-format=absolute --git-common-dir)
-$workspace = Split-Path -Parent $shellRoot
-$appDir = Join-Path $workspace 'laststream-app'
-$addonDir = Join-Path $workspace 'lastaddon'
-$nodeExe = Join-Path $workspace 'dist\laststream-desktop\lastaddon\node.exe'
-$stage = Join-Path $shellRoot "dist\stage-$tag"
+# Checkout principal du mono-repo (un worktree pointe vers le depot principal par git-common-dir).
+# dist\ : apps\dist, le dossier de sortie partage par build.ps1, setup\Laststream.iss et upload.ps1 (..\dist depuis apps\desktop).
+$repoRoot = Split-Path -Parent (git -C $PSScriptRoot rev-parse --path-format=absolute --git-common-dir)
+$desktopDir = Join-Path $repoRoot 'apps\desktop'
+$appDir = Join-Path $repoRoot 'apps\web'
+$addonDir = Join-Path $repoRoot 'services\core'
+$nodeExe = Join-Path $repoRoot 'apps\dist\laststream-desktop\lastaddon\node.exe'
+$stage = Join-Path $desktopDir "dist\stage-$tag"
 
 $cargoToml = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'Cargo.toml') -Raw
 $cargoVersion = [regex]::Match($cargoToml, '(?m)^version = "([^"]+)"').Groups[1].Value
@@ -56,12 +57,12 @@ if ($cargoVersion -ne $Version) {
     if ($DryRun) { Write-Warning $msg } else { throw $msg }
 }
 
-# 1. Depots voisins : propres, sur main, egaux a origin/main. Tous les problemes sont listes avant d'abandonner.
+# 1. Mono-repo propre, sur main, egal a origin/main. Tous les problemes sont listes avant d'abandonner.
+# Un seul depot : l'interface et le serveur viennent du meme commit (enregistre pour les deux dans deps.json).
 $problems = [System.Collections.Generic.List[string]]::new()
 $commits = [ordered]@{}
-foreach ($dir in @($appDir, $addonDir)) {
-    $name = Split-Path -Leaf $dir
-    if (-not (Test-Path -LiteralPath (Join-Path $dir '.git'))) { $problems.Add("$name : depot absent ($dir)"); continue }
+foreach ($dir in @($repoRoot)) {
+    $name = 'laststream'
     # Fichiers suivis seulement : les non suivis (.claude/, nul) ne bloquent pas.
     $dirty = @(git -C $dir status --porcelain --untracked-files=no)
     if ($dirty.Count -gt 0) { $problems.Add("$name : arbre non propre ($($dirty.Count) entree(s) : $($dirty -join ' ; '))") }
@@ -72,7 +73,8 @@ foreach ($dir in @($appDir, $addonDir)) {
     $head = git -C $dir rev-parse HEAD
     $remote = git -C $dir rev-parse origin/main
     if ($head -ne $remote) { $problems.Add("$name : HEAD $($head.Substring(0, 7)) different de origin/main $($remote.Substring(0, 7))") }
-    $commits[$name] = $head
+    $commits['laststream-app'] = $head
+    $commits['lastaddon'] = $head
 }
 if (-not (Test-Path -LiteralPath $nodeExe)) { $problems.Add("node.exe absent : $nodeExe") }
 if ($problems.Count -gt 0) {

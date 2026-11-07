@@ -70,7 +70,7 @@ describe('manifeste latest.json', () => {
 });
 
 describe('configuration Capacitor', () => {
-  const cfg = JSON.parse(readFileSync(join(__dirname, '..', 'capacitor.config.json'), 'utf8'));
+  const cfg = JSON.parse(readFileSync(join(__dirname, '..', '..', 'mobile', 'capacitor.config.json'), 'utf8'));
 
   it('charge l’interface depuis le serveur Laststream (une seule adresse, celle de PUBLIC_BASE)', () => {
     expect(cfg.server.url).toBe(PUBLIC_BASE);

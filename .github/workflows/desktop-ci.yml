@@ -1,11 +1,19 @@
-name: Continuous integration
+name: Desktop CI
+
+# Application Windows (apps/desktop, ex-laststream-shell-ng).
 
 # Deux declencheurs seulement : une pull request (toute branche) et un push sur main.
 # Un push de branche de travail sans PR ne lance rien : une seule execution par changement.
 on:
   pull_request:
+    paths: ['apps/desktop/**', '.github/workflows/desktop-ci.yml', '!apps/desktop/docs/**', '!**/*.md']
   push:
     branches: [main]
+    paths: ['apps/desktop/**', '.github/workflows/desktop-ci.yml', '!apps/desktop/docs/**', '!**/*.md']
+
+defaults:
+  run:
+    working-directory: apps/desktop
 
 # La CI ne publie rien : lecture seule sur le depot (la publication est dans release.yml).
 permissions:
@@ -33,6 +41,8 @@ jobs:
     # Runners Windows : autocrlf actif par defaut (voir le job fmt-clippy).
     - name: disable git eol translation
       run: git config --global core.autocrlf false
+      # Avant le checkout, apps/desktop n'existe pas encore : racine du workspace.
+      working-directory: .
     - name: checkout
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
@@ -52,18 +62,31 @@ jobs:
     # which causes failures for some of rustfmt's line-ending sensitive tests
     - name: disable git eol translation
       run: git config --global core.autocrlf false
+      # Avant le checkout, apps/desktop n'existe pas encore : racine du workspace.
+      working-directory: .
     - name: checkout
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         fetch-depth: 1
-        # Le jeton du workflow ne reste pas dans .git/config.
+        # Le jeton du workflow ne reste pas dans .git/config : il n'est passe qu'a l'etape LFS ci-dessous.
         persist-credentials: false
+    # build.rs extrait libmpv de l'archive versionnee (Git LFS) : seule celle de la cible est telechargee.
+    - name: Binaires (Git LFS)
+      shell: bash
+      env:
+        LFS_TOKEN: ${{ github.token }}
+      run: |
+        auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
+        echo "::add-mask::$auth"
+        GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+          git lfs pull --include="apps/desktop/libmpv-2_x64.zip"
     - name: Stable with rustfmt and clippy
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
         toolchain: stable
         target: x86_64-pc-windows-msvc
         components: rustfmt, clippy
+        cache-workspaces: apps/desktop -> target
     - name: Lint code format
       run: cargo fmt --all -- --check
     - name: Lint code
@@ -75,16 +98,30 @@ jobs:
     steps:
     - name: disable git eol translation
       run: git config --global core.autocrlf false
+      # Avant le checkout, apps/desktop n'existe pas encore : racine du workspace.
+      working-directory: .
     - name: checkout
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         fetch-depth: 1
+        # Le jeton du workflow ne reste pas dans .git/config : il n'est passe qu'a l'etape LFS ci-dessous.
         persist-credentials: false
+    # build.rs extrait libmpv (Git LFS) ; les tests lancent bin/laststream-runtime.exe (Git LFS aussi).
+    - name: Binaires (Git LFS)
+      shell: bash
+      env:
+        LFS_TOKEN: ${{ github.token }}
+      run: |
+        auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
+        echo "::add-mask::$auth"
+        GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+          git lfs pull --include="apps/desktop/libmpv-2_x64.zip,apps/desktop/bin/laststream-runtime.exe"
     - name: Stable
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
         toolchain: stable
         target: x86_64-pc-windows-msvc
+        cache-workspaces: apps/desktop -> target
     - name: Build
       run: cargo build --locked --target x86_64-pc-windows-msvc
     - name: Test
@@ -96,16 +133,30 @@ jobs:
     steps:
     - name: disable git eol translation
       run: git config --global core.autocrlf false
+      # Avant le checkout, apps/desktop n'existe pas encore : racine du workspace.
+      working-directory: .
     - name: checkout
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         fetch-depth: 1
+        # Le jeton du workflow ne reste pas dans .git/config : il n'est passe qu'a l'etape LFS ci-dessous.
         persist-credentials: false
+    # build.rs extrait libmpv de l'archive versionnee (Git LFS) : seule celle de la cible est telechargee.
+    - name: Binaires (Git LFS)
+      shell: bash
+      env:
+        LFS_TOKEN: ${{ github.token }}
+      run: |
+        auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
+        echo "::add-mask::$auth"
+        GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+          git lfs pull --include="apps/desktop/libmpv-2_arm64.zip"
     - name: Stable
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
         toolchain: stable
         target: aarch64-pc-windows-msvc
+        cache-workspaces: apps/desktop -> target
     # pwsh et non bash : Git Bash met /usr/bin/link devant le link.exe MSVC et casse l'edition de liens ARM64.
     - name: ARM64 build (release, no tests)
       shell: pwsh
@@ -119,6 +170,8 @@ jobs:
     steps:
     - name: disable git eol translation
       run: git config --global core.autocrlf false
+      # Avant le checkout, apps/desktop n'existe pas encore : racine du workspace.
+      working-directory: .
     - name: checkout
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:

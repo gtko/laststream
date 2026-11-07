@@ -1,5 +1,6 @@
-// Garde de déploiement et verrou entre sessions (LAST-150). Copie identique dans lastaddon et laststream-edge :
-// toute modification se reporte dans les deux dépôts (scripts/lib/deploy-guard.mjs).
+// Garde de déploiement et verrou entre sessions (LAST-150). Copie identique dans services/core et services/edge :
+// toute modification se reporte dans les deux (scripts/lib/deploy-guard.mjs).
+// Mono-repo : chaque service a ses tags préfixés (« core-v0.4.3 », « edge-v0.1.1 ») ; `tagPrefix` vaut '' hors mono-repo.
 // Les fonctions reçoivent leurs dépendances (git, KV, horloge) : aucun appel réel dans les tests.
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -11,38 +12,43 @@ export const TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
 /** Durée de vie du verrou : un déploiement dure quelques minutes, 15 min couvrent le pire cas. */
 export const LOCK_TTL_SECONDS = 900;
 
-/** Étiquette de release « vX.Y.Z » (rien d'autre : ni préfixe, ni suffixe de pré-version). */
-export function parseReleaseTag(text) {
-  const match = TAG_PATTERN.exec(String(text ?? '').trim());
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Étiquette de release « <prefix>vX.Y.Z » (rien d'autre : ni autre préfixe, ni suffixe de pré-version). */
+export function parseReleaseTag(text, prefix = '') {
+  const pattern = prefix === '' ? TAG_PATTERN : new RegExp(`^${escapeRegExp(prefix)}v(\\d+)\\.(\\d+)\\.(\\d+)$`);
+  const match = pattern.exec(String(text ?? '').trim());
   if (match === null) return null;
   return { tag: match[0], major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
 }
 
-/** Argument de `npm run release -- <x.y.z>` (le « v » est accepté) → étiquette « vX.Y.Z », ou null. */
-export function parseVersionArg(text) {
-  const raw = String(text ?? '').trim();
-  return parseReleaseTag(raw.startsWith('v') ? raw : `v${raw}`)?.tag ?? null;
+/** Argument de `npm run release -- <x.y.z>` (le « v » et le préfixe sont acceptés) → étiquette « <prefix>vX.Y.Z », ou null. */
+export function parseVersionArg(text, prefix = '') {
+  let raw = String(text ?? '').trim();
+  if (prefix !== '' && raw.startsWith(prefix)) raw = raw.slice(prefix.length);
+  return parseReleaseTag(`${prefix}${raw.startsWith('v') ? raw : `v${raw}`}`, prefix)?.tag ?? null;
 }
 
-/** Comparaison semver de deux étiquettes « vX.Y.Z » : négatif si a < b. */
-export function compareTags(a, b) {
-  const left = parseReleaseTag(a);
-  const right = parseReleaseTag(b);
+/** Comparaison semver de deux étiquettes « <prefix>vX.Y.Z » : négatif si a < b. */
+export function compareTags(a, b, prefix = '') {
+  const left = parseReleaseTag(a, prefix);
+  const right = parseReleaseTag(b, prefix);
   if (left === null || right === null) throw new Error(`Étiquette invalide : ${left === null ? a : b}`);
   return left.major - right.major || left.minor - right.minor || left.patch - right.patch;
 }
 
-/** La plus haute étiquette « vX.Y.Z » d'une liste, ou undefined. */
-export function latestTag(tags) {
-  return tags.filter((tag) => parseReleaseTag(tag) !== null).sort(compareTags).at(-1);
+/** La plus haute étiquette « <prefix>vX.Y.Z » d'une liste, ou undefined. */
+export function latestTag(tags, prefix = '') {
+  return tags.filter((tag) => parseReleaseTag(tag, prefix) !== null).sort((a, b) => compareTags(a, b, prefix)).at(-1);
 }
 
 /**
  * Décision de refus à partir de l'état git. Renvoie la liste des raisons de refus (vide : on peut déployer).
  * state : { dirty: string[], branch, head, upstream, tag, tagOnRemote, errors: string[] }
- * rules : { branch, requireTag }
+ * rules : { branch, requireTag, tagPrefix? }
  */
 export function evaluateGuard(state, rules) {
+  const prefix = rules.tagPrefix ?? '';
   const problems = [...(state.errors ?? [])];
   if (state.dirty.length > 0) {
     problems.push(`arbre suivi sale (${state.dirty.length} fichier(s) modifié(s) : ${state.dirty.slice(0, 5).join(', ')}${state.dirty.length > 5 ? ', …' : ''})`);
@@ -56,8 +62,8 @@ export function evaluateGuard(state, rules) {
     problems.push(`HEAD (${state.head.slice(0, 7)}) différent de origin/${rules.branch} (${state.upstream.slice(0, 7)}) : mettre à jour ou pousser`);
   }
   if (rules.requireTag) {
-    if (state.tag === undefined || parseReleaseTag(state.tag) === null) {
-      problems.push(state.tag === undefined ? 'HEAD n\'est pas exactement une étiquette vX.Y.Z (créer la release : npm run release -- <x.y.z>)' : `l'étiquette « ${state.tag} » n'a pas la forme vX.Y.Z`);
+    if (state.tag === undefined || parseReleaseTag(state.tag, prefix) === null) {
+      problems.push(state.tag === undefined ? `HEAD n'est pas exactement une étiquette ${prefix}vX.Y.Z (créer la release : npm run release -- <x.y.z>)` : `l'étiquette « ${state.tag} » n'a pas la forme ${prefix}vX.Y.Z`);
     } else if (state.tagOnRemote === false) {
       problems.push(`l'étiquette ${state.tag} n'existe pas sur origin (la pousser)`);
     }
@@ -69,7 +75,7 @@ export function evaluateGuard(state, rules) {
  * Lit l'état git d'un dépôt. run(args, cwd) → { status, stdout, stderr } : `git` réel en production, simulé en test.
  * `git fetch` d'abord : sans lui, la comparaison avec origin serait faite sur une copie périmée.
  */
-export function collectGitState(run, cwd, { branch, requireTag }) {
+export function collectGitState(run, cwd, { branch, requireTag, tagPrefix = '' }) {
   const errors = [];
   const git = (...args) => run(args, cwd);
   const text = (result) => (result.status === 0 ? result.stdout.trim() : undefined);
@@ -90,7 +96,11 @@ export function collectGitState(run, cwd, { branch, requireTag }) {
   let tag;
   let tagOnRemote;
   if (requireTag) {
-    tag = text(git('describe', '--exact-match', '--tags', 'HEAD'));
+    // Mono-repo : plusieurs services peuvent étiqueter le même commit (core-v…, edge-v…) ; `describe` en choisirait un au
+    // hasard. On retient la plus haute étiquette de ce service parmi celles posées sur HEAD.
+    tag = tagPrefix === ''
+      ? text(git('describe', '--exact-match', '--tags', 'HEAD'))
+      : latestTag((text(git('tag', '--points-at', 'HEAD')) ?? '').split('\n').map((line) => line.trim()), tagPrefix);
     if (tag !== undefined) {
       const remote = git('ls-remote', '--tags', 'origin', `refs/tags/${tag}`);
       tagOnRemote = remote.status === 0 ? remote.stdout.trim() !== '' : undefined;
@@ -224,13 +234,13 @@ export function wranglerKv({ binding, run, tempFile }) {
 }
 
 /**
- * Déroulé commun d'un déploiement. cfg : { name, branch, lockKey }.
+ * Déroulé commun d'un déploiement. cfg : { name, branch, lockKey, tagPrefix? }.
  * deps : { git(args, cwd), cwd, kv, uiRepo? (dossier du dépôt de l'interface), deploy({ tag, sha, uiSha }) → code, log, error, now, proc, owner }.
  * Renvoie le code de sortie (0 : déployé, ou vérifications réussies en --dry-run).
  */
 export async function runDeploy(cfg, options, deps) {
   const { log, error } = deps;
-  const rules = { branch: cfg.branch, requireTag: true };
+  const rules = { branch: cfg.branch, requireTag: true, tagPrefix: cfg.tagPrefix ?? '' };
   const state = collectGitState(deps.git, deps.cwd, rules);
   const problems = evaluateGuard(state, rules).map((problem) => `${cfg.name} : ${problem}`);
 
@@ -282,8 +292,8 @@ export function releaseNotes({ tag, previous, subjects }) {
  * Création d'une release. Renvoie { problems, notes, tag, previous }. Ne touche à rien (le script exécute ensuite).
  * run(args, cwd) comme collectGitState.
  */
-export function planRelease(run, cwd, { branch, versionArg }) {
-  const tag = parseVersionArg(versionArg);
+export function planRelease(run, cwd, { branch, versionArg, tagPrefix = '', paths = [] }) {
+  const tag = parseVersionArg(versionArg, tagPrefix);
   const problems = [];
   if (tag === null) problems.push(`version « ${versionArg ?? ''} » invalide (attendu x.y.z)`);
   const rules = { branch, requireTag: false };
@@ -291,19 +301,20 @@ export function planRelease(run, cwd, { branch, versionArg }) {
   problems.push(...evaluateGuard(state, rules));
   if (tag === null) return { problems };
 
-  const tagsResult = run(['tag', '--list', 'v*'], cwd);
+  const tagsResult = run(['tag', '--list', `${tagPrefix}v*`], cwd);
   const tags = tagsResult.status === 0 ? tagsResult.stdout.split('\n').map((line) => line.trim()).filter((line) => line !== '') : [];
   if (tagsResult.status !== 0) problems.push('git tag --list a échoué');
   if (tags.includes(tag)) problems.push(`l'étiquette ${tag} existe déjà`);
-  const previous = latestTag(tags);
-  if (previous !== undefined && !tags.includes(tag) && compareTags(tag, previous) <= 0) {
+  const previous = latestTag(tags, tagPrefix);
+  if (previous !== undefined && !tags.includes(tag) && compareTags(tag, previous, tagPrefix) <= 0) {
     problems.push(`${tag} n'est pas supérieure à la dernière étiquette ${previous}`);
   }
   const remote = run(['ls-remote', '--tags', 'origin', `refs/tags/${tag}`], cwd);
   if (remote.status === 0 && remote.stdout.trim() !== '') problems.push(`l'étiquette ${tag} existe déjà sur origin`);
 
   const range = previous === undefined ? ['HEAD'] : [`${previous}..HEAD`];
-  const log = run(['log', '--no-merges', '--pretty=format:%s', ...range], cwd);
+  // Mono-repo : notes limitées aux dossiers du service (paths), pas aux commits des autres applications.
+  const log = run(['log', '--no-merges', '--pretty=format:%s', ...range, ...(paths.length > 0 ? ['--', ...paths] : [])], cwd);
   if (log.status !== 0) problems.push('git log a échoué');
   const subjects = log.status === 0 ? log.stdout.split('\n') : [];
   return { problems, tag, previous, sha: state.head, notes: releaseNotes({ tag, previous, subjects }) };

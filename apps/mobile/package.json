@@ -1,0 +1,20 @@
+{
+  "name": "laststream-mobile",
+  "private": true,
+  "description": "Application Android Laststream (Capacitor) : interface chargée depuis app.laststream.app, build web local (../web/dist) pour la page hors ligne.",
+  "scripts": {
+    "sync": "cap sync android",
+    "open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "7.6.9",
+    "@capacitor/app": "7.1.2",
+    "@capacitor/core": "7.6.9"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.6.9"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

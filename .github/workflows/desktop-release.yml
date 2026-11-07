@@ -1,9 +1,9 @@
-name: Release
+name: Desktop release
 
-# Publication d'une version Windows, lancee a la main (workflow_dispatch, avec un tag deja pousse, ex. v1.0.25).
+# Publication d'une version Windows (apps/desktop), lancee a la main (workflow_dispatch, avec un tag deja pousse, ex. desktop-v1.0.25).
 # Un push de tag ne la lance pas : elle ne part qu'apres le staging des dependances.
-# Les archives des depots voisins (ui.zip, lastaddon.zip, deps.json) sont preparees en local par
-# scripts/stage-release-deps.ps1 et posees sur la release brouillon du tag. Ce workflow ne lit aucun autre depot,
+# Les archives de l'interface et du serveur (ui.zip, lastaddon.zip, deps.json) sont preparees en local par
+# apps/desktop/scripts/stage-release-deps.ps1 et posees sur la release brouillon du tag. Ce workflow ne lit aucun autre depot,
 # n'a aucun jeton inter-depots et ne telecharge que les trois fichiers de la release.
 # Produit l'installeur, son SHA-256, le flux latest.json signe (ed25519) et publie la release.
 # Le televersement R2 reste manuel (upload.ps1) : aucun jeton Cloudflare dans ce workflow.
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag deja pousse a publier, format vX.Y.Z (ex. v1.0.25)'
+        description: 'Tag deja pousse a publier, format desktop-vX.Y.Z (ex. desktop-v1.0.25)'
         required: true
         type: string
 
@@ -41,7 +41,7 @@ jobs:
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
-        if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+\z') { throw "Tag invalide '$env:RELEASE_TAG' : format vX.Y.Z attendu (ex. v1.0.25)." }
+        if ($env:RELEASE_TAG -notmatch '^desktop-v[0-9]+\.[0-9]+\.[0-9]+\z') { throw "Tag invalide '$env:RELEASE_TAG' : format desktop-vX.Y.Z attendu (ex. desktop-v1.0.25)." }
     - name: Download the staged dependencies from the release
       shell: pwsh
       run: |
@@ -50,7 +50,7 @@ jobs:
         gh release download $env:RELEASE_TAG --dir deps --pattern ui.zip --pattern lastaddon.zip --pattern deps.json
         foreach ($f in 'ui.zip', 'lastaddon.zip', 'deps.json') {
           if (-not (Test-Path -LiteralPath (Join-Path deps $f))) {
-            throw "Archive $f absente de la release $env:RELEASE_TAG : lancer scripts/stage-release-deps.ps1 -Version <X.Y.Z> d'abord."
+            throw "Archive $f absente de la release $env:RELEASE_TAG : lancer apps/desktop/scripts/stage-release-deps.ps1 -Version <X.Y.Z> d'abord."
           }
         }
     - name: Check the staged files against deps.json
@@ -75,23 +75,30 @@ jobs:
     needs: fetch-deps
     runs-on: windows-latest
     timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/desktop
     env:
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
     # The Windows runners have autocrlf enabled by default (voir test.yml)
     - name: disable git eol translation
       run: git config --global core.autocrlf false
+      # Avant le checkout, apps/desktop n'existe pas encore : racine du workspace.
+      working-directory: .
     - name: checkout
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         ref: ${{ format('refs/tags/{0}', inputs.tag) }}
         persist-credentials: false
+        # Binaires du bundle (bin/, server.js, archives libmpv) : Git LFS.
+        lfs: true
     - name: Check the tag matches the versions (Cargo.toml, Cargo.lock, Laststream.iss)
       shell: bash
       run: |
         node scripts/windows-manifest.mjs check
         cargo_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
-        if [ "$RELEASE_TAG" != "v$cargo_version" ]; then
+        if [ "$RELEASE_TAG" != "desktop-v$cargo_version" ]; then
           echo "::error::Le tag $RELEASE_TAG ne correspond pas a la version $cargo_version de Cargo.toml"
           exit 1
         fi
@@ -99,7 +106,7 @@ jobs:
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: release-deps
-        path: deps
+        path: apps/desktop/deps
     - name: Stable toolchain
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
@@ -163,19 +170,22 @@ jobs:
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: installer
-        path: dist/installer/Laststream-Setup-*.exe
+        path: apps/desktop/dist/installer/Laststream-Setup-*.exe
         if-no-files-found: error
     - name: Upload the ARM64 binary (not published)
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: arm64-binary
-        path: target/aarch64-pc-windows-msvc/release/laststream-shell-ng.exe
+        path: apps/desktop/target/aarch64-pc-windows-msvc/release/laststream-shell-ng.exe
         if-no-files-found: error
 
   publish:
     needs: build
     runs-on: windows-latest
     timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/desktop
     permissions:
       contents: write
     env:
@@ -185,6 +195,8 @@ jobs:
     steps:
     - name: disable git eol translation
       run: git config --global core.autocrlf false
+      # Avant le checkout, apps/desktop n'existe pas encore : racine du workspace.
+      working-directory: .
     - name: checkout
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
@@ -194,7 +206,7 @@ jobs:
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: installer
-        path: release
+        path: apps/desktop/release
     - name: SHA-256, checksum file and latest.json
       shell: pwsh
       run: |

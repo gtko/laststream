@@ -4,7 +4,7 @@
  *   node scripts/publish-android.mjs [--apk <fichier.apk>] [--meta <output-metadata.json>] [--notes "texte"]
  *                                    [--base-url <https://…/app/android>] [--out <dossier>] [--stage <dossier>]
  *
- * - lit versionCode / versionName dans output-metadata.json (écrit par Gradle à côté de l'APK) ;
+ * - lit versionCode / versionName dans output-metadata.json (écrit par Gradle à côté de l'APK, dans apps/mobile/android) ;
  * - calcule le SHA-256 et la taille de l'APK ;
  * - écrit <out>/latest.json  (par défaut public/app/android/ : servi par le Worker au prochain déploiement) ;
  * - copie l'APK sous <stage>/laststream-<versionCode>.apk (par défaut ../dist/laststream-android/publish/).
@@ -69,7 +69,7 @@ export function buildManifest({ versionCode, versionName, sha256, size, baseUrl 
 
 export async function publish(opts = {}) {
   const apk = resolve(opts.apk || join(root, '..', 'dist', 'laststream-android', 'laststream-release.apk'));
-  const meta = resolve(opts.meta || join(root, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'output-metadata.json'));
+  const meta = resolve(opts.meta || join(root, '..', 'mobile', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'output-metadata.json'));
   const out = resolve(opts.out || join(root, 'public', 'app', 'android'));
   const stage = resolve(opts.stage || join(root, '..', 'dist', 'laststream-android', 'publish'));
   if (!existsSync(apk)) throw new Error(`APK introuvable : ${apk}`);

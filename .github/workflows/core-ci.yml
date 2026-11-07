@@ -1,49 +1,47 @@
-name: CI
+name: Core CI
+
+# Serveur lastaddon-core (services/core). Se declenche aussi quand le protocole partage (packages/protocol) change.
 
 on:
   push:
     branches: [main]
-    paths-ignore: ['docs/**', '**/*.md']
+    paths: ['services/core/**', 'packages/protocol/**', '.github/workflows/core-ci.yml', '!services/core/docs/**', '!**/*.md']
   pull_request:
     branches: [main]
-    paths-ignore: ['docs/**', '**/*.md']
+    paths: ['services/core/**', 'packages/protocol/**', '.github/workflows/core-ci.yml', '!services/core/docs/**', '!**/*.md']
 
 permissions:
   contents: read
 
-# Runner Windows uniquement : pwsh charge le profil PowerShell de l'utilisateur, qui bloque quand la sortie est redirigée.
-# Retirer ce bloc si runs-on repasse sur ubuntu-latest (pas de cmd sous Linux).
 defaults:
   run:
-    shell: cmd
+    working-directory: services/core
 
 # PR : un nouveau push annule le run en cours. main : le run en cours va au bout, seul le plus récent en attente est conservé.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Runner persistant : node_modules est conservé entre les runs. git clean l'épargne, ci-install.mjs ne relance npm ci que
-# si package.json, package-lock.json ou la plateforme changent. Typecheck et lint sont incrémentaux (caches dans node_modules).
+# Runners hébergés par GitHub (ubuntu-latest) : machine neuve à chaque job, cache npm de setup-node.
 # PR : seuls les tests des fichiers modifiés depuis origin/main (--changed). Push sur main : suites complètes.
 jobs:
   test:
     name: Typecheck, lint, knip, tests Node
-    runs-on: [self-hosted, laststream-local]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
-          clean: false
           fetch-depth: 0
           persist-credentials: false
-
-      - run: git clean -ffdx -e node_modules
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: services/core/package-lock.json
 
-      - run: node scripts/ci-install.mjs
+      - run: npm ci
 
       - run: npm run typecheck
 
@@ -61,22 +59,21 @@ jobs:
 
   workers:
     name: Tests Workers
-    runs-on: [self-hosted, laststream-local]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
-          clean: false
           fetch-depth: 0
           persist-credentials: false
-
-      - run: git clean -ffdx -e node_modules
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: services/core/package-lock.json
 
-      - run: node scripts/ci-install.mjs
+      - run: npm ci
 
       - name: Tests Workers des fichiers modifiés (PR)
         if: github.event_name == 'pull_request'
