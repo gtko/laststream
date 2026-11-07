@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5 (2026-11-07)
+
+Watch party (LAST-1615)
+
+- « Rejoindre le salon » ne reste plus bloqué sur « Connexion au salon… » quand aucune lecture n’a eu lieu avant.
+- Salon d’attente : section « Ma source », pour voir les sources (langue, qualité) et en choisir une avant le départ. La source de l’hôte y est repérée et la source choisie est celle lancée.
+- La lecture suit la langue du salon et prévient quand elle doit lire dans une autre langue.
+- Réactions du lecteur envoyées par le salon, en direct, à tous les participants.
+- Départ : un hôte lent ne ramène plus tout le monde en arrière, et chacun retient le salon le temps de charger sa source.
+
 ## 0.1.4 (2026-11-04)
 
 - Android : publication de l'APK 2026.11.02.1 (versionCode 2026110201) : « Suivant » et « Continuer » ferment le lecteur et chargent l'épisode suivant.
