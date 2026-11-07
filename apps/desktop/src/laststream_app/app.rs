@@ -1,0 +1,1179 @@
+use native_windows_derive::NwgUi;
+use native_windows_gui as nwg;
+use serde_json;
+use std::{
+    cell::RefCell,
+    io::Read,
+    os::windows::process::CommandExt,
+    path::Path,
+    process::{self, Command},
+    str,
+    sync::{atomic::Ordering, Arc, Mutex},
+    thread, time,
+};
+use url::Url;
+use winapi::{
+    shared::windef::RECT,
+    um::{
+        winbase::CREATE_BREAKAWAY_FROM_JOB,
+        winuser::{
+            GetWindowLongA, ReleaseCapture, SendMessageW, SetWindowPos, GWL_STYLE, HTCAPTION,
+            SWP_NOACTIVATE, SWP_NOZORDER, WM_DPICHANGED, WM_NCLBUTTONDOWN, WS_CAPTION,
+            WS_EX_TOPMOST,
+        },
+    },
+};
+
+use crate::laststream_app::{
+    constants::{safe_url, APP_NAME, UPDATE_INTERVAL, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH},
+    downloads,
+    ipc::{check_command, CacheDirectoryRequest, RPCRequest, RPCResponse},
+    lastaddon::{AddonEvent, LastAddon},
+    laststream_player::Player,
+    laststream_webview::WebView,
+    robust::{self, SERVICES},
+    shell_config,
+    splash::SplashImage,
+    systray::SystemTray,
+    updater,
+    window_helper::{WindowStyle, PIP_ACTIVE},
+    window_settings::WindowSettings,
+    PipeClient, PipeServer,
+};
+
+use super::laststream_server::{LaststreamServer, ServerEvent};
+
+/// Temps total laissé aux fils de service pour s'arrêter à la fermeture.
+const SHUTDOWN_TIMEOUT: time::Duration = time::Duration::from_secs(3);
+
+/// Window operation asked by the Web UI and run on the UI thread.
+pub enum WindowRequest {
+    Pip(bool),
+    Drag,
+}
+
+pub enum OpenRequest {
+    Input(String),
+    Ready,
+    Reset,
+}
+
+#[derive(Default, NwgUi)]
+pub struct MainWindow {
+    pub command: String,
+    pub commands_path: Option<String>,
+    /// `None` loads the Laststream app served by the local service.
+    pub webui_url: Option<String>,
+    pub no_splash: bool,
+    pub dev_tools: bool,
+    pub start_hidden: bool,
+    pub autoupdater_endpoint: Option<Url>,
+    pub force_update: bool,
+    pub autoupdater_setup_file: Arc<Mutex<Option<updater::Update>>>,
+    pub requested_fullscreen: Arc<Mutex<Option<bool>>>,
+    pub requested_window_op: Arc<Mutex<Option<WindowRequest>>>,
+    pub requested_cache_directory: Arc<Mutex<Option<CacheDirectoryRequest>>>,
+    /// Une demande de sélecteur de dossier des téléchargements est en attente (ODY-201).
+    pub requested_download_folder: Arc<Mutex<bool>>,
+    pub requested_interface_scale: Arc<Mutex<Option<u64>>>,
+    pub saved_window_style: RefCell<WindowStyle>,
+    pub open_media_sender: RefCell<Option<flume::Sender<OpenRequest>>>,
+    pub local_server_url: Arc<Mutex<Option<String>>>,
+    #[nwg_resource]
+    pub embed: nwg::EmbedResource,
+    #[nwg_resource(source_embed: Some(&data.embed), source_embed_str: Some("MAINICON"))]
+    pub window_icon: nwg::Icon,
+    #[nwg_resource(title: "Choose cache folder", action: nwg::FileDialogAction::OpenDirectory)]
+    pub cache_directory_picker: nwg::FileDialog,
+    #[nwg_resource(title: "Choose downloads folder", action: nwg::FileDialogAction::OpenDirectory)]
+    pub download_folder_picker: nwg::FileDialog,
+    #[nwg_control(icon: Some(&data.window_icon), title: APP_NAME, flags: "MAIN_WINDOW")]
+    #[nwg_events(
+        OnWindowClose: [Self::on_quit(SELF, EVT_DATA)],
+        OnInit: [Self::on_init],
+        OnPaint: [Self::on_paint],
+        OnMinMaxInfo: [Self::on_min_max(SELF, EVT_DATA)],
+        OnWindowMinimize: [Self::transmit_window_state_change],
+        OnWindowMaximize: [Self::on_window_state_changed],
+        OnWindowFocus: [Self::transmit_window_state_change],
+        OnResizeEnd: [Self::save_window_settings],
+    )]
+    pub window: nwg::Window,
+    #[nwg_partial(parent: window)]
+    #[nwg_events(
+        (tray, MousePressLeftUp): [Self::on_show],
+        (tray_exit, OnMenuItemSelected): [Self::on_exit],
+        (tray_show_hide, OnMenuItemSelected): [Self::on_show_hide],
+        (tray_topmost, OnMenuItemSelected): [Self::on_toggle_topmost],
+    )]
+    pub tray: SystemTray,
+    #[nwg_partial(parent: window)]
+    pub splash_screen: SplashImage,
+    #[nwg_partial(parent: window)]
+    #[nwg_events((notice, OnNotice): [Self::on_server_notice])]
+    pub server: LaststreamServer,
+    #[nwg_partial(parent: window)]
+    #[nwg_events((notice, OnNotice): [Self::on_addon_notice])]
+    pub addon: LastAddon,
+    #[nwg_partial(parent: window)]
+    pub player: Player,
+    #[nwg_partial(parent: window)]
+    pub webview: WebView,
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_toggle_fullscreen_notice] )]
+    pub toggle_fullscreen_notice: nwg::Notice,
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_window_op_notice] )]
+    pub window_op_notice: nwg::Notice,
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_set_interface_scale_notice] )]
+    pub set_interface_scale_notice: nwg::Notice,
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_exit] )]
+    pub quit_notice: nwg::Notice,
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_hide_splash_notice] )]
+    pub hide_splash_notice: nwg::Notice,
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_focus_notice] )]
+    pub focus_notice: nwg::Notice,
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_cache_directory_notice])]
+    pub cache_directory_notice: nwg::Notice,
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_download_folder_notice])]
+    pub download_folder_notice: nwg::Notice,
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_remote_probe_notice])]
+    pub remote_probe_notice: nwg::Notice,
+    /// Budget de relance de mpv épuisé : le lecteur ne reviendra pas (LAST-172).
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_player_lost_notice])]
+    pub player_lost_notice: nwg::Notice,
+    /// Moteur libVLC : création/affichage de la surface vidéo sur le fil de l'interface (LAST-504).
+    #[nwg_control]
+    #[nwg_events(OnNotice: [Self::on_player_engine_notice])]
+    pub player_engine_notice: nwg::Notice,
+    /// Result of the last probe of the remote service (`None` while it runs); the error holds the cause.
+    pub remote_probe_result: Arc<Mutex<Option<Result<(), String>>>>,
+    /// Page of the remote service to load, from `shell.json` (`None`: local service or explicit URL).
+    pub remote_url: RefCell<Option<String>>,
+}
+
+impl MainWindow {
+    fn transmit_pip_change(&self) {
+        if let (Ok(web_channel), Ok(style)) = (
+            self.webview.channel.try_borrow(),
+            self.saved_window_style.try_borrow(),
+        ) {
+            if let Some((web_tx, _)) = web_channel.as_ref() {
+                web_tx.send(RPCResponse::pip_change(style.pip)).ok();
+            }
+        }
+    }
+    fn transmit_window_visibility_change(&self) {
+        if let (Ok(web_channel), Ok(style)) = (
+            self.webview.channel.try_borrow(),
+            self.saved_window_style.try_borrow(),
+        ) {
+            let Some((web_tx, _)) = web_channel.as_ref() else {
+                eprintln!("Cannot obtain communication channel for the Web UI");
+                return;
+            };
+            let web_tx_app = web_tx.clone();
+            web_tx_app
+                .send(RPCResponse::visibility_change(
+                    self.window.visible(),
+                    style.full_screen as u32,
+                    style.full_screen,
+                ))
+                .ok();
+        } else {
+            eprintln!("Cannot obtain communication channel or window style");
+        }
+    }
+    fn transmit_window_state_change(&self) {
+        if let (Some(hwnd), Ok(web_channel), Ok(style)) = (
+            self.window.handle.hwnd(),
+            self.webview.channel.try_borrow(),
+            self.saved_window_style.try_borrow(),
+        ) {
+            let state = style.clone().get_window_state(hwnd);
+            drop(style);
+            let Some((web_tx, _)) = web_channel.as_ref() else {
+                eprintln!("Cannot obtain communication channel for the Web UI");
+                return;
+            };
+            let web_tx_app = web_tx.clone();
+            web_tx_app.send(RPCResponse::state_change(state)).ok();
+        } else {
+            eprintln!("Cannot obtain window handle or communication channel");
+        }
+    }
+    fn on_init(&self) {
+        self.webview.dev_tools.set(self.dev_tools).ok();
+        if let Some(hwnd) = self.window.handle.hwnd() {
+            if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
+                saved_style.set_title_bar_color(hwnd);
+                nwg::bind_raw_event_handler(&self.window.handle, 0x10001, |hwnd, msg, _w, l| {
+                    if msg != WM_DPICHANGED
+                        || unsafe { GetWindowLongA(hwnd, GWL_STYLE) } as u32 & WS_CAPTION == 0
+                    {
+                        return None;
+                    }
+                    let rect = unsafe { &*(l as *const RECT) };
+                    unsafe {
+                        SetWindowPos(
+                            hwnd,
+                            std::ptr::null_mut(),
+                            rect.left,
+                            rect.top,
+                            rect.right - rect.left,
+                            rect.bottom - rect.top,
+                            SWP_NOZORDER | SWP_NOACTIVATE,
+                        );
+                    }
+                    Some(0)
+                })
+                .ok();
+                if let Some(window_settings) = WindowSettings::load() {
+                    saved_style
+                        .restore_window_placement(hwnd, window_settings.to_window_placement());
+                } else {
+                    saved_style.center_window(hwnd, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+                }
+            }
+        }
+
+        self.window.set_visible(!self.start_hidden);
+        self.tray.tray_show_hide.set_checked(!self.start_hidden);
+        if self.no_splash {
+            self.splash_screen.hide();
+        }
+
+        let player_channel = self.player.channel.borrow();
+        let Some((player_tx, player_rx)) = player_channel.as_ref() else {
+            robust::report_error("on_init", &"canal du lecteur indisponible");
+            return;
+        };
+        let player_tx = player_tx.clone();
+        let player_rx = player_rx.clone();
+        let player_engine = self.player.engine.clone();
+        player_engine.set_notifier(self.player_engine_notice.sender());
+        // Le lecteur signale l'épuisement de son budget de relance : l'interface l'annonce (LAST-172).
+        if let Some(lost_receiver) = self.player.lost.clone() {
+            let lost_sender = self.player_lost_notice.sender();
+            SERVICES.spawn("player-lost", move || {
+                while SERVICES.recv(&lost_receiver).is_some() {
+                    lost_sender.notice();
+                }
+            });
+        }
+
+        let web_channel = self.webview.channel.borrow();
+        let Some((web_tx, web_rx)) = web_channel.as_ref() else {
+            robust::report_error("on_init", &"canal de l'interface web indisponible");
+            return;
+        };
+        let web_tx_player = web_tx.clone();
+        let web_tx_web = web_tx.clone();
+        let web_tx_open = web_tx.clone();
+        let web_tx_upd = web_tx.clone();
+        let web_rx = web_rx.clone();
+
+        let (updater_tx, updater_rx) = flume::unbounded::<String>();
+        let updater_tx_web = updater_tx.clone();
+
+        let (open_sender, open_receiver) = flume::unbounded();
+        let open_sender_web = open_sender.clone();
+        *self.open_media_sender.borrow_mut() = Some(open_sender.clone());
+        let command = self.command.clone();
+        SERVICES.spawn("open-media", move || {
+            let mut ready = false;
+            let mut pending = (!command.is_empty()).then_some(command);
+            while let Some(request) = SERVICES.recv(&open_receiver) {
+                match request {
+                    OpenRequest::Input(input) => pending = Some(input),
+                    OpenRequest::Ready => ready = true,
+                    OpenRequest::Reset => ready = false,
+                }
+                if ready {
+                    if let Some(input) = pending.take() {
+                        let message = super::open_media::message(&input);
+                        web_tx_open
+                            .send(RPCResponse::response_message(Some(message)))
+                            .ok();
+                    }
+                }
+            }
+        });
+
+        // Single application IPC
+        let socket_path = self.commands_path.as_deref().map(Path::new);
+        if socket_path.is_none() {
+            robust::report_error("on_init", &"chemin du canal d'instance unique absent");
+        }
+
+        // Auto-update runs on the default feed unless disabled (--no-autoupdater); the endpoint is None then.
+        let updater_enabled = self.autoupdater_endpoint.is_some();
+        let autoupdater_endpoint = self.autoupdater_endpoint.clone();
+        let force_update = self.force_update;
+        let autoupdater_setup_file = self.autoupdater_setup_file.clone();
+
+        if let Some(updater_endpoint) = autoupdater_endpoint {
+            SERVICES.spawn("autoupdater", move || {
+                let mut check_requested = false;
+                while let Some(msg) = SERVICES.recv(&updater_rx) {
+                    if msg == "check_for_update" {
+                        check_requested = true;
+                        break;
+                    }
+                }
+                if !check_requested {
+                    return;
+                }
+
+                let mut ready_version = None;
+                loop {
+                    let current_version = match env!("CARGO_PKG_VERSION").parse() {
+                        Ok(version) => version,
+                        Err(error) => {
+                            robust::report_error("autoupdater: version du shell illisible", &error);
+                            return;
+                        }
+                    };
+
+                    let mut updater =
+                        updater::Updater::new(current_version, &updater_endpoint, force_update);
+                    updater.ready_version = ready_version.clone();
+                    match updater.autoupdate() {
+                        Ok(Some(update)) => {
+                            println!("New version ready to install v{}", update.version);
+                            ready_version = Some(update.version.clone());
+                            let mut autoupdater_setup_file =
+                                robust::lock(&autoupdater_setup_file, "installeur prêt");
+                            *autoupdater_setup_file = Some(update.clone());
+                            web_tx_upd.send(RPCResponse::update_available()).ok();
+                        }
+                        Ok(None) => println!("No new updates found"),
+                        Err(e) => eprintln!("Failed to fetch updates: {e}"),
+                    }
+
+                    if !SERVICES.sleep(time::Duration::from_secs(UPDATE_INTERVAL)) {
+                        return;
+                    }
+                }
+            }); // thread
+        }
+
+        if let Some(Ok(mut listener)) = socket_path.map(PipeServer::bind) {
+            let focus_sender = self.focus_notice.sender();
+            SERVICES.spawn("single-instance-pipe", move || {
+                // `accept` bloque : `on_exit` se connecte au canal pour le réveiller à la fermeture.
+                while !SERVICES.is_shutdown() {
+                    match listener.accept() {
+                        Ok(mut stream) => {
+                            if SERVICES.is_shutdown() {
+                                break;
+                            }
+                            let mut buf = vec![];
+                            stream.read_to_end(&mut buf).ok();
+                            if let Ok(s) = str::from_utf8(&buf) {
+                                focus_sender.notice();
+                                if !s.is_empty() {
+                                    open_sender.send(OpenRequest::Input(s.to_string())).ok();
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            robust::report_error("canal d'instance unique", &error);
+                            if !SERVICES.sleep(time::Duration::from_millis(500)) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Read message from player
+        SERVICES.spawn("player-relay", move || {
+            while let Some(msg) = SERVICES.recv(&player_rx) {
+                web_tx_player.send(msg).ok();
+            }
+        }); // thread
+
+        let toggle_fullscreen_sender = self.toggle_fullscreen_notice.sender();
+        let window_op_sender = self.window_op_notice.sender();
+        let requested_window_op = self.requested_window_op.clone();
+        let set_interface_scale_sender = self.set_interface_scale_notice.sender();
+        let quit_sender = self.quit_notice.sender();
+        let hide_splash_sender = self.hide_splash_notice.sender();
+        let focus_sender = self.focus_notice.sender();
+        let autoupdater_setup_mutex = self.autoupdater_setup_file.clone();
+
+        let requested_fullscreen = self.requested_fullscreen.clone();
+        let requested_cache_directory = self.requested_cache_directory.clone();
+        let cache_directory_sender = self.cache_directory_notice.sender();
+        let requested_download_folder = self.requested_download_folder.clone();
+        let download_folder_sender = self.download_folder_notice.sender();
+        let local_server_url = self.local_server_url.clone();
+        let requested_interface_scale = self.requested_interface_scale.clone();
+
+        // Une panique dans le traitement d'une commande ne doit pas couper les suivantes : chaque message est gardé.
+        let dispatch = move |msg: RPCRequest| {
+            {
+                // Liste blanche (ipc.rs) : une commande refusée n'atteint aucun traitement.
+                if let Some(method) = msg.get_method() {
+                    if let Err(reason) = check_command(method, msg.get_params()) {
+                        eprintln!("Refused IPC command {method:?}: {reason}");
+                        return;
+                    }
+                }
+                let local_server_url =
+                    robust::lock(&local_server_url, "URL du serveur local").clone();
+                match msg.get_method() {
+                    // The handshake. Here we send some useful data to the WEB UI
+                    None if msg.is_handshake() => {
+                        web_tx_web
+                            .send(RPCResponse::get_handshake(
+                                local_server_url.as_deref(),
+                                &player_engine.backends_json(),
+                            ))
+                            .ok();
+                    }
+                    // Téléchargements (ODY-201). Le sélecteur de dossier tourne sur le fil de l'interface ; les autres
+                    // méthodes `download-*` passent une à une par le fil de downloads.rs.
+                    Some("download-folder-pick") => {
+                        let mut pending = robust::lock(
+                            &requested_download_folder,
+                            "sélecteur de téléchargements",
+                        );
+                        if *pending {
+                            web_tx_web
+                                .send(RPCResponse::download_reply(
+                                    "download-folder-pick",
+                                    serde_json::json!({
+                                        "ok": false,
+                                        "code": "io",
+                                        "message": "a folder picker is already open",
+                                    }),
+                                ))
+                                .ok();
+                        } else {
+                            *pending = true;
+                            download_folder_sender.notice();
+                        }
+                    }
+                    Some(method) if downloads::is_worker_method(method) => {
+                        let method = method.to_owned();
+                        let params = msg
+                            .args
+                            .and_then(|args| args.into_iter().nth(1))
+                            .unwrap_or(serde_json::Value::Null);
+                        downloads::submit(&method, params, web_tx_web.clone());
+                    }
+                    Some("pick-cache-directory") => {
+                        if let Some(request) = msg.get_params().and_then(|params| {
+                            serde_json::from_value::<CacheDirectoryRequest>(params.clone()).ok()
+                        }) {
+                            let mut pending =
+                                robust::lock(&requested_cache_directory, "sélecteur de cache");
+                            let error = if local_server_url.as_deref()
+                                != Some(request.server_url.as_str())
+                            {
+                                Some("The folder picker is only available for the shell's local server")
+                            } else if pending.is_some() {
+                                Some("A folder picker is already open")
+                            } else {
+                                None
+                            };
+                            if let Some(error) = error {
+                                web_tx_web
+                                    .send(RPCResponse::cache_directory_selected(
+                                        request.request_id,
+                                        Err(error.to_owned()),
+                                    ))
+                                    .ok();
+                            } else {
+                                *pending = Some(request);
+                                cache_directory_sender.notice();
+                            }
+                        }
+                    }
+                    // Pont HTTP vers les débrideurs (AllDebrid, TorBox), limité à leurs domaines : requête depuis cet appareil.
+                    Some("native-http") => {
+                        if let Some(request) = msg.get_params().and_then(|params| {
+                            serde_json::from_value::<
+                                crate::laststream_app::native_http::NativeHttpRequest,
+                            >(params.clone())
+                            .ok()
+                        }) {
+                            let reply_tx = web_tx_web.clone();
+                            thread::spawn(move || {
+                                let payload = crate::laststream_app::native_http::run(&request);
+                                reply_tx
+                                    .send(RPCResponse::native_http_response(payload))
+                                    .ok();
+                            });
+                        }
+                    }
+                    // Pont de lecture par plages (fichiers débridés, morceaux bornés) : même allowlist que native-http, voir native_range.rs.
+                    Some("native-range") => {
+                        let params = msg.get_params();
+                        match params.and_then(|params| {
+                            serde_json::from_value::<
+                                crate::laststream_app::native_range::NativeRangeRequest,
+                            >(params.clone())
+                            .ok()
+                        }) {
+                            Some(request) => crate::laststream_app::native_range::start(
+                                request,
+                                web_tx_web.clone(),
+                            ),
+                            // Requête illisible : réponse finale quand même, avec l'identifiant s'il existe (jamais de silence).
+                            None => {
+                                web_tx_web
+                                    .send(RPCResponse::native_range_response(
+                                        crate::laststream_app::native_range::bad_request(params),
+                                    ))
+                                    .ok();
+                            }
+                        }
+                    }
+                    Some("native-range-cancel") => {
+                        if let Some(cancel) = msg.get_params().and_then(|params| {
+                            serde_json::from_value::<
+                                crate::laststream_app::native_range::NativeRangeCancel,
+                            >(params.clone())
+                            .ok()
+                        }) {
+                            crate::laststream_app::native_range::cancel(cancel.id);
+                        }
+                    }
+                    Some("native-range-caps") => {
+                        web_tx_web
+                            .send(RPCResponse::native_range_caps(
+                                crate::laststream_app::native_range::caps(),
+                            ))
+                            .ok();
+                    }
+                    // Pont HTTP « addon stream » (GET https borné, voir addon_http.rs) : mêmes signaux de réponse que native-http.
+                    Some("native-addon-http") => {
+                        if let Some(request) = msg.get_params().and_then(|params| {
+                            serde_json::from_value::<
+                                crate::laststream_app::addon_http::AddonHttpRequest,
+                            >(params.clone())
+                            .ok()
+                        }) {
+                            let reply_tx = web_tx_web.clone();
+                            thread::spawn(move || {
+                                let payload = crate::laststream_app::addon_http::run(&request);
+                                reply_tx
+                                    .send(RPCResponse::native_http_response(payload))
+                                    .ok();
+                            });
+                        }
+                    }
+                    // Pont HTTP « playlist de box TV » (Freebox ou URL M3U de l'utilisateur, LAN autorisé, voir box_playlist.rs). Rien n'est journalisé.
+                    Some("native-box-playlist") => {
+                        if let Some(request) = msg.get_params().and_then(|params| {
+                            serde_json::from_value::<
+                                crate::laststream_app::box_playlist::BoxPlaylistRequest,
+                            >(params.clone())
+                            .ok()
+                        }) {
+                            let reply_tx = web_tx_web.clone();
+                            thread::spawn(move || {
+                                let payload = crate::laststream_app::box_playlist::run(&request);
+                                reply_tx
+                                    .send(RPCResponse::native_http_response(payload))
+                                    .ok();
+                            });
+                        }
+                    }
+                    Some("win-set-interface-scale") => {
+                        if let Some(scale) = msg
+                            .get_params()
+                            .and_then(|params| params.get("scale"))
+                            .and_then(|value| value.as_u64())
+                            .filter(|scale| (75..=175).contains(scale))
+                        {
+                            *robust::lock(&requested_interface_scale, "échelle demandée") =
+                                Some(scale);
+                            set_interface_scale_sender.notice();
+                        }
+                    }
+                    Some("win-set-visibility") => {
+                        if let Some(fullscreen) = msg
+                            .get_params()
+                            .and_then(|params| params.get("fullscreen"))
+                            .and_then(|value| value.as_bool())
+                        {
+                            *robust::lock(&requested_fullscreen, "plein écran demandé") =
+                                Some(fullscreen);
+                            toggle_fullscreen_sender.notice();
+                        }
+                    }
+                    Some("win-set-pip") => {
+                        if let Some(pip) = msg
+                            .get_params()
+                            .and_then(|params| params.get("pip"))
+                            .and_then(|value| value.as_bool())
+                        {
+                            *robust::lock(&requested_window_op, "opération fenêtre") =
+                                Some(WindowRequest::Pip(pip));
+                            window_op_sender.notice();
+                        }
+                    }
+                    Some("win-drag") => {
+                        *robust::lock(&requested_window_op, "opération fenêtre") =
+                            Some(WindowRequest::Drag);
+                        window_op_sender.notice();
+                    }
+                    Some("quit") => quit_sender.notice(),
+                    Some("app-ready") => {
+                        hide_splash_sender.notice();
+                        web_tx_web
+                            .send(RPCResponse::visibility_change(true, 1, false))
+                            .ok();
+                        if updater_enabled
+                            && updater_tx_web.send("check_for_update".to_owned()).is_err()
+                        {
+                            robust::report_error("app-ready", &"canal de mise à jour fermé");
+                        }
+
+                        open_sender_web.send(OpenRequest::Ready).ok();
+                        // Toujours après la réponse `init` : le bus de l'app n'existe qu'ensuite.
+                        player_engine.send_capabilities();
+                    }
+                    Some("player-get-capabilities") => player_engine.send_capabilities(),
+                    Some("player-set-backend") => {
+                        // Même canal que `mpv-*` : traité dans l'ordre par le fil du lecteur, qui acquitte
+                        // par `player-backend` (moteur réellement actif).
+                        match msg.get_params().and_then(|params| {
+                            serde_json::from_value::<
+                                crate::laststream_app::laststream_player::communication::SetBackendRequest,
+                            >(params.clone())
+                            .ok()
+                        }) {
+                            Some(request) => {
+                                use crate::laststream_app::laststream_player::communication::{
+                                    InMsg, InMsgArgs, InMsgFn,
+                                };
+                                let message = InMsg(
+                                    InMsgFn::PlayerSetBackend,
+                                    InMsgArgs::Backend(request.backend),
+                                );
+                                match serde_json::to_string(&message) {
+                                    Ok(json) => {
+                                        player_tx.send(json).ok();
+                                    }
+                                    Err(error) => {
+                                        robust::report_error("player-set-backend", &error)
+                                    }
+                                }
+                            }
+                            None => {
+                                eprintln!("player-set-backend: paramètre illisible");
+                                player_engine.acknowledge_current();
+                            }
+                        }
+                    }
+                    Some("app-error") => {
+                        hide_splash_sender.notice();
+                        if let Some(arg) = msg.get_params() {
+                            // TODO: Make this modal dialog
+                            eprintln!("Web App Error: {arg}");
+                        }
+                    }
+                    Some("open-external") => {
+                        if let Some(arg) = msg.get_params() {
+                            // safe_url only lets http(s) links through.
+                            let arg = arg.as_str().unwrap_or("");
+                            if let Some(url) = safe_url(arg) {
+                                open::that(url).ok();
+                            }
+                        }
+                    }
+                    Some("play-external") => {
+                        if let Some(arg) = msg.get_params().and_then(|value| value.as_str()) {
+                            if let Err(error) = crate::laststream_app::external_player::play(arg) {
+                                eprintln!("External player request failed: {error}");
+                            }
+                        }
+                    }
+                    Some("win-focus") => {
+                        focus_sender.notice();
+                    }
+                    Some("autoupdater-notif-clicked") => {
+                        // We've shown the "Update Available" notification
+                        // and the user clicked on "Restart And Update"
+                        // The installer may have waited hours in a user-writable folder:
+                        // re-check its SHA-256 right before running it (ODY-263).
+                        match updater::verified_installer_to_run(&autoupdater_setup_mutex) {
+                            Some(file_path) => {
+                                println!("Running the setup at {file_path:?}");
+
+                                let command = Command::new(file_path)
+                                    .args([
+                                        "/SILENT",
+                                        "/NOCANCEL",
+                                        "/FORCECLOSEAPPLICATIONS",
+                                        "/TASKS=runapp",
+                                    ])
+                                    .creation_flags(CREATE_BREAKAWAY_FROM_JOB)
+                                    .stdin(process::Stdio::null())
+                                    .stdout(process::Stdio::null())
+                                    .stderr(process::Stdio::null())
+                                    .spawn();
+
+                                match command {
+                                    Ok(process) => {
+                                        println!("Updater started. (PID {:?})", process.id());
+                                        quit_sender.notice();
+                                    }
+                                    Err(err) => eprintln!("Updater couldn't be started: {err}"),
+                                };
+                            }
+                            _ => {
+                                println!("Cannot obtain the setup file path");
+                            }
+                        }
+                    }
+                    Some(player_command) if player_command.starts_with("mpv-") => {
+                        match msg.args.as_ref().map(serde_json::to_string) {
+                            Some(Ok(resp_json)) => {
+                                player_tx.send(resp_json).ok();
+                            }
+                            Some(Err(error)) => {
+                                robust::report_error("commande lecteur illisible", &error)
+                            }
+                            None => robust::report_error("commande lecteur", &"arguments absents"),
+                        }
+                    }
+                    Some(unknown) => {
+                        eprintln!("Unsupported command {}({:?})", unknown, msg.get_params())
+                    }
+                    None => {}
+                }
+            } // recv
+        };
+        SERVICES.spawn("ipc-dispatch", move || {
+            while let Some(raw) = SERVICES.recv(&web_rx) {
+                let Ok(msg) = serde_json::from_str::<RPCRequest>(&raw) else {
+                    continue;
+                };
+                if let Err(payload) =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dispatch(msg)))
+                {
+                    robust::report_error(
+                        "commande IPC arrêtée par une panique",
+                        &robust::panic_message(payload.as_ref()),
+                    );
+                }
+            }
+        }); // thread
+        let plan = shell_config::load().plan(self.webui_url.is_some());
+        if plan.local_addon {
+            self.addon.start();
+        }
+        if let Some(url) = plan.remote_url {
+            // Public service: no local process; the page is loaded once the probe succeeds.
+            *self.remote_url.borrow_mut() = Some(url);
+            self.probe_remote();
+        } else if self.server.development() {
+            self.load_webui(None);
+        } else if plan.streaming_server {
+            self.server.start();
+        }
+    }
+    /// Probes the remote service in a thread (several attempts) so the splash screen stays responsive.
+    fn probe_remote(&self) {
+        let Some(url) = self.remote_url.borrow().clone() else {
+            return;
+        };
+        *robust::lock(&self.remote_probe_result, "sonde distante") = None;
+        let result = self.remote_probe_result.clone();
+        let sender = self.remote_probe_notice.sender();
+        thread::spawn(move || {
+            let outcome = shell_config::probe(
+                &url,
+                shell_config::PROBE_TIMEOUT,
+                shell_config::PROBE_ATTEMPTS,
+                shell_config::PROBE_BACKOFF,
+            );
+            *robust::lock(&result, "sonde distante") = Some(outcome);
+            sender.notice();
+        });
+    }
+    fn on_remote_probe_notice(&self) {
+        let Some(url) = self.remote_url.borrow().clone() else {
+            return;
+        };
+        let outcome = robust::lock(&self.remote_probe_result, "sonde distante").take();
+        let cause = match outcome {
+            Some(Ok(())) => {
+                self.splash_screen.hide();
+                self.navigate_webui(url);
+                return;
+            }
+            Some(Err(cause)) => cause,
+            None => "aucune réponse de la sonde".to_owned(),
+        };
+        self.splash_screen.hide();
+        self.on_show();
+        let content = format!(
+            "Impossible de joindre le service Laststream ({url}).\n\nCause : {cause}\n\nVérifiez votre connexion Internet, puis choisissez Réessayer, ou Annuler pour quitter Laststream."
+        );
+        let choice = nwg::modal_message(
+            &self.window,
+            &nwg::MessageParams {
+                title: APP_NAME,
+                content: &content,
+                buttons: nwg::MessageButtons::RetryCancel,
+                icons: nwg::MessageIcons::Error,
+            },
+        );
+        if choice == nwg::MessageChoice::Retry {
+            if !self.no_splash {
+                self.splash_screen.show();
+            }
+            self.probe_remote();
+        } else {
+            self.on_exit();
+        }
+    }
+    fn load_webui(&self, server_url: Option<&str>) {
+        *robust::lock(&self.local_server_url, "URL du serveur local") = server_url
+            .filter(|server_url| {
+                Url::parse(server_url).is_ok_and(|url| {
+                    matches!(url.scheme(), "http" | "https")
+                        && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))
+                })
+            })
+            .map(str::to_owned);
+        // With the default WebUI, the page is loaded when the local Laststream service is ready.
+        let Some(webui_url) = self.webui_url.as_deref() else {
+            return;
+        };
+        self.navigate_webui(webui_url.to_owned());
+    }
+    fn navigate_webui(&self, endpoint: String) {
+        if let Some(sender) = self.open_media_sender.borrow().as_ref() {
+            sender.send(OpenRequest::Reset).ok();
+        }
+        if let Err(error) = self.webview.navigate(endpoint) {
+            self.splash_screen.hide();
+            nwg::modal_error_message(
+                &self.window,
+                "Impossible de charger l'interface Laststream",
+                &error.to_string(),
+            );
+        }
+    }
+    fn on_addon_notice(&self) {
+        for event in self.addon.events() {
+            match event {
+                AddonEvent::Ready(url) => {
+                    // The Laststream UI does not send app-ready, so the splash ends with the navigation.
+                    if self.webui_url.is_none() {
+                        self.splash_screen.hide();
+                        self.navigate_webui(url);
+                    }
+                }
+                AddonEvent::Failed(details) => {
+                    self.splash_screen.hide();
+                    self.on_show();
+                    let content = format!(
+                        "Le service local de Laststream est indisponible.\n\n{details}\n\nChoisissez Réessayer pour le relancer, ou Annuler pour quitter Laststream."
+                    );
+                    let choice = nwg::modal_message(
+                        &self.window,
+                        &nwg::MessageParams {
+                            title: APP_NAME,
+                            content: &content,
+                            buttons: nwg::MessageButtons::RetryCancel,
+                            icons: nwg::MessageIcons::Error,
+                        },
+                    );
+                    if choice == nwg::MessageChoice::Retry {
+                        if !self.no_splash {
+                            self.splash_screen.show();
+                        }
+                        self.addon.start();
+                    } else {
+                        self.on_exit();
+                    }
+                }
+            }
+        }
+    }
+    fn on_server_notice(&self) {
+        for event in self.server.events() {
+            match event {
+                ServerEvent::Ready(endpoint) => self.load_webui(Some(&endpoint)),
+                ServerEvent::Failed(details) => {
+                    *robust::lock(&self.local_server_url, "URL du serveur local") = None;
+                    if let Some(sender) = self.open_media_sender.borrow().as_ref() {
+                        sender.send(OpenRequest::Reset).ok();
+                    }
+                    self.splash_screen.hide();
+                    self.on_show();
+                    let content = format!(
+                        "Le serveur de streaming local de Laststream est indisponible.\n\n{details}\n\nRelancez le serveur ou quittez Laststream."
+                    );
+                    let choice = nwg::modal_message(
+                        &self.window,
+                        &nwg::MessageParams {
+                            title: APP_NAME,
+                            content: &content,
+                            buttons: nwg::MessageButtons::RetryCancel,
+                            icons: nwg::MessageIcons::Error,
+                        },
+                    );
+                    if choice == nwg::MessageChoice::Retry {
+                        if !self.no_splash {
+                            self.splash_screen.show();
+                        }
+                        self.server.start();
+                    } else {
+                        self.on_exit();
+                    }
+                }
+            }
+        }
+    }
+    fn on_min_max(&self, data: &nwg::EventData) {
+        let data = data.on_min_max();
+        if PIP_ACTIVE.load(Ordering::Relaxed) {
+            data.set_min_size(240, 135);
+        } else {
+            data.set_min_size(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+        }
+    }
+    fn on_paint(&self) {
+        if !self.splash_screen.visible() {
+            self.webview.fit_to_window(self.window.handle.hwnd());
+        }
+        self.player.engine.fit();
+    }
+    fn on_player_engine_notice(&self) {
+        self.player.engine.on_ui_notice();
+    }
+    fn on_window_state_changed(&self) {
+        self.save_window_settings();
+        self.transmit_window_state_change();
+    }
+    fn save_window_settings(&self) {
+        if self
+            .saved_window_style
+            .try_borrow()
+            .map(|style| style.full_screen || style.pip)
+            .unwrap_or(false)
+        {
+            return;
+        }
+        if let Some(hwnd) = self.window.handle.hwnd() {
+            if let Err(err) = WindowSettings::save(hwnd) {
+                eprintln!("Cannot save window settings: {err}");
+            }
+        }
+    }
+    /// Relances de mpv épuisées : une boîte de dialogue native dit à l'utilisateur de redémarrer (LAST-172).
+    fn on_player_lost_notice(&self) {
+        self.on_show();
+        nwg::modal_message(
+            &self.window,
+            &nwg::MessageParams {
+                title: APP_NAME,
+                content: "Le lecteur a rencontré trop d'erreurs. Redémarrez l'app.",
+                buttons: nwg::MessageButtons::Ok,
+                icons: nwg::MessageIcons::Error,
+            },
+        );
+    }
+    fn on_toggle_fullscreen_notice(&self) {
+        if let Some(hwnd) = self.window.handle.hwnd() {
+            if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
+                let target = robust::lock(&self.requested_fullscreen, "plein écran demandé")
+                    .take()
+                    .unwrap_or(!saved_style.full_screen);
+                if target {
+                    saved_style.set_pip(hwnd, false);
+                }
+                saved_style.set_full_screen(hwnd, target);
+                self.tray.tray_topmost.set_enabled(!saved_style.full_screen);
+                self.tray
+                    .tray_topmost
+                    .set_checked((saved_style.ex_style as u32 & WS_EX_TOPMOST) == WS_EX_TOPMOST);
+            }
+        }
+        self.transmit_pip_change();
+        self.transmit_window_visibility_change();
+    }
+    fn on_window_op_notice(&self) {
+        let request = robust::lock(&self.requested_window_op, "opération fenêtre").take();
+        let Some(hwnd) = self.window.handle.hwnd() else {
+            return;
+        };
+        match request {
+            Some(WindowRequest::Pip(pip)) => {
+                if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
+                    saved_style.set_pip(hwnd, pip);
+                    self.tray.tray_topmost.set_enabled(!saved_style.pip);
+                }
+                self.transmit_pip_change();
+                self.transmit_window_visibility_change();
+            }
+            Some(WindowRequest::Drag) => unsafe {
+                // Borderless window: let Windows move it as if its caption was dragged.
+                ReleaseCapture();
+                SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION as usize, 0);
+            },
+            None => {}
+        }
+    }
+    fn on_set_interface_scale_notice(&self) {
+        let scale = robust::lock(&self.requested_interface_scale, "échelle demandée").take();
+        if let Some(scale) = scale {
+            self.webview.set_interface_scale(scale);
+        }
+    }
+    fn on_hide_splash_notice(&self) {
+        self.splash_screen.hide();
+    }
+    fn on_cache_directory_notice(&self) {
+        let request = robust::lock(&self.requested_cache_directory, "sélecteur de cache").clone();
+        let Some(request) = request else { return };
+        if let Some(directory) = &request.directory {
+            // An unplugged drive must not prevent choosing a different folder.
+            self.cache_directory_picker
+                .set_default_folder(directory)
+                .ok();
+        }
+        // Show runs a nested message loop; keep the pending request, but no locks or borrows.
+        let result = if self.cache_directory_picker.run(Some(&self.window)) {
+            self.cache_directory_picker
+                .get_selected_item()
+                .map_err(|error| error.to_string())
+                .and_then(|path| {
+                    path.into_string()
+                        .map(Some)
+                        .map_err(|_| "The selected folder path is not valid Unicode".to_owned())
+                })
+        } else {
+            Ok(None)
+        };
+        robust::lock(&self.requested_cache_directory, "sélecteur de cache").take();
+        if let Some((web_tx, _)) = self.webview.channel.borrow().as_ref() {
+            web_tx
+                .send(RPCResponse::cache_directory_selected(
+                    request.request_id,
+                    result,
+                ))
+                .ok();
+        }
+    }
+    fn on_download_folder_notice(&self) {
+        let requested = std::mem::take(&mut *robust::lock(
+            &self.requested_download_folder,
+            "sélecteur de téléchargements",
+        ));
+        if !requested {
+            return;
+        }
+        if let Some(directory) = shell_config::downloads_dir() {
+            self.download_folder_picker
+                .set_default_folder(&directory)
+                .ok();
+        }
+        // Boîte modale : boucle imbriquée, aucun verrou n'est tenu pendant qu'elle est ouverte.
+        let selected = if self.download_folder_picker.run(Some(&self.window)) {
+            self.download_folder_picker
+                .get_selected_item()
+                .map_err(|error| error.to_string())
+                .and_then(|path| {
+                    path.into_string()
+                        .map(Some)
+                        .map_err(|_| "The selected folder path is not valid Unicode".to_owned())
+                })
+        } else {
+            Ok(None)
+        };
+        if let Some((web_tx, _)) = self.webview.channel.borrow().as_ref() {
+            web_tx
+                .send(RPCResponse::download_reply(
+                    "download-folder-pick",
+                    downloads::finish_pick(selected),
+                ))
+                .ok();
+        }
+    }
+    fn on_focus_notice(&self) {
+        self.window.set_visible(true);
+        if let Some(hwnd) = self.window.handle.hwnd() {
+            if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
+                saved_style.set_active(hwnd);
+            }
+        }
+    }
+    fn on_toggle_topmost(&self) {
+        if let Some(hwnd) = self.window.handle.hwnd() {
+            if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
+                saved_style.toggle_topmost(hwnd);
+                self.tray
+                    .tray_topmost
+                    .set_checked((saved_style.ex_style as u32 & WS_EX_TOPMOST) == WS_EX_TOPMOST);
+            }
+        }
+    }
+    fn on_show(&self) {
+        self.window.set_visible(true);
+        if let (Some(hwnd), Ok(mut saved_style)) = (
+            self.window.handle.hwnd(),
+            self.saved_window_style.try_borrow_mut(),
+        ) {
+            if saved_style.is_window_minimized(hwnd) {
+                self.window.restore();
+            }
+            saved_style.set_active(hwnd);
+        }
+        self.tray.tray_show_hide.set_checked(self.window.visible());
+        self.transmit_window_state_change();
+        self.transmit_window_visibility_change();
+    }
+    fn on_show_hide(&self) {
+        if self.window.visible() {
+            self.window.set_visible(false);
+            self.tray.tray_show_hide.set_checked(self.window.visible());
+            self.transmit_window_state_change();
+            self.transmit_window_visibility_change();
+        } else {
+            self.on_show();
+        }
+    }
+    fn on_quit(&self, data: &nwg::EventData) {
+        if let nwg::EventData::OnWindowClose(data) = data {
+            data.close(false);
+        }
+        self.save_window_settings();
+        self.window.set_visible(false);
+        self.tray.tray_show_hide.set_checked(self.window.visible());
+        self.transmit_window_visibility_change();
+    }
+    fn on_exit(&self) {
+        self.save_window_settings();
+        self.stop_threads();
+        nwg::stop_thread_dispatch();
+    }
+    /// Arrêt propre des fils de service (lecteur, téléchargements, relais IPC...) : aucun fil orphelin à la fermeture.
+    fn stop_threads(&self) {
+        SERVICES.request_shutdown();
+        // Le fil du canal d'instance unique attend une connexion : on s'y connecte pour le réveiller.
+        if let Some(path) = &self.commands_path {
+            drop(PipeClient::connect(path));
+        }
+        SERVICES.join_all(SHUTDOWN_TIMEOUT);
+    }
+}

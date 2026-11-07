@@ -1,0 +1,9 @@
+/target
+/laststream*.exe
+/libmpv-2.dll
+/dist/
+
+# libVLC (moteur secondaire) : telecharge par scripts/fetch-libvlc.ps1, jamais commite.
+/vlc/
+libvlc*.dll
+vlc-cache/

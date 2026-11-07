@@ -1,0 +1,327 @@
+//! Sonde libVLC (LAST-504) : `LASTSTREAM_LIBVLC_DIR=<dossier de libvlc.dll> cargo run --example vlc_probe`
+//!
+//! Charge libVLC dynamiquement, affiche sa version, ouvre une fenêtre, lit ~9 s au plus d'une URL HTTP
+//! (`VLC_PROBE_URL`, sinon une vidéo de test publique ; `VLC_PROBE_ARGS` ajoute des options libVLC).
+//! Remarque : le clip public par défaut, sans piste audio, se fige à ~250 ms avec libVLC 3.0.21 ;
+//! préférer une URL avec audio (vérifié : HTTP local avec Range, `+faststart`) dans une surface enfant, puis s'arrête.
+//! Contrôle le pixel vidéo à l'écran (jamais blanc) ; avec `VLC_PROBE_WEBVIEW=1`, une vraie WebView2 transparente
+//! (comme l'app) est créée avant la surface et son carré rouge doit rester au-dessus de la vidéo.
+//! Sans `LASTSTREAM_LIBVLC_DIR`, la recherche par défaut est utilisée.
+#![cfg(windows)]
+#![allow(dead_code)] // Modules partagés avec l'app : seule une partie sert à la sonde.
+
+#[path = "../src/laststream_app/laststream_player/vlc_backend.rs"]
+mod vlc_backend;
+#[path = "../src/laststream_app/laststream_player/vlc_ffi.rs"]
+mod vlc_ffi;
+#[path = "../src/laststream_app/laststream_player/vlc_player.rs"]
+mod vlc_player;
+
+use std::{
+    cell::RefCell,
+    env,
+    os::windows::ffi::OsStrExt,
+    path::PathBuf,
+    process::ExitCode,
+    ptr,
+    rc::Rc,
+    time::{Duration, Instant},
+};
+use vlc_backend::VlcBackend;
+use vlc_ffi::{LibVlc, VlcInstance};
+use vlc_player::{VideoSurface, VlcPlayer};
+use winapi::{
+    shared::windef::HWND,
+    um::{
+        wingdi::GetPixel,
+        winuser::{
+            ClientToScreen, CreateWindowExW, DestroyWindow, DispatchMessageW, GetClientRect, GetDC,
+            GetWindow, PeekMessageW, ReleaseDC, TranslateMessage, GW_HWNDNEXT, MSG, PM_REMOVE,
+            WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+        },
+    },
+};
+
+const DEFAULT_URL: &str =
+    "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4";
+const SS_WHITERECT: u32 = 0x0000_0006;
+
+fn wide(text: &str) -> Vec<u16> {
+    std::ffi::OsStr::new(text)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+fn child(parent: HWND, style: u32, x: i32, y: i32, w: i32, h: i32) -> HWND {
+    let class = wide("STATIC");
+    let title = wide("");
+    // SAFETY: fenêtre STATIC enfant de `parent`, chaînes vivantes pendant l'appel.
+    unsafe {
+        CreateWindowExW(
+            0,
+            class.as_ptr(),
+            title.as_ptr(),
+            WS_CHILD | WS_VISIBLE | style,
+            x,
+            y,
+            w,
+            h,
+            parent,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+fn pump_for(duration: Duration, mut tick: impl FnMut()) {
+    let end = Instant::now() + duration;
+    while Instant::now() < end {
+        // SAFETY: boucle de messages standard sur le fil qui possède les fenêtres.
+        unsafe {
+            let mut msg: MSG = std::mem::zeroed();
+            while PeekMessageW(&mut msg, ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+        tick();
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn screen_pixel(window: HWND, x: i32, y: i32) -> u32 {
+    let mut point = winapi::shared::windef::POINT { x, y };
+    // SAFETY: lecture d'un pixel de l'écran ; le DC est libéré aussitôt.
+    unsafe {
+        ClientToScreen(window, &mut point);
+        let dc = GetDC(ptr::null_mut());
+        let pixel = GetPixel(dc, point.x, point.y);
+        ReleaseDC(ptr::null_mut(), dc);
+        pixel
+    }
+}
+
+/// Reproduit la WebView2 de l'app (hébergement HWND, fond transparent) au-dessus de la surface.
+/// Activée par `VLC_PROBE_WEBVIEW=1`. Renvoie le contrôleur, à garder vivant.
+fn add_webview(top: HWND) -> Result<Rc<RefCell<Option<webview2::Controller>>>, String> {
+    let slot: Rc<RefCell<Option<webview2::Controller>>> = Rc::new(RefCell::new(None));
+    let slot_in = Rc::clone(&slot);
+    let folder = env::temp_dir().join("vlc_probe_webview2");
+    let hwnd = top as usize;
+    webview2::EnvironmentBuilder::new()
+        .with_user_data_folder(&folder)
+        .build(move |env| {
+            env?.create_controller(hwnd as HWND, move |controller| {
+                let controller = controller?;
+                if let Ok(c2) = controller.get_controller2() {
+                    c2.put_default_background_color(webview2_sys::Color {
+                        r: 255,
+                        g: 255,
+                        b: 255,
+                        a: 0,
+                    })?;
+                }
+                // SAFETY: rectangle client d'une fenêtre vivante de ce fil.
+                unsafe {
+                    let mut rect = std::mem::zeroed();
+                    GetClientRect(hwnd as HWND, &mut rect);
+                    controller.put_bounds(rect)?;
+                }
+                controller.get_webview()?.navigate_to_string(
+                    "<html><body style='margin:0;background:transparent'><div style='position:absolute;left:0;top:0;width:100px;height:60px;background:#ff0000'></div></body></html>",
+                )?;
+                *slot_in.borrow_mut() = Some(controller);
+                Ok(())
+            })
+        })
+        .map_err(|e| format!("WebView2: {e}"))?;
+    let end = Instant::now() + Duration::from_secs(10);
+    pump_for(Duration::from_secs(0), || {});
+    while slot.borrow().is_none() && Instant::now() < end {
+        pump_for(Duration::from_millis(100), || {});
+    }
+    if slot.borrow().is_none() {
+        return Err("WebView2 non prête".into());
+    }
+    Ok(slot)
+}
+
+fn dump_children(top: HWND) {
+    // SAFETY: lecture de l'ordre Z de fenêtres vivantes de ce fil.
+    unsafe {
+        let mut h = GetWindow(top, winapi::um::winuser::GW_CHILD);
+        while !h.is_null() {
+            let mut name = [0u16; 128];
+            winapi::um::winuser::GetClassNameW(h, name.as_mut_ptr(), 128);
+            let mut r = std::mem::zeroed();
+            winapi::um::winuser::GetWindowRect(h, &mut r);
+            println!(
+                "  enfant {:?} classe={} visible={} rect={},{},{},{}",
+                h,
+                String::from_utf16_lossy(&name).trim_end_matches('\0'),
+                winapi::um::winuser::IsWindowVisible(h),
+                r.left,
+                r.top,
+                r.right,
+                r.bottom
+            );
+            h = GetWindow(h, GW_HWNDNEXT);
+        }
+    }
+}
+
+fn run() -> Result<(), String> {
+    let api = match env::var_os("LASTSTREAM_LIBVLC_DIR") {
+        Some(dir) => LibVlc::load_from_dir(&PathBuf::from(dir))?,
+        None => LibVlc::load()?,
+    };
+    println!("libVLC chargée, version {}", api.version());
+    let extra = env::var("VLC_PROBE_ARGS").unwrap_or_default();
+    let mut args: Vec<&str> = VlcInstance::DEFAULT_ARGS.to_vec();
+    args.extend(extra.split_whitespace());
+    let instance = VlcInstance::new(api, &args)?;
+    let player = instance.new_player()?;
+
+    let class = wide("STATIC");
+    let title = wide("vlc_probe");
+    // SAFETY: fenêtre de premier niveau créée et détruite sur ce fil.
+    let top = unsafe {
+        CreateWindowExW(
+            0,
+            class.as_ptr(),
+            title.as_ptr(),
+            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+            200,
+            200,
+            656,
+            399,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    if top.is_null() {
+        return Err("fenêtre de test non créée".into());
+    }
+    // Créé AVANT la surface, comme la WebView : doit finir au-dessus.
+    let overlay = child(top, SS_WHITERECT, 10, 10, 80, 40);
+    let _webview = if env::var_os("VLC_PROBE_WEBVIEW").is_some() {
+        Some(add_webview(top)?)
+    } else {
+        None
+    };
+    let surface = VideoSurface::create(top)?;
+    surface.set_visible(true);
+    let backend = VlcBackend::new(VlcPlayer::with_surface(
+        player,
+        std::sync::Arc::new(surface),
+    ))?;
+    let vlc = backend.player();
+    // SAFETY: GetWindow lit l'ordre Z de fenêtres vivantes.
+    let below_surface = unsafe { GetWindow(vlc.surface.hwnd(), GW_HWNDNEXT) };
+    println!(
+        "ordre Z : surface en bas = {} ; recouvrement creé avant = au-dessus",
+        below_surface.is_null()
+    );
+
+    println!("ordre Z des enfants (haut -> bas) :");
+    dump_children(top);
+    let url = env::var("VLC_PROBE_URL").unwrap_or_else(|_| DEFAULT_URL.to_string());
+    backend.load(&url, &[":network-caching=1000"])?;
+
+    let mut max_time = -1;
+    let mut size = None;
+    let mut sampled = None;
+    let mut webview_pixel = None;
+    pump_for(Duration::from_secs(9), || {
+        max_time = max_time.max(vlc.player.time_ms());
+        if size.is_none() {
+            size = vlc.player.video_size();
+        }
+        if max_time > 1500 && sampled.is_none() {
+            sampled = Some((screen_pixel(top, 50, 30), screen_pixel(top, 400, 250)));
+            println!(
+                "pixel carré rouge de la WebView (BGR 0x0000ff attendu) = {:#08x}",
+                screen_pixel(top, 95, 55)
+            );
+            webview_pixel = Some(screen_pixel(top, 95, 55));
+            println!("après lecture :");
+            dump_children(top);
+        }
+    });
+    println!(
+        "etat={:?} temps_max={max_time} ms duree={} ms taille={:?} volume={}",
+        vlc.player.state(),
+        vlc.player.length_ms(),
+        size,
+        vlc.player.volume()
+    );
+    println!("pistes audio : {:?}", vlc.player.audio_tracks());
+    println!("pistes sous-titres : {:?}", vlc.player.subtitle_tracks());
+    for name in [
+        "time-pos",
+        "duration",
+        "pause",
+        "volume",
+        "mute",
+        "speed",
+        "eof-reached",
+        "seeking",
+        "paused-for-cache",
+        "track-list",
+        "aid",
+        "sid",
+        "video-params",
+    ] {
+        println!("  {name} = {:?}", backend.property(name));
+    }
+    backend.set_property("pause", &serde_json::json!(true));
+    println!("  apres pause : pause = {:?}", backend.property("pause"));
+    let result = match sampled {
+        Some((over, video)) => {
+            println!(
+                "pixel recouvrement GDI = {over:#08x} (indicatif) ; pixel vidéo = {video:#08x}"
+            );
+            let with_webview = env::var_os("VLC_PROBE_WEBVIEW").is_some();
+            if max_time <= 1500 {
+                Err("lecture figée".to_string())
+            } else if video == 0x00ff_ffff {
+                Err("vidéo BLANCHE (LAST-504)".to_string())
+            } else if with_webview && webview_pixel != Some(0x0000_00ff) {
+                // Avec la WebView : carré rouge (BGR 0x0000ff) au coin, qui doit rester au-dessus de la vidéo.
+                Err(format!(
+                    "la WebView n'est plus au-dessus de la vidéo (pixel {webview_pixel:#x?})"
+                ))
+            } else if !below_surface.is_null() {
+                Err("la surface n'est pas tout en bas de l'ordre Z".to_string())
+            } else {
+                Ok(())
+            }
+        }
+        None => Err(format!("la lecture n'a pas avancé (temps_max={max_time})")),
+    };
+    backend.stop();
+    drop(backend);
+    // SAFETY: fenêtres de ce fil.
+    unsafe {
+        DestroyWindow(overlay);
+        DestroyWindow(top);
+    }
+    result
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => {
+            println!("OK");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("ECHEC : {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
