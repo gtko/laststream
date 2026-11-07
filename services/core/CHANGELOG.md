@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.3 (2026-11-07)
+
+Watch party (LAST-1615, PR #51)
+
+- Le salon accepte le message `source` : l’hôte annonce sa version et sa langue, sans effet sur la lecture. Seules l’empreinte et la langue circulent, jamais un lien, et les invités sans compte ne reçoivent pas l’empreinte.
+- Un nom de fichier en forme d’URL ou une langue invalide sont refusés sur ce message.
+- Protocole v0.5.0 : les réactions couvrent tous les emojis du sélecteur du lecteur.
+
+Soirées planifiées (LAST-1611, PR #50)
+
+- Un profil adulte du foyer peut être invité à une soirée planifiée.
+
 ## 0.4.2 (2026-11-01)
 
 TV en direct (LAST-1411, PR #49)

@@ -1,6 +1,6 @@
 {
   "name": "lastaddon",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Addon Stremio agrégateur de streams pour Laststream",
   "private": true,
   "type": "module",
