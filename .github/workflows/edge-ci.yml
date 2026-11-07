@@ -13,11 +13,8 @@ on:
 permissions:
   contents: read
 
-# Runner Windows uniquement : pwsh charge le profil PowerShell de l'utilisateur, qui bloque quand la sortie est redirigée.
-# Retirer ce bloc si runs-on repasse sur ubuntu-latest (pas de cmd sous Linux).
 defaults:
   run:
-    shell: cmd
     working-directory: services/edge
 
 # PR : un nouveau push annule le run en cours. main : le run en cours va au bout, seul le plus récent en attente est conservé.
@@ -28,18 +25,13 @@ concurrency:
 jobs:
   check:
     name: Tests et compilation Wrangler à blanc
-    runs-on: [self-hosted, laststream-local]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # Runner partagé avec Web CI et Core CI (même checkout du mono-repo) : pas de nettoyage global, qui effacerait leurs
-      # node_modules ; fetch-depth 0 comme eux, sinon le runner alterne entre checkout superficiel et complet.
       - uses: actions/checkout@v4
         with:
-          clean: false
           fetch-depth: 0
           persist-credentials: false
-
-      - run: git clean -ffdx
 
       # Node 22, comme la CI de lastaddon (le code de production tourne sur workerd).
       - uses: actions/setup-node@v4

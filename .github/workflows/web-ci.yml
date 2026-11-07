@@ -13,11 +13,8 @@ on:
 permissions:
   contents: read
 
-# Runner Windows uniquement : pwsh charge le profil PowerShell de l'utilisateur, qui bloque quand la sortie est redirigée.
-# Retirer ce bloc si runs-on repasse sur ubuntu-latest (pas de cmd sous Linux).
 defaults:
   run:
-    shell: cmd
     working-directory: apps/web
 
 # PR : un nouveau push annule le run en cours. main : le run en cours va au bout, seul le plus récent en attente est conservé.
@@ -25,30 +22,26 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Runner persistant : node_modules (et ses caches node_modules/.cache) survit d'un run à l'autre.
-# Le checkout ne nettoie pas (clean: false) ; le nettoyage explicite épargne node_modules. npm ci n'est relancé que si
-# package.json, package-lock.json ou .npmrc changent.
+# Runners hébergés par GitHub (ubuntu-latest) : machine neuve à chaque job, cache npm de setup-node.
 jobs:
   static:
-    runs-on: [self-hosted, laststream-local]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      # fetch-depth 0 dans tous les jobs : sinon le runner alterne entre checkout superficiel et complet.
+      # fetch-depth 0 : les tests sur PR comparent à origin/main (--changed).
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          clean: false
           persist-credentials: false
-
-      - name: Nettoyer l'arbre (node_modules conservé)
-        run: git clean -ffdx -e node_modules
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
 
       - name: Installer les dépendances
-        run: node scripts/ci-install.mjs
+        run: npm ci
 
       # Incrémental : le cache tsc est écrit dans node_modules/.cache.
       - name: Typecheck
@@ -72,24 +65,22 @@ jobs:
         run: npm run knip
 
   test:
-    runs-on: [self-hosted, laststream-local]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          clean: false
           persist-credentials: false
-
-      - name: Nettoyer l'arbre (node_modules conservé)
-        run: git clean -ffdx -e node_modules
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
 
       - name: Installer les dépendances
-        run: node scripts/ci-install.mjs
+        run: npm ci
 
       # PR : seuls les tests liés aux fichiers modifiés (vitest relance tout si la config ou package.json changent).
       - name: Tests sur PR (fichiers concernés)
@@ -107,10 +98,10 @@ jobs:
         if: github.event_name != 'pull_request'
         run: npm run build:ci
 
-      # Chromium de Playwright, headless ; no-op quand il est déjà en cache sur le runner.
+      # Chromium de Playwright, headless, avec ses bibliothèques système (runner Linux neuf).
       - name: Navigateur de test e2e
         if: github.event_name != 'pull_request'
-        run: npx playwright install chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Test de fumée e2e
         if: github.event_name != 'pull_request'

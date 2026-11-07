@@ -26,8 +26,8 @@ Pour travailler sans les binaires Windows : `GIT_LFS_SKIP_SMUDGE=1 git clone …
 ## CI
 
 Un workflow par projet, à la racine (`.github/workflows/`), déclenché seulement par les changements de son dossier :
-`web-ci.yml` et `core-ci.yml` (aussi sur `packages/protocol`), `edge-ci.yml`, `desktop-ci.yml`. Web, core et edge tournent sur le
-runner auto-hébergé `laststream-local` (à enregistrer sur ce dépôt) ; desktop sur `windows-latest`.
+`web-ci.yml` et `core-ci.yml` (aussi sur `packages/protocol`), `edge-ci.yml`, `desktop-ci.yml`. Tous tournent sur les runners
+hébergés par GitHub : web, core et edge sur `ubuntu-latest`, desktop sur `windows-latest`.
 
 ## Tags
 
