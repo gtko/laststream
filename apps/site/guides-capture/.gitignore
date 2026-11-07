@@ -1,0 +1,8 @@
+# Identifiants de test (générés) et sorties locales : jamais commités
+.env.test
+out/
+.smoke-data/
+node_modules/
+.capture-data/
+.capture-data-source/
+.capture-data-tv/

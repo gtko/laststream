@@ -1,0 +1,115 @@
+/* Guides : styles propres aux guides, en plus de /style.css.
+   Tout passe par les variables du site (--bg, --surface, --line, --muted, --accent...).
+   Le site est sombre uniquement : pas de thème clair à prévoir. */
+
+:root {
+  --accent-text: #ff8a6e;  /* accent sur fond sombre : liens, libellés (plus clair que --accent) */
+  --line-strong: #4a4560;  /* bordure en pointillés des emplacements « à venir » */
+}
+
+/* ===== Fil d'Ariane ===== */
+.guide-crumbs { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.guide-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.guide-crumbs li + li::before { content: "\203A"; margin-right: 6px; opacity: 0.6; }
+.guide-crumbs a { color: var(--muted); text-decoration: none; }
+.guide-crumbs a:hover { color: var(--text); }
+.guide-crumbs [aria-current="page"] { color: var(--text); font-weight: 600; }
+
+/* ===== En-tête de page (titre, chapô, badges) ===== */
+.guide-hero { padding: 32px 0 40px; }
+@media (min-width: 900px) { .guide-hero { padding: 56px 0 56px; } }
+.guide-hero h1 { margin-top: 18px; font-size: clamp(2.2rem, 1.5rem + 3.4vw, 3.6rem); font-weight: 800; }
+.guide-hero .lead { max-width: 36em; }
+.guide-hero .shot { margin: 32px 0 0; }
+
+.guide-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; padding: 0; list-style: none; }
+.guide-badges li { padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font: 600 0.84rem/1.3 var(--font-b); }
+.guide-badges .is-time { color: var(--accent-text); border-color: rgba(255, 90, 54, 0.55); background: var(--accent-soft); }
+
+/* ===== Corps du guide ===== */
+.guide-body { padding-bottom: 72px; }  /* seul le bas : garde la marge latérale de .wrap */
+@media (min-width: 900px) { .guide-body { padding-bottom: 104px; } }
+.guide-body h2 { margin-top: 56px; font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.1rem); }
+.guide-body p { margin: 0; }
+.guide-body li a, .guide-body p a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Prérequis */
+.guide-body .guide-prereq { margin-top: 0; padding: 22px 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.guide-body .guide-prereq h2 { margin-top: 0; font-size: 1.2rem; }
+.guide-prereq ul { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 8px; color: var(--muted); }
+
+/* Étapes numérotées */
+.guide-steps { display: grid; gap: 36px; margin: 24px 0 0; padding: 0; list-style: none; counter-reset: guide-step; }
+.guide-steps > li { position: relative; counter-increment: guide-step; padding-left: 60px; }
+.guide-steps > li::before { content: counter(guide-step); position: absolute; left: 0; top: 0; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font: 800 1.1rem/1 var(--font-h); }
+.guide-steps > li > p { padding-top: 6px; }
+.guide-steps .shot { margin: 18px 0 0; }
+.guide-body .shot { margin: 18px 0 0; }  /* figures hors étapes */
+.guide-body pre + p { margin-top: 16px; }
+.guide-body > section:not(.guide-prereq) > ul { margin: 16px 0 0; padding-left: 20px; display: grid; gap: 10px; color: var(--muted); }
+
+/* Captures et vidéos (figure.shot) */
+.shot img, .shot video { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-2); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45); }
+.shot figcaption { margin-top: 12px; color: var(--muted); font-size: 0.92rem; }
+
+/* Emplacement neutre tant que le média n'existe pas (ratio 16/10, aucune image cassée) */
+.shot--todo { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 10; overflow: hidden; border: 1px dashed var(--line-strong); border-radius: var(--radius); background: linear-gradient(135deg, var(--bg-2), var(--surface)); }
+.shot--todo::before { content: ""; position: absolute; inset: 14px; border-radius: 12px; background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 10px, transparent 10px 20px); }
+.shot--todo span { position: relative; padding: 6px 14px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font: 600 0.88rem/1.3 var(--font-b); }
+
+/* Encadré « Bon à savoir » */
+.guide-tip { margin: 56px 0 0; padding: 22px 24px; border: 1px solid rgba(255, 90, 54, 0.45); border-radius: var(--radius); background: var(--accent-soft); }
+.guide-tip-title { margin: 0 0 8px; color: var(--accent-text); font: 700 0.8rem/1.2 var(--font-b); letter-spacing: 0.1em; text-transform: uppercase; }
+.guide-tip ul { margin: 0; padding-left: 20px; display: grid; gap: 10px; }
+
+/* Tableaux de valeurs (rubriques, limites) */
+.guide-table { width: 100%; margin: 28px 0 0; border: 1px solid var(--line); border-collapse: collapse; font-size: 0.95rem; }
+.guide-table th, .guide-table td { padding: 11px 16px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.guide-table tr:last-child > * { border-bottom: 0; }
+.guide-table thead th { background: var(--surface-2); color: var(--text); font: 700 0.88rem/1.3 var(--font-b); }
+.guide-table tbody th { color: var(--text); font-weight: 600; }
+.guide-table td { color: var(--muted); }
+
+/* Blocs de code (guides techniques) */
+.guide-body pre { margin: 20px 0 0; padding: 16px 18px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2); color: var(--text); font: 500 0.88rem/1.6 ui-monospace, "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace; -webkit-overflow-scrolling: touch; }
+.guide-body code { font-family: ui-monospace, "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.9em; padding: 2px 6px; border-radius: 6px; background: var(--surface-2); overflow-wrap: anywhere; }
+.guide-body pre code { padding: 0; border-radius: 0; background: none; font-size: 1em; }
+
+/* Liens « Guide précédent / suivant » */
+.guide-pager { display: flex; flex-wrap: wrap; gap: 12px; margin: 64px 0 0; }
+.guide-pager a { display: grid; gap: 4px; flex: 1 1 260px; max-width: 100%; padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); text-decoration: none; transition: border-color 0.2s, transform 0.2s; }
+.guide-pager a:hover { border-color: rgba(255, 90, 54, 0.6); transform: translateY(-2px); }
+.guide-pager .next { margin-left: auto; justify-items: end; text-align: right; }
+@media (min-width: 600px) { .guide-pager .next { flex: 0 1 320px; } }
+.guide-pager small { color: var(--muted); font: 700 0.76rem/1.2 var(--font-b); letter-spacing: 0.08em; text-transform: uppercase; }
+.guide-pager strong { color: var(--text); font: 700 1.05rem/1.3 var(--font-h); }
+
+/* ===== Sommaire (index des guides) ===== */
+.guide-index { padding: 0 0 72px; }
+@media (min-width: 900px) { .guide-index { padding-bottom: 104px; } }
+.guide-index h2 { margin: 0; font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.2rem); }
+.guide-index-sec { margin-top: 48px; }
+@media (min-width: 900px) { .guide-index-sec { margin-top: 72px; } }
+.guide-index-sec .cards { margin-top: 28px; }
+
+.guide-card { display: flex; flex-direction: column; }
+.guide-card h3 { margin: 18px 0 8px; font-size: 1.2rem; }
+.guide-card p { margin: 0; color: var(--muted); font-size: 0.97rem; }
+.guide-card a { display: block; height: 100%; color: inherit; text-decoration: none; }
+/* Toute la carte est cliquable (lien étiré) */
+.guide-card a::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); }
+.guide-card:focus-within { outline: 3px solid var(--text); outline-offset: 3px; }
+.guide-card a:focus-visible { outline: none; }
+.guide-card.is-soon { border-style: dashed; }
+.guide-card.is-soon:hover { transform: none; border-color: var(--line); }
+.guide-card.is-soon h3 { color: var(--muted); }
+.guide-num { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); font: 800 0.95rem/1 var(--font-h); }
+.guide-card.is-soon .guide-num { background: var(--surface-2); color: var(--muted); }
+
+/* ===== Petits écrans ===== */
+@media (max-width: 420px) {
+  .guide-steps { gap: 28px; }
+  .guide-steps > li { padding-left: 52px; }
+  .guide-steps > li::before { width: 36px; height: 36px; font-size: 1rem; }
+  .guide-body .guide-prereq, .guide-tip { padding: 20px 18px; }
+}
