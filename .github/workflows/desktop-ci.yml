@@ -68,14 +68,18 @@ jobs:
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         fetch-depth: 1
-        # Jeton garde le temps du telechargement LFS ci-dessous, puis retire avant toute compilation.
-        persist-credentials: true
+        # Le jeton du workflow ne reste pas dans .git/config : il n'est passe qu'a l'etape LFS ci-dessous.
+        persist-credentials: false
     # build.rs extrait libmpv de l'archive versionnee (Git LFS) : seule celle de la cible est telechargee.
-    - name: libmpv (Git LFS)
+    - name: Binaires (Git LFS)
       shell: bash
+      env:
+        LFS_TOKEN: ${{ github.token }}
       run: |
-        git lfs pull --include="apps/desktop/libmpv-2_x64.zip"
-        git config --local --unset-all http.https://github.com/.extraheader || true
+        auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
+        echo "::add-mask::$auth"
+        GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+          git lfs pull --include="apps/desktop/libmpv-2_x64.zip"
     - name: Stable with rustfmt and clippy
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
@@ -100,14 +104,18 @@ jobs:
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         fetch-depth: 1
-        # Jeton garde le temps du telechargement LFS ci-dessous, puis retire avant toute compilation.
-        persist-credentials: true
-    # build.rs extrait libmpv de l'archive versionnee (Git LFS) : seule celle de la cible est telechargee.
-    - name: libmpv (Git LFS)
+        # Le jeton du workflow ne reste pas dans .git/config : il n'est passe qu'a l'etape LFS ci-dessous.
+        persist-credentials: false
+    # build.rs extrait libmpv (Git LFS) ; les tests lancent bin/laststream-runtime.exe (Git LFS aussi).
+    - name: Binaires (Git LFS)
       shell: bash
+      env:
+        LFS_TOKEN: ${{ github.token }}
       run: |
-        git lfs pull --include="apps/desktop/libmpv-2_x64.zip"
-        git config --local --unset-all http.https://github.com/.extraheader || true
+        auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
+        echo "::add-mask::$auth"
+        GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+          git lfs pull --include="apps/desktop/libmpv-2_x64.zip,apps/desktop/bin/laststream-runtime.exe"
     - name: Stable
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
@@ -131,14 +139,18 @@ jobs:
       uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         fetch-depth: 1
-        # Jeton garde le temps du telechargement LFS ci-dessous, puis retire avant toute compilation.
-        persist-credentials: true
+        # Le jeton du workflow ne reste pas dans .git/config : il n'est passe qu'a l'etape LFS ci-dessous.
+        persist-credentials: false
     # build.rs extrait libmpv de l'archive versionnee (Git LFS) : seule celle de la cible est telechargee.
-    - name: libmpv (Git LFS)
+    - name: Binaires (Git LFS)
       shell: bash
+      env:
+        LFS_TOKEN: ${{ github.token }}
       run: |
-        git lfs pull --include="apps/desktop/libmpv-2_arm64.zip"
-        git config --local --unset-all http.https://github.com/.extraheader || true
+        auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
+        echo "::add-mask::$auth"
+        GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+          git lfs pull --include="apps/desktop/libmpv-2_arm64.zip"
     - name: Stable
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
