@@ -1,10 +1,14 @@
-name: CI
+name: Edge CI
+
+# Relais laststream-edge (services/edge).
 
 on:
   push:
-    branches: [master]
+    branches: [main]
+    paths: ['services/edge/**', '.github/workflows/edge-ci.yml']
   pull_request:
-    branches: [master]
+    branches: [main]
+    paths: ['services/edge/**', '.github/workflows/edge-ci.yml']
 
 permissions:
   contents: read
@@ -14,8 +18,9 @@ permissions:
 defaults:
   run:
     shell: cmd
+    working-directory: services/edge
 
-# PR : un nouveau push annule le run en cours. master : le run en cours va au bout, seul le plus récent en attente est conservé.
+# PR : un nouveau push annule le run en cours. main : le run en cours va au bout, seul le plus récent en attente est conservé.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -26,9 +31,15 @@ jobs:
     runs-on: [self-hosted, laststream-local]
     timeout-minutes: 15
     steps:
+      # Runner partagé avec Web CI et Core CI (même checkout du mono-repo) : pas de nettoyage global, qui effacerait leurs
+      # node_modules ; fetch-depth 0 comme eux, sinon le runner alterne entre checkout superficiel et complet.
       - uses: actions/checkout@v4
         with:
+          clean: false
+          fetch-depth: 0
           persist-credentials: false
+
+      - run: git clean -ffdx
 
       # Node 22, comme la CI de lastaddon (le code de production tourne sur workerd).
       - uses: actions/setup-node@v4

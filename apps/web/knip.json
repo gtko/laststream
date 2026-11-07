@@ -10,9 +10,6 @@
     "public/ls-sw.js",
     "public/service-worker.js"
   ],
-  "ignoreDependencies": [
-    "@capacitor/cli"
-  ],
   "ignoreBinaries": [
     "ffmpeg"
   ],

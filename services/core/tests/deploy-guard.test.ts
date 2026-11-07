@@ -409,3 +409,58 @@ describe('/health : release injectée au déploiement', () => {
     expect(plain.release).toBe('lastaddon-core@0.1.0');
   });
 });
+
+describe('mono-repo : tags préfixés par service (core-v…, edge-v…)', () => {
+  // Plusieurs services peuvent étiqueter le même commit : seul le tag du service compte.
+  function monoGit(onHead: string[], listed: string[] = [], calls: string[][] = []): GitRunner {
+    return (args) => {
+      calls.push(args);
+      const line = args.join(' ');
+      if (args[0] === 'fetch') return ok();
+      if (line.startsWith('status --porcelain')) return ok('');
+      if (line === 'rev-parse HEAD' || line.startsWith('rev-parse origin/')) return ok(`${SHA}\n`);
+      if (line === 'rev-parse --abbrev-ref HEAD') return ok('main\n');
+      if (line === 'tag --points-at HEAD') return ok(onHead.join('\n'));
+      // Sur origin : les tags déjà posés (HEAD ou liste), pas celui que la release va créer.
+      if (args[0] === 'ls-remote') return ok([...onHead, ...listed].includes(args[3].replace('refs/tags/', '')) ? `${SHA}\t${args[3]}\n` : '');
+      if (args[0] === 'tag' && args[1] === '--list') return ok(listed.join('\n'));
+      if (args[0] === 'log') return ok('LAST-9 : neuf');
+      throw new Error(`commande git inattendue : ${line}`);
+    };
+  }
+  const CORE = { branch: 'main', requireTag: true, tagPrefix: 'core-' };
+
+  it('parse, compare et choisit les tags du préfixe seulement', () => {
+    expect(parseReleaseTag('core-v0.4.3', 'core-')).toEqual({ tag: 'core-v0.4.3', major: 0, minor: 4, patch: 3 });
+    for (const bad of ['v0.4.3', 'edge-v0.4.3', 'core-0.4.3', 'core-v0.4']) expect(parseReleaseTag(bad, 'core-')).toBeNull();
+    expect(parseVersionArg('0.4.4', 'core-')).toBe('core-v0.4.4');
+    expect(parseVersionArg('core-v0.4.4', 'core-')).toBe('core-v0.4.4');
+    expect(latestTag(['core-v0.4.9', 'edge-v2.0.0', 'core-v0.4.10', 'v9.0.0'], 'core-')).toBe('core-v0.4.10');
+    expect(compareTags('core-v1.10.0', 'core-v1.9.0', 'core-')).toBeGreaterThan(0);
+  });
+
+  it('collectGitState retient le tag du service parmi ceux de HEAD, sans describe', () => {
+    const calls: string[][] = [];
+    const result = collectGitState(monoGit(['edge-v0.1.2', 'core-v0.4.4', 'site-v1.0.2'], [], calls), '/mono', CORE);
+    expect(result.tag).toBe('core-v0.4.4');
+    expect(evaluateGuard(result, CORE)).toEqual([]);
+    expect(calls.some((c) => c[0] === 'describe')).toBe(false);
+  });
+
+  it('HEAD étiqueté pour un autre service seulement : déploiement refusé', () => {
+    const result = collectGitState(monoGit(['edge-v0.1.2']), '/mono', CORE);
+    expect(result.tag).toBeUndefined();
+    expect(evaluateGuard(result, CORE).join()).toMatch(/étiquette core-vX\.Y\.Z/);
+    expect(evaluateGuard({ ...result, tag: 'v0.4.4' }, CORE).join()).toMatch(/n'a pas la forme core-vX\.Y\.Z/);
+  });
+
+  it('planRelease : tags du préfixe, notes limitées aux dossiers du service', () => {
+    const calls: string[][] = [];
+    const plan = planRelease(monoGit([], ['core-v0.4.3', 'core-v0.4.2'], calls), '/mono', { branch: 'main', versionArg: '0.4.4', tagPrefix: 'core-', paths: ['services/core', 'apps/web'] });
+    expect(plan.problems).toEqual([]);
+    expect(plan).toMatchObject({ tag: 'core-v0.4.4', previous: 'core-v0.4.3' });
+    expect(calls).toContainEqual(['tag', '--list', 'core-v*']);
+    expect(calls.find((c) => c[0] === 'log')).toEqual(['log', '--no-merges', '--pretty=format:%s', 'core-v0.4.3..HEAD', '--', 'services/core', 'apps/web']);
+    expect(planRelease(monoGit([], ['core-v0.4.3']), '/mono', { branch: 'main', versionArg: '0.4.3', tagPrefix: 'core-' }).problems.join()).toMatch(/existe déjà/);
+  });
+});

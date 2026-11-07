@@ -1,0 +1,4 @@
+# Dépendances et sorties de build de chaque projet : voir aussi les .gitignore de apps/* et services/*.
+node_modules/
+# Sorties partagées des applications (installeur Windows, APK publiées) : ..\dist depuis apps/desktop et apps/web.
+/apps/dist/

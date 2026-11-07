@@ -101,6 +101,8 @@ Le bouton « Lecture » ouvre le tiroir **Sources** : `GET {base}/{config}/strea
 
 ## Application Android : interface distante, mise à jour en un tap, mini-lecteur
 
+Le projet natif est dans `apps/mobile` (`android/`, `capacitor.config.json`, `npm run sync` pour `cap sync android`) ; le code JavaScript du pont et `scripts/publish-android.mjs` restent ici.
+
 - **Interface chargée depuis le serveur** : `capacitor.config.json` (`server.url` = `PUBLIC_BASE` de `src/data/config.ts`, un test vérifie l'égalité, ainsi que `androidScheme: https` et `allowNavigation` limité à ce domaine). Le pont Capacitor (LaststreamPlayer, CapacitorHttp, LaststreamUpdate…) est injecté sur l'origine du serveur (script de début de document restreint à l'origine de `server.url`) : `Capacitor.isNativePlatform()` reste vrai. Si le serveur ne répond pas au démarrage, `public/offline.html` (embarquée dans l'APK) s'affiche avec « Réessayer ». Les appels à un serveur perso d'une autre origine (PC en http) partent du code natif (`src/data/crossFetch.ts`), sans contenu mixte ni CORS. Le `localStorage` change d'origine (`http://localhost` devient le domaine du serveur) : pas de migration, reconnexion simple (la configuration, la bibliothèque et les préférences suivent le compte).
 - **Mise à jour en un tap** : le build donne un `versionCode` AAAAMMJJNN (compteur du jour dans `android/app/version-counter.properties`, non versionné, incrémenté à chaque `assemble*`). `node scripts/publish-android.mjs` lit `output-metadata.json`, calcule le SHA-256 et écrit `public/app/android/latest.json` ({versionCode, versionName, url, sha256, size, notes}) ; l'APK (≈ 50 Mo, au-delà des 25 Mo par fichier des Workers Assets) est copiée dans `../dist/laststream-android/publish/laststream-<versionCode>.apk` pour être servie à l'adresse `url` (R2 public derrière le Worker). L'application compare le versionCode au lancement puis toutes les 24 h, affiche « Mise à jour disponible (vX) — Installer », télécharge en https, vérifie le SHA-256, puis ouvre l'installeur système (autorisation « sources inconnues » guidée).
 - **Signature** : toutes les APK (debug et release) sont signées avec la clé de debug de ce PC (`~/.android/debug.keystore`) : Android n'accepte une mise à jour que signée par la même clé, il faut donc toujours builder depuis ce PC ou copier cette clé. Perdre la clé impose de désinstaller l'application avant d'installer la nouvelle.
@@ -108,21 +110,14 @@ Le bouton « Lecture » ouvre le tiroir **Sources** : `GET {base}/{config}/strea
 
 ## Déploiement
 
-L'interface web n'a pas de Worker à elle : son build (`dist/`) est copié dans le Worker Cloudflare **lastaddon-core** (dépôt `gtko/lastaddon`), qui la sert en Workers Assets sur `core.laststream.app`. `app.laststream.app` passe par **laststream-edge**, qui relaie vers lastaddon-core (Service Binding `CORE`).
+L'interface web n'a pas de Worker à elle : son build (`dist/`) est copié dans le Worker Cloudflare **lastaddon-core** (`services/core` du mono-repo), qui la sert en Workers Assets sur `core.laststream.app`. `app.laststream.app` passe par **laststream-edge** (`services/edge`), qui relaie vers lastaddon-core (Service Binding `CORE`).
 
-**Un merge sur `main` ne déploie rien** : `.github/workflows/ci.yml` ne fait que les vérifications (typecheck, lint, build, budget, knip, tests). Contrairement à laststream-edge et laststream-www (site), reliés à GitHub dans Cloudflare (Workers Builds) et déployés à chaque merge, lastaddon-core se déploie à la main, depuis un tag de lastaddon (procédure complète : `docs/deploiement.md` de lastaddon) :
+Un merge sur `main` ne déploie pas l'interface : Web CI (`.github/workflows/web-ci.yml` à la racine) ne fait que les vérifications. Le déploiement part d'une release du serveur, qui embarque l'interface du même commit (procédure complète : `services/core/docs/deploiement.md`) :
 
 ```bash
-# laststream-app : main à jour, build frais
-git switch main && git pull && npm run build
-
-# lastaddon (dépôt voisin) : déployer depuis un tag vX.Y.Z posé sur la pointe de main
-cd ../lastaddon
+cd services/core
 git switch main && git pull
-npm run release -- X.Y.Z                                # seulement si le dernier tag n'est plus la pointe de main
-git checkout vX.Y.Z
-npm run deploy:worker -- --ui ../laststream-app/dist    # --dry-run : vérifications seules
-git switch main
+npm run release -- X.Y.Z    # tag core-vX.Y.Z poussé → workflow « Core deploy » (build de apps/web + deploy:worker)
 ```
 
-La garde de `deploy:worker` refuse si laststream-app n'est pas propre, sur `main` et égal à `origin/main`, ou si lastaddon n'est pas exactement sur un tag `vX.Y.Z` égal à `origin/main`. Elle ne vérifie pas que `dist/` vient de ce commit : reconstruire juste avant.
+À la main, depuis un PC : `npm run build` dans `apps/web`, puis `git checkout core-vX.Y.Z` et `npm run deploy:worker` dans `services/core` (`--dry-run` : vérifications seules). La garde refuse si le mono-repo n'est pas propre, ou si HEAD n'est pas un tag `core-vX.Y.Z` égal à `origin/main`. Elle ne vérifie pas que `dist/` vient de ce commit : reconstruire juste avant.

@@ -1,7 +1,7 @@
 {
   "appId": "com.laststream.app",
   "appName": "Laststream",
-  "webDir": "dist",
+  "webDir": "../web/dist",
   "backgroundColor": "#0c0b11",
   "server": {
     "url": "https://app.laststream.app",

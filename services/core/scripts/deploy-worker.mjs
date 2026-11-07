@@ -1,9 +1,9 @@
-// Déploiement du Worker « lastaddon-core » : copie le build de l'interface (laststream-app) dans worker-ui/, puis wrangler deploy.
+// Déploiement du Worker « lastaddon-core » : copie le build de l'interface (apps/web) dans worker-ui/, puis wrangler deploy.
 // Usage : npm run deploy:worker [-- --ui <dossier du build>] [--dry-run] [--force-unlock]
-// Garde (LAST-150) : refuse si l'arbre suivi est sale, hors main, HEAD ≠ origin/main, ou HEAD n'est pas exactement un tag vX.Y.Z ;
-// avec l'interface, laststream-app doit aussi être propre et à jour sur main. Verrou KV contre deux déploiements simultanés.
+// Garde (LAST-150) : refuse si l'arbre suivi est sale, hors main, HEAD ≠ origin/main, ou HEAD ne porte pas de tag core-vX.Y.Z ;
+// l'interface vient du même mono-repo, donc du même commit. Verrou KV contre deux déploiements simultanés.
 // --dry-run : toutes les vérifications (garde, verrou en lecture), sans copie ni déploiement. Voir docs/deploiement.md.
-// Dossier du build : --ui, sinon LASTADDON_UI_SOURCE, sinon ..\laststream-app\dist (dépôts voisins) puis le chemin local de gtko.
+// Dossier du build : --ui, sinon LASTADDON_UI_SOURCE, sinon apps/web/dist du mono-repo.
 // Les secrets ne passent jamais par ce script : wrangler secret put (voir README, « Cloudflare Workers »).
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { hostname } from 'node:os';
@@ -23,8 +23,7 @@ const option = (name) => {
 const candidates = [
   option('--ui'),
   process.env.LASTADDON_UI_SOURCE,
-  resolve(root, '..', 'laststream-app', 'dist'),
-  'C:\\Users\\grego\\Projets\\laststream\\laststream-app\\dist',
+  resolve(root, '..', '..', 'apps', 'web', 'dist'),
 ].filter((path) => path !== undefined && path !== '');
 const source = candidates.find((path) => existsSync(join(path, 'index.html')));
 if (source === undefined) {
@@ -37,14 +36,14 @@ if (source === undefined) {
 const WRANGLER = 'wrangler@4.151.1';
 const files = (dir) => readdirSync(dir).flatMap((name) => (statSync(join(dir, name)).isDirectory() ? files(join(dir, name)) : [name]));
 
-// Dépôt de l'interface : le dossier parent du build (dist/ → laststream-app). Les commandes git y sont lancées avec -C.
+// Dépôt de l'interface : le dossier parent du build (dist/ → apps/web, dans le mono-repo). Les commandes git y sont lancées avec -C.
 const uiRepo = realGit(['rev-parse', '--show-toplevel'], resolve(source, '..')).stdout.trim() || resolve(source, '..');
 
 const kv = realKv({ binding: 'CACHE', wranglerSpec: WRANGLER, cwd: root });
 let code;
 try {
   code = await runDeploy(
-    { name: 'lastaddon', branch: 'main', lockKey: 'deploy-lock:lastaddon-core' },
+    { name: 'lastaddon', branch: 'main', lockKey: 'deploy-lock:lastaddon-core', tagPrefix: 'core-' },
     { dryRun: flag('--dry-run'), forceUnlock: flag('--force-unlock') },
     {
       git: realGit,
@@ -61,8 +60,10 @@ try {
         cpSync(source, target, { recursive: true });
         console.log(`Interface copiée : ${files(target).length} fichiers depuis ${source}`);
         const message = `${tag} ${sha}${uiSha === undefined ? '' : ` ui:${uiSha}`}`;
-        // --var LASTADDON_RELEASE : le Worker publie ce tag dans /health et comme release Sentry (serverRelease, src/app.ts).
-        return realWrangler(WRANGLER, ['deploy', '--tag', tag, '--message', message, '--var', `LASTADDON_RELEASE:${tag}`], root, { inherit: true }).status ?? 1;
+        // Version sans le préfixe du mono-repo (core-v0.4.4 → v0.4.4) : serverRelease() n'accepte que la forme vX.Y.Z.
+        const version = tag.slice('core-'.length);
+        // --var LASTADDON_RELEASE : le Worker publie cette version dans /health et comme release Sentry (serverRelease, src/app.ts).
+        return realWrangler(WRANGLER, ['deploy', '--tag', version, '--message', message, '--var', `LASTADDON_RELEASE:${version}`], root, { inherit: true }).status ?? 1;
       },
     },
   );

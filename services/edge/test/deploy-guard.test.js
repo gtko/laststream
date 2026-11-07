@@ -250,3 +250,48 @@ describe('planRelease (git simulé)', () => {
     assert.equal(planRelease(fakeGit({ branch: 'dev', dirty: ' M a', remoteTag: false }), '/r', { branch: 'master', versionArg: '9.0.0' }).problems.length, 2);
   });
 });
+
+describe('mono-repo : tags préfixés par service (edge-v…)', () => {
+  // Plusieurs services peuvent étiqueter le même commit : seul le tag du service compte.
+  function monoGit(onHead, listed = [], calls = []) {
+    return (args) => {
+      calls.push(args);
+      const line = args.join(' ');
+      if (args[0] === 'fetch') return ok();
+      if (line.startsWith('status --porcelain')) return ok('');
+      if (line === 'rev-parse HEAD' || line.startsWith('rev-parse origin/')) return ok(`${SHA}\n`);
+      if (line === 'rev-parse --abbrev-ref HEAD') return ok('main\n');
+      if (line === 'tag --points-at HEAD') return ok(onHead.join('\n'));
+      // Sur origin : les tags déjà posés (HEAD ou liste), pas celui que la release va créer.
+      if (args[0] === 'ls-remote') return ok([...onHead, ...listed].includes(args[3].replace('refs/tags/', '')) ? `${SHA}\t${args[3]}\n` : '');
+      if (args[0] === 'tag' && args[1] === '--list') return ok(listed.join('\n'));
+      if (args[0] === 'log') return ok('LAST-9 : neuf');
+      throw new Error(`commande git inattendue : ${line}`);
+    };
+  }
+  const EDGE = { branch: 'main', requireTag: true, tagPrefix: 'edge-' };
+
+  it('collectGitState retient le tag edge parmi ceux de HEAD, sans describe', () => {
+    const calls = [];
+    const result = collectGitState(monoGit(['core-v0.4.4', 'edge-v0.1.2'], [], calls), '/mono', EDGE);
+    assert.equal(result.tag, 'edge-v0.1.2');
+    assert.deepEqual(evaluateGuard(result, EDGE), []);
+    assert.equal(calls.some((c) => c[0] === 'describe'), false);
+  });
+
+  it('HEAD étiqueté pour un autre service seulement : déploiement refusé', () => {
+    const result = collectGitState(monoGit(['core-v0.4.4']), '/mono', EDGE);
+    assert.equal(result.tag, undefined);
+    assert.match(evaluateGuard(result, EDGE).join(), /étiquette edge-vX\.Y\.Z/);
+    assert.equal(parseReleaseTag('core-v0.4.4', 'edge-'), null);
+    assert.equal(parseVersionArg('0.1.2', 'edge-'), 'edge-v0.1.2');
+  });
+
+  it('planRelease : tags edge-v*, notes limitées à services/edge', () => {
+    const calls = [];
+    const plan = planRelease(monoGit([], ['edge-v0.1.1'], calls), '/mono', { branch: 'main', versionArg: '0.1.2', tagPrefix: 'edge-', paths: ['services/edge'] });
+    assert.deepEqual(plan.problems, []);
+    assert.equal(plan.tag, 'edge-v0.1.2');
+    assert.deepEqual(calls.find((c) => c[0] === 'log'), ['log', '--no-merges', '--pretty=format:%s', 'edge-v0.1.1..HEAD', '--', 'services/edge']);
+  });
+});

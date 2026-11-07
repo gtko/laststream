@@ -1,4 +1,5 @@
-// Création d'une release : tag annoté vX.Y.Z sur master à jour et propre, poussé, puis release GitHub (LAST-150).
+// Création d'une release : tag annoté edge-vX.Y.Z sur main à jour et propre, poussé, puis release GitHub (LAST-150).
+// Notes : commits de services/edge depuis le tag edge-v précédent.
 // Usage : npm run release -- <x.y.z> [--dry-run]
 // --dry-run : vérifie et affiche les notes, ne crée ni tag ni release. Le déploiement part ensuite de ce tag.
 import { spawnSync } from 'node:child_process';
@@ -8,13 +9,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { planRelease, realGit } from './lib/deploy-guard.mjs';
 
-const BRANCH = 'master';
+const BRANCH = 'main';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
 const versionArg = args.find((arg) => !arg.startsWith('--'));
 
-const plan = planRelease(realGit, root, { branch: BRANCH, versionArg });
+const plan = planRelease(realGit, root, { branch: BRANCH, versionArg, tagPrefix: 'edge-', paths: ['services/edge'] });
 if (plan.problems.length > 0) {
   console.error('Release REFUSÉE :');
   for (const problem of plan.problems) console.error(`  - ${problem}`);

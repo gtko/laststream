@@ -1,7 +1,10 @@
 # Déploiement et releases (LAST-150)
 
-On ne déploie que depuis un tag `vX.Y.Z` posé sur `main` (lastaddon) ou `master` (laststream-edge). Les scripts refusent tout le reste.
-La garde est dans `scripts/lib/deploy-guard.mjs` (copie identique dans `laststream-edge/scripts/lib/`) ; tests : `tests/deploy-guard.test.ts`.
+Mono-repo : chaque service a ses tags préfixés, `core-vX.Y.Z` (services/core) et `edge-vX.Y.Z` (services/edge), posés sur `main`.
+On ne déploie que depuis un tag du service posé sur la pointe de `main`. Les scripts refusent tout le reste. Dans la suite, `vX.Y.Z`
+désigne `core-vX.Y.Z` (ou `edge-vX.Y.Z` pour l'edge) ; `npm run release -- X.Y.Z` crée le tag préfixé, et le Worker reçoit la version
+sans préfixe (`--tag vX.Y.Z`, `LASTADDON_RELEASE`). Un push de tag `core-v*` lance le workflow « Core deploy » (`.github/workflows/core-deploy.yml`).
+La garde est dans `scripts/lib/deploy-guard.mjs` (copie identique dans `services/edge/scripts/lib/`) ; tests : `tests/deploy-guard.test.ts`.
 
 ## Procédure
 
@@ -9,21 +12,21 @@ La garde est dans `scripts/lib/deploy-guard.mjs` (copie identique dans `laststre
 2. Créer la release : `npm run release -- 0.2.0` (idem dans laststream-edge). Le script vérifie que la branche est propre et à jour,
    que la version est supérieure à la dernière étiquette, crée le tag annoté `v0.2.0` (notes : titres des commits depuis le tag précédent),
    le pousse, puis lance `gh release create v0.2.0 --notes-file …`. `--dry-run` affiche les notes sans rien créer.
-3. Déployer depuis ce tag : `git checkout v0.2.0` (HEAD détaché sur le tag), puis `npm run deploy:worker -- --ui ../laststream-app/dist`
+3. Déployer depuis ce tag : `git checkout v0.2.0` (HEAD détaché sur le tag), puis `npm run deploy:worker` (interface : `apps/web/dist`, à construire juste avant)
    (edge : `npm run deploy`). `--dry-run` fait toutes les vérifications sans copier ni déployer.
 4. Revenir sur la branche (`git switch main`).
 
 ## Ce que la garde refuse (code de sortie 1, message listant toutes les raisons)
 
 - arbre suivi sale (les fichiers non suivis ne comptent pas) ;
-- branche autre que `main` (lastaddon) / `master` (edge) ;
+- branche autre que `main` ;
 - HEAD différent de `origin/<branche>` après `git fetch` (copie locale en retard ou en avance) ;
 - HEAD n'est pas exactement un tag `vX.Y.Z` (`git describe --exact-match --tags`), ou ce tag n'existe pas sur `origin` ;
-- avec `--ui` (lastaddon) : le dépôt `laststream-app` du build doit aussi être propre, sur `main`, égal à `origin/main`. Son SHA est
+- interface (lastaddon) : le dépôt du build (le mono-repo, via `apps/web/dist`) doit aussi être propre, sur `main`, égal à `origin/main`. Son SHA est
   enregistré dans le message du déploiement (`<tag> <sha> ui:<sha>`). La garde ne prouve pas que `dist/` a été construit depuis ce SHA :
-  reconstruire le build (`npm run build` dans laststream-app) juste avant.
+  reconstruire le build (`npm run build` dans apps/web) juste avant.
 
-Un HEAD détaché sur le tag (`git checkout v0.2.0`) est accepté : il doit alors être égal à `origin/main` (ou `origin/master`), donc être la pointe
+Un HEAD détaché sur le tag (`git checkout v0.2.0`) est accepté : il doit alors être égal à `origin/main`, donc être la pointe
 de la branche de référence. Depuis une branche de feature, ou un tag posé sur un commit plus ancien que la pointe, le déploiement est refusé.
 
 ## Verrou entre sessions
@@ -57,7 +60,7 @@ Retour arrière : `npx wrangler@4.151.1 rollback` (ou `wrangler rollback <versio
 
 ## Ordre de déploiement
 
-1. **lastaddon-core** d'abord (le Worker appelé), avec l'interface de laststream-app qu'il sert (`--ui`, copiée dans `worker-ui/` puis téléversée
+1. **lastaddon-core** d'abord (le Worker appelé), avec l'interface (apps/web) qu'il sert (`--ui`, copiée dans `worker-ui/` puis téléversée
    comme Workers Assets).
 2. **laststream-edge** ensuite (l'appelant, Service Binding `CORE` vers lastaddon-core) : il ne doit jamais appeler une route que le core ne connaît pas encore.
    Un changement d'edge seul se déploie sans toucher au core.
