@@ -41,7 +41,7 @@ export type ClientMsg = Exclude<ClientMessage, { t: 'rtc' }> extends infer M
     : M
   : never;
 
-const SERVER_TYPES = new Set(['welcome', 'pong', 'state', 'media', 'join', 'leave', 'chat', 'react', 'settings', 'prep', 'countdown', 'vote', 'event', 'muted', 'host', 'reported', 'removed', 'wait', 'link_renewed', 'error', 'ended']);
+const SERVER_TYPES = new Set(['welcome', 'pong', 'state', 'media', 'source', 'join', 'leave', 'chat', 'react', 'settings', 'prep', 'countdown', 'vote', 'event', 'muted', 'host', 'reported', 'removed', 'wait', 'link_renewed', 'error', 'ended']);
 
 /** Message serveur d'une trame texte, ou null si elle est illisible ou d'un type inconnu. */
 export function parseServerMessage(raw: unknown): ServerMsg | null {
@@ -88,7 +88,7 @@ export function partyErrorText(code: string): string {
     case 'not_host': return 'Seul l’hôte peut faire ça.';
     case 'muted': return 'Tu as été rendu muet par l’hôte.';
     case 'rate_limited': return 'Trop de messages : ralentis un peu.';
-    case 'invalid_message': return 'Message invalide.';
+    // invalid_message : aucun message (un serveur antérieur refuse ainsi la trame source, sans fermer la connexion).
     case 'invalid_reaction': return 'Réaction inconnue.';
     case 'empty_message': return 'Message vide.';
     case 'message_not_found': return 'Message introuvable.';

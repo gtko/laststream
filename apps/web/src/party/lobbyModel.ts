@@ -1,4 +1,7 @@
+import type { Lang } from '../data/stream';
 import type { PartyParticipant } from '../data/socialApi';
+import { sourceKeyOf, type SourceView } from '../sources/info';
+import { languageChanged, sourceLabel } from './sourceChoice';
 import {
   COUNTDOWN_DEFAULT_SEC, type ControlMode, type EventKind, type ReactionMode, type VoteView, type WaitLateMode,
 } from './protocol';
@@ -140,3 +143,78 @@ export function voteShare(option: Pick<VoteView, 'votes'>, options: readonly Pic
 export const STAGE_EMOJIS = ['😂', '🔥', '😮', '❤️', '👏', '🎉'] as const;
 /** Réactions rapides du salon d'attente. */
 export const LOBBY_EMOJIS = ['👍', '🎉', '🔥', '😂'] as const;
+
+// ---------- Source du participant (« Ma source ») ----------
+/** Ligne de la liste des sources du salon d'attente. Aucun lien : seulement ce qui s'affiche. */
+export interface SourceRow {
+  /** Identifiant stable de la source (`sourceKeyOf`), l'index change à chaque réponse d'addon. */
+  key: string;
+  /** « VF · 1080p ». */
+  label: string;
+  /** « En cache · 4,2 Go ». */
+  meta: string;
+  selected: boolean;
+  /** `host` : même version que l'hôte ; `other` : autre langue que le salon ; null sinon. */
+  badge: 'host' | 'other' | null;
+  /** Pourquoi cette source ne passe pas dans ce navigateur (ligne d'avertissement), null si elle passe. */
+  warn: string | null;
+}
+
+const SOURCE_ROWS_MAX = 8;
+export const SOURCE_BADGE_TEXT = { host: 'Même version que l’hôte', other: 'Autre langue que le salon' } as const;
+
+const STATUS_TEXT: Record<string, string> = { cached: 'En cache', uncached: 'À la demande', direct: 'Direct' };
+
+/**
+ * Lignes jouables, au plus SOURCE_ROWS_MAX. Une ligne ne change jamais de place sous le doigt ni sous le focus : `opts.order`
+ * garde l'ordre des clés déjà affichées (la meilleure source d'abord au premier sondage), les nouvelles viennent à la suite. Le
+ * tableau est mis à jour sur place ; l'appelant le garde le temps du titre et le vide quand le titre change. Une sélection qui
+ * sort des lignes affichées prend la dernière place.
+ */
+export function buildSourceRows(
+  views: readonly SourceView[],
+  opts: { selectedKey: string; hostLabel: string | null; roomLanguage: Lang | null; compat?: (v: SourceView) => string | null; order?: string[] },
+): SourceRow[] {
+  const byKey = new Map<string, SourceView>();
+  for (const v of [...views].filter((x) => x.playable).sort((a, b) => b.score - a.score || a.index - b.index)) {
+    if (!byKey.has(sourceKeyOf(v))) byKey.set(sourceKeyOf(v), v);
+  }
+  const order = opts.order ?? [];
+  for (const key of byKey.keys()) if (!order.includes(key)) order.push(key);
+  const keys = order.filter((key) => byKey.has(key));
+  const top = keys.slice(0, SOURCE_ROWS_MAX);
+  if (byKey.has(opts.selectedKey) && !top.includes(opts.selectedKey)) top[top.length - 1] = opts.selectedKey;
+  const shown = top.map((key) => byKey.get(key)!);
+  return shown.map((v) => {
+    const label = sourceLabel(v);
+    const badge = opts.hostLabel && label === opts.hostLabel ? 'host' : languageChanged(v, opts.roomLanguage) ? 'other' : null;
+    return {
+      key: sourceKeyOf(v),
+      label,
+      meta: [STATUS_TEXT[v.status] ?? '', v.sizeLabel].filter(Boolean).join(' · '),
+      selected: sourceKeyOf(v) === opts.selectedKey,
+      badge,
+      warn: opts.compat?.(v) ?? null,
+    };
+  });
+}
+
+/** « Hôte : VF · 1080p » ; null sans libellé (l'hôte n'est pas prêt) ou pour l'hôte lui-même. */
+export const hostSourceLine = (hostLabel: string | null | undefined): string | null => (hostLabel ? 'Hôte : ' + hostLabel : null);
+
+/** Statut de la recherche de sources du participant. */
+export function sourceSearchText(count: number, searching: boolean): string {
+  if (searching) return count > 0 ? 'Recherche en cours… ' + count + (count > 1 ? ' sources' : ' source') : 'Recherche en cours…';
+  return count > 0 ? count + (count > 1 ? ' sources trouvées' : ' source trouvée') : 'Aucune source trouvée';
+}
+
+/** Avertissement quand la source choisie n'est pas dans la langue du salon ; null sinon. */
+export function sourceLanguageWarning(view: SourceView | null, roomLanguage: Lang | null, roomName: string): string | null {
+  return view && languageChanged(view, roomLanguage) ? 'Cette source n’est pas dans la langue du salon (' + roomName + ') : tu la liras dans une autre langue.' : null;
+}
+
+/** Vrai si des sources existent mais aucune dans la langue du salon (bandeau « Réessayer la recherche »). */
+export function noSourceInRoomLanguage(views: readonly SourceView[], roomLanguage: Lang | null): boolean {
+  const playable = views.filter((v) => v.playable);
+  return !!roomLanguage && playable.length > 0 && playable.every((v) => languageChanged(v, roomLanguage));
+}

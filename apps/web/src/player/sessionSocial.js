@@ -5,8 +5,10 @@ import { deleteNote, getNotes, postNote, updateNote } from '../data/socialV2Api'
 import { getHeatmap, getMissed } from '../data/socialV3Api';
 import { cinemaOn, endCinema, getState as getSocialState, loadPrefs, onNote, onNoteRemoved, sendMessage as sendSocialMessage, setCinemaHidden, startCinema, subscribe as subscribeSocial } from '../data/socialStore';
 import { isKidProfile } from '../data/auth';
+import { partyBridge } from '../party/bridge';
+import { partyReactLimit } from '../party/reactLimit';
 import { knownMessages } from './messageBubble';
-import { freshIncoming, handleNativeReact, handleNativeReply, nativeSocialOf, toNativeMessage, toNativeNotes, watchingViewers } from './nativeSocial';
+import { freshIncoming, handleNativeReact, handleNativeReply, nativeSocialOf, partyReactMessageOf, toNativeMessage, toNativeNotes, watchingViewers } from './nativeSocial';
 import { openShareDialog } from '../ui/socialHooks.js';
 import { cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, startPolicy, toggleElement, untilFor } from './playbackSocial';
 import { clusterNotes, crossing, liveFlashDue, mediaKey, rearmed, upsertNotes } from './notesTimeline';
@@ -88,15 +90,45 @@ function removeNote(nt, id) {
   syncNativeNotes(nt);
 }
 
+/**
+ * Noms sous lesquels un participant du salon peut être reconnu. Le salon ne porte aucun pid : `username` est le nom d'affichage
+ * du serveur (« compte » ou « compte · profil »), pas le handle social. On compare en minuscules le nom entier et la partie
+ * après « · » (le profil). Risque restant : deux personnes de même nom se confondent (l'écho de l'une cache l'emoji de l'autre).
+ */
+function roomNames(username) {
+  const name = String(username || '').trim().toLowerCase();
+  const dot = name.lastIndexOf(' · ');
+  return dot === -1 ? [name] : [name, name.slice(dot + 3).trim()];
+}
+
+/** Vrai si l'auteur de la note est dans le salon actif (ou est moi) : sa réaction y a déjà son écho. */
+function fromRoom(note) {
+  const me = getSocialState().me;
+  if (me && note.author.pid === me.pid) return true;
+  const c = partyBridge.client;
+  const h = note.author.handle;
+  const wanted = [h.name, h.full].map((n) => String(n || '').trim().toLowerCase());
+  return !!c && (c.participants || []).some((q) => roomNames(q.username).some((n) => n && wanted.includes(n)));
+}
+
 /** Charge les notes du média lu et écoute celles qui arrivent en direct. Erreurs silencieuses : la lecture n'en dépend pas. */
 export function startNotes(p) {
   const media = notesAllowed() ? noteMediaOf(p) : null;
-  if (!media) { S.ui.setNotesAvailable(false); return; }
+  // Écho des réactions de salon suivi pour tout titre lu, avec ou sans notes (LAST-1615) ; retiré à la fin de la session (stopNotes).
+  if (p.partyEcho) p.partyEcho();
+  const unsubParty = partyBridge.onChange(bindPartyReact);
+  bindPartyReact();
+  p.partyEcho = () => { unsubParty(); unbindPartyReact(); p.partyEcho = null; };
+  // En salon, « Réagir » reste visible sans notes : la réaction de salon marche sans note (seul le salon actif la garde).
+  if (!media) { S.ui.setNotesAvailable(partyBridge.isActive()); return; }
   const nt = { media, key: mediaKey(media), list: [], fired: new Set(), last: null, version: 0, renderKey: '', unsub: null };
   p.notes = nt;
   S.ui.setNotesAvailable(true);
   nt.unsub = onNote((m, note) => {
     if (p.notes !== nt || mediaKey(m) !== nt.key) return;
+    // En salon, l'emoji d'un participant du salon n'est pas affiché : l'écho du salon le montre déjà. Il reste un marqueur ; celui d'un
+    // ami hors salon, sur le même titre, s'affiche comme d'habitude (LAST-1615).
+    if (partyBridge.isActive() && note.kind === 'emoji' && fromRoom(note)) { nt.fired.add(note.id); putNotes(nt, [note]); return; }
     // Réaction d'un ami arrivée en direct près de notre position : affichée tout de suite (sinon seulement au franchissement).
     const me = getSocialState().me;
     const due = liveFlashDue(note, p.engine ? p.engine.state().time : NaN, { now: Date.now(), mePid: me ? me.pid : null, known: nt.list });
@@ -118,6 +150,7 @@ export function startNotes(p) {
 
 /** Fin de session ou changement de média : désabonnement, marqueurs et popover retirés. */
 export function stopNotes(p) {
+  if (p && p.partyEcho) p.partyEcho();
   const nt = p && p.notes;
   if (!nt) return;
   p.notes = null;
@@ -163,7 +196,8 @@ export function refreshNoteMarkers(nt, duration) {
 
 /** « Réagir ici » : popover pour la position courante, figée à l'ouverture. */
 export function openReactHere() {
-  if (!S.P || !S.P.view || !S.P.notes) return;
+  // En salon, la réaction ne dépend pas des notes du titre (LAST-1615) : le popover s'ouvre aussi sans notes.
+  if (!S.P || !S.P.view || (!S.P.notes && !partyBridge.isActive())) return;
   S.ui.closeCinemaMenu(false);
   const peer = S.bubble ? S.bubble.lastPeer() : null;
   const friend = peer ? { pid: peer.pid, name: peer.who.replace(/#.*$/, '') } : null;
@@ -174,11 +208,22 @@ export function openReactHere() {
  * Envoie une réaction à la position du popover. Si le profil connecté est connu, la note apparaît tout de suite (optimiste,
  * avec sa bulle) puis est remplacée par celle du serveur ; en cas d'échec elle disparaît et un toast explique.
  */
-export function postReact({ pos, kind, body, also }) {
+export function postReact({ pos, kind, body, also = null }) {
   const p = S.P;
   const nt = p && p.notes;
-  if (!nt) return;
   const at = Math.round(Math.max(0, pos) * 10) / 10;
+  // En salon, un emoji part par le WebSocket du salon : son écho est le seul affichage, rien n'est montré en local.
+  // La note est postée en silence pour les marqueurs. Une réaction par seconde, le reste est ignoré sans erreur (LAST-1615).
+  if (kind === 'emoji' && partyBridge.isActive() && partyBridge.client) {
+    if (!partyReactLimit.ready()) return;
+    if (partyBridge.client.sendReact(body, at)) {
+      partyReactLimit.sent();
+      if (also && nt) sendSocialMessage(also, body, { ...nt.media, pos: at }).catch(() => S.ui.toast('Message non envoyé, réessaie plus tard', 3500));
+      if (nt) postQuietNote(p, nt, { ...nt.media, pos: at, kind, body });
+      return;
+    }
+  }
+  if (!nt) return;
   const me = getSocialState().me;
   const tmp = me ? 'tmp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) : '';
   if (me) {
@@ -199,6 +244,43 @@ export function postReact({ pos, kind, body, also }) {
     if (tmp) removeNote(nt, tmp);
     S.ui.toast(err && err.status === 429 ? 'Trop de réactions : réessaie dans une minute' : 'Réaction non envoyée, réessaie plus tard', 3500);
   });
+}
+
+/** Note de réaction de salon posée sans affichage : marqueur et carte de chaleur seulement, erreurs silencieuses (LAST-1615). */
+function postQuietNote(p, nt, data) {
+  postNote(data).then(({ note }) => {
+    if (p.notes !== nt) return;
+    loadHeat(p);
+    nt.fired.add(note.id);
+    putNotes(nt, [note]);
+  }, () => undefined);
+}
+
+/** Écho des réactions de salon (LAST-1615) : suivi du client du salon, rebranché à chaque changement du salon. */
+let partyClient = null;
+let partyOff = null;
+let partyReactSeq = 0;
+function bindPartyReact() {
+  const c = partyBridge.isActive() ? partyBridge.client : null;
+  if (c === partyClient) return;
+  if (partyOff) partyOff();
+  partyClient = c;
+  partyOff = c ? c.on('react', onPartyReact) : null;
+}
+function unbindPartyReact() {
+  if (partyOff) partyOff();
+  partyOff = null;
+  partyClient = null;
+}
+
+/** Réaction de salon reçue : au natif, une bulle (pas de réactions flottantes) ; le web l'affiche déjà (LAST-1615). */
+function onPartyReact(d) {
+  const eng = nativeEngineOf(S.P);
+  if (!eng || socialHidden().has('bubbles')) return;
+  const c = partyBridge.client;
+  if (c && c.settings && c.settings.reactions === 'off') return;
+  const m = partyReactMessageOf(d, 'party-react-' + ++partyReactSeq);
+  if (m) eng.pushMessage(m);
 }
 
 /** Échec d'une modification ou d'une suppression : note absente côté serveur → retrait local, sinon retour en arrière. */

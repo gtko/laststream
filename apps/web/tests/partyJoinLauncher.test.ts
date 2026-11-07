@@ -64,10 +64,11 @@ describe('lanceur du salon posé par le chargeur du lecteur', () => {
     expect(partyBridge.launcher).not.toBeNull();
     expect(m.playBest).not.toHaveBeenCalled();
     const req = { type: 'movie', id: '550', name: 'Fight Club', season: null, episode: null, key: 'movie:550' };
-    const opts = { resume: 'none', prefer: () => null };
+    // Toutes les options de salon doivent passer : en oublier une perdrait la langue ou le choix de source sans erreur.
+    const opts = { resume: 'none', prefer: () => null, partyLang: 'fr', partyFingerprint: { fileName: 'a.mkv', size: 1, hash: null }, hostLabel: 'VF · 1080p', chosen: { id: 'v1' }, chosenLoaded: { views: [] } };
     await partyBridge.launcher!(req as never, opts as never);
     expect(m.playBest).toHaveBeenCalledTimes(1);
-    expect(m.playBest).toHaveBeenCalledWith(req, null, { resume: 'none', force: true, prefer: opts.prefer });
+    expect(m.playBest).toHaveBeenCalledWith(req, null, { ...opts, force: true });
   });
 });
 

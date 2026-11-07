@@ -13,7 +13,7 @@ import {
   audioKnown, chooseCompatibleSource, compatWarning, fileCodecsOf, guestStatuses, isCompatibleSource, isStreamable, verdictOf, type FileCodecs, type GuestVerdict, type SourceLike,
 } from './compat';
 import { codecCacheKey, getCodecs, probeSource, probeUrl, putCodecs } from './headerCodecs';
-import { fingerprintOf, pickByFingerprint, type FingerprintSource } from './fingerprint';
+import { pickByFingerprint, sameFingerprint, shareableFingerprintOf, type FingerprintSource } from './fingerprint';
 import { partyErrorText } from './protocol';
 import type { RangeSource } from '../relay/host';
 import { RelayError } from '../relay/protocol';
@@ -21,6 +21,9 @@ import { HostRelaySession, type RelayStats } from '../relay/session';
 import { urlRangeSource } from '../relay/sources';
 import { buildPartySubtitles, type LoadedSubtitle } from './subtitles';
 import { partyCreateErrorText } from './createError';
+import { sourceLabel, sourceLangCode } from './sourceChoice';
+import type { SourceView } from '../sources/info';
+import type { LoadedSources } from '../sources/load';
 
 /* Lien entre le salon (client WebSocket, contrôleur de synchronisation) et le lecteur. Un seul salon actif à la fois.
  * Le lecteur (player/session.js) appelle `sessionOpened`, `viewReady`, `tick`, `sessionClosed` ; l'interface appelle
@@ -66,6 +69,21 @@ export interface LaunchOptions {
   resume: 'none';
   /** Choix de la source : la version la plus proche de l'empreinte du salon. */
   prefer: (views: readonly FingerprintSource[]) => FingerprintSource | null;
+  /** Langue du salon (`room.language`) : la lecture suit cette langue, pas les préférences personnelles. */
+  partyLang?: string | null;
+  /** Empreinte de la version de l'hôte, pour choisir la même version (chaque participant lit avec SA source). */
+  partyFingerprint?: Fingerprint | null;
+  /** Libellé de la version de l'hôte (sourceLabel) : le participant prend la même langue et la même résolution. */
+  hostLabel?: string | null;
+  /** Source choisie dans le salon d'attente : lancée telle quelle, sans seconde recherche (`chosenLoaded` : la liste qui la contient). */
+  chosen?: SourceView | null;
+  chosenLoaded?: LoadedSources | null;
+}
+
+/** Choix du salon d'attente transmis au départ. */
+export interface LaunchChoice {
+  view: SourceView;
+  loaded: LoadedSources;
 }
 
 export type LaunchFn = (request: { type: 'movie' | 'tv'; id: string; name: string; season: number | null; episode: number | null; key: string }, opts: LaunchOptions) => Promise<unknown>;
@@ -88,7 +106,7 @@ export function requestOfRoom(room: PartyRoom, media: PartyMedia = room.media): 
 export function roomBodyOf(a: SessionAdapter, visibility: PartyVisibility, profileId: string, language: string) {
   const type = a.req.type === 'tv' ? 'series' : 'movie';
   const media: CreatePartyMedia = { type, tmdbId: Number(a.req.id), ...(type === 'series' ? { season: a.cur.season ?? a.req.season ?? 1, episode: a.cur.episode ?? a.req.episode ?? 1 } : {}) };
-  const fp = fingerprintOf(a.view);
+  const fp = shareableFingerprintOf(a.view);
   return {
     profileId, visibility, title: a.req.name, poster: a.poster || null, language, media, ...(fp ? { fingerprint: fp } : {}),
   };
@@ -99,6 +117,12 @@ export function lobbyBodyOf(req: { type: 'movie' | 'tv'; id: string; name: strin
   const type = req.type === 'tv' ? 'series' : 'movie';
   const media: CreatePartyMedia = { type, tmdbId: Number(req.id), ...(type === 'series' ? { season: req.season ?? 1, episode: req.episode ?? 1 } : {}) };
   return { profileId, visibility, title: req.name, poster, language, media };
+}
+
+/** Langue d'un salon à sa création : la langue audio de l'utilisateur, « vo » pour la version originale (jamais « fr » à sa place). */
+function creationLangOf(): string {
+  const audio = getLangPrefs().audio;
+  return audio === 'original' ? 'vo' : audio;
 }
 
 /** Adaptateur moteur -> `PlayerLike` pour le contrôleur. */
@@ -125,6 +149,9 @@ type Listener = () => void;
 
 /** Adresse WebSocket d'un ticket : `wsPath` est relatif à l'adresse du serveur (http -> ws, https -> wss). */
 export const socketUrl = (base: string, wsPath: string): string => base.replace(/\/+$/, '').replace(/^http/i, 'ws') + wsPath;
+
+/** Plafond du départ d'un salon : passé ce délai sans source prête, le participant se déclare prêt pour ne pas bloquer le salon. */
+const LAUNCH_HOLD_MAX_MS = 45_000;
 
 class PartyBridge {
   client: PartyClient | null = null;
@@ -185,7 +212,7 @@ class PartyBridge {
     const kid = isKidProfile();
     const vis = kid ? 'private' : visibility;
     const profileId = userStore.currentProfile().id;
-    const body = roomBodyOf(a, vis, profileId, getLangPrefs().audio === 'original' ? 'fr' : getLangPrefs().audio);
+    const body = roomBodyOf(a, vis, profileId, creationLangOf());
     const { room } = await createParty(body);
     await this.connect(room.id, profileId);
     // La lecture en cours de l'hôte fait foi pour le salon neuf.
@@ -197,7 +224,7 @@ class PartyBridge {
   async createLobby(req: { type: 'movie' | 'tv'; id: string; name: string; season?: number | null; episode?: number | null }, poster: string | null, visibility: PartyVisibility): Promise<PartyRoom> {
     const kid = isKidProfile();
     const profileId = userStore.currentProfile().id;
-    const lang = getLangPrefs().audio === 'original' ? 'fr' : getLangPrefs().audio;
+    const lang = creationLangOf();
     const { room } = await createParty(lobbyBodyOf(req, poster, kid ? 'private' : visibility, profileId, lang));
     await this.connect(room.id, profileId);
     return room;
@@ -212,13 +239,47 @@ class PartyBridge {
   }
 
   /** Lance la lecture du titre du salon avec la source la plus proche de l'hôte (départ du salon d'attente). */
-  async launchRoom(): Promise<void> {
+  async launchRoom(choice?: LaunchChoice | null, opts: { hold?: boolean } = {}): Promise<void> {
     const room = this.client?.room ?? this.room;
     if (!room) return;
     const req = requestOfRoom(room, this.client?.room?.media ?? room.media);
     if (!req) throw new UserApiError(0, 'media_unsupported');
     if (!this.launcher) throw new UserApiError(0, 'player_unavailable');
-    await this.launcher(req, this.launchOptions());
+    // `hold` : départ après un compte à rebours vu dans ce salon. L'arrivée en cours de film (welcome) ne retient rien.
+    if (opts.hold) this.holdLaunch();
+    const held = this.launchTimer;
+    try {
+      // Choix du salon d'attente : lancé directement (sans seconde recherche), avec les options de salon intactes.
+      await this.launcher(req, { ...this.launchOptions(), ...(choice ? { chosen: choice.view, chosenLoaded: choice.loaded } : {}) });
+      // Le lanceur a rendu la main sans source prête (panneau Sources, recherche vide) : `viewReady` ne viendra pas, le salon n'attend plus.
+      // Seulement si c'est encore CETTE retenue (un autre lancement a pu la remplacer ou `viewReady` l'avoir déjà libérée).
+      const a = this.adapter?.() ?? null;
+      if (held !== null && this.launchTimer === held && (!a || !a.ready)) this.releaseLaunch();
+    } catch (err) {
+      this.releaseLaunch();
+      throw err;
+    }
+  }
+
+  /**
+   * Départ du salon (compte à rebours écoulé) : ce participant se déclare non prêt, pour que le salon retienne la lecture le temps
+   * que sa source se charge (`viewReady` le libère). L'appelant décide de la retenue (`hold`, voir `launchRoom`) : on ne lit plus
+   * `state.playing`, que le serveur passe déjà à vrai à l'expiration. Aucune attente pour un serveur sans réglages v3 ou le réglage
+   * « attendre les retardataires » à off. Passé LAUNCH_HOLD_MAX_MS, il se déclare prêt.
+   */
+  private holdLaunch(): void {
+    const c = this.client;
+    if (!c || !c.v3 || c.settings.waitLate === 'off' || this.launchTimer !== null) return;
+    c.sendBuffering(false, 0);
+    this.launchTimer = setTimeout(() => this.releaseLaunch(), LAUNCH_HOLD_MAX_MS);
+  }
+
+  /** Source prête (ou plafond atteint) : le salon ne retient plus ce participant. Sans effet hors départ. */
+  private releaseLaunch(): void {
+    if (this.launchTimer === null) return;
+    clearTimeout(this.launchTimer);
+    this.launchTimer = null;
+    this.client?.sendBuffering(true, 0);
   }
 
   /** Rejoint un salon existant (le lecteur est lancé par l'appelant si besoin, voir `joinAndPlay`). */
@@ -242,7 +303,9 @@ class PartyBridge {
     this.controller = new PartyController(client);
     client.on('status', () => this.emit());
     client.on('participants', () => this.onParticipants(client));
-    client.on('welcome', (w) => { this.room = w.room; this.controller?.reset(); this.emit(); });
+    client.on('welcome', (w) => { this.room = w.room; this.readyDeclared = false; this.sentSource = null; this.controller?.reset(); this.emit(); });
+    // Source de l'hôte : le salon et sa langue suivent, sans lancement ni rechargement de la lecture.
+    client.on('source', (s) => { if (this.room) this.room = { ...this.room, fingerprint: s.fingerprint, language: s.language }; this.emit(); });
     client.on('host', () => { this.controller?.reset(); this.emit(); });
     client.on('media', (m) => this.onMedia(m));
     client.on('end', (reason) => { this.endReason = reason; this.emit(); });
@@ -256,6 +319,10 @@ class PartyBridge {
   lobby = false;
   /** Préparation déjà déclarée (prêt) pour la connexion en cours : posée au lancement d'une lecture hors salon d'attente. */
   private readyDeclared = false;
+  /** Dernière version envoyée au salon par l'hôte (empreinte en JSON) : évite de la renvoyer à chaque pas du lecteur. */
+  private sentSource: string | null = null;
+  /** Départ en cours : minuteur du plafond, tant que ce participant retient le salon (voir `holdLaunch`). */
+  private launchTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Rejoint un salon et lance la lecture du titre (ou de l'épisode) en cours, avec la source la plus proche de l'hôte. */
   async joinAndPlay(roomId: string, profileId: string): Promise<void> {
@@ -270,7 +337,16 @@ class PartyBridge {
   }
 
   private launchOptions(): LaunchOptions {
-    return { resume: 'none', prefer: (views) => pickByFingerprint(views, this.client?.room?.fingerprint ?? this.room?.fingerprint ?? null) };
+    // Salon : langue imposée par le salon et empreinte de la version de l'hôte (chacun lit dans la langue du salon).
+    const room = this.client?.room ?? this.room;
+    return {
+      resume: 'none',
+      prefer: (views) => pickByFingerprint(views, this.client?.room?.fingerprint ?? this.room?.fingerprint ?? null),
+      partyLang: room?.language,
+      partyFingerprint: room?.fingerprint ?? null,
+      // Libellé de la version de l'hôte (son « prêt » porte la qualité de sa source) : chaque participant prend la même langue et résolution.
+      hostLabel: this.client?.participants.find((p) => p.host)?.quality ?? null,
+    };
   }
 
   leave(): void {
@@ -282,6 +358,9 @@ class PartyBridge {
     this.pendingInvites = [];
     this.announced = '';
     this.readyDeclared = false;
+    this.sentSource = null;
+    if (this.launchTimer !== null) clearTimeout(this.launchTimer);
+    this.launchTimer = null;
     this.lobby = false;
     this.stopRelay();
     if (c) c.close();
@@ -562,10 +641,12 @@ class PartyBridge {
     if (!c || !c.room) return;
     this.controller?.reset();
     this.declareReady(c, a);
+    // Source prête : le salon ne retient plus ce participant (départ, voir launchRoom).
+    this.releaseLaunch();
     if (c.isHost) {
-      // Le lecteur de l'hôte vient de démarrer : son état s'aligne sur le salon à la prochaine mesure. Pas pour une bascule :
-      // le salon garde la main (son état ne doit pas être écrasé par celui d'un lecteur qui repart).
-      if (!a.switching) this.controller?.arm();
+      this.syncSource(c, a);
+      // Le lecteur de l'hôte qui démarre ne réaligne pas le salon : un départ de salon d'attente le cale sur son état, comme les
+      // autres participants. L'alignement sur le lecteur de l'hôte se fait à la création du salon et au changement d'épisode.
       const m = c.room.media;
       const s = a.cur.season ?? null;
       const e = a.cur.episode ?? null;
@@ -573,7 +654,9 @@ class PartyBridge {
       const tag = a.req.key + ':' + s + ':' + e;
       if (differs && s !== null && e !== null && this.announced !== tag) {
         this.announced = tag;
-        c.changeEpisode(s, e, fingerprintOf(a.view) ?? undefined);
+        // Épisode suivant décidé par l'hôte : son lecteur fait foi pour le salon à la prochaine mesure (sauf bascule).
+        if (!a.switching) this.controller?.arm();
+        c.changeEpisode(s, e, shareableFingerprintOf(a.view) ?? undefined);
       }
     } else {
       c.requestSync();
@@ -589,9 +672,33 @@ class PartyBridge {
     // Serveur sans réglages v3 (pas de champ `settings` dans le welcome) : ces messages seraient refusés, on ne les envoie pas.
     if (!c.v3) return;
     this.readyDeclared = true;
-    const quality = (a.view as { quality?: unknown } | null)?.quality;
-    c.sendReady(true, typeof quality === 'string' && quality !== '' ? quality.slice(0, 40) : null);
+    // Libellé de la source (« VF · 1080p ») : même vocabulaire que le choix de l'hôte (hostLabel).
+    const label = a.view ? sourceLabel(a.view as SourceView) : '';
+    c.sendReady(true, label ? label.slice(0, 40) : null);
     c.sendStatus('ready');
+  }
+
+  /**
+   * Hôte : la version lue est envoyée au salon quand elle diffère de celle du salon (départ d'un salon d'attente, changement de
+   * source). Une fois par version : la trame déjà envoyée, puis l'écho du salon, évitent le doublon. Jamais de lien.
+   */
+  private syncSource(c: PartyClient, a: SessionAdapter): void {
+    if (a.view) this.shareSource(c, a.view as SourceView);
+  }
+
+  /** Hôte, salon d'attente : la source qu'il vient de choisir est annoncée tout de suite, pour que les autres s'alignent avant le départ. */
+  announceSource(view: SourceView): void {
+    const c = this.client;
+    if (c && c.room && c.isHost) this.shareSource(c, view);
+  }
+
+  private shareSource(c: PartyClient, view: SourceView): void {
+    const fp = shareableFingerprintOf(view);
+    const key = JSON.stringify(fp);
+    if (key === this.sentSource || sameFingerprint(c.room?.fingerprint, fp)) return;
+    // Source multi ou de langue inconnue : aucune langue envoyée, la langue du salon ne change pas.
+    const lang = sourceLangCode(view);
+    if (c.sendSource(fp, lang ?? undefined)) this.sentSource = key;
   }
 
   /** Appelé à chaque pas de la boucle du lecteur (250 ms, ou 1 s boucle d'interface arrêtée). */

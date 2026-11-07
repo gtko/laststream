@@ -47,6 +47,8 @@ export interface ClientEvents {
   welcome: ServerMsg & { t: 'welcome' };
   state: PlaybackState;
   media: { media: PartyMedia; fingerprint: Fingerprint | null; state: PlaybackState };
+  /** Source choisie par l'hôte : empreinte (null si inconnue), langue et auteur. Ni lecture ni relance côté invité. */
+  source: { fingerprint: Fingerprint | null; language: string; by: string };
   participants: PartyParticipant[];
   /** Ligne de chat : une ligne de l'historique reçue à la (re)connexion, ou une nouvelle ligne. */
   chat: ChatLine;
@@ -327,6 +329,11 @@ export class PartyClient {
         this.emit('media', { media: msg.media, fingerprint: msg.fingerprint ?? null, state: msg.state });
         this.emit('state', msg.state);
         break;
+      case 'source':
+        // Source de l'hôte : le salon et sa langue suivent, sans toucher à l'état de lecture ni relancer la source.
+        if (this.room) this.room = { ...this.room, fingerprint: msg.fingerprint ?? null, language: msg.language };
+        this.emit('source', { fingerprint: msg.fingerprint ?? null, language: msg.language, by: msg.by });
+        break;
       case 'join':
         this.participants = [...this.participants.filter((p) => p.username !== msg.participant.username), msg.participant];
         this.emit('participants', this.participants);
@@ -429,6 +436,10 @@ export class PartyClient {
   }
   changeEpisode(season: number, episode: number, fingerprint?: Fingerprint): boolean {
     return this.isHost && this.raw({ t: 'episode', season, episode, ...(fingerprint ? { fingerprint } : {}) });
+  }
+  /** Source du salon (hôte seul) : empreinte de la version lue (null si inconnue) et langue de la source, facultative. Jamais de lien. */
+  sendSource(fingerprint: Fingerprint | null, language?: string): boolean {
+    return this.isHost && this.raw({ t: 'source', fingerprint, ...(language ? { language } : {}) });
   }
   /**
    * Message du chat : espaces retirés, CHAT_MAX_CHARS caractères au plus ; vide = rien n'est envoyé. `pos` : position du film (s),

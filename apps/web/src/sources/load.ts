@@ -298,6 +298,8 @@ export interface LaunchOptions {
   onUpdate?: (next: LoadedSources) => void;
   /** Avant chaque pause : l'écran de chargement affiche l'état courant. */
   onWait?: (cur: LoadedSources, rec: Recommendation | null) => void;
+  /** Salon, langue imposée : tant que la recommandation est un repli de langue, attendre jusqu'à ce délai (ms depuis `since`) pendant que des addons répondent. */
+  fallbackWaitMs?: number;
 }
 
 export interface LaunchChoice {
@@ -318,7 +320,9 @@ export async function awaitLaunchable(start: LoadedSources, opts: LaunchOptions)
   while (!opts.stop?.() && cur.pending.length && !opts.good(rec)) {
     const now = Date.now();
     if (!readableAt && opts.readable(cur.views)) readableAt = now;
-    const deadline = readableAt ? Math.min(readableAt + LAUNCH_GRACE_MS, t0 + LAUNCH_MAX_MS) : t0 + POLL_MAX_MS;
+    const deadline = opts.fallbackWaitMs !== undefined && rec?.languageFallback
+      ? t0 + opts.fallbackWaitMs
+      : readableAt ? Math.min(readableAt + LAUNCH_GRACE_MS, t0 + LAUNCH_MAX_MS) : t0 + POLL_MAX_MS;
     if (now >= deadline) break;
     opts.onWait?.(cur, rec);
     await new Promise((r) => setTimeout(r, Math.min(POLL_EVERY_MS, deadline - now)));

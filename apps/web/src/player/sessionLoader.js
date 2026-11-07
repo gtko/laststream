@@ -65,7 +65,7 @@ export const playSource = (...args) => launch('playSource', args);
 partyBridge.launcher = async (request, o) => {
   const g = generation;
   const c = partyBridge.client;
-  const r = await playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer });
+  const r = await playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer, partyLang: o.partyLang, partyFingerprint: o.partyFingerprint, hostLabel: o.hostLabel, chosen: o.chosen, chosenLoaded: o.chosenLoaded });
   if (g !== generation && partyBridge.client === c) partyBridge.leave();
   return r;
 };

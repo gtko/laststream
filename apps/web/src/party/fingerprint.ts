@@ -77,3 +77,22 @@ export function pickByFingerprint<V extends FingerprintSource>(views: readonly V
   }
   return bestScore >= MATCH_MIN ? best : null;
 }
+
+/** Nom de fichier ressemblant à une URL (`://`, début en `//`, `www.` ou `magnet:`). Même motif que le serveur (party/protocol.ts). */
+const URL_LIKE_NAME = /:\/\/|^\/\/|^www\.|^magnet:/i;
+
+/**
+ * Empreinte envoyée au salon : jamais une URL. Un nom de fichier qui ressemble à un lien (://, //, www., magnet:) est retiré ; null si rien
+ * ne reste. La taille et le hash ne révèlent aucun lien.
+ */
+export function shareableFingerprintOf(view: FingerprintSource | null | undefined): Fingerprint | null {
+  const fp = fingerprintOf(view);
+  if (!fp) return null;
+  const fileName = fp.fileName && !URL_LIKE_NAME.test(fp.fileName) ? fp.fileName : null;
+  return fileName || fp.size !== null || fp.hash ? { fileName, size: fp.size, hash: fp.hash } : null;
+}
+
+/** Deux empreintes identiques, champs à null compris (null égale null). */
+export function sameFingerprint(a: Partial<Fingerprint> | null | undefined, b: Partial<Fingerprint> | null | undefined): boolean {
+  return (a?.fileName ?? null) === (b?.fileName ?? null) && (a?.size ?? null) === (b?.size ?? null) && (a?.hash ?? null) === (b?.hash ?? null);
+}

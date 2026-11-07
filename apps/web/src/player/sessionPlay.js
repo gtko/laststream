@@ -28,6 +28,8 @@ import { failover, localFailure, nextCandidate, recordRace } from './sessionFail
 import { nativeOptions, pollMoreSources } from './sessionNative.js';
 import { loaderExtra } from './sessionOpen.js';
 import { partyAdapter, resolveRelayUrl } from './sessionSocial.js';
+import { roomAudioLang } from '../party/sourceChoice';
+import { originalLangOf } from './sessionState.js';
 import { S, abortError, audioPreference, badKey, describeView, getCaps, hasEpisodesPanel, miniState, nextRef, sourceLine, storeGet } from './sessionState.js';
 import { refreshAddonThumbs } from './sessionThumbs.js';
 import { refreshUI, syncTicks } from './sessionTick.js';
@@ -105,7 +107,7 @@ async function prepareView(p, cand, signal, local = false, opts = {}) {
   let choice = chooseEngine({
     shell: !!shell, native, serverUp: media.up, probe, caps: getCaps(), notWebReady: view.notWebReady,
     name: view.filename || media.url, forceTranscoding: p.forceHls && !direct,
-    preferredLang: audioPreference()[0], audioTracksSupported: !!S.ui.video.audioTracks,
+    preferredLang: roomAudioLang(p.launchOpts && p.launchOpts.partyLang, originalLangOf(p)) || audioPreference()[0], audioTracksSupported: !!S.ui.video.audioTracks,
     desktopEngine: cand.shellBackend ? 'libvlc' : getDesktopEngine(), libvlcAvailable: shellHasLibvlc(),
   });
   if (!direct && choice.engine === 'hls') {
