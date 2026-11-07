@@ -1,0 +1,89 @@
+import type { DurableObjectNamespace, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
+import type { EnvLike, RuntimeEnv } from '../types.js';
+import type { Metrics } from './metrics-do.js';
+import type { PartyRoom } from './party-room.js';
+import type { UserStoreDO } from './user-store-do.js';
+
+/** Binding de service (Workers Assets) : seule la méthode fetch sert, avec les types Request/Response de l'application. */
+export interface AssetsFetcher {
+  fetch(request: Request): Promise<Response>;
+}
+
+/** Binding Rate Limiting de Workers (période de 10 ou 60 secondes seulement). */
+interface RateLimitBinding {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
+/** Liaisons du Worker lastaddon-core (voir wrangler.jsonc) : variables, secrets et ressources. */
+export interface WorkerEnv {
+  /** Durable Object des données utilisateur. */
+  USER_STORE: DurableObjectNamespace<UserStoreDO>;
+  /** Durable Objects des salons de visionnage (un par salon). */
+  PARTY_ROOM: DurableObjectNamespace<PartyRoom>;
+  /** Durable Object des métriques d'exploitation et des purges de cache (absent : métriques en mémoire de l'isolat). */
+  METRICS?: DurableObjectNamespace<Metrics>;
+  /** KV des caches persistants (statut AllDebrid, packs, URL émises, état de lecture). */
+  CACHE: KVNamespace;
+  /** Interface web (Workers Assets). */
+  ASSETS: AssetsFetcher;
+  /** Limite de connexion/inscription par IP et par nom d'utilisateur (absentes : compteurs en mémoire). */
+  AUTH_LIMITER_IP?: RateLimitBinding;
+  AUTH_LIMITER_USER?: RateLimitBinding;
+  /** Limite globale des appels sortants vers MDBList. */
+  MDBLIST_LIMITER?: RateLimitBinding;
+  /**
+   * Limites de débit partagées des routes sensibles et des mises à niveau WebSocket (absentes : Map locale seule). Nom = limite
+   * par minute (RL_TYPING : par 10 s) ; voir rate-limit-shared.ts et wrangler.jsonc.
+   */
+  RL_10_PER_MIN?: RateLimitBinding;
+  RL_20_PER_MIN?: RateLimitBinding;
+  RL_30_PER_MIN?: RateLimitBinding;
+  RL_60_PER_MIN?: RateLimitBinding;
+  RL_120_PER_MIN?: RateLimitBinding;
+  RL_300_PER_MIN?: RateLimitBinding;
+  RL_1200_PER_MIN?: RateLimitBinding;
+  RL_TYPING?: RateLimitBinding;
+  /** Budget quotidien global des appels MDBList (variable, entier) : absente, 800 (lt/quota.ts). */
+  MDBLIST_DAILY_BUDGET?: string;
+  /** Bucket R2 du catalogue TV et de l'EPG (alimenté par le Cron Trigger). */
+  TV?: R2Bucket;
+  /** Bucket R2 des fiches partagées (meta/<type>/<tmdbId>.json) : absent, fiches construites à chaque demande. */
+  META?: R2Bucket;
+  /** Bucket R2 des avatars par collections (catalog.json, c/, i/ ; voir scripts/avatars) : absent, /avatars/* répond 404. */
+  AVATARS?: R2Bucket;
+  /** DSN Sentry (secret) : absent, aucune remontée d'erreur. */
+  SENTRY_DSN?: string;
+  /** Relais TURN Cloudflare Realtime (secrets) : identifiant de clé et jeton d'API ; absents, la watch party reste en STUN seul (voir src/party/turn.ts). */
+  TURN_KEY_ID?: string;
+  TURN_KEY_API_TOKEN?: string;
+  /** Autres liaisons : variables (chaînes) et secrets. */
+  [name: string]: unknown;
+}
+
+/**
+ * Noms de secrets du Worker → variables lues par l'application. Le secret du Worker porte le nom court (`EDGE_SECRET`),
+ * comme dans le Worker de relais ; l'application lit le nom LASTADDON_EDGE_SECRET.
+ */
+const ALIASES: Readonly<Record<string, string>> = {
+  LASTADDON_EDGE_SECRET: 'EDGE_SECRET',
+};
+
+/** Variables d'exécution d'un Worker : liaisons de type chaîne (variables et secrets). Lecture seule. */
+export function workersRuntimeEnv(env: WorkerEnv): RuntimeEnv {
+  const get = (name: string): string | undefined => {
+    const direct = env[name];
+    if (typeof direct === 'string') return direct;
+    const alias = ALIASES[name];
+    const aliased = alias === undefined ? undefined : env[alias];
+    return typeof aliased === 'string' ? aliased : undefined;
+  };
+  return {
+    get,
+    all: (): EnvLike => {
+      const out: Record<string, string | undefined> = {};
+      for (const [name, value] of Object.entries(env)) if (typeof value === 'string') out[name] = value;
+      for (const name of Object.keys(ALIASES)) out[name] ??= get(name);
+      return out;
+    },
+  };
+}

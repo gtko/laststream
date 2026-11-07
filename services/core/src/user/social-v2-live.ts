@@ -1,0 +1,278 @@
+import type { EveningEvent } from '@laststream/protocol/social';
+import type { ActivityItem } from './social-v2-activity.js';
+import type { SocialEvent } from './social-v2-events.js';
+import {
+  type FriendView,
+  type FriendRequestView,
+  type Handle,
+  type MediaRef,
+  type MessageView,
+  type NoteView,
+  type PollView,
+  type ReactionView,
+  type SubjectView,
+  normalizeMedia,
+  normalizeWatching,
+} from './social-v2-store.js';
+
+/**
+ * Flux temps réel social (contrat « WebSocket temps réel ») : traduction pure d'un événement social en trames JSON, et
+ * lecture des trames client. Aucun accès aux données ici : les vues (amis, demandes) sont celles que l'émetteur a déjà
+ * calculées pour son groupe de destinataires (drapeau « foyer » posé par social-v2-routes, statut invisible vu hors
+ * ligne et sans titre par le store). Chaque forme ne reprend que les champs du contrat : aucun identifiant interne.
+ */
+
+/** Chemin de la mise à niveau WebSocket, obtenu par POST /user/social/live-ticket. */
+export const SOCIAL_LIVE_PATH = '/user/social/live';
+/**
+ * En-tête interne posé par le Worker après vérification du ticket (profil = pid vérifié). Le client ne peut pas le
+ * forger : le Worker l'écrase toujours. Seul le Durable Object des données lit cet en-tête.
+ */
+export const SOCIAL_LIVE_PID_HEADER = 'x-social-live-pid';
+/** En-têtes internes (écrasés par le Worker) : nonce et échéance (ms) du ticket, pour son usage unique. */
+export const SOCIAL_LIVE_NONCE_HEADER = 'x-social-live-nonce';
+export const SOCIAL_LIVE_EXP_HEADER = 'x-social-live-exp';
+/** Taille maximale d'une trame client, en caractères. Au-delà, la connexion est fermée (4013). */
+export const SOCIAL_LIVE_MAX_FRAME_CHARS = 1024;
+/** Code de fermeture d'une connexion remplacée : au-delà de SOCIAL_LIVE_MAX_PER_PID, la plus ancienne du profil est fermée. */
+export const SOCIAL_LIVE_REPLACED = 4000;
+/**
+ * Connexions simultanées par profil (appareils ou onglets). La nouvelle connexion ferme la plus ancienne (4000) seulement
+ * au-delà de ce nombre : deux onglets d'un même profil cohabitent sans se déconnecter mutuellement.
+ */
+export const SOCIAL_LIVE_MAX_PER_PID = 5;
+/** Code de fermeture d'une connexion qui dépasse le débit de trames autorisé. */
+export const SOCIAL_LIVE_RATE_LIMITED = 4008;
+/**
+ * Code de fermeture d'une trame client trop grande. Un code applicatif (4000-4999) : les codes standard comme 1009 ne
+ * peuvent pas être envoyés par `WebSocket.close` dans l'exécution Workers.
+ */
+export const SOCIAL_LIVE_FRAME_TOO_LARGE = 4013;
+/**
+ * Code de fermeture d'une trame non texte (binaire). Applicatif lui aussi : 1003 (« données non acceptables ») est refusé
+ * par workerd, qui n'admet que 1000 et 3000-4999 (voir le commentaire de 4013).
+ */
+export const SOCIAL_LIVE_BINARY_FRAME = 4003;
+
+/** Trame sortante du contrat, telle qu'un client la reçoit. */
+export type LiveFrame =
+  | { t: 'message'; message: MessageView }
+  | { t: 'read'; pid: string; at: number }
+  | { t: 'presence'; friend: FriendView }
+  | { t: 'request'; request: FriendRequestView }
+  | { t: 'friend'; friend: FriendView }
+  | { t: 'unfriend'; pid: string }
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'note_removed'; media: MediaRef; id: string }
+  | { t: 'list'; listId: string }
+  | { t: 'reaction'; conv: string; id: string; reactions: ReactionView[] }
+  | { t: 'poll'; conv: string; poll: PollView }
+  | { t: 'typing'; conv: string; pid: string }
+  | { t: 'join_request'; from: FriendView }
+  | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
+  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string; avatar?: string }; partyId: string; title: string }
+  | { t: 'activity'; item: ActivityItem }
+  /** Soirées : la trame est l'`EveningEvent` du protocole, discriminée par `type` (et non `t`). */
+  | EveningEvent;
+
+/** Trame à remettre à un profil : sa destination et le texte JSON exact. */
+export interface LiveEnvelope {
+  pid: string;
+  frame: string;
+}
+
+function handleOut(handle: Handle): Handle {
+  return { name: handle.name, tag: handle.tag, full: handle.full };
+}
+
+function subjectOut(view: SubjectView): SubjectView {
+  const out: SubjectView = { pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, status: view.status };
+  if (view.avatar !== undefined) out.avatar = view.avatar;
+  if (view.customStatus !== undefined) out.customStatus = { ...view.customStatus };
+  // Hors ligne (dont le mode invisible) : jamais de titre en cours.
+  if (view.status !== 'offline' && view.watching !== undefined) out.watching = normalizeWatching(view.watching);
+  if (view.lastSeen !== undefined) out.lastSeen = view.lastSeen;
+  return out;
+}
+
+function friendOut(view: FriendView): FriendView {
+  const out: FriendView = { ...subjectOut(view), household: view.household === true, favorite: view.favorite === true, muted: view.muted === true };
+  if (view.nickname !== undefined) out.nickname = view.nickname;
+  return out;
+}
+
+function requestOut(view: FriendRequestView): FriendRequestView {
+  const out: FriendRequestView = { pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, createdAt: view.createdAt };
+  if (view.avatar !== undefined) out.avatar = view.avatar;
+  return out;
+}
+
+function reactionOut(view: ReactionView): ReactionView {
+  return { emoji: view.emoji, count: view.count, mine: view.mine };
+}
+
+function pollOut(view: PollView): PollView {
+  return {
+    id: view.id,
+    question: view.question,
+    closed: view.closed,
+    options: view.options.map((option) => ({ id: option.id, label: option.label, votes: option.votes, mine: option.mine })),
+  };
+}
+
+function messageOut(view: MessageView): MessageView {
+  const out: MessageView = {
+    id: view.id,
+    conv: view.conv,
+    from: view.from,
+    kind: view.kind,
+    body: view.body,
+    reactions: view.reactions.map(reactionOut),
+    createdAt: view.createdAt,
+  };
+  if (view.to !== undefined) out.to = view.to;
+  if (view.context !== undefined) out.context = { ...normalizeMedia(view.context), ...(view.context.pos === undefined ? {} : { pos: view.context.pos }) };
+  if (view.title !== undefined) out.title = { ...view.title };
+  if (view.moment !== undefined) out.moment = { ...view.moment };
+  if (view.party !== undefined) out.party = { ...view.party };
+  if (view.poll !== undefined) out.poll = pollOut(view.poll);
+  if (view.replyTo !== undefined) out.replyTo = view.replyTo;
+  if (view.readAt !== undefined) out.readAt = view.readAt;
+  return out;
+}
+
+function activityOut(view: ActivityItem): ActivityItem {
+  const media: ActivityItem['media'] = { type: view.media.type, tmdbId: view.media.tmdbId, title: view.media.title };
+  if (view.media.poster !== undefined) media.poster = view.media.poster;
+  if (view.media.season !== undefined) media.season = view.media.season;
+  if (view.media.episode !== undefined) media.episode = view.media.episode;
+  const out: ActivityItem = { id: view.id, pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, kind: view.kind, media, at: view.at };
+  if (view.avatar !== undefined) out.avatar = view.avatar;
+  if (view.rating !== undefined) out.rating = view.rating;
+  return out;
+}
+
+function noteOut(view: NoteView): NoteView {
+  const author: NoteView['author'] = { pid: view.author.pid, handle: handleOut(view.author.handle), avatarColor: view.author.avatarColor };
+  if (view.author.avatar !== undefined) author.avatar = view.author.avatar;
+  return {
+    id: view.id,
+    author,
+    pos: view.pos,
+    kind: view.kind,
+    body: view.body,
+    createdAt: view.createdAt,
+  };
+}
+
+/** Trame de soirée champ par champ : aucun champ interne ne passe. */
+function eveningOut(event: EveningEvent): EveningEvent {
+  switch (event.type) {
+    case 'evening_invite': {
+      const out: Extract<EveningEvent, { type: 'evening_invite' }> = {
+        type: 'evening_invite',
+        eveningId: event.eveningId,
+        title: event.title,
+        startsAt: event.startsAt,
+        tz: event.tz,
+        host: { pid: event.host.pid, handle: handleOut(event.host.handle), avatarColor: event.host.avatarColor },
+      };
+      if (event.host.avatar !== undefined) out.host.avatar = event.host.avatar;
+      return out;
+    }
+    case 'evening_update':
+      return { type: 'evening_update', eveningId: event.eveningId, change: event.change };
+    case 'evening_response':
+      return { type: 'evening_response', eveningId: event.eveningId, pid: event.pid, response: event.response };
+    case 'evening_reminder':
+      return { type: 'evening_reminder', eveningId: event.eveningId, title: event.title, startsAt: event.startsAt, tz: event.tz };
+    case 'evening_open':
+      return { type: 'evening_open', eveningId: event.eveningId, party: { partyId: event.party.partyId, title: event.party.title } };
+  }
+}
+
+/** Trame du contrat pour un événement (sans destinataire). */
+export function liveFrame(event: SocialEvent): LiveFrame {
+  switch (event.t) {
+    case 'message':
+      return { t: 'message', message: messageOut(event.message) };
+    case 'read':
+      return { t: 'read', pid: event.pid, at: event.at };
+    case 'presence':
+      return { t: 'presence', friend: friendOut(event.friend) };
+    case 'request':
+      return { t: 'request', request: requestOut(event.request) };
+    case 'friend':
+      return { t: 'friend', friend: friendOut(event.friend) };
+    case 'unfriend':
+      return { t: 'unfriend', pid: event.pid };
+    case 'note':
+      return { t: 'note', media: normalizeMedia(event.media), note: noteOut(event.note) };
+    case 'note_removed':
+      return { t: 'note_removed', media: normalizeMedia(event.media), id: event.id };
+    case 'reaction':
+      return { t: 'reaction', conv: event.conv, id: event.id, reactions: event.reactions.map(reactionOut) };
+    case 'poll':
+      return { t: 'poll', conv: event.conv, poll: pollOut(event.poll) };
+    case 'typing':
+      return { t: 'typing', conv: event.conv, pid: event.pid };
+    case 'list':
+      return { t: 'list', listId: event.listId };
+    case 'join_request':
+      return { t: 'join_request', from: friendOut(event.from) };
+    case 'join_answer':
+      return event.partyId === undefined
+        ? { t: 'join_answer', pid: event.pid, accept: event.accept }
+        : { t: 'join_answer', pid: event.pid, accept: event.accept, partyId: event.partyId };
+    case 'party_invite':
+      return {
+        t: 'party_invite',
+        from: {
+          pid: event.from.pid,
+          handle: handleOut(event.from.handle),
+          avatarColor: event.from.avatarColor,
+          ...(event.from.avatar !== undefined ? { avatar: event.from.avatar } : {}),
+        },
+        partyId: event.partyId,
+        title: event.title,
+      };
+    case 'activity':
+      return { t: 'activity', item: activityOut(event.item) };
+    case 'evening':
+      return eveningOut(event.event);
+  }
+}
+
+/**
+ * Trames à remettre : une par profil de l'audience (sans doublon), toutes identiques. Audience vide : aucune trame.
+ */
+export function liveEnvelopes(audience: readonly string[], event: SocialEvent): LiveEnvelope[] {
+  if (audience.length === 0) return [];
+  const frame = JSON.stringify(liveFrame(event));
+  return [...new Set(audience)].map((pid) => ({ pid, frame }));
+}
+
+/** Trame de réponse au ping client. */
+export const LIVE_PONG_FRAME = JSON.stringify({ t: 'pong' });
+
+/** Vrai si la trame client dépasse la taille autorisée. */
+export function isOversizedLiveFrame(raw: string): boolean {
+  return raw.length > SOCIAL_LIVE_MAX_FRAME_CHARS;
+}
+
+/**
+ * Lit une trame client. Seul `{ "t": "ping" }` (exactement cette clé) est reconnu ; toute autre trame, mal formée ou non
+ * objet, est ignorée (`undefined`).
+ */
+export function parseLiveClientFrame(raw: string): 'ping' | undefined {
+  if (isOversizedLiveFrame(raw)) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const keys = Object.keys(value);
+  return keys.length === 1 && (value as { t?: unknown }).t === 'ping' ? 'ping' : undefined;
+}

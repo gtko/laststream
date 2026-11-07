@@ -1,0 +1,40 @@
+import type { EntryVerdict, InviteVerdict, JoinCheck, LinkVerdict } from './room-core.js';
+import type { ReportEntry, RoomInfo, RoomMeta } from './protocol.js';
+
+/**
+ * Accès aux salons de visionnage. Seule la plateforme Workers en fournit un (Durable Object `PartyRoom`, un par salon) ;
+ * sous Node il est absent et les routes /party répondent 501. Les tests Workers l'injectent via `AppDeps.party`.
+ */
+export interface PartyRoomStub {
+  /** Crée le salon (une seule fois). */
+  init(meta: RoomMeta): Promise<'ok' | 'exists'>;
+  /** Description du salon, ou null s'il n'existe pas / plus. */
+  info(): Promise<RoomInfo | null>;
+  /** Un participant (clé du salon, voir keys.ts) peut-il se connecter (salon plein, compte exclu, pseudo pris) ? `closed` : le salon n'existe plus. */
+  check(key: string, username?: string): Promise<JoinCheck | 'closed'>;
+  /** Mode d'identification des participants (`profile` : par profil ; `account` : salon ancien) ; null : salon inexistant. */
+  keyMode(): Promise<'profile' | 'account' | null>;
+  /** Droit d'émettre une invitation (hôte connecté, moins de quatre invités, débit du salon) ; compté si `ok`. */
+  invite(requesterId: string): Promise<InviteVerdict>;
+  /** Vrai si ce compte, par l'un quelconque de ses profils (et non un invité), est connecté au salon : seul un membre peut inviter un ami à le rejoindre. */
+  connected(accountId: string): Promise<boolean>;
+  /** Lien d'invitation partagé : génération courante et échéance (hôte connecté) ; `rotate` invalide les liens précédents. */
+  inviteLink(requesterId: string, rotate: boolean): Promise<LinkVerdict>;
+  /** Entrée d'un invité par le lien partagé (génération du lien, salon plein, débit) ; attribue un pseudo unique. */
+  enterGuest(guestId: string, name: string, epoch: number): Promise<EntryVerdict>;
+  /** Termine le salon. `requesterId` doit être l'hôte, sauf `null` (propriétaire du serveur). */
+  close(requesterId: string | null): Promise<'ok' | 'forbidden' | 'not_found'>;
+  /** Signalements reçus (hôte, ou propriétaire du serveur avec `null`). */
+  reports(requesterId: string | null): Promise<ReportEntry[] | 'forbidden' | 'not_found'>;
+  /** Modération du serveur : retire un message de l'historique du salon. `not_found` : salon terminé ou message absent. */
+  deleteMessage(messageId: string): Promise<'ok' | 'not_found'>;
+  /** Mise à niveau WebSocket (identité dans l'en-tête interne `x-party-identity`, posé par handlePartyWs). */
+  fetch(request: Request): Promise<Response>;
+}
+
+export interface PartyBackend {
+  room(id: string): PartyRoomStub;
+}
+
+/** En-tête interne entre le Worker et le Durable Object : identité vérifiée (jamais fournie par le client). */
+export const IDENTITY_HEADER = 'x-party-identity';

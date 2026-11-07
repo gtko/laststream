@@ -1,0 +1,26 @@
+{
+  "id": 4242,
+  "groups": [
+    {
+      "id": "5f0000000000000000000001",
+      "name": "Absolute Order",
+      "type": 2,
+      "episodes": [
+        { "order": 0, "season_number": 1, "episode_number": 1, "name": "Premier" },
+        { "order": 1, "season_number": 1, "episode_number": 2, "name": "Deuxième" },
+        { "order": 2, "season_number": 2, "episode_number": 1, "name": "Suite" },
+        { "order": 3, "season_number": 2, "episode_number": 2, "name": "Fin" },
+        { "order": 1, "season_number": 9, "episode_number": 9, "name": "Doublon ignoré" },
+        { "order": -1, "season_number": 1, "episode_number": 3, "name": "Ordre négatif ignoré" },
+        { "order": 4, "season_number": 2, "episode_number": 0, "name": "Numéro nul ignoré" },
+        { "order": "5", "season_number": 2, "episode_number": 3, "name": "Ordre texte ignoré" }
+      ]
+    },
+    {
+      "id": "5f0000000000000000000002",
+      "name": "Seasons",
+      "type": 1,
+      "episodes": "pas un tableau"
+    }
+  ]
+}

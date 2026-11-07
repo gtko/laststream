@@ -1,0 +1,95 @@
+{
+  // Worker Cloudflare « lastaddon-core » : même application Hono que le serveur Node (src/worker.ts), plateforme Workers.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lastaddon-core",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  // Plan payant : jusqu'à 30 s de CPU par requête (scrypt ≈ 72 ms à la connexion, analyse des sources).
+  // Sous-requêtes : le Cron TV sonde les flux (CORS puis santé, tv-health.ts), soit plusieurs milliers de fetch par passage.
+  "limits": { "cpu_ms": 30000, "subrequests": 10000 },
+  "observability": { "enabled": true },
+
+  // Données utilisateur : un Durable Object SQLite global nommé « users » (voir src/platform/workers/user-store-do.ts).
+  "durable_objects": {
+    "bindings": [
+      { "name": "USER_STORE", "class_name": "UserStoreDO" },
+      // Salons de visionnage : un Durable Object par salon (WebSocket, API d'hibernation), voir src/platform/workers/party-room.ts.
+      { "name": "PARTY_ROOM", "class_name": "PartyRoom" },
+      // Métriques d'exploitation (tranches de 5 min, 7 jours) et purges de cache asynchrones, voir src/platform/workers/metrics-do.ts.
+      { "name": "METRICS", "class_name": "Metrics" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["UserStoreDO"] },
+    { "tag": "v2", "new_sqlite_classes": ["PartyRoom"] },
+    { "tag": "v3", "new_sqlite_classes": ["Metrics"] }
+  ],
+
+  // Caches persistants partagés entre instances : packs, URL émises, torrents privés, hébergeurs.
+  "kv_namespaces": [{ "binding": "CACHE", "id": "ec421766c5b74c5cac6f3cd76d4f7adf" }],
+
+  // Limites de connexion/inscription (binding Rate Limiting, partagé par emplacement). La période ne peut valoir que 10 ou 60 s :
+  // 10 tentatives par minute et par IP (AUTH_LIMITER_IP) et par nom d'utilisateur (AUTH_LIMITER_USER).
+  "ratelimits": [
+    { "name": "AUTH_LIMITER_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "AUTH_LIMITER_USER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } },
+    // Appels sortants vers MDBList (clé partagée, quota quotidien) : 20 par minute au total, quel que soit le compte.
+    { "name": "MDBLIST_LIMITER", "namespace_id": "1004", "simple": { "limit": 20, "period": 60 } },
+    // Routes sensibles et mises à niveau WebSocket (LAST-128) : compteurs partagés entre instances, par IP (ou profil, compte).
+    // S'ajoutent aux Maps locales de src/rate-limit.ts ; un nom de limite (src/rate-limit-shared.ts) préfixe la clé, donc
+    // plusieurs routes peuvent partager une liaison de même limite. Fenêtre de 10 s pour la frappe (une par 333 ms).
+    { "name": "RL_10_PER_MIN", "namespace_id": "1010", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_20_PER_MIN", "namespace_id": "1011", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RL_30_PER_MIN", "namespace_id": "1012", "simple": { "limit": 30, "period": 60 } },
+    { "name": "RL_60_PER_MIN", "namespace_id": "1013", "simple": { "limit": 60, "period": 60 } },
+    { "name": "RL_120_PER_MIN", "namespace_id": "1014", "simple": { "limit": 120, "period": 60 } },
+    { "name": "RL_300_PER_MIN", "namespace_id": "1015", "simple": { "limit": 300, "period": 60 } },
+    { "name": "RL_1200_PER_MIN", "namespace_id": "1016", "simple": { "limit": 1200, "period": 60 } },
+    { "name": "RL_TYPING", "namespace_id": "1017", "simple": { "limit": 30, "period": 10 } }
+  ],
+
+  // TV en direct : le catalogue des chaînes et l'EPG réduit (maintenant → +24 h) sont construits hors requête, en flux
+  // (sous 128 Mo), par le Cron Trigger ci-dessous, et écrits dans R2 ; les routes /lt/tv/* les lisent.
+  // Bucket à créer une fois : npx wrangler r2 bucket create lastaddon-tv
+  "r2_buckets": [
+    { "binding": "TV", "bucket_name": "lastaddon-tv" },
+    // Fiches partagées (TMDB + TVDB + notes + casting + épisodes) : meta/<type>/<tmdbId>.json, voir src/lt/meta.ts.
+    // Bucket à créer une fois : npx wrangler r2 bucket create lastaddon-meta
+    // Depuis ODY-297 les fiches sont en couches meta/v2/<type>/<id>/{base,ratings}.json et l10n/<lang>.json ; nettoyage par
+    // scripts/r2-meta-lifecycle.sh (à lancer une fois : v2 supprimé 365 j après le dernier upload, anciens objets v1 à 60 j).
+    { "binding": "META", "bucket_name": "lastaddon-meta" },
+    // Avatars par collections (catalog.json, c/, i/) : envoyés par scripts/avatars/upload.mjs, servis sur /avatars/*.
+    // Bucket à créer une fois : npx wrangler r2 bucket create lastaddon-avatars
+    { "binding": "AVATARS", "bucket_name": "lastaddon-avatars" }
+  ],
+  // TV : passe complète toutes les 6 h ; reprise toutes les 30 min (seules les sources en échec et les sondages restants,
+  // voir src/lt/tv-passes.ts). Les deux déclencheurs coïncident à 00:00, 06:00… : la reprise s'efface alors.
+  "triggers": { "crons": ["0 */6 * * *", "*/30 * * * *"] },
+
+  // Interface web : build de laststream-app copié dans worker-ui/ par `npm run deploy:worker`.
+  // Le Worker passe en premier (en-têtes de cache, routes API) ; html_handling « none » garde les chemins exacts.
+  "assets": {
+    "directory": "./worker-ui",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+
+  "vars": {
+    // Mode public : adresses privées refusées pour les URL saisies (SSRF) ; la base publique sert aux liens /play.
+    // AllDebrid suspend les comptes appelés depuis des IP de serveurs : aucun appel AllDebrid depuis Cloudflare.
+    "LASTADDON_PUBLIC": "1",
+    "LASTADDON_PUBLIC_URL": "https://app.laststream.app",
+    // Aucune requête vers AllDebrid ni ses hôtes ne part de Cloudflare : miniatures et lecture passent par l'appareil, avec son IP.
+    // Origines autorisées pour /config, /user et les écritures lt (en plus de l'origine du Worker).
+    "LASTADDON_ALLOWED_ORIGINS": "https://app.laststream.app,https://core.laststream.app,https://lastaddon-core.gtux-prog.workers.dev,https://localhost,http://localhost,capacitor://localhost"
+  }
+  // Secrets (wrangler secret put, jamais dans ce fichier) : LASTADDON_SECRET, EDGE_SECRET,
+  // ADMIN_SECRET (route /__admin/ de migration des données ; `wrangler secret delete ADMIN_SECRET` la ferme),
+  // et LASTADDON_BOOTSTRAP_TOKEN si le premier compte doit être protégé. SENTRY_DSN : remontée des erreurs (absent = aucune).
+  // TURN_KEY_ID et TURN_KEY_API_TOKEN : relais TURN de la watch party (Cloudflare Realtime TURN) ; absents = STUN seul (src/party/turn.ts).
+}

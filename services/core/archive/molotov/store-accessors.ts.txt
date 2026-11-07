@@ -1,0 +1,40 @@
+// Extrait de src/user/store.ts avant retrait (LAST-184). Non compilé : extension .ts.txt.
+// Réactivation : voir archive/molotov/README.md, point 2.
+
+// 1. Au niveau module, avant la classe UserStore (ligne 403 de l'origine) :
+
+/** Session Molotov d'un compte : jetons chiffrés, profil chiffré (ou absent), date de dernière écriture (ms). */
+export interface MolotovAccount {
+  /** JSON chiffré `{ idToken, refreshToken }` (base64url). */
+  tokens: string;
+  /** JSON chiffré du profil Molotov (base64url), ou null si le profil n'a pas pu être lu. */
+  profile: string | null;
+  /** Dernière écriture de la ligne (ms epoch). */
+  updatedAt: number;
+}
+
+// 2. Dans la classe UserStore, après setTvSources (lignes 1338 à 1360 de l'origine) :
+
+  /** Session Molotov du compte : jetons chiffrés, profil chiffré (ou null) et date de dernière écriture (ms). */
+  getMolotovAccount(accountId: string): MolotovAccount | null {
+    const row = this.db
+      .prepare('SELECT tokens AS t, profile AS p, updated_at AS u FROM molotov_accounts WHERE account_id = ?')
+      .get(accountId) as { t: string; p: string | null; u: number } | undefined;
+    if (row === undefined) return null;
+    return { tokens: row.t, profile: row.p ?? null, updatedAt: Number(row.u) };
+  }
+
+  /** Enregistre la session Molotov du compte (jetons et profil chiffrés). */
+  setMolotovAccount(accountId: string, tokens: string, profile: string | null): void {
+    this.db
+      .prepare(
+        `INSERT INTO molotov_accounts (account_id, tokens, profile, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(account_id) DO UPDATE SET tokens = excluded.tokens, profile = excluded.profile, updated_at = excluded.updated_at`,
+      )
+      .run(accountId, tokens, profile, Date.now());
+  }
+
+  /** Supprime la session Molotov du compte (déconnexion) : la ligne disparaît. */
+  deleteMolotovAccount(accountId: string): void {
+    this.db.prepare('DELETE FROM molotov_accounts WHERE account_id = ?').run(accountId);
+  }

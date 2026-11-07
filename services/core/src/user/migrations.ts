@@ -1,0 +1,1016 @@
+import { backfillProfileIdentities } from './social-handles.js';
+import type { SqlDb } from './sql.js';
+
+/** Migration versionnée. Les versions appliquées sont tracées dans `schema_migrations`. */
+export interface Migration {
+  readonly version: number;
+  readonly name: string;
+  readonly sql: string;
+  /** Étape de données facultative, exécutée après `sql` dans la même transaction (ex. tirages aléatoires). */
+  readonly run?: (db: SqlDb) => void;
+}
+
+/** Début de requête commun : profil principal de chaque compte (premier profil non enfant créé, pid déjà attribué). */
+const PRINCIPAL_CTE = `
+  WITH principal AS (
+    SELECT a.id AS account_id,
+      (SELECT p.pid FROM profiles p WHERE p.account_id = a.id AND p.is_kid = 0 ORDER BY p.created_at, p.id LIMIT 1) AS pid
+    FROM accounts a
+  )`;
+
+/**
+ * Reprise des données sociales vers les profils (après l'attribution des identités) : les amitiés compte↔compte
+ * deviennent des amitiés entre profils principaux, la présence existante est rattachée au profil principal. Les
+ * anciennes tables restent en place pour les routes de compatibilité. Horodatages : ms epoch (ISO 8601 UTC → julianday).
+ */
+const PROFILE_SOCIAL_BACKFILL_SQL = `
+  ${PRINCIPAL_CTE}
+  INSERT INTO profile_friendships (low_pid, high_pid, requested_by, status, created_at)
+  SELECT CASE WHEN lo.pid < hi.pid THEN lo.pid ELSE hi.pid END,
+         CASE WHEN lo.pid < hi.pid THEN hi.pid ELSE lo.pid END,
+         CASE WHEN f.requested_by = f.low_id THEN lo.pid ELSE hi.pid END,
+         f.status,
+         CAST(ROUND((julianday(f.created_at) - 2440587.5) * 86400000) AS INTEGER)
+  FROM friendships f
+  JOIN principal lo ON lo.account_id = f.low_id
+  JOIN principal hi ON hi.account_id = f.high_id
+  WHERE lo.pid IS NOT NULL AND hi.pid IS NOT NULL;
+
+  ${PRINCIPAL_CTE}
+  INSERT INTO profile_presence (profile_pid, status, watching, updated_at)
+  SELECT pr.pid,
+         CASE WHEN s.invisible = 1 THEN 'invisible' ELSE 'online' END,
+         NULL,
+         CAST(ROUND((julianday(s.seen_at) - 2440587.5) * 86400000) AS INTEGER)
+  FROM presence s
+  JOIN principal pr ON pr.account_id = s.account_id
+  WHERE pr.pid IS NOT NULL;
+`;
+
+/**
+ * Schéma des données utilisateur. `title_ref` identifie un titre : `tmdb:<id>` quand l'identifiant TMDB est connu,
+ * sinon `imdb:<tt…>` (import Stremio sans jeton TMDB). Les films ont season = episode = 0.
+ */
+export const MIGRATIONS: readonly Migration[] = [
+  {
+    version: 1,
+    name: 'comptes, sessions, profils, bibliothèque, progression, réglages',
+    sql: `
+      CREATE TABLE accounts (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        is_owner INTEGER NOT NULL DEFAULT 0 CHECK (is_owner IN (0, 1)),
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE sessions (
+        token_hash TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
+      CREATE INDEX sessions_account ON sessions(account_id);
+
+      CREATE TABLE profiles (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        avatar_color TEXT NOT NULL,
+        is_kid INTEGER NOT NULL DEFAULT 0 CHECK (is_kid IN (0, 1)),
+        kid_max_age INTEGER CHECK (kid_max_age IN (10, 12, 16, 18)),
+        pin_hash TEXT,
+        allowed_catalogs TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX profiles_account ON profiles(account_id);
+
+      CREATE TABLE library_items (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        title_ref TEXT NOT NULL,
+        tmdb_id INTEGER,
+        imdb_id TEXT,
+        title TEXT NOT NULL,
+        poster TEXT,
+        added_at TEXT NOT NULL,
+        removed INTEGER NOT NULL DEFAULT 0 CHECK (removed IN (0, 1)),
+        PRIMARY KEY (profile_id, type, title_ref)
+      );
+
+      CREATE TABLE progress (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        title_ref TEXT NOT NULL,
+        tmdb_id INTEGER,
+        imdb_id TEXT,
+        season INTEGER NOT NULL DEFAULT 0,
+        episode INTEGER NOT NULL DEFAULT 0,
+        position_sec REAL NOT NULL,
+        duration_sec REAL NOT NULL,
+        updated_at TEXT NOT NULL,
+        finished INTEGER NOT NULL DEFAULT 0 CHECK (finished IN (0, 1)),
+        PRIMARY KEY (profile_id, type, title_ref, season, episode)
+      );
+      CREATE INDEX progress_updated ON progress(profile_id, updated_at);
+
+      CREATE TABLE settings (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (profile_id, key)
+      );
+    `,
+  },
+  {
+    version: 2,
+    name: 'verrouillage PIN : tentatives, blocage temporaire, version du PIN',
+    sql: `
+      ALTER TABLE profiles ADD COLUMN pin_failures INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE profiles ADD COLUMN pin_locked_until TEXT;
+      ALTER TABLE profiles ADD COLUMN pin_version INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    version: 3,
+    name: 'suivis (titres et personnes) et notes sur 5 par demi-étoiles',
+    sql: `
+      CREATE TABLE follows (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series', 'person')),
+        title_ref TEXT NOT NULL,
+        tmdb_id INTEGER,
+        imdb_id TEXT,
+        title TEXT NOT NULL,
+        poster TEXT,
+        followed_at TEXT NOT NULL,
+        notify INTEGER NOT NULL DEFAULT 0 CHECK (notify IN (0, 1)),
+        PRIMARY KEY (profile_id, type, title_ref)
+      );
+
+      CREATE TABLE ratings (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        title_ref TEXT NOT NULL,
+        tmdb_id INTEGER,
+        imdb_id TEXT,
+        title TEXT,
+        rating REAL NOT NULL CHECK (rating >= 0 AND rating <= 5 AND rating * 2 = CAST(rating * 2 AS INTEGER)),
+        rated_at TEXT NOT NULL,
+        PRIMARY KEY (profile_id, type, title_ref)
+      );
+    `,
+  },
+  {
+    version: 4,
+    name: 'titres masqués de « continuer à regarder » (réapparaissent à la prochaine progression)',
+    sql: `
+      CREATE TABLE continue_hidden (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        title_ref TEXT NOT NULL,
+        hidden_at TEXT NOT NULL,
+        PRIMARY KEY (profile_id, type, title_ref)
+      );
+    `,
+  },
+  {
+    version: 5,
+    name: 'segments de saut proposés par la communauté (votes pour et contre, source)',
+    sql: `
+      CREATE TABLE skip_segments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        imdb_id TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        episode INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('intro', 'recap', 'credits', 'postcredits')),
+        "start" REAL NOT NULL CHECK ("start" >= 0),
+        "end" REAL NOT NULL CHECK ("end" > "start"),
+        duration REAL NOT NULL CHECK (duration > 0),
+        votes_up INTEGER NOT NULL DEFAULT 0 CHECK (votes_up >= 0),
+        votes_down INTEGER NOT NULL DEFAULT 0 CHECK (votes_down >= 0),
+        source TEXT NOT NULL DEFAULT 'user' CHECK (source IN ('user', 'inferred')),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX skip_segments_episode ON skip_segments (imdb_id, season, episode, kind);
+    `,
+  },
+  {
+    version: 6,
+    name: 'segments de saut détectés automatiquement (chapitres, empreinte audio) et empreintes par saison',
+    sql: `
+      CREATE TABLE skip_segments_v6 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        imdb_id TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        episode INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('intro', 'recap', 'credits', 'postcredits', 'preview')),
+        "start" REAL NOT NULL CHECK ("start" >= 0),
+        "end" REAL NOT NULL CHECK ("end" > "start"),
+        duration REAL NOT NULL CHECK (duration > 0),
+        votes_up INTEGER NOT NULL DEFAULT 0 CHECK (votes_up >= 0),
+        votes_down INTEGER NOT NULL DEFAULT 0 CHECK (votes_down >= 0),
+        source TEXT NOT NULL DEFAULT 'user' CHECK (source IN ('user', 'inferred', 'auto')),
+        created_at TEXT NOT NULL,
+        confidence REAL CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
+        method TEXT
+      );
+      INSERT INTO skip_segments_v6 (id, imdb_id, season, episode, kind, "start", "end", duration, votes_up, votes_down, source, created_at)
+        SELECT id, imdb_id, season, episode, kind, "start", "end", duration, votes_up, votes_down, source, created_at FROM skip_segments;
+      DROP TABLE skip_segments;
+      ALTER TABLE skip_segments_v6 RENAME TO skip_segments;
+      CREATE INDEX skip_segments_episode ON skip_segments (imdb_id, season, episode, kind);
+
+      CREATE TABLE skip_fingerprints (
+        imdb_id TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('intro', 'credits')),
+        method TEXT NOT NULL,
+        fp BLOB NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (imdb_id, season, kind, method)
+      );
+    `,
+  },
+  {
+    version: 7,
+    name: 'fonctions sociales : parrainage, amis, présence, visibilité de la bibliothèque, titres masqués, index des salons',
+    sql: `
+      ALTER TABLE accounts ADD COLUMN invite_quota INTEGER NOT NULL DEFAULT 4 CHECK (invite_quota >= 0);
+
+      -- Liens de parrainage. inviter_id NULL : invitation « système » créée par l'administration (aucune amitié à l'inscription).
+      -- Un lien utilisé garde used_at même si le compte du filleul est supprimé (used_by passe alors à NULL).
+      CREATE TABLE invites (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE,
+        inviter_id TEXT REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        sent_at TEXT,
+        used_by TEXT REFERENCES accounts(id) ON DELETE SET NULL,
+        used_at TEXT
+      );
+      CREATE INDEX invites_inviter ON invites(inviter_id);
+
+      -- Amitiés : une ligne par paire, ids ordonnés (low_id < high_id). requested_by = celui qui a demandé.
+      CREATE TABLE friendships (
+        low_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        high_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        requested_by TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'accepted')),
+        created_at TEXT NOT NULL,
+        accepted_at TEXT,
+        PRIMARY KEY (low_id, high_id),
+        CHECK (low_id < high_id)
+      );
+      CREATE INDEX friendships_high ON friendships(high_id);
+
+      -- Présence : dernier battement de cœur, titre en cours (JSON) et mode invisible.
+      CREATE TABLE presence (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        profile_id TEXT,
+        seen_at TEXT NOT NULL,
+        watching TEXT,
+        invisible INTEGER NOT NULL DEFAULT 0 CHECK (invisible IN (0, 1))
+      );
+
+      ALTER TABLE library_items ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'friends'));
+      CREATE INDEX library_items_visibility ON library_items(profile_id, visibility) WHERE visibility = 'friends';
+
+      -- Titres masqués de l'accueil : clé « movie:550 » / « tv:1399 » (même clé que le client).
+      CREATE TABLE hidden_titles (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT NOT NULL DEFAULT '',
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, key)
+      );
+      CREATE INDEX hidden_titles_order ON hidden_titles(profile_id, added_at DESC, key DESC);
+      -- Profils dont les anciens morceaux de réglages (homeHidden0..11) ont déjà été importés.
+      CREATE TABLE hidden_import (
+        profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+        imported_at TEXT NOT NULL
+      );
+
+      -- Index des salons de visionnage (le temps réel vit dans le Durable Object PartyRoom ; ici : annuaire).
+      CREATE TABLE party_rooms (
+        id TEXT PRIMARY KEY,
+        host_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        visibility TEXT NOT NULL CHECK (visibility IN ('private', 'public')),
+        title TEXT NOT NULL,
+        poster TEXT,
+        language TEXT,
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'series')),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX party_rooms_public ON party_rooms(visibility, created_at DESC, id);
+      CREATE INDEX party_rooms_host ON party_rooms(host_id);
+    `,
+  },
+  {
+    version: 8,
+    name: 'administration : suspension des comptes, réglages globaux, journal d audit, réinitialisation de mot de passe, signalements',
+    sql: `
+      -- Compte suspendu : ne peut plus se connecter, ses sessions sont refusées. NULL = actif.
+      ALTER TABLE accounts ADD COLUMN suspended_at TEXT;
+
+      -- Réglages globaux (clé → JSON) : quota d'invitations par défaut, inscriptions par invitation, mode maintenance.
+      CREATE TABLE app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      -- Journal d'audit des actions d'administration (qui, quoi, quand). Jamais de secret dans detail.
+      CREATE TABLE admin_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at TEXT NOT NULL,
+        actor_id TEXT,
+        actor_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT,
+        detail TEXT
+      );
+
+      -- Liens de réinitialisation de mot de passe : seule l'empreinte du jeton est stockée, usage unique.
+      CREATE TABLE password_resets (
+        token_hash TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT
+      );
+      CREATE INDEX password_resets_account ON password_resets(account_id);
+
+      -- File des messages signalés dans les salons (alimentée par le salon au moment du signalement).
+      CREATE TABLE party_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        by_name TEXT NOT NULL,
+        against_id TEXT,
+        against_name TEXT NOT NULL,
+        text TEXT NOT NULL,
+        reason TEXT,
+        at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'deleted', 'suspended', 'ignored')),
+        resolved_at TEXT,
+        UNIQUE (room_id, message_id, by_name)
+      );
+      CREATE INDEX party_reports_status ON party_reports(status, id);
+    `,
+  },
+  {
+    version: 9,
+    name: 'avatar illustré du profil (dicebear:<style>:<graine>), la couleur reste le repli',
+    sql: `
+      ALTER TABLE profiles ADD COLUMN avatar TEXT;
+    `,
+  },
+  {
+    version: 10,
+    name: 'configuration lastAddon au niveau du compte (accounts.lastaddon_config), copiée depuis le profil principal',
+    sql: `
+      -- Configuration lastAddon chiffrée (JSON d'une chaîne) : lisible par tous les profils du compte, écrite par le principal seul.
+      ALTER TABLE accounts ADD COLUMN lastaddon_config TEXT;
+
+      -- Reprise de la valeur gardée jusqu'ici dans les réglages du profil principal (compte propriétaire : profil
+      -- administrateur ; sinon plus ancien profil, repli compris).
+      UPDATE accounts SET lastaddon_config = (
+        SELECT s.value FROM settings s
+        WHERE s.key = 'lastaddonConfig' AND s.profile_id = COALESCE(
+          CASE WHEN accounts.is_owner = 1
+            THEN (SELECT p.id FROM profiles p WHERE p.account_id = accounts.id AND p.id = (SELECT json_extract(value, '$') FROM app_settings WHERE key = 'admin_profile_id'))
+          END,
+          (SELECT p2.id FROM profiles p2 WHERE p2.account_id = accounts.id ORDER BY p2.created_at, p2.id LIMIT 1)
+        )
+      );
+    `,
+  },
+  {
+    version: 11,
+    name: 'sources TV du compte (accounts.tv_sources), chiffrées côté serveur',
+    sql: `
+      -- Playlists M3U / guides XMLTV de l'utilisateur : JSON chiffré (AES-256-GCM, base64url), jamais en clair en base.
+      ALTER TABLE accounts ADD COLUMN tv_sources TEXT;
+    `,
+  },
+  {
+    version: 12,
+    name: 'index des fiches partagées (R2 meta/<type>/<tmdbId>.json), recherche par identifiant IMDb ou TVDB',
+    sql: `
+      -- Une ligne par fiche stockée dans R2 : contenu partagé entre tous les comptes, aucune donnée personnelle.
+      -- etag : empreinte du contenu de la fiche ; une ligne n'est réécrite que si cette empreinte change.
+      CREATE TABLE meta_index (
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        imdb_id TEXT,
+        tvdb_id INTEGER,
+        title TEXT NOT NULL,
+        original_title TEXT,
+        year INTEGER,
+        status TEXT,
+        updated_at TEXT NOT NULL,
+        next_air_date TEXT,
+        etag TEXT NOT NULL,
+        PRIMARY KEY (type, tmdb_id)
+      );
+      CREATE INDEX meta_index_imdb ON meta_index (imdb_id);
+      CREATE INDEX meta_index_tvdb ON meta_index (tvdb_id);
+    `,
+  },
+  {
+    version: 13,
+    name: 'lancements de titres par pays et par jour (agrégat anonyme, sans donnée de compte, purge après 90 jours)',
+    sql: `
+      -- Une ligne par jour UTC, pays et titre (key = « type|référence », sans saison ni épisode). n : nombre de comptes
+      -- dont c'est la première progression sur ce titre. Aucune clé étrangère : l'agrégat survit à la suppression d'un compte.
+      CREATE TABLE title_starts (
+        day TEXT NOT NULL,
+        country TEXT NOT NULL,
+        key TEXT NOT NULL,
+        n INTEGER NOT NULL,
+        PRIMARY KEY (day, country, key)
+      );
+    `,
+  },
+  {
+    version: 14,
+    name: 'handles par profil (Nom#TAG, pid public), amitiés et présence par profil',
+    sql: `
+      -- Handle : nom normalisé (minuscules) + tag. Identifiant public : pid. Profils enfants : NULL.
+      ALTER TABLE profiles ADD COLUMN handle_name TEXT;
+      ALTER TABLE profiles ADD COLUMN handle_key TEXT;
+      ALTER TABLE profiles ADD COLUMN handle_tag TEXT;
+      ALTER TABLE profiles ADD COLUMN pid TEXT;
+      CREATE UNIQUE INDEX profiles_handle ON profiles (handle_key, handle_tag);
+      CREATE UNIQUE INDEX profiles_pid ON profiles (pid);
+
+      -- Amitiés entre profils : une ligne par paire (low_pid < high_pid, donc une seule quel que soit le sens).
+      -- requested_by = pid du demandeur. Supprimées avec le profil (clés étrangères sur pid).
+      CREATE TABLE profile_friendships (
+        low_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        high_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        requested_by TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'accepted')),
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (low_pid, high_pid),
+        CHECK (low_pid < high_pid),
+        CHECK (requested_by IN (low_pid, high_pid))
+      );
+      CREATE INDEX profile_friendships_high ON profile_friendships (high_pid);
+
+      -- Présence par profil : statut choisi, titre en cours (JSON, NULL = en ligne seulement), horodatage en ms.
+      CREATE TABLE profile_presence (
+        profile_pid TEXT PRIMARY KEY REFERENCES profiles (pid) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK (status IN ('online', 'away', 'dnd', 'invisible')),
+        watching TEXT,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+    run: (db) => {
+      backfillProfileIdentities(db);
+      db.exec(PROFILE_SOCIAL_BACKFILL_SQL);
+    },
+  },
+  {
+    version: 15,
+    name: 'messages entre profils et notes sur les titres',
+    sql: `
+      -- Messages entre profils amis ou du même foyer. Corps 1 à 1000 car. (contrôlé avant écriture), contexte JSON facultatif.
+      -- read_at : lecture par le destinataire (NULL = non lu). Supprimés avec le profil.
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        from_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        to_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        body TEXT NOT NULL,
+        context TEXT,
+        created_at INTEGER NOT NULL,
+        read_at INTEGER,
+        CHECK (from_pid <> to_pid)
+      );
+      -- Conversation (les deux sens) ; quota d'envoi par expéditeur sur created_at.
+      CREATE INDEX messages_pair ON messages (from_pid, to_pid, created_at);
+      CREATE INDEX messages_sent ON messages (from_pid, created_at);
+
+      -- Notes posées sur un titre à une position (saison et épisode à 0 pour un film). Texte ou emoji.
+      CREATE TABLE notes (
+        id TEXT PRIMARY KEY,
+        author_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        season INTEGER NOT NULL DEFAULT 0,
+        episode INTEGER NOT NULL DEFAULT 0,
+        pos REAL NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('text', 'emoji')),
+        body TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX notes_media ON notes (type, tmdb_id, season, episode, pos);
+      CREATE INDEX notes_author ON notes (author_pid, created_at);
+    `,
+  },
+  {
+    version: 16,
+    name: 'journal des créations de notes (quota indépendant des suppressions)',
+    sql: `
+      -- Une ligne par note créée, purgée au-delà d'une minute (fenêtre du quota). Sans clé étrangère : la remise à zéro
+      -- d'identité (pid vidé) ne doit pas être bloquée par ce journal, qui expire de lui-même.
+      CREATE TABLE note_creations (
+        author_pid TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX note_creations_author ON note_creations (author_pid, created_at);
+    `,
+  },
+  {
+    version: 17,
+    name: 'nonces des tickets du flux temps réel (usage unique)',
+    sql: `
+      -- Un ticket du flux social n'ouvre qu'une connexion : son nonce est mémorisé jusqu'à son échéance (ms), puis purgé.
+      CREATE TABLE live_ticket_nonces (
+        nonce TEXT PRIMARY KEY,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX live_ticket_nonces_expiry ON live_ticket_nonces (expires_at);
+    `,
+  },
+  {
+    version: 18,
+    name: 'profil social étendu (bio, statut, bannière, favoris, cooldown du tag), relations par profil',
+    sql: `
+      -- Champs du profil social (JSON, NULL = absent) : bio ≤ 140 car., statut personnalisé, bannière, favoris (≤ 4).
+      -- tag_changed_at : dernier changement de tag (ms) ; le cooldown de 30 jours s'y applique. Aucun NULL par défaut.
+      ALTER TABLE profiles ADD COLUMN bio TEXT;
+      ALTER TABLE profiles ADD COLUMN custom_status TEXT;
+      ALTER TABLE profiles ADD COLUMN banner TEXT;
+      ALTER TABLE profiles ADD COLUMN favorites TEXT;
+      ALTER TABLE profiles ADD COLUMN tag_changed_at INTEGER;
+
+      -- Date d'acceptation d'une amitié (ms) : « ami depuis ». Les amitiés déjà acceptées reçoivent leur date de demande.
+      ALTER TABLE profile_friendships ADD COLUMN accepted_at INTEGER;
+      UPDATE profile_friendships SET accepted_at = created_at WHERE status = 'accepted';
+
+      -- Réglages qu'un profil applique à un autre (favori, surnom, sourdine, activité masquée). Une ligne par couple ;
+      -- l'absence de ligne vaut les défauts (false, aucun surnom). Supprimée avec l'un des deux profils.
+      CREATE TABLE profile_relations (
+        owner_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        target_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1)),
+        nickname TEXT,
+        muted INTEGER NOT NULL DEFAULT 0 CHECK (muted IN (0, 1)),
+        hide_activity INTEGER NOT NULL DEFAULT 0 CHECK (hide_activity IN (0, 1)),
+        PRIMARY KEY (owner_pid, target_pid),
+        CHECK (owner_pid <> target_pid)
+      );
+      CREATE INDEX profile_relations_target ON profile_relations (target_pid);
+    `,
+  },
+  {
+    version: 19,
+    name: 'préférences, relations par ami, blocages, signalements, demandes de rejoindre',
+    sql: `
+      -- Les relations par ami (favori, surnom, sourdine, masquage d'activité) vivent dans profile_relations (migration 18).
+
+      -- Préférences d'un profil : un objet JSON (contrat SocialPrefs). Les défauts s'appliquent à la lecture.
+      CREATE TABLE social_prefs (
+        profile_pid TEXT PRIMARY KEY REFERENCES profiles (pid) ON DELETE CASCADE,
+        prefs TEXT NOT NULL
+      );
+
+      -- Blocage orienté (blocker_pid bloque blocked_pid) : effet dans les deux sens, lu par les deux profils.
+      CREATE TABLE blocks (
+        blocker_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        blocked_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (blocker_pid, blocked_pid),
+        CHECK (blocker_pid <> blocked_pid)
+      );
+      CREATE INDEX blocks_blocked ON blocks (blocked_pid);
+
+      -- Signalements : sans clé étrangère, un signalement survit à la suppression de son auteur ou de sa cible.
+      CREATE TABLE reports (
+        id TEXT PRIMARY KEY,
+        reporter_pid TEXT NOT NULL,
+        target_pid TEXT NOT NULL,
+        reason TEXT NOT NULL CHECK (reason IN ('spam', 'harassment', 'other')),
+        details TEXT,
+        created_at INTEGER NOT NULL
+      );
+
+      -- Demande de rejoindre le titre en cours d'un ami (requester → host). Une seule demande par paire.
+      CREATE TABLE join_requests (
+        requester_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        host_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (requester_pid, host_pid),
+        CHECK (requester_pid <> host_pid)
+      );
+    `,
+  },
+  {
+    version: 20,
+    name: 'messages riches, réactions, sondages et groupes (social v3)',
+    sql: `
+      -- Groupes : membres = profils amis, lus à la date read_at (messages non lus = créés après). Groupe vide : supprimé.
+      CREATE TABLE social_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE social_group_members (
+        group_id TEXT NOT NULL REFERENCES social_groups (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        joined_at INTEGER NOT NULL,
+        read_at INTEGER NOT NULL,
+        PRIMARY KEY (group_id, pid)
+      );
+      CREATE INDEX social_group_members_pid ON social_group_members (pid);
+
+      -- Messages : une conversation est soit un échange entre deux profils (to_pid), soit un groupe (group_id). kind porte
+      -- le type (texte, titre, moment, invitation de salon, sondage) ; payload (JSON) la charge hors texte.
+      -- Reconstruction de la table : to_pid devient facultatif (messages de groupe) et de nouvelles colonnes s'ajoutent.
+      CREATE TABLE messages_v3 (
+        id TEXT PRIMARY KEY,
+        from_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        to_pid TEXT REFERENCES profiles (pid) ON DELETE CASCADE,
+        group_id TEXT REFERENCES social_groups (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'title', 'moment', 'party', 'poll')),
+        body TEXT NOT NULL,
+        context TEXT,
+        payload TEXT,
+        reply_to TEXT,
+        created_at INTEGER NOT NULL,
+        read_at INTEGER,
+        CHECK ((to_pid IS NULL) <> (group_id IS NULL)),
+        CHECK (from_pid <> to_pid)
+      );
+      INSERT INTO messages_v3 (rowid, id, from_pid, to_pid, kind, body, context, created_at, read_at)
+        SELECT rowid, id, from_pid, to_pid, 'text', body, context, created_at, read_at FROM messages;
+      DROP TABLE messages;
+      ALTER TABLE messages_v3 RENAME TO messages;
+      CREATE INDEX messages_pair ON messages (from_pid, to_pid, created_at);
+      CREATE INDEX messages_sent ON messages (from_pid, created_at);
+      CREATE INDEX messages_group ON messages (group_id, created_at);
+
+      -- Réactions : une par profil, emoji et message (la bascule supprime la ligne).
+      CREATE TABLE message_reactions (
+        message_id TEXT NOT NULL REFERENCES messages (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        emoji TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (message_id, pid, emoji)
+      );
+      CREATE INDEX message_reactions_message ON message_reactions (message_id, created_at);
+
+      -- Sondages : l'identifiant du sondage est celui de son message. Options ordonnées ; un vote unique par profil.
+      CREATE TABLE polls (
+        message_id TEXT PRIMARY KEY REFERENCES messages (id) ON DELETE CASCADE,
+        question TEXT NOT NULL,
+        closed INTEGER NOT NULL DEFAULT 0 CHECK (closed IN (0, 1))
+      );
+      CREATE TABLE poll_options (
+        id TEXT PRIMARY KEY,
+        poll_id TEXT NOT NULL REFERENCES polls (message_id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        label TEXT NOT NULL
+      );
+      CREATE INDEX poll_options_poll ON poll_options (poll_id, position);
+      CREATE TABLE poll_votes (
+        poll_id TEXT NOT NULL REFERENCES polls (message_id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        option_id TEXT NOT NULL REFERENCES poll_options (id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (poll_id, pid)
+      );
+    `,
+  },
+  {
+    version: 21,
+    name: 'activité des profils (débuts, fins, notes, favoris, listes, notes sur 5), un événement par titre et par jour',
+    sql: `
+      -- Événements d'activité d'un profil, vus par ses amis et son foyer. Titre et affiche figés à l'écriture ; saison et
+      -- épisode NULL pour un film. Le jour (UTC, AAAA-MM-JJ) et le genre forment la clé de dédoublonnage avec le titre.
+      CREATE TABLE activity (
+        id TEXT PRIMARY KEY,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('started', 'finished', 'rated', 'noted', 'favorited', 'listed')),
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        season INTEGER,
+        episode INTEGER,
+        title TEXT NOT NULL DEFAULT '',
+        poster TEXT,
+        rating REAL CHECK (rating IS NULL OR (rating >= 0.5 AND rating <= 5)),
+        day TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX activity_daily ON activity (pid, kind, type, tmdb_id, day);
+      CREATE INDEX activity_pid_at ON activity (pid, at);
+    `,
+  },
+  {
+    version: 22,
+    name: 'liens publics, listes partagées',
+    sql: `
+      -- Liens publics : code non devinable (16 octets aléatoires, 22 caractères), auteur (profil), titre, affiche (chemin ou
+      -- URL TMDB), position (seulement pour un moment), note facultative, invitation réservée facultative (invites.id).
+      CREATE TABLE share_links (
+        code TEXT PRIMARY KEY,
+        author_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT,
+        pos REAL,
+        note TEXT,
+        invite_id TEXT REFERENCES invites (id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX share_links_author ON share_links (author_pid, created_at);
+      CREATE INDEX share_links_invite ON share_links (invite_id);
+
+      -- Listes partagées : le propriétaire est aussi une ligne de membre ; les autres membres sont des amis du propriétaire.
+      CREATE TABLE shared_lists (
+        id TEXT PRIMARY KEY,
+        owner_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX shared_lists_owner ON shared_lists (owner_pid);
+      CREATE TABLE shared_list_members (
+        list_id TEXT NOT NULL REFERENCES shared_lists (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        PRIMARY KEY (list_id, pid)
+      );
+      CREATE INDEX shared_list_members_pid ON shared_list_members (pid);
+      CREATE TABLE shared_list_items (
+        list_id TEXT NOT NULL REFERENCES shared_lists (id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT,
+        added_by TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (list_id, type, tmdb_id)
+      );
+    `,
+  },
+  {
+    version: 23,
+    name: 'limites de débit persistantes, propriété des groupes',
+    sql: `
+      -- Limites de débit à fenêtre glissante : une ligne par action autorisée (seau, clé, instant en ms), purgée au-delà de
+      -- deux heures. Sans clé étrangère : une ligne expire d'elle-même.
+      CREATE TABLE rate_hits (
+        bucket TEXT NOT NULL,
+        key TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      CREATE INDEX rate_hits_key ON rate_hits (bucket, key, at);
+      CREATE INDEX rate_hits_at ON rate_hits (at);
+
+      -- Groupes : created_by est le propriétaire, toujours un membre. Un groupe sans membre est supprimé ; un propriétaire
+      -- parti avant ce correctif cède sa place au plus ancien membre.
+      DELETE FROM social_groups WHERE NOT EXISTS (SELECT 1 FROM social_group_members m WHERE m.group_id = social_groups.id);
+      UPDATE social_groups
+         SET created_by = (SELECT m.pid FROM social_group_members m WHERE m.group_id = social_groups.id ORDER BY m.joined_at, m.pid LIMIT 1)
+       WHERE NOT EXISTS (SELECT 1 FROM social_group_members m WHERE m.group_id = social_groups.id AND m.pid = social_groups.created_by);
+    `,
+  },
+  {
+    version: 24,
+    name: 'annonces (bandeau public, fenêtre de dates) et éléments de la boîte de contrôle écartés',
+    sql: `
+      -- Annonces publiées par le propriétaire. Dates ISO 8601 UTC normalisées à l'écriture ; NULL = sans borne.
+      CREATE TABLE announcements (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('info', 'warning')),
+        starts_at TEXT,
+        ends_at TEXT,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX announcements_active ON announcements (active, starts_at, ends_at);
+
+      -- Éléments de la boîte de contrôle écartés par l'administrateur : une clé stable par élément (« report:<id> »…).
+      CREATE TABLE inbox_dismissed (
+        key TEXT PRIMARY KEY,
+        dismissed_at TEXT NOT NULL
+      );
+    `,
+  },
+  {
+    version: 25,
+    name: 'invitations révoquées par l administration (date de révocation, NULL = lien valide)',
+    sql: `
+      ALTER TABLE invites ADD COLUMN revoked_at TEXT;
+    `,
+  },
+  {
+    version: 26,
+    name: 'sessions : user-agent à la connexion (200 car. max) et dernière activité (ms, écrite au plus toutes les 5 min)',
+    sql: `
+      -- NULL = user-agent absent ; last_seen_at NULL = jamais mise à jour (la date de connexion fait foi).
+      ALTER TABLE sessions ADD COLUMN user_agent TEXT;
+      ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER;
+    `,
+  },
+  {
+    version: 27,
+    name: 'invitations sur un profil du foyer (jeton haché), logins de profil, sessions verrouillées sur un profil',
+    sql: `
+      CREATE TABLE household_invites (
+        id TEXT PRIMARY KEY,                 -- id court aléatoire (pour l'UI)
+        token_hash TEXT NOT NULL UNIQUE,     -- sha256(jeton) ; le jeton clair n'est jamais stocké
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        created_by_profile TEXT,             -- profil qui a créé le lien
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER, used_login TEXT,
+        revoked_at INTEGER
+      );
+      CREATE TABLE profile_logins (
+        login TEXT PRIMARY KEY,              -- identifiant normalisé (minuscules, trim), même règles que accounts.username + '@' permis
+        password_hash TEXT NOT NULL,         -- même algorithme que les comptes
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        profile_id TEXT NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL
+      );
+      -- Non NULL = session verrouillée sur ce profil. (Pas de commentaire après le dernier point-virgule : le SQLite du
+      -- Durable Object refuse un fragment sans instruction.)
+      ALTER TABLE sessions ADD COLUMN profile_id TEXT;
+    `,
+  },
+  {
+    version: 28,
+    name: 'billets de parrainage : message, coups de cœur (JSON), échéance à l envoi, amitié automatique à l inscription',
+    sql: `
+      -- Message du billet (280 caractères au plus) et coups de cœur (JSON, 3 au plus : [{id, type, name, poster, background}]).
+      ALTER TABLE invites ADD COLUMN message TEXT;
+      ALTER TABLE invites ADD COLUMN picks TEXT;
+      -- Échéance (ms epoch) posée à l envoi : sent_at + 14 jours. NULL = non envoyé (ou envoyé avant la v28, sans échéance).
+      ALTER TABLE invites ADD COLUMN expires_at INTEGER;
+      -- 0 : inscription sans amitié automatique (register avec autoFriend=false). Les liens existants restent à 1.
+      ALTER TABLE invites ADD COLUMN auto_friend INTEGER NOT NULL DEFAULT 1 CHECK (auto_friend IN (0, 1));
+    `,
+  },
+  {
+    version: 29,
+    name: 'marquage « vu » manuel : colonne manual sur la progression, hors historique des amis',
+    sql: `
+      -- 1 : ligne écrite par un marquage « vu » à la main (PUT /watched) ; 0 : lecture réelle. L'historique des amis ignore les 1.
+      ALTER TABLE progress ADD COLUMN manual INTEGER NOT NULL DEFAULT 0 CHECK (manual IN (0, 1));
+    `,
+  },
+  {
+    version: 30,
+    name: 'compte Molotov du compte (jetons et profil chiffrés, une ligne par compte)',
+    sql: `
+      -- Session Molotov du compte : jetons (idToken, refreshToken) et profil (identité, rang) chiffrés côté serveur
+      -- (AES-256-GCM, base64url), jamais en clair en base. La ligne suit le compte (suppression en cascade).
+      CREATE TABLE molotov_accounts (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        tokens TEXT NOT NULL,
+        profile TEXT,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    version: 31,
+    name: 'liens publics : fin d un extrait (end_pos)',
+    sql: `
+      -- Fin (secondes) d'un extrait partagé par lien public ; NULL = moment à position unique ou titre entier.
+      ALTER TABLE share_links ADD COLUMN end_pos REAL;
+    `,
+  },
+  {
+    version: 32,
+    name: 'clés de services serveur (une ligne par champ, valeur chiffrée)',
+    sql: `
+      -- Clés des services gérés par le propriétaire (TMDB, MDBList, TheTVDB, Fanart.tv, IntroDB, SkipDB, Anime Skip).
+      -- La valeur est chiffrée (AES-256-GCM, clé dérivée de LASTADDON_SECRET avec le libellé « server-services »), jamais en clair.
+      -- OpenRouter n'a pas de ligne ici : sa clé vient du compte ou de OPENROUTER_API_KEY.
+      CREATE TABLE server_services (
+        field TEXT PRIMARY KEY CHECK (field IN ('tmdbToken', 'tmdbApiKey', 'mdblistApiKey', 'tvdbApiKey', 'tvdbPin', 'fanartApiKey', 'introdbApiKey', 'skipdbApiKey', 'animeskipClientId')),
+        sealed TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    version: 33,
+    name: 'coups de cœur des amis : un mot par profil et par titre (140 caractères au plus), lus par l accueil',
+    sql: `
+      -- Coup de cœur d'un profil sur un titre : une ligne par (profil, genre, identifiant TMDB). Supprimée avec le profil.
+      CREATE TABLE recommendations (
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT,
+        word TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (pid, type, tmdb_id)
+      );
+      CREATE INDEX recommendations_created ON recommendations (pid, created_at DESC);
+    `,
+  },
+  {
+    version: 34,
+    name: 'soirées planifiées : séries récurrentes, occurrences, invités et réponses',
+    sql: `
+      -- Série de soirées : une règle (fuseau, jour, heure locale, cadence) et des occurrences matérialisées dans evenings.
+      -- anchor_at : première occurrence, qui fixe la parité des semaines pour une cadence de 2 semaines.
+      -- Supprimée avec l'hôte.
+      CREATE TABLE evening_series (
+        id TEXT PRIMARY KEY,
+        host_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        tz TEXT NOT NULL,
+        weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+        local_time TEXT NOT NULL CHECK (local_time GLOB '[0-2][0-9]:[0-5][0-9]'),
+        interval INTEGER NOT NULL CHECK (interval IN (1, 2)),
+        until_at INTEGER,
+        status TEXT NOT NULL CHECK (status IN ('active', 'stopped')),
+        anchor_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX evening_series_host ON evening_series (host_pid, status);
+
+      -- Invités d'une série (hors occurrences déjà posées) ; left_at renseigné quand l'invité quitte la série.
+      CREATE TABLE evening_series_guests (
+        series_id TEXT NOT NULL REFERENCES evening_series (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        left_at INTEGER,
+        PRIMARY KEY (series_id, pid)
+      );
+
+      -- Soirée (ou occurrence d'une série). starts_at en ms UTC ; tz : fuseau IANA de la soirée (copié de la série pour une
+      -- occurrence). overridden = 1 : occurrence modifiée à la main, que la série ne réécrit plus. reminded_at : rappel T-15 min
+      -- envoyé (un seul par soirée). slot_at : instant prévu par la règle de la série (jamais modifié, même si l'occurrence est
+      -- déplacée) ; il garde la génération idempotente : un créneau d'origine libéré par un déplacement n'est pas recréé.
+      -- NULL pour une soirée ponctuelle (l'unicité ne s'y applique pas).
+      CREATE TABLE evenings (
+        id TEXT PRIMARY KEY,
+        series_id TEXT REFERENCES evening_series (id) ON DELETE CASCADE,
+        host_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        tz TEXT NOT NULL,
+        starts_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('scheduled', 'cancelled')),
+        overridden INTEGER NOT NULL DEFAULT 0 CHECK (overridden IN (0, 1)),
+        party_id TEXT,
+        reminded_at INTEGER,
+        slot_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE (series_id, slot_at)
+      );
+      CREATE INDEX evenings_status_starts ON evenings (status, starts_at);
+      CREATE INDEX evenings_host ON evenings (host_pid, status);
+
+      -- Invités d'une soirée. L'hôte y figure aussi, avec la réponse « yes ».
+      CREATE TABLE evening_guests (
+        evening_id TEXT NOT NULL REFERENCES evenings (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        response TEXT NOT NULL CHECK (response IN ('pending', 'yes', 'maybe', 'no')),
+        responded_at INTEGER,
+        PRIMARY KEY (evening_id, pid)
+      );
+      CREATE INDEX evening_guests_pid ON evening_guests (pid);
+    `,
+  },
+];
+
+/**
+ * Applique les migrations en attente, chacune dans sa propre transaction. Refuse une base plus récente que le code
+ * (version inconnue) plutôt que de risquer une corruption.
+ */
+export function migrate(db: SqlDb, migrations: readonly Migration[] = MIGRATIONS): void {
+  db.exec(
+    'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)',
+  );
+  const applied = new Set(db.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
+  const known = new Set(migrations.map((migration) => migration.version));
+  if ([...applied].some((version) => !known.has(version))) {
+    throw new Error('Base de données utilisateur : version de schéma inconnue (base plus récente que lastAddon)');
+  }
+  for (const migration of [...migrations].sort((a, b) => a.version - b.version)) {
+    if (applied.has(migration.version)) continue;
+    db.transaction(() => {
+      db.exec(migration.sql);
+      migration.run?.(db);
+      db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
+        migration.version,
+        migration.name,
+        new Date().toISOString(),
+      );
+    });
+  }
+}

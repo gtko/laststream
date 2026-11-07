@@ -1,0 +1,888 @@
+import { type AppSettings, readAppSettings, writeAppSettings } from './app-settings.js';
+import { hashSessionToken } from './crypto.js';
+import { deviceLabel } from './session-device.js';
+import type { SqlDb, SqlParam, SqlRow } from './sql.js';
+
+/**
+ * Données de l'administration : comptes (vue d'ensemble, parrainage, suspension), réglages globaux, journal d'audit,
+ * liens de réinitialisation, file des signalements. Même base et mêmes migrations que UserStore. Chaque vue est une
+ * liste explicite de champs : ni hash de mot de passe ou de PIN, ni jeton, ni configuration chiffrée n'en sort.
+ */
+
+const MAX_AUDIT_ROWS = 10_000;
+const MAX_TREE_ACCOUNTS = 5_000;
+const MAX_REPORT_ROWS = 2_000;
+export const RESET_TTL_MS = 24 * 3600_000;
+/** Un compte est « en ligne » si sa dernière présence date de moins de deux minutes. */
+const ONLINE_WINDOW_MS = 2 * 60_000;
+/** Un compte est « inactif » si sa dernière activité date de plus de trente jours, ou s'il n'en a jamais eu. */
+const INACTIVE_AFTER_MS = 30 * 24 * 3600_000;
+
+type AccountStatus = 'active' | 'suspended';
+
+/** Filtre de la liste des comptes (`all` : sans filtre). */
+export type AccountFilter = 'all' | 'online' | 'inactive30' | 'suspended' | 'noInvites';
+
+/** Effectifs par filtre, sur l'ensemble des comptes (indépendants de la pagination, de la recherche et du filtre choisi). */
+export type AccountCounts = Record<AccountFilter, number>;
+
+/** Compte présent (présence de moins de deux minutes) et titre en cours de lecture, s'il existe. */
+export interface OnlineAccount {
+  id: string;
+  username: string;
+  lastSeenAt: string;
+  watching: { title: string; mediaType?: string } | null;
+}
+
+export interface AdminAccount {
+  id: string;
+  username: string;
+  isOwner: boolean;
+  createdAt: string;
+  status: AccountStatus;
+  suspendedAt: string | null;
+  /** Pseudo du parrain (null : premier compte ou lien « système »). */
+  referrer: string | null;
+  /** Dernière trace d'activité (présence, connexion, progression), ou null. */
+  lastActivityAt: string | null;
+  /** Présence (battement de cœur) de moins de deux minutes. */
+  online: boolean;
+  /** Sessions ouvertes et non expirées. */
+  sessionCount: number;
+  profileCount: number;
+  libraryCount: number;
+  inviteQuota: number;
+  invitesUsed: number;
+}
+
+/** Session ouverte d'un compte. Ni empreinte ni jeton : `id` est un identifiant public dérivé (voir `sessionRef`). */
+interface AdminSession {
+  id: string;
+  /** Libellé court de l'appareil (« Android · Chrome ») dérivé du user-agent de la connexion ; null si non reconnu. */
+  device: string | null;
+  createdAt: string;
+  /** Dernière activité écrite au plus toutes les 5 min ; la date de connexion tant qu'elle n'a pas été écrite. */
+  lastSeenAt: string;
+  expiresAt: string;
+}
+
+/** Statut d'une invitation. `expired` est réservé : aucun lien n'a d'échéance aujourd'hui. */
+export type InviteStatus = 'active' | 'used' | 'expired' | 'revoked';
+
+/** Lien d'invitation, vue d'administration : identifiant et état, jamais le code. */
+export interface AdminInvite {
+  id: string;
+  /** Nul pour une invitation « système » (créée par l'administration, sans parrain). */
+  ownerId: string | null;
+  ownerUsername: string | null;
+  createdAt: string;
+  /** Toujours nul : les liens n'ont pas d'échéance. */
+  expiresAt: string | null;
+  usedAt: string | null;
+  /** Compte inscrit avec le lien ; nul si ce compte a été supprimé depuis. */
+  usedBy: string | null;
+  usedByUsername: string | null;
+  status: InviteStatus;
+}
+
+type TimelineKind = 'audit' | 'signup' | 'invite' | 'session' | 'party';
+
+/** Événement de la chronologie d'un compte. `detail` : complément lisible, jamais de secret ni de texte de message. */
+export interface TimelineEvent {
+  at: string;
+  kind: TimelineKind;
+  label: string;
+  detail?: string;
+}
+
+export interface AccountListQuery {
+  /** Fragment du pseudo (insensible à la casse). */
+  q?: string;
+  status?: AccountStatus;
+  filter?: AccountFilter;
+  /** Pseudo exact du parrain. */
+  referrer?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  order: 'newest' | 'oldest';
+  limit: number;
+  cursor?: string;
+}
+
+export interface AdminAccountDetail {
+  account: AdminAccount;
+  profiles: { id: string; name: string; isKid: boolean; hasPin: boolean; createdAt: string; libraryCount: number }[];
+  libraryCount: number;
+  invitees: { id: string; username: string; usedAt: string | null }[];
+  sessions: AdminSession[];
+  /** Liens d'invitation du compte (ceux qu'il a créés), récents d'abord. */
+  invites: AdminInvite[];
+}
+
+export interface ReferralNode {
+  id: string;
+  username: string;
+  createdAt: string;
+  status: AccountStatus;
+  children: ReferralNode[];
+}
+
+export interface AuditEntry {
+  id: number;
+  at: string;
+  actor: string;
+  actorId: string | null;
+  action: string;
+  target: string | null;
+  detail: Record<string, unknown> | null;
+}
+
+export type ReportStatus = 'open' | 'deleted' | 'suspended' | 'ignored';
+
+export interface PartyReportRecord {
+  id: number;
+  roomId: string;
+  messageId: string;
+  by: string;
+  againstId: string | null;
+  against: string;
+  text: string;
+  reason: string | null;
+  at: number;
+  status: ReportStatus;
+  resolvedAt: string | null;
+}
+
+export type NewPartyReport = Omit<PartyReportRecord, 'id' | 'status' | 'resolvedAt'>;
+
+export interface RegisteredRoom {
+  id: string;
+  hostId: string;
+  host: string;
+  visibility: 'private' | 'public';
+  title: string;
+  mediaType: 'movie' | 'series';
+  createdAt: string;
+}
+
+const LIKE_ESCAPE = /[\\%_]/g;
+
+/** Dernière activité d'un compte (ISO, chaîne vide si jamais) : présence, connexion, progression. Alias de table `a`. */
+const LAST_ACTIVITY_SQL = `MAX(
+    COALESCE((SELECT seen_at FROM presence WHERE account_id = a.id), ''),
+    COALESCE((SELECT MAX(created_at) FROM sessions WHERE account_id = a.id), ''),
+    COALESCE((SELECT MAX(pr.updated_at) FROM progress pr JOIN profiles p ON p.id = pr.profile_id WHERE p.account_id = a.id), '')
+  )`;
+
+/** Colonnes d'un compte. Premier paramètre lié : l'instant courant (ISO), pour ne compter que les sessions non expirées. */
+const ACCOUNT_COLUMNS = `
+  a.id, a.username, a.is_owner, a.created_at, a.suspended_at, a.invite_quota,
+  (SELECT ia.username FROM invites i JOIN accounts ia ON ia.id = i.inviter_id WHERE i.used_by = a.id LIMIT 1) AS referrer,
+  (SELECT COUNT(*) FROM profiles p WHERE p.account_id = a.id) AS profile_count,
+  (SELECT COUNT(*) FROM library_items l JOIN profiles p ON p.id = l.profile_id WHERE p.account_id = a.id AND l.removed = 0) AS library_count,
+  (SELECT COUNT(*) FROM invites i WHERE i.inviter_id = a.id AND i.used_at IS NOT NULL) AS invites_used,
+  (SELECT seen_at FROM presence WHERE account_id = a.id) AS seen_at,
+  (SELECT COUNT(*) FROM sessions s WHERE s.account_id = a.id AND s.expires_at > ?) AS session_count,
+  ${LAST_ACTIVITY_SQL} AS last_activity`;
+
+/**
+ * Condition SQL d'un filtre de liste (alias de table `a`) et ses paramètres liés, dans l'ordre ; `null` pour « tous ».
+ * Les effectifs et la liste s'appuient sur les mêmes conditions : un compteur égale le total du filtre correspondant.
+ */
+function accountFilterCondition(filter: AccountFilter, nowMs: number): { sql: string; params: SqlParam[] } | null {
+  switch (filter) {
+    case 'all':
+      return null;
+    case 'online':
+      return { sql: 'EXISTS (SELECT 1 FROM presence pr WHERE pr.account_id = a.id AND pr.seen_at > ?)', params: [new Date(nowMs - ONLINE_WINDOW_MS).toISOString()] };
+    case 'inactive30':
+      // Une chaîne vide (jamais d'activité) est inférieure à toute date : « jamais » est compté comme inactif.
+      return { sql: `(${LAST_ACTIVITY_SQL}) < ?`, params: [new Date(nowMs - INACTIVE_AFTER_MS).toISOString()] };
+    case 'suspended':
+      return { sql: 'a.suspended_at IS NOT NULL', params: [] };
+    case 'noInvites':
+      return { sql: '(a.invite_quota - (SELECT COUNT(*) FROM invites i WHERE i.inviter_id = a.id AND i.used_at IS NOT NULL)) <= 0', params: [] };
+  }
+}
+
+/** Titre en cours d'un compte (présence, JSON du battement de cœur) réduit à son titre et à son type ; null si absent ou illisible. */
+function adminWatching(raw: unknown): OnlineAccount['watching'] {
+  if (typeof raw !== 'string') return null;
+  try {
+    const value = JSON.parse(raw) as { title?: unknown; type?: unknown };
+    if (typeof value.title !== 'string') return null;
+    return typeof value.type === 'string' ? { title: value.title, mediaType: value.type } : { title: value.title };
+  } catch {
+    return null;
+  }
+}
+
+/** Identifiant public d'une session, dérivé de son empreinte stockée : il ne révèle ni l'empreinte ni le jeton. */
+function sessionRef(tokenHash: string): string {
+  return hashSessionToken(tokenHash).slice(0, 24);
+}
+
+/** Empreinte stockée de la session désignée par son identifiant public, parmi celles du compte (hors prototype : pas exposée au RPC). */
+function sessionHashOf(db: SqlDb, accountId: string, sessionId: string): string | undefined {
+  const rows = db.prepare('SELECT token_hash FROM sessions WHERE account_id = ?').all(accountId);
+  const row = rows.find((candidate) => sessionRef(String(candidate.token_hash)) === sessionId);
+  return row === undefined ? undefined : String(row.token_hash);
+}
+
+function toAdminAccount(row: SqlRow, nowMs: number): AdminAccount {
+  const suspendedAt = row.suspended_at === null || row.suspended_at === undefined ? null : String(row.suspended_at);
+  const activity = String(row.last_activity ?? '');
+  const seen = row.seen_at === null || row.seen_at === undefined ? null : String(row.seen_at);
+  return {
+    id: String(row.id),
+    username: String(row.username),
+    isOwner: Number(row.is_owner) === 1,
+    createdAt: String(row.created_at),
+    status: suspendedAt === null ? 'active' : 'suspended',
+    suspendedAt,
+    referrer: row.referrer === null || row.referrer === undefined ? null : String(row.referrer),
+    lastActivityAt: activity === '' ? null : activity,
+    online: seen !== null && nowMs - Date.parse(seen) < ONLINE_WINDOW_MS,
+    sessionCount: Number(row.session_count),
+    profileCount: Number(row.profile_count),
+    libraryCount: Number(row.library_count),
+    inviteQuota: Number(row.invite_quota),
+    invitesUsed: Number(row.invites_used),
+  };
+}
+
+function toReport(row: SqlRow): PartyReportRecord {
+  return {
+    id: Number(row.id),
+    roomId: String(row.room_id),
+    messageId: String(row.message_id),
+    by: String(row.by_name),
+    againstId: row.against_id === null || row.against_id === undefined ? null : String(row.against_id),
+    against: String(row.against_name),
+    text: String(row.text),
+    reason: row.reason === null || row.reason === undefined ? null : String(row.reason),
+    at: Number(row.at),
+    status: String(row.status) as ReportStatus,
+    resolvedAt: row.resolved_at === null || row.resolved_at === undefined ? null : String(row.resolved_at),
+  };
+}
+
+/** Niveau d'une annonce : information ou alerte. */
+type AnnouncementLevel = 'info' | 'warning';
+
+/** Annonce publiée par le propriétaire (bandeau). Dates ISO 8601 UTC ; null = sans borne. */
+export interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  level: AnnouncementLevel;
+  startsAt: string | null;
+  endsAt: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const ANNOUNCEMENT_COLUMNS = 'id, title, message, level, starts_at, ends_at, active, created_at, updated_at';
+
+function toAnnouncement(row: SqlRow): Announcement {
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    message: String(row.message),
+    level: String(row.level) as AnnouncementLevel,
+    startsAt: row.starts_at === null || row.starts_at === undefined ? null : String(row.starts_at),
+    endsAt: row.ends_at === null || row.ends_at === undefined ? null : String(row.ends_at),
+    active: Number(row.active) === 1,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+/** Conditions de la liste (recherche, statut, parrain, dates, filtre) et leurs paramètres liés, dans l'ordre du SQL. */
+function accountConditions(
+  query: Partial<Pick<AccountListQuery, 'q' | 'status' | 'referrer' | 'createdFrom' | 'createdTo' | 'filter'>>,
+  nowMs: number,
+): { where: string[]; params: SqlParam[] } {
+  const where: string[] = [];
+  const params: SqlParam[] = [];
+  if (query.q !== undefined && query.q !== '') {
+    where.push("a.username LIKE ? ESCAPE '\\'");
+    params.push(`%${query.q.toLowerCase().replace(LIKE_ESCAPE, '\\$&')}%`);
+  }
+  if (query.status === 'suspended') where.push('a.suspended_at IS NOT NULL');
+  if (query.status === 'active') where.push('a.suspended_at IS NULL');
+  if (query.referrer !== undefined) {
+    where.push('EXISTS (SELECT 1 FROM invites i JOIN accounts ia ON ia.id = i.inviter_id WHERE i.used_by = a.id AND ia.username = ?)');
+    params.push(query.referrer);
+  }
+  if (query.createdFrom !== undefined) {
+    where.push('a.created_at >= ?');
+    params.push(query.createdFrom);
+  }
+  if (query.createdTo !== undefined) {
+    where.push('a.created_at <= ?');
+    params.push(query.createdTo);
+  }
+  const condition = query.filter === undefined ? null : accountFilterCondition(query.filter, nowMs);
+  if (condition !== null) {
+    where.push(condition.sql);
+    params.push(...condition.params);
+  }
+  return { where, params };
+}
+
+/** Effectifs de chaque filtre sur l'ensemble des comptes (une requête COUNT par filtre, mêmes conditions que la liste). */
+function accountCounts(db: SqlDb, nowMs: number): AccountCounts {
+  const countOf = (filter: AccountFilter): number => {
+    const condition = accountFilterCondition(filter, nowMs);
+    const where = condition === null ? '' : ` WHERE ${condition.sql}`;
+    return Number(db.prepare(`SELECT COUNT(*) AS n FROM accounts a${where}`).get(...(condition?.params ?? []))?.n ?? 0);
+  };
+  return { all: countOf('all'), online: countOf('online'), inactive30: countOf('inactive30'), suspended: countOf('suspended'), noInvites: countOf('noInvites') };
+}
+
+/** Libellés des actions du journal d'audit dans la chronologie d'un compte. Action absente de la liste : affichée telle quelle. */
+const AUDIT_LABELS: Readonly<Partial<Record<string, string>>> = {
+  'account.suspend': 'Compte suspendu',
+  'account.reactivate': 'Compte réactivé',
+  'account.delete': 'Compte supprimé',
+  'account.invite_quota': 'Quota d’invitations modifié',
+  'account.revoke_sessions': 'Sessions révoquées',
+  'account.session.revoke': 'Session révoquée',
+  'account.reset_link': 'Lien de réinitialisation créé',
+  'admin.profile': 'Profil administrateur désigné',
+  elevate: 'Ré-authentification',
+  'elevate.failed': 'Échec de ré-authentification',
+  'invite.revoke': 'Invitation révoquée',
+  'party.close_room': 'Salon fermé',
+  'report.ignore': 'Signalement ignoré',
+  'report.delete_message': 'Message signalé supprimé',
+  'report.suspend_author': 'Auteur signalé suspendu',
+  'settings.update': 'Réglages modifiés',
+  'cache.purge': 'Purge de cache',
+  'tv.rerun': 'Relance de la TV',
+};
+
+/** Colonnes d'un lien d'invitation, avec le pseudo du parrain et celui du filleul (jointures facultatives). */
+const INVITE_SELECT = `SELECT i.id, i.inviter_id, o.username AS owner_username, i.created_at, i.used_at, i.used_by, u.username AS used_by_username, i.revoked_at
+  FROM invites i LEFT JOIN accounts o ON o.id = i.inviter_id LEFT JOIN accounts u ON u.id = i.used_by`;
+
+/** Clause WHERE de chaque statut d'invitation. `expired` ne correspond à rien : aucun lien n'a d'échéance. */
+const INVITE_STATUS_SQL: Readonly<Record<InviteStatus, string>> = {
+  active: 'i.used_at IS NULL AND i.revoked_at IS NULL',
+  used: 'i.used_at IS NOT NULL',
+  revoked: 'i.used_at IS NULL AND i.revoked_at IS NOT NULL',
+  expired: '1 = 0',
+};
+
+function textOrNull(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
+}
+
+function toAdminInvite(row: SqlRow): AdminInvite {
+  const usedAt = textOrNull(row.used_at);
+  const revokedAt = textOrNull(row.revoked_at);
+  let status: InviteStatus = 'active';
+  if (usedAt !== null) status = 'used';
+  else if (revokedAt !== null) status = 'revoked';
+  return {
+    id: String(row.id),
+    ownerId: textOrNull(row.inviter_id),
+    ownerUsername: textOrNull(row.owner_username),
+    createdAt: String(row.created_at),
+    expiresAt: null,
+    usedAt,
+    usedBy: textOrNull(row.used_by),
+    usedByUsername: textOrNull(row.used_by_username),
+    status,
+  };
+}
+
+function timelineEvent(at: string, kind: TimelineKind, label: string, detail?: string): TimelineEvent {
+  return detail === undefined ? { at, kind, label } : { at, kind, label, detail };
+}
+
+export class AdminStore {
+  constructor(private readonly db: SqlDb) {}
+
+  // Comptes
+
+  /**
+   * Liste paginée (filtre, recherche, statut, parrain, dates) avec le total du filtre et les effectifs de tous les filtres
+   * (`counts`, sur l'ensemble des comptes : cinq requêtes de comptage). `withCounts: false` les saute, pour les lectures
+   * d'exploitation qui n'affichent pas les effectifs (`counts` vaut alors undefined).
+   */
+  listAccounts(query: AccountListQuery, options: { withCounts?: boolean } = {}): { accounts: AdminAccount[]; nextCursor: string | null; total: number; counts?: AccountCounts } {
+    const nowMs = Date.now();
+    const { where, params } = accountConditions(query, nowMs);
+    const filter = where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`;
+    const total = Number(this.db.prepare(`SELECT COUNT(*) AS n FROM accounts a${filter}`).get(...params)?.n ?? 0);
+    const newest = query.order === 'newest';
+    const paged = [...where];
+    const pagedParams = [...params];
+    if (query.cursor !== undefined) {
+      const sep = query.cursor.indexOf('|');
+      if (sep > 0) {
+        paged.push(newest ? '(a.created_at, a.id) < (?, ?)' : '(a.created_at, a.id) > (?, ?)');
+        pagedParams.push(query.cursor.slice(0, sep), query.cursor.slice(sep + 1));
+      }
+    }
+    const pagedFilter = paged.length === 0 ? '' : ` WHERE ${paged.join(' AND ')}`;
+    const rows = this.db
+      .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a${pagedFilter} ORDER BY a.created_at ${newest ? 'DESC' : 'ASC'}, a.id ${newest ? 'DESC' : 'ASC'} LIMIT ?`)
+      .all(new Date(nowMs).toISOString(), ...pagedParams, query.limit + 1);
+    const accounts = rows.slice(0, query.limit).map((row) => toAdminAccount(row, nowMs));
+    const last = accounts[accounts.length - 1];
+    return {
+      accounts,
+      nextCursor: rows.length > query.limit && last !== undefined ? `${last.createdAt}|${last.id}` : null,
+      total,
+      counts: options.withCounts === false ? undefined : accountCounts(this.db, nowMs),
+    };
+  }
+
+  /** Derniers comptes créés, les plus récents d'abord : identifiant, pseudo et date de création seulement (fil d'activité). */
+  recentAccounts(limit: number): Pick<AdminAccount, 'id' | 'username' | 'createdAt'>[] {
+    return this.db
+      .prepare('SELECT a.id, a.username, a.created_at FROM accounts a ORDER BY a.created_at DESC, a.id DESC LIMIT ?')
+      .all(limit)
+      .map((row) => ({ id: String(row.id), username: String(row.username), createdAt: String(row.created_at) }));
+  }
+
+  /**
+   * Export des comptes (même recherche et même filtre que la liste, les plus récents d'abord) : au plus `max` comptes ;
+   * `truncated` si d'autres correspondent.
+   */
+  exportAccounts(query: { q?: string; filter: AccountFilter }, max: number): { accounts: AdminAccount[]; truncated: boolean } {
+    const nowMs = Date.now();
+    const { where, params } = accountConditions(query, nowMs);
+    const filter = where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`;
+    const rows = this.db
+      .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a${filter} ORDER BY a.created_at DESC, a.id DESC LIMIT ?`)
+      .all(new Date(nowMs).toISOString(), ...params, max + 1);
+    return { accounts: rows.slice(0, max).map((row) => toAdminAccount(row, nowMs)), truncated: rows.length > max };
+  }
+
+  /** Comptes présents (présence de moins de deux minutes), le plus récemment vu d'abord, avec le titre en cours s'il existe. */
+  onlineAccounts(): OnlineAccount[] {
+    const since = new Date(Date.now() - ONLINE_WINDOW_MS).toISOString();
+    return this.db
+      .prepare('SELECT a.id, a.username, pr.seen_at, pr.watching FROM presence pr JOIN accounts a ON a.id = pr.account_id WHERE pr.seen_at > ? ORDER BY pr.seen_at DESC, a.id')
+      .all(since)
+      .map((row) => ({ id: String(row.id), username: String(row.username), lastSeenAt: String(row.seen_at), watching: adminWatching(row.watching) }));
+  }
+
+  accountById(id: string): AdminAccount | undefined {
+    const nowMs = Date.now();
+    const row = this.db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a WHERE a.id = ?`).get(new Date(nowMs).toISOString(), id);
+    return row === undefined ? undefined : toAdminAccount(row, nowMs);
+  }
+
+  accountDetail(id: string): AdminAccountDetail | undefined {
+    const account = this.accountById(id);
+    if (account === undefined) return undefined;
+    const profiles = this.db
+      .prepare(
+        `SELECT p.id, p.name, p.is_kid, p.pin_hash IS NOT NULL AS has_pin, p.created_at,
+                (SELECT COUNT(*) FROM library_items l WHERE l.profile_id = p.id AND l.removed = 0) AS library_count
+         FROM profiles p WHERE p.account_id = ? ORDER BY p.created_at, p.id`,
+      )
+      .all(id)
+      .map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        isKid: Number(row.is_kid) === 1,
+        hasPin: Number(row.has_pin) === 1,
+        createdAt: String(row.created_at),
+        libraryCount: Number(row.library_count),
+      }));
+    const invitees = this.db
+      .prepare('SELECT a.id, a.username, i.used_at FROM invites i JOIN accounts a ON a.id = i.used_by WHERE i.inviter_id = ? ORDER BY i.used_at')
+      .all(id)
+      .map((row) => ({ id: String(row.id), username: String(row.username), usedAt: row.used_at === null ? null : String(row.used_at) }));
+    const sessions = this.db
+      .prepare(
+        'SELECT token_hash, created_at, expires_at, user_agent, last_seen_at FROM sessions WHERE account_id = ? AND expires_at > ? ORDER BY created_at DESC',
+      )
+      .all(id, new Date().toISOString())
+      .map((row): AdminSession => ({
+        id: sessionRef(String(row.token_hash)),
+        device: deviceLabel(row.user_agent === null ? null : String(row.user_agent)),
+        createdAt: String(row.created_at),
+        lastSeenAt: row.last_seen_at === null ? String(row.created_at) : new Date(Number(row.last_seen_at)).toISOString(),
+        expiresAt: String(row.expires_at),
+      }));
+    const invites = this.db.prepare(`${INVITE_SELECT} WHERE i.inviter_id = ? ORDER BY i.created_at DESC, i.rowid DESC`).all(id).map(toAdminInvite);
+    return { account, profiles, libraryCount: account.libraryCount, invitees, sessions, invites };
+  }
+
+  /** Vrai si la session (identifiant public) appartient au compte, expirée ou non. */
+  hasSession(accountId: string, sessionId: string): boolean {
+    return sessionHashOf(this.db, accountId, sessionId) !== undefined;
+  }
+
+  /** Révoque une session du compte. `false` si elle ne lui appartient pas. */
+  revokeSession(accountId: string, sessionId: string): boolean {
+    const tokenHash = sessionHashOf(this.db, accountId, sessionId);
+    if (tokenHash === undefined) return false;
+    this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND token_hash = ?').run(accountId, tokenHash);
+    return true;
+  }
+
+  /** Forêt de parrainage : racines = comptes sans parrain (premier compte, liens « système »). */
+  referralTree(): { roots: ReferralNode[]; total: number; truncated: boolean } {
+    const accounts = this.db
+      .prepare('SELECT id, username, created_at, suspended_at FROM accounts ORDER BY created_at, id LIMIT ?')
+      .all(MAX_TREE_ACCOUNTS + 1);
+    const truncated = accounts.length > MAX_TREE_ACCOUNTS;
+    const nodes = new Map<string, ReferralNode>();
+    for (const row of accounts.slice(0, MAX_TREE_ACCOUNTS)) {
+      nodes.set(String(row.id), {
+        id: String(row.id),
+        username: String(row.username),
+        createdAt: String(row.created_at),
+        status: row.suspended_at === null ? 'active' : 'suspended',
+        children: [],
+      });
+    }
+    const hasParent = new Set<string>();
+    const links = this.db.prepare('SELECT inviter_id, used_by FROM invites WHERE used_by IS NOT NULL AND inviter_id IS NOT NULL ORDER BY used_at').all();
+    for (const link of links) {
+      const parent = nodes.get(String(link.inviter_id));
+      const child = nodes.get(String(link.used_by));
+      if (parent === undefined || child === undefined || hasParent.has(child.id) || parent.id === child.id) continue;
+      parent.children.push(child);
+      hasParent.add(child.id);
+    }
+    return { roots: [...nodes.values()].filter((node) => !hasParent.has(node.id)), total: nodes.size, truncated };
+  }
+
+  setInviteQuota(id: string, quota: number): boolean {
+    return this.db.prepare('UPDATE accounts SET invite_quota = ? WHERE id = ?').run(quota, id).changes !== 0;
+  }
+
+  /** Suspend ou réactive un compte ; la suspension révoque ses sessions. `false` si le compte n'existe pas. */
+  setSuspended(id: string, suspended: boolean, now: string): boolean {
+    return this.db.transaction(() => {
+      const changed = this.db.prepare('UPDATE accounts SET suspended_at = ? WHERE id = ?').run(suspended ? now : null, id).changes !== 0;
+      if (changed && suspended) this.db.prepare('DELETE FROM sessions WHERE account_id = ?').run(id);
+      return changed;
+    });
+  }
+
+  // Réglages globaux
+
+  getSettings(): AppSettings {
+    return readAppSettings(this.db);
+  }
+
+  updateSettings(patch: Partial<AppSettings>): AppSettings {
+    return writeAppSettings(this.db, patch);
+  }
+
+  /**
+   * Profil administrateur : le seul profil du compte propriétaire qui accède à l'administration. Valeur enregistrée
+   * (clé admin_profile_id), sinon (migration) le plus ancien profil du propriétaire, enregistré à la première lecture.
+   * Null s'il n'existe aucun profil propriétaire.
+   */
+  adminProfileId(): string | null {
+    const owner = this.db.prepare('SELECT id FROM accounts WHERE is_owner = 1 LIMIT 1').get() as SqlRow | undefined;
+    if (owner === undefined) return null;
+    const stored = this.db.prepare("SELECT value FROM app_settings WHERE key = 'admin_profile_id'").get() as SqlRow | undefined;
+    if (stored !== undefined) {
+      try {
+        const id = JSON.parse(String(stored.value)) as unknown;
+        if (typeof id === 'string' && this.db.prepare('SELECT 1 AS ok FROM profiles WHERE id = ? AND account_id = ?').get(id, String(owner.id)) !== undefined) return id;
+      } catch {
+        // Valeur illisible : repli sur le plus ancien profil.
+      }
+    }
+    const oldest = this.db.prepare('SELECT id FROM profiles WHERE account_id = ? ORDER BY created_at, id LIMIT 1').get(String(owner.id)) as SqlRow | undefined;
+    if (oldest === undefined) return null;
+    this.setAdminProfileId(String(oldest.id));
+    return String(oldest.id);
+  }
+
+  /**
+   * Profil principal d'un compte : seul à gérer la configuration (sources, extensions, clés). Compte propriétaire : le
+   * profil administrateur ; autre compte : son plus ancien profil. Null s'il n'a aucun profil.
+   */
+  mainProfileId(accountId: string): string | null {
+    const owner = this.db.prepare('SELECT is_owner FROM accounts WHERE id = ?').get(accountId) as SqlRow | undefined;
+    if (owner === undefined) return null;
+    if (Number(owner.is_owner) === 1) return this.adminProfileId();
+    const oldest = this.db.prepare('SELECT id FROM profiles WHERE account_id = ? ORDER BY created_at, id LIMIT 1').get(accountId) as SqlRow | undefined;
+    return oldest === undefined ? null : String(oldest.id);
+  }
+
+  /** Désigne le profil administrateur (doit appartenir au propriétaire). `false` sinon. */
+  setAdminProfileId(profileId: string): boolean {
+    const ok = this.db.prepare('SELECT 1 AS ok FROM profiles p JOIN accounts a ON a.id = p.account_id WHERE p.id = ? AND a.is_owner = 1').get(profileId);
+    if (ok === undefined) return false;
+    this.db
+      .prepare("INSERT INTO app_settings (key, value) VALUES ('admin_profile_id', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify(profileId));
+    return true;
+  }
+
+  // Invitations
+
+  /** Invitations (toutes, ou d'un statut), récentes d'abord. Jamais le code. */
+  listInvites(query: { status?: InviteStatus; limit: number }): AdminInvite[] {
+    const where = query.status === undefined ? '' : ` WHERE ${INVITE_STATUS_SQL[query.status]}`;
+    return this.db
+      .prepare(`${INVITE_SELECT}${where} ORDER BY i.created_at DESC, i.rowid DESC LIMIT ?`)
+      .all(query.limit)
+      .map(toAdminInvite);
+  }
+
+  inviteById(id: string): AdminInvite | undefined {
+    const row = this.db.prepare(`${INVITE_SELECT} WHERE i.id = ?`).get(id);
+    return row === undefined ? undefined : toAdminInvite(row);
+  }
+
+  /** Révoque une invitation ni utilisée ni déjà révoquée : son lien n'est plus accepté à l'inscription. `false` sinon. */
+  revokeInvite(id: string, now: string): boolean {
+    return this.db.prepare('UPDATE invites SET revoked_at = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL').run(now, id).changes !== 0;
+  }
+
+  // Chronologie
+
+  /**
+   * Chronologie d'un compte, récent d'abord, au plus `limit` événements : journal d'audit où il est acteur, cible ou
+   * « accountId » ; inscription ; invitations créées et utilisées ; connexions ouvertes ; salons créés ; signalements.
+   * Aucun texte de message ni secret. Undefined si le compte n'existe pas.
+   */
+  accountTimeline(accountId: string, limit: number): TimelineEvent[] | undefined {
+    const account = this.accountById(accountId);
+    if (account === undefined) return undefined;
+    const audit = this.db
+      .prepare(
+        `SELECT at, actor_id, actor_name, action FROM admin_audit
+         WHERE actor_id = ? OR target = ? OR (detail IS NOT NULL AND json_extract(detail, '$.accountId') = ?)
+         ORDER BY id DESC LIMIT ?`,
+      )
+      .all(accountId, account.username, accountId, limit)
+      .map((row) => {
+        const action = String(row.action);
+        const actor = row.actor_id === accountId ? undefined : `par ${String(row.actor_name)}`;
+        return timelineEvent(String(row.at), 'audit', AUDIT_LABELS[action] ?? action, actor);
+      });
+    const created = this.db
+      .prepare('SELECT created_at FROM invites WHERE inviter_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(accountId, limit)
+      .map((row) => timelineEvent(String(row.created_at), 'invite', 'Invitation créée'));
+    const used = this.db
+      .prepare(
+        `SELECT i.used_at, u.username AS invitee FROM invites i LEFT JOIN accounts u ON u.id = i.used_by
+         WHERE i.inviter_id = ? AND i.used_at IS NOT NULL ORDER BY i.used_at DESC LIMIT ?`,
+      )
+      .all(accountId, limit)
+      .map((row) => timelineEvent(String(row.used_at), 'invite', 'Invitation utilisée', textOrNull(row.invitee) ?? 'compte supprimé'));
+    const sessions = this.db
+      .prepare('SELECT created_at FROM sessions WHERE account_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(accountId, limit)
+      .map((row) => timelineEvent(String(row.created_at), 'session', 'Connexion'));
+    const rooms = this.db
+      .prepare('SELECT title, created_at FROM party_rooms WHERE host_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(accountId, limit)
+      .map((row) => timelineEvent(String(row.created_at), 'party', 'Salon créé', String(row.title)));
+    // Signalements : `at` est en millisecondes (epoch), comme dans la file des signalements.
+    const reports = this.db
+      .prepare('SELECT at, by_name, against_id, against_name, reason FROM party_reports WHERE against_id = ? OR by_name = ? ORDER BY id DESC LIMIT ?')
+      .all(accountId, account.username, limit)
+      .map((row) => {
+        const at = new Date(Number(row.at)).toISOString();
+        if (row.against_id === accountId) return timelineEvent(at, 'party', 'Signalé dans un salon', textOrNull(row.reason) ?? undefined);
+        return timelineEvent(at, 'party', 'Signalement envoyé', `contre ${String(row.against_name)}`);
+      });
+    const signup = timelineEvent(account.createdAt, 'signup', 'Inscription', account.referrer === null ? 'sans parrain' : `parrainé par ${account.referrer}`);
+    return [signup, ...audit, ...created, ...used, ...sessions, ...rooms, ...reports].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, limit);
+  }
+
+  // Journal d'audit
+
+  addAudit(entry: { at: string; actorId: string | null; actor: string; action: string; target: string | null; detail: Record<string, unknown> | null }): void {
+    this.db
+      .prepare('INSERT INTO admin_audit (at, actor_id, actor_name, action, target, detail) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(entry.at, entry.actorId, entry.actor, entry.action, entry.target, entry.detail === null ? null : JSON.stringify(entry.detail));
+    this.db.prepare('DELETE FROM admin_audit WHERE id <= (SELECT MAX(id) FROM admin_audit) - ?').run(MAX_AUDIT_ROWS);
+  }
+
+  /** Entrées récentes d'abord ; `before` : identifiant de la dernière entrée vue. */
+  listAudit(options: { limit: number; before?: number; action?: string }): { entries: AuditEntry[]; nextBefore: number | null } {
+    const where: string[] = [];
+    const params: SqlParam[] = [];
+    if (options.before !== undefined) {
+      where.push('id < ?');
+      params.push(options.before);
+    }
+    if (options.action !== undefined) {
+      where.push('action = ?');
+      params.push(options.action);
+    }
+    const rows = this.db
+      .prepare(`SELECT id, at, actor_id, actor_name, action, target, detail FROM admin_audit${where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`} ORDER BY id DESC LIMIT ?`)
+      .all(...params, options.limit + 1);
+    const entries = rows.slice(0, options.limit).map((row): AuditEntry => {
+      let detail: Record<string, unknown> | null = null;
+      if (typeof row.detail === 'string') {
+        try {
+          detail = JSON.parse(row.detail) as Record<string, unknown>;
+        } catch {
+          detail = null;
+        }
+      }
+      return {
+        id: Number(row.id),
+        at: String(row.at),
+        actor: String(row.actor_name),
+        actorId: row.actor_id === null ? null : String(row.actor_id),
+        action: String(row.action),
+        target: row.target === null ? null : String(row.target),
+        detail,
+      };
+    });
+    const last = entries[entries.length - 1];
+    return { entries, nextBefore: rows.length > options.limit && last !== undefined ? last.id : null };
+  }
+
+  // Réinitialisation de mot de passe
+
+  /** Enregistre l'empreinte d'un jeton (un seul lien valide par compte : les précédents sont supprimés). */
+  createPasswordReset(accountId: string, tokenHash: string, now: string, expiresAt: string): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM password_resets WHERE account_id = ?').run(accountId);
+      this.db.prepare('DELETE FROM password_resets WHERE expires_at <= ?').run(now);
+      this.db.prepare('INSERT INTO password_resets (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(tokenHash, accountId, now, expiresAt);
+    });
+  }
+
+  /**
+   * Consomme un lien (usage unique, non expiré) : nouveau mot de passe et révocation de toutes les sessions, dans la même
+   * transaction. Renvoie le pseudo du compte, ou undefined si le lien est invalide, expiré ou déjà utilisé.
+   */
+  redeemPasswordReset(tokenHash: string, now: string, passwordHash: string): { accountId: string; username: string } | undefined {
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare(
+          `SELECT r.account_id, a.username FROM password_resets r JOIN accounts a ON a.id = r.account_id
+           WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > ?`,
+        )
+        .get(tokenHash, now);
+      if (row === undefined) return undefined;
+      const claimed = this.db.prepare('UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL').run(now, tokenHash);
+      if (claimed.changes === 0) return undefined;
+      const accountId = String(row.account_id);
+      this.db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ?').run(passwordHash, accountId);
+      this.db.prepare('DELETE FROM sessions WHERE account_id = ?').run(accountId);
+      return { accountId, username: String(row.username) };
+    });
+  }
+
+  // Signalements de salons
+
+  addReport(report: NewPartyReport): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO party_reports (room_id, message_id, by_name, against_id, against_name, text, reason, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(report.roomId, report.messageId, report.by, report.againstId, report.against, report.text.slice(0, 1000), report.reason?.slice(0, 200) ?? null, report.at);
+    this.db.prepare('DELETE FROM party_reports WHERE id <= (SELECT MAX(id) FROM party_reports) - ?').run(MAX_REPORT_ROWS);
+  }
+
+  listReports(status: ReportStatus, limit: number): PartyReportRecord[] {
+    return this.db.prepare('SELECT * FROM party_reports WHERE status = ? ORDER BY id DESC LIMIT ?').all(status, limit).map(toReport);
+  }
+
+  reportById(id: number): PartyReportRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM party_reports WHERE id = ?').get(id);
+    return row === undefined ? undefined : toReport(row);
+  }
+
+  resolveReport(id: number, status: Exclude<ReportStatus, 'open'>, now: string): boolean {
+    return this.db.prepare("UPDATE party_reports SET status = ?, resolved_at = ? WHERE id = ? AND status = 'open'").run(status, now, id).changes !== 0;
+  }
+
+  // Annuaire des salons (tous, privés compris)
+
+  listRegisteredRooms(limit: number): RegisteredRoom[] {
+    return this.db
+      .prepare(
+        `SELECT r.id, r.host_id, a.username AS host, r.visibility, r.title, r.media_type, r.created_at
+         FROM party_rooms r JOIN accounts a ON a.id = r.host_id ORDER BY r.created_at DESC, r.id LIMIT ?`,
+      )
+      .all(limit)
+      .map((row) => ({
+        id: String(row.id),
+        hostId: String(row.host_id),
+        host: String(row.host),
+        visibility: String(row.visibility) as 'private' | 'public',
+        title: String(row.title),
+        mediaType: String(row.media_type) as 'movie' | 'series',
+        createdAt: String(row.created_at),
+      }));
+  }
+
+  deleteRegisteredRoom(id: string): void {
+    this.db.prepare('DELETE FROM party_rooms WHERE id = ?').run(id);
+  }
+
+  /** Salons dont l'hôte est ce compte (à fermer avant la suppression du compte). */
+  roomIdsOfHost(hostId: string): string[] {
+    return this.db.prepare('SELECT id FROM party_rooms WHERE host_id = ?').all(hostId).map((row) => String(row.id));
+  }
+
+  // Annonces (bandeau d'information)
+
+  listAnnouncements(): Announcement[] {
+    return this.db.prepare(`SELECT ${ANNOUNCEMENT_COLUMNS} FROM announcements ORDER BY created_at DESC, id DESC`).all().map(toAnnouncement);
+  }
+
+  announcementById(id: string): Announcement | undefined {
+    const row = this.db.prepare(`SELECT ${ANNOUNCEMENT_COLUMNS} FROM announcements WHERE id = ?`).get(id);
+    return row === undefined ? undefined : toAnnouncement(row);
+  }
+
+  /** Annonces actives dont la fenêtre contient `now` (bornes incluses ; une borne NULL n'est pas testée). */
+  listActiveAnnouncements(now: string): Announcement[] {
+    return this.db
+      .prepare(
+        `SELECT ${ANNOUNCEMENT_COLUMNS} FROM announcements
+         WHERE active = 1 AND (starts_at IS NULL OR starts_at <= ?) AND (ends_at IS NULL OR ends_at >= ?)
+         ORDER BY created_at DESC, id DESC`,
+      )
+      .all(now, now)
+      .map(toAnnouncement);
+  }
+
+  createAnnouncement(record: Announcement): void {
+    this.db
+      .prepare(`INSERT INTO announcements (${ANNOUNCEMENT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(record.id, record.title, record.message, record.level, record.startsAt, record.endsAt, record.active ? 1 : 0, record.createdAt, record.updatedAt);
+  }
+
+  /** Réécrit les champs modifiables d'une annonce (identifiant et date de création inchangés). `false` si elle n'existe pas. */
+  updateAnnouncement(record: Announcement): boolean {
+    return this.db
+      .prepare('UPDATE announcements SET title = ?, message = ?, level = ?, starts_at = ?, ends_at = ?, active = ?, updated_at = ? WHERE id = ?')
+      .run(record.title, record.message, record.level, record.startsAt, record.endsAt, record.active ? 1 : 0, record.updatedAt, record.id).changes !== 0;
+  }
+
+  deleteAnnouncement(id: string): boolean {
+    return this.db.prepare('DELETE FROM announcements WHERE id = ?').run(id).changes !== 0;
+  }
+
+  // Boîte de contrôle : éléments écartés
+
+  /** Écarte un élément de la boîte (idempotent : la première date d'écartement est conservée). */
+  dismissInbox(key: string, now: string): void {
+    this.db.prepare('INSERT INTO inbox_dismissed (key, dismissed_at) VALUES (?, ?) ON CONFLICT (key) DO NOTHING').run(key, now);
+  }
+
+  listDismissedKeys(): string[] {
+    return this.db.prepare('SELECT key FROM inbox_dismissed').all().map((row) => String(row.key));
+  }
+}
