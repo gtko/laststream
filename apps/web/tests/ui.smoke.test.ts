@@ -551,8 +551,9 @@ describe('interface portée', () => {
     }, { timeout: 15000 });
     const player = document.getElementById('lsplayer') as HTMLElement;
     (player.querySelector('[data-act="close"]') as HTMLElement).click();
-    await settle(50);
-    expect(player.hidden).toBe(true);
+    // Fondu de fermeture (CLOSE_MS, 260 ms) : on attend la condition, pas un délai fixe. settle(50) ne passait que sous Windows,
+    // où chaque minuterie est arrondie à ~15 ms (20 × 15 ms > 260 ms) ; sous Linux il rend la main avant la fin du fondu.
+    await vi.waitFor(() => expect(player.hidden).toBe(true), { timeout: 5000 });
     localStorage.setItem('laststream.autoplay', '0');
     // Anti-multi-clic (ODY-237) : un second clic sur le même bouton Lecture est ignoré pendant PLAY_COOLDOWN_MS.
     const { PLAY_COOLDOWN_MS } = await import('../src/ui/busy.js');
@@ -569,8 +570,7 @@ describe('interface portée', () => {
     expect(item.textContent).toContain('WEB-DL');
     expect(player.querySelector('.lp-panel .s-chip[data-chip="res:1080p"]')).not.toBeNull();
     (player.querySelector('[data-act="panel-close"]') as HTMLElement).click(); // fermer sans choisir : retour à la fiche
-    await settle(100);
-    expect(player.hidden).toBe(true);
+    await vi.waitFor(() => expect(player.hidden).toBe(true), { timeout: 5000 }); // même fondu de fermeture que ci-dessus
     localStorage.removeItem('laststream.autoplay');
   });
 
