@@ -15,7 +15,7 @@ export function normalizedFilename(name: string): string {
   return base.replace(/[\s._-]+/g, '.').replace(/\.(mkv|mp4|avi|m4v|ts|m2ts|mov|webm)$/i, '').replace(/^\.+|\.+$/g, '');
 }
 
-const hashOf = (v: SourceView): string => (v.stream.infoHash ?? '').toLowerCase();
+const hashOf = (v: SourceView): string => (v.stream?.infoHash ?? '').toLowerCase();
 
 function sizesMatch(a: number, b: number): boolean {
   if (!(a > 0) || !(b > 0)) return false;
@@ -31,12 +31,12 @@ export function sameRelease(a: SourceView, b: SourceView): boolean {
   const ha = hashOf(a);
   const hb = hashOf(b);
   if (ha && hb && ha === hb) {
-    const fa = a.stream.fileIdx;
-    const fb = b.stream.fileIdx;
+    const fa = a.stream?.fileIdx;
+    const fb = b.stream?.fileIdx;
     return fa === undefined || fa === null || fb === undefined || fb === null || fa === fb;
   }
-  const na = normalizedFilename(a.filename);
-  const nb = normalizedFilename(b.filename);
+  const na = normalizedFilename(a.filename ?? '');
+  const nb = normalizedFilename(b.filename ?? '');
   if (na && nb) {
     if (na !== nb) return false;
     return !(a.sizeBytes > 0 && b.sizeBytes > 0) || sizesMatch(a.sizeBytes, b.sizeBytes);
@@ -47,7 +47,7 @@ export function sameRelease(a: SourceView, b: SourceView): boolean {
 /** Fournisseur affiché : addon d'origine (« Lumpi », « StreamFusion »), puis le débrideur s'il diffère ; vide si inconnu. */
 export function providerOf(v: SourceView): string {
   const parts: string[] = [];
-  const origin = originSummary(v.origins, 1);
+  const origin = originSummary(v.origins ?? [], 1);
   if (origin) parts.push(origin);
   const debrid = (v.provider ?? '').trim();
   if (debrid && !parts.some((p) => p.toLowerCase().includes(debrid.toLowerCase()))) parts.push(debrid);
@@ -56,12 +56,12 @@ export function providerOf(v: SourceView): string {
 }
 
 /** Clé de fournisseur, pour compter les fournisseurs distincts d'une même release. */
-const providerKey = (v: SourceView): string => (v.origins[0]?.name || v.provider || sourceKeyOf(v)).toLowerCase();
+const providerKey = (v: SourceView): string => (v.origins?.[0]?.name || v.provider || sourceKeyOf(v)).toLowerCase();
 
 /** Infos techniques d'une ligne : codec, HDR, audio, débit, seeders (ce qui est connu seulement). */
 export function sourceDetail(v: SourceView): string {
   const seeders = typeof v.seeders === 'number' && v.seeders >= 0 ? v.seeders + (v.seeders > 1 ? ' seeders' : ' seeder') : '';
-  return [v.sourceType, v.codec, v.hdr.join(' '), v.audio, v.bitrateLabel, seeders].filter((x) => !!x && x.trim()).join(' · ');
+  return [v.sourceType, v.codec, (v.hdr ?? []).join(' '), v.audio, v.bitrateLabel, seeders].filter((x) => !!x && x.trim()).join(' · ');
 }
 
 /** Nom du fichier, à défaut le groupe de release ; vide si aucun n'est connu. */

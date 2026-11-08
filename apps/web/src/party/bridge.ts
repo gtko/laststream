@@ -15,6 +15,7 @@ import {
 import { codecCacheKey, getCodecs, probeSource, probeUrl, putCodecs } from './headerCodecs';
 import { pickByFingerprint, sameFingerprint, shareableFingerprintOf, type FingerprintSource } from './fingerprint';
 import { partyErrorText } from './protocol';
+import { expectedPosition } from './sync';
 import type { RangeSource } from '../relay/host';
 import { RelayError } from '../relay/protocol';
 import { HostRelaySession, type RelayStats } from '../relay/session';
@@ -238,6 +239,17 @@ class PartyBridge {
     return Number.isFinite(t) && t >= 0 ? t : null;
   }
 
+  /**
+   * Position attendue du salon à l'instant (secondes), extrapolée de l'état diffusé et de l'horloge serveur ; null hors salon, sans
+   * état, ou pour une valeur non finie ou négative.
+   */
+  roomPosition(): number | null {
+    const c = this.client;
+    if (!c?.room || !c.state) return null;
+    const t = expectedPosition(c.state, c.serverNow());
+    return Number.isFinite(t) && t >= 0 ? t : null;
+  }
+
   /** Lance la lecture du titre du salon avec la source la plus proche de l'hôte (départ du salon d'attente). */
   async launchRoom(choice?: LaunchChoice | null, opts: { hold?: boolean } = {}): Promise<void> {
     const room = this.client?.room ?? this.room;
@@ -280,6 +292,21 @@ class PartyBridge {
     clearTimeout(this.launchTimer);
     this.launchTimer = null;
     this.client?.sendBuffering(true, 0);
+  }
+
+  /**
+   * Le lecteur abandonne sa source en cours de lecture et en essaie une autre : ce participant se déclare non prêt, comme au départ
+   * (`holdLaunch`), pour que le salon attende la nouvelle source (`viewReady` le libère). Hors salon, ou sans réglages v3 / avec
+   * « attendre les retardataires » à off, rien ne se passe. Passé LAUNCH_HOLD_MAX_MS, il se déclare prêt.
+   */
+  sourceFailing(): void {
+    if (!this.client?.room) return;
+    this.holdLaunch();
+  }
+
+  /** Plus aucune source à essayer : le salon ne retient plus ce participant (sans effet hors retenue). */
+  sourceFailed(): void {
+    this.releaseLaunch();
   }
 
   /** Rejoint un salon existant (le lecteur est lancé par l'appelant si besoin, voir `joinAndPlay`). */
