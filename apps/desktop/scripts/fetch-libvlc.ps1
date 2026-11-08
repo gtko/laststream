@@ -99,7 +99,8 @@ if (-not (Test-Path -LiteralPath $zipPath)) {
     # L'integrite ne repose pas sur le miroir : le SHA-256 epingle est verifie ci-dessous.
     $curl = @(Get-Command -Name 'curl.exe' -CommandType Application -ErrorAction SilentlyContinue) | Select-Object -First 1
     if (-not $curl) { throw 'curl.exe introuvable (Windows 10 1803 ou plus recent requis).' }
-    & $curl.Source --location --fail --silent --show-error --output $part $Url
+    # Reprises : les miroirs VideoLAN coupent parfois la connexion en cours de transfert (curl 56 en CI).
+    & $curl.Source --location --fail --silent --show-error --retry 4 --retry-delay 5 --retry-all-errors --output $part $Url
     if ($LASTEXITCODE -ne 0) {
         Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
         throw "Telechargement de $Url echoue (curl.exe, code $LASTEXITCODE)."
