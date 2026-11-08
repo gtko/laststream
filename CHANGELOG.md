@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.36 – 2026-11-08
+
+- LAST-1622 : la sonde serveur ne suit plus les redirections vers un autre hôte (#8) — @gtko
+
 ## v1.0.35 – 2026-11-08
 
 - LAST-1623 : shell desktop, plus de « initShellComm is not defined » (#7) — @gtko
