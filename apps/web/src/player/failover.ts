@@ -15,7 +15,7 @@ const STARTUP_LIMIT_MS = 45_000;
  * Les échecs de lien (débridage, 404, délai, blocage du flux) dépendent du fournisseur : le même fichier ailleurs a sa chance.
  */
 export function fileLevelFailure(reason: string | null | undefined): boolean {
-  return /media-error:[34]\b|illisible|non pris en charge|format|codec|décod/i.test(String(reason ?? ''));
+  return /media-error:[34]\b|illisible|non pris en charge|\bformat\b|\bcodec\b|décod/i.test(String(reason ?? ''));
 }
 
 /**

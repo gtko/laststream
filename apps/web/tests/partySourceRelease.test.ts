@@ -45,6 +45,10 @@ describe('identité de release', () => {
     const [a, b, c] = views(direct(1, 'A', '', 4.9e9), direct(2, 'B', '', 4.9e9), direct(3, 'C', '', 4.9e9, { resolution: '1080p', height: 1080 }));
     expect(sameRelease(a, b)).toBe(true);
     expect(sameRelease(a, c)).toBe(false);
+    // Nom connu d'un seul côté, ou autre version (codec) : la taille seule ne prouve rien.
+    const [named, hevc, avc] = views(direct(4, 'D', FILE, 4.9e9), direct(5, 'E', '', 4.9e9), direct(6, 'F', '', 4.9e9, { codec: 'AVC' }));
+    expect(sameRelease(named, b)).toBe(false);
+    expect(sameRelease(hevc, avc)).toBe(false);
   });
   it('fournisseur : addon d’origine, et rien d’inventé quand il est inconnu', () => {
     const [a] = views(direct(1, 'Lumpi', FILE, 1e9));
@@ -111,6 +115,7 @@ describe('repli : même release chez un autre fournisseur d’abord', () => {
   it('échec du fichier lui-même (décodage) : le doublon passe en dernier', () => {
     expect(fileLevelFailure('Erreur de lecture (media-error:4)')).toBe(true);
     expect(fileLevelFailure('La source met trop de temps à démarrer')).toBe(false);
+    expect(fileLevelFailure('Lien expiré (plus d’informations côté débrideur)')).toBe(false);
     const order = failoverOrder(ranked, ranked[0], new Set([0]), 'Erreur de lecture (media-error:4)');
     expect(order.map((v) => v.index)).toEqual([1, 3, 2]);
   });

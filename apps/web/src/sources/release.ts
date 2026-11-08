@@ -1,4 +1,4 @@
-import { originSummary, sourceKeyOf, type SourceView } from './info';
+import { copySignature, originSummary, sourceKeyOf, type SourceView } from './info';
 
 /* Identité d'une release, indépendante du fournisseur qui la propose : plusieurs addons (ou débrideurs) servent souvent le même
  * fichier. Sert à regrouper les doublons dans la liste des sources et à essayer, au repli, la même release chez un autre
@@ -41,7 +41,10 @@ export function sameRelease(a: SourceView, b: SourceView): boolean {
     if (na !== nb) return false;
     return !(a.sizeBytes > 0 && b.sizeBytes > 0) || sizesMatch(a.sizeBytes, b.sizeBytes);
   }
-  return a.sizeBytes >= SIZE_ONLY_MIN_BYTES && a.sizeBytes === b.sizeBytes && a.quality === b.quality;
+  // Taille seule : seulement quand aucun des deux n'a de nom (un nom d'un seul côté ne prouve rien), et pour la même version
+  // (qualité, source, codec, langues) : deux tailles arrondies identiques ne suffisent pas.
+  if (na || nb) return false;
+  return a.sizeBytes >= SIZE_ONLY_MIN_BYTES && a.sizeBytes === b.sizeBytes && a.quality === b.quality && copySignature(a) === copySignature(b);
 }
 
 /** Fournisseur affiché : addon d'origine (« Lumpi », « StreamFusion »), puis le débrideur s'il diffère ; vide si inconnu. */

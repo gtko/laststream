@@ -459,7 +459,7 @@ function renderBand() {
   const sync = syncText(partyBridge.controller ? partyBridge.controller.drift : null);
   const label = chipLabel(list.length, sync);
   const chatLbl = open ? 'Masquer la discussion' : 'Afficher la discussion';
-  band.innerHTML = '<button type="button" class="ps-chip" data-ps-chip aria-expanded="false" aria-haspopup="true" aria-controls="ps-pop" aria-label="' + esc(label) + '" title="' + esc(label) + '">' +
+  band.innerHTML = '<button type="button" class="ps-chip" data-ps-chip aria-expanded="false" aria-controls="ps-pop" aria-label="' + esc(label) + '" title="' + esc(label) + '">' +
     '<span class="ps-avs" aria-hidden="true">' + shown.map((p) => avatarHTML(p).replace('class="wp-av', 'class="wp-av ps-av')).join('') +
     (more > 0 ? '<span class="wp-av ps-av ps-more">+' + more + '</span>' : '') + '</span>' +
     '<span class="ps-dot' + (sync.ok ? '' : ' is-off') + '" data-ps-dot aria-hidden="true"></span></button>' +
@@ -586,8 +586,11 @@ export function mountPartyPanel(root, opts) {
   panel.addEventListener('input', onInput, { signal });
   panel.addEventListener('keydown', onKeyDown, { signal });
   band.addEventListener('click', onBandClick, { signal });
-  band.addEventListener('mouseenter', () => onBandHover(true), { signal });
-  band.addEventListener('mouseleave', () => onBandHover(false), { signal });
+  // Survol à la souris seulement : au tactile, le survol émulé resterait collé et un second tap ne refermerait plus le détail.
+  band.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') onBandHover(true); }, { signal });
+  band.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') onBandHover(false); }, { signal });
+  // Clic hors de la pastille : le détail ouvert au clic se referme (Safari ne donne pas le focus aux boutons).
+  document.addEventListener('pointerdown', (e) => { if (popOpen && band && !band.contains(e.target instanceof Node ? e.target : null)) setPop(false, false); }, { signal });
   band.addEventListener('keydown', onBandKey, { signal });
   band.addEventListener('focusout', onBandFocusOut, { signal });
   tickTimer = setInterval(() => { updateRelayLine(); updateCountdown(); updateSync(); }, 1000);

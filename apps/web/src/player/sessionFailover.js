@@ -111,7 +111,8 @@ export function failover(reason) {
   const options = failoverOrder(fallbackPool(p), p.view, p.tried, reason);
   // Une source en échec n'est plus rejouée à la relance ; démarrée depuis la mémoire sans autre choix connu : recherche complète.
   forgetLaunch(requestKey(p.req), sourceKey(p.view));
-  const roomAt = partyBridge.roomPosition();
+  // Position du salon seulement s'il diffuse ce titre et cet épisode (l'épisode suivant n'est annoncé qu'une fois sa source prête).
+  const roomAt = partyBridge.roomPosition({ id: p.req.id, season: p.cur ? p.cur.season : null, episode: p.cur ? p.cur.episode : null });
   const resumeAt = roomAt !== null ? roomAt : time > 5 ? time : p.startAt || 0;
   if (p.fromCache && (!options.length || p.attempts >= MAX_ATTEMPTS)) { partyBridge.sourceFailing(); searchInstead(p, resumeAt); return; }
   if (!options.length || p.attempts >= MAX_ATTEMPTS) {

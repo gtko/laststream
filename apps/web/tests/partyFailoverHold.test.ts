@@ -174,6 +174,15 @@ describe('basculement de source pendant la lecture (LAST-1620)', () => {
     expect(pb.roomPosition()).toBe(102);
   });
 
+  it('roomPosition : le salon diffuse un autre titre ou un autre épisode (suivant pas encore annoncé), null', async () => {
+    const tvRoom = { ...room, media: { type: 'tv', tmdbId: 7, season: 1, episode: 1 } };
+    const client = fakeClient({ room: tvRoom, state: { playing: true, pos: 1500, at: 1000, rev: 2 }, serverNow: () => 3000 });
+    const pb = await install(client);
+    expect(pb.roomPosition({ id: '7', season: 1, episode: 1 })).toBe(1502);
+    expect(pb.roomPosition({ id: '7', season: 1, episode: 2 })).toBeNull();
+    expect(pb.roomPosition({ id: '8', season: 1, episode: 1 })).toBeNull();
+  });
+
   it('roomPosition : salon en pause, la position diffusée telle quelle', async () => {
     const client = fakeClient({ state: { playing: false, pos: 100, at: 1000, rev: 2 }, serverNow: () => 3000 });
     const pb = await install(client);

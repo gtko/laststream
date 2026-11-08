@@ -241,11 +241,16 @@ class PartyBridge {
 
   /**
    * Position attendue du salon à l'instant (secondes), extrapolée de l'état diffusé et de l'horloge serveur ; null hors salon, sans
-   * état, ou pour une valeur non finie ou négative.
+   * état, ou pour une valeur non finie ou négative. `media` : titre lu par l'appelant ; si le salon diffuse un autre titre ou un
+   * autre épisode (épisode suivant pas encore annoncé), sa position ne vaut pas pour lui : null.
    */
-  roomPosition(): number | null {
+  roomPosition(media?: { id: string | number; season?: number | null; episode?: number | null }): number | null {
     const c = this.client;
     if (!c?.room || !c.state) return null;
+    if (media) {
+      const m = c.room.media;
+      if (String(m.tmdbId) !== String(media.id) || (m.season ?? null) !== (media.season ?? null) || (m.episode ?? null) !== (media.episode ?? null)) return null;
+    }
     const t = expectedPosition(c.state, c.serverNow());
     return Number.isFinite(t) && t >= 0 ? t : null;
   }
