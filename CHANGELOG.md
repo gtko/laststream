@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.40 – 2026-11-08
+
+- LAST-1627 : watch party sur Android, synchro du lecteur natif, réactions et membres du salon (#12) — @gtko
+
 ## v1.0.39 – 2026-11-08
 
 - LAST-1625 : zéro appel serveur vers un lien d'addon (sonde en liste blanche) (#11) — @gtko

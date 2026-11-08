@@ -1,6 +1,6 @@
 [package]
 name = "laststream-shell-ng"
-version = "1.0.39"
+version = "1.0.40"
 edition = "2018"
 
 [dependencies]
