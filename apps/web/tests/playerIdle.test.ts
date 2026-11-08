@@ -134,9 +134,10 @@ describe('exceptions', () => {
 });
 
 describe('CSS', () => {
-  it('l’exception mobile portrait de la bande de salle l’emporte sur le masquage (spécificité)', () => {
+  it('la pastille de salon vit dans la barre d’icônes du haut : plus de bandeau flottant en haut à gauche', () => {
     const css = readFileSync('src/styles/partylobby.css', 'utf8');
-    expect(css).toMatch(/\.lp\.lp:not\(\.is-ui\) \.ps-band/);
-    expect(css.indexOf('.lp.lp:not(.is-ui) .ps-band')).toBeGreaterThan(css.indexOf('orientation: portrait'));
+    expect(css).toMatch(/\.ps-band \{ position: relative;/);
+    expect(css).not.toMatch(/\.ps-band \{[^}]*position: (absolute|fixed)/);
+    expect(css).not.toMatch(/\.ps-band \{[^}]*left: 20px/);
   });
 });

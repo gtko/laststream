@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { initialCinemaState, initialSocialState, type CinemaState } from '../src/data/socialStore';
 import {
   CINEMA_MENU_DEFAULT, HOUR_MS, STACK_MAX, advanceBubble, bucketAt, durationOf, emptyQueue, filmEnded, friendsWatching, heatBars,
-  hiddenElements, indicatorText, initialOf, isFuture, menuSelection, pushBubble, remainingLabel, startPolicy, toggleElement, untilFor,
+  hiddenElements, indicatorText, initialOf, isFuture, isInRoom, roomNames, menuSelection, pushBubble, remainingLabel, startPolicy, toggleElement, untilFor,
 } from '../src/player/playbackSocial';
 import { createCinemaMenu, createCinemaSummary } from '../src/player/cinemaView';
 import { fadeFutureMarkers, renderNoteMarkers } from '../src/player/notesView';
@@ -165,6 +165,40 @@ describe('« regarde aussi »', () => {
     const out = friendsWatching(s([a], [a]), { type: 'movie', tmdbId: 7 }, NOW);
     expect(out).toHaveLength(1);
     expect(out[0].name).toBe('Lélé');
+  });
+
+  it('en salon : les amis déjà dans le salon ne sont pas proposés (nom, « compte · profil », nom complet ou surnom)', () => {
+    const media = { type: 'movie' as const, tmdbId: 7 };
+    const olivier = friend('p-olivier', watch(), { handle: { name: 'Olivier', tag: '1234', full: 'Olivier#1234' } });
+    const lea = friend('p-lea', watch({ pos: 50 }));
+    const all = s([olivier, lea]);
+    // Hors salon (null) : inchangé.
+    expect(friendsWatching(all, media, NOW).map((p) => p.pid)).toEqual(['p-olivier', 'p-lea']);
+    expect(friendsWatching(all, media, NOW, 0, null).map((p) => p.pid)).toEqual(['p-olivier', 'p-lea']);
+    // Salon vide ou sans cet ami : inchangé.
+    expect(friendsWatching(all, media, NOW, 0, []).map((p) => p.pid)).toEqual(['p-olivier', 'p-lea']);
+    expect(friendsWatching(all, media, NOW, 0, [{ username: 'Hugo' }]).map((p) => p.pid)).toEqual(['p-olivier', 'p-lea']);
+    // Pseudo du salon = nom de l'ami (sans tenir compte de la casse), ou « compte · profil », ou nom complet.
+    expect(friendsWatching(all, media, NOW, 0, [{ username: 'olivier' }]).map((p) => p.pid)).toEqual(['p-lea']);
+    expect(friendsWatching(all, media, NOW, 0, [{ username: 'greg · Olivier' }]).map((p) => p.pid)).toEqual(['p-lea']);
+    expect(friendsWatching(all, media, NOW, 0, [{ username: 'Olivier#1234' }]).map((p) => p.pid)).toEqual(['p-lea']);
+    const nick = friend('p-nick', watch(), { nickname: 'Lélé' });
+    expect(friendsWatching(s([nick]), media, NOW, 0, [{ username: 'lélé' }])).toHaveLength(0);
+    // Le foyer est filtré de la même façon.
+    expect(friendsWatching(s([], [olivier]), media, NOW, 0, [{ username: 'Olivier' }])).toHaveLength(0);
+    // Tout le monde est dans le salon : plus de puce.
+    expect(friendsWatching(all, media, NOW, 0, [{ username: 'Olivier' }, { username: 'p-lea' }])).toEqual([]);
+  });
+
+  it('correspondance de salon : noms reconnus et participants vides', () => {
+    expect(roomNames('Greg · Olivier')).toEqual(['greg · olivier', 'olivier']);
+    expect(roomNames('  Léa ')).toEqual(['léa']);
+    expect(roomNames(undefined)).toEqual(['']);
+    const f = { handle: { name: 'Olivier', full: 'Olivier#1234' }, nickname: null };
+    expect(isInRoom(f, null)).toBe(false);
+    expect(isInRoom(f, [])).toBe(false);
+    expect(isInRoom(f, [{ username: '' }])).toBe(false);
+    expect(isInRoom(f, [{ username: 'Olivier' }])).toBe(true);
   });
 
   it('initiale de repli', () => {

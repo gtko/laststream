@@ -10,7 +10,7 @@ import { partyReactLimit } from '../party/reactLimit';
 import { knownMessages } from './messageBubble';
 import { freshIncoming, handleNativeReact, handleNativeReply, nativeSocialOf, partyReactMessageOf, toNativeMessage, toNativeNotes, watchingViewers } from './nativeSocial';
 import { openShareDialog } from '../ui/socialHooks.js';
-import { cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, startPolicy, toggleElement, untilFor } from './playbackSocial';
+import { cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, roomNames, startPolicy, toggleElement, untilFor } from './playbackSocial';
 import { clusterNotes, crossing, liveFlashDue, mediaKey, rearmed, upsertNotes } from './notesTimeline';
 import { seekTo } from './sessionActions.js';
 import { resolveMedia } from './sessionPlay.js';
@@ -88,17 +88,6 @@ function removeNote(nt, id) {
   nt.list = nt.list.filter((n) => n.id !== id);
   nt.version += 1;
   syncNativeNotes(nt);
-}
-
-/**
- * Noms sous lesquels un participant du salon peut être reconnu. Le salon ne porte aucun pid : `username` est le nom d'affichage
- * du serveur (« compte » ou « compte · profil »), pas le handle social. On compare en minuscules le nom entier et la partie
- * après « · » (le profil). Risque restant : deux personnes de même nom se confondent (l'écho de l'une cache l'emoji de l'autre).
- */
-function roomNames(username) {
-  const name = String(username || '').trim().toLowerCase();
-  const dot = name.lastIndexOf(' · ');
-  return dot === -1 ? [name] : [name, name.slice(dot + 3).trim()];
 }
 
 /** Vrai si l'auteur de la note est dans le salon actif (ou est moi) : sa réaction y a déjà son écho. */
@@ -361,7 +350,7 @@ function syncNativeSocial(p = S.P) {
   if (p.notes) syncNativeNotes(p.notes);
   const now = Date.now();
   const st = getSocialState();
-  const viewers = socialLive && !socialHidden().has('friendsPresence') ? watchingViewers(st, presenceMediaOf(p), now, eng.state().duration) : [];
+  const viewers = socialLive && !socialHidden().has('friendsPresence') ? watchingViewers(st, presenceMediaOf(p), now, eng.state().duration, roomMembers()) : [];
   const payload = nativeSocialOf({ available: socialLive, kid: isKidProfile(), status: st.status, cinema: cinemaOn(st.cinema, now) }, viewers);
   const key = JSON.stringify(payload);
   if (key === nativeSocialKey) return;
@@ -535,12 +524,17 @@ export function socialTick(p, st) {
   S.ui.setSocialTime(st.time, st.duration, antiSpoilerOn());
 }
 
+/** Participants du salon courant (vide hors salon) : les amis qui y sont déjà ne sont pas proposés par la puce « regarde aussi ». */
+function roomMembers() {
+  return partyBridge.isActive() && partyBridge.client ? partyBridge.client.participants || [] : null;
+}
+
 /** Relevé lent (1 s) : puce « regarde aussi ». */
 export function friendChipTick(p, st) {
   syncNativeSocial(p);
   if (!p.notes) return;
   if (socialHidden().has('friendsPresence')) { S.ui.setFriendChip(null); chipPid = ''; return; }
-  const peers = friendsWatching(getSocialState(), presenceMediaOf(p), Date.now(), st.duration);
+  const peers = friendsWatching(getSocialState(), presenceMediaOf(p), Date.now(), st.duration, roomMembers());
   if (!peers.length) { S.ui.setFriendChip(null); chipPid = ''; return; }
   const f = peers[0];
   chipPid = f.pid;
@@ -551,7 +545,7 @@ export function friendChipTick(p, st) {
 export function catchUp() {
   if (!S.P || !S.P.view || !chipPid) return;
   const st = S.P.engine.state();
-  const peer = friendsWatching(getSocialState(), presenceMediaOf(S.P), Date.now(), st.duration).find((x) => x.pid === chipPid);
+  const peer = friendsWatching(getSocialState(), presenceMediaOf(S.P), Date.now(), st.duration, roomMembers()).find((x) => x.pid === chipPid);
   if (!peer) { S.ui.toast('Cet ami ne regarde plus', 2500); return; }
   seekTo(peer.pos);
   S.ui.toast('Calé sur ' + peer.name, 2000);

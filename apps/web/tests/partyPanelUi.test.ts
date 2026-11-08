@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import type { GuestVerdict } from '../src/party/compat';
+import { partyReactLimit } from '../src/party/reactLimit';
 
 const tick = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 const panelOf = () => document.querySelector('aside.lp-party') as HTMLElement;
@@ -437,6 +438,8 @@ describe('chat : rendu, échappement, envoi, limite', () => {
   });
 
   it('une réaction de la barre part via sendReact', () => {
+    // Créneau d'une réaction par seconde partagé avec les tests précédents : remis à zéro (sinon le résultat dépend de leur durée).
+    partyReactLimit.sent(Number.NEGATIVE_INFINITY);
     const c = busClient(false, hostParticipants());
     partyBridge.client = c;
     panel.togglePartyPanel(true);

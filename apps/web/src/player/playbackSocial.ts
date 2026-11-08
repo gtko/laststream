@@ -139,14 +139,35 @@ export interface WatchMedia { type: 'movie' | 'series'; tmdbId: number; season?:
 export interface WatchPeer { pid: string; name: string; color: string; pos: number }
 const WATCH_FRESH_MS = 90_000;
 
-/** Amis et foyer qui regardent le même film ou épisode, avec leur position estimée à `now` (jamais sans `pos`, jamais périmée). */
-export function friendsWatching(s: Pick<SocialState, 'friends' | 'household'>, media: WatchMedia | null, now: number, duration = 0): WatchPeer[] {
+/**
+ * Noms sous lesquels un participant de salon peut être reconnu : le pseudo entier, et le profil après « · » (« Compte · Profil »).
+ * Les participants n'ont pas d'identifiant d'ami (`pid`) : la correspondance se fait par nom, en minuscules.
+ */
+export function roomNames(username: unknown): string[] {
+  const name = String(username ?? '').trim().toLowerCase();
+  const dot = name.lastIndexOf(' · ');
+  return dot === -1 ? [name] : [name, name.slice(dot + 3).trim()];
+}
+
+/** Vrai si l'ami (ou le foyer) est l'un des participants du salon : même nom, nom complet (`Nom#TAG`) ou surnom que le pseudo du salon. */
+export function isInRoom(f: { handle: { name: string; full: string }; nickname?: string | null }, participants: readonly { username: string }[] | null | undefined): boolean {
+  if (!participants || participants.length === 0) return false;
+  const wanted = [f.handle.name, f.handle.full, f.nickname].map((n) => String(n ?? '').trim().toLowerCase()).filter(Boolean);
+  return participants.some((q) => roomNames(q.username).some((n) => n !== '' && wanted.includes(n)));
+}
+
+/**
+ * Amis et foyer qui regardent le même film ou épisode, avec leur position estimée à `now` (jamais sans `pos`, jamais périmée).
+ * `room` : participants du salon courant ; ceux qui y sont déjà ne sont pas proposés (« se caler » n'a pas de sens, ils sont synchronisés).
+ */
+export function friendsWatching(s: Pick<SocialState, 'friends' | 'household'>, media: WatchMedia | null, now: number, duration = 0, room: readonly { username: string }[] | null = null): WatchPeer[] {
   if (!media) return [];
   const seen = new Set<string>();
   const out: WatchPeer[] = [];
   for (const f of [...s.friends, ...s.household]) {
     const w = f.watching;
     if (!w || seen.has(f.pid) || f.status === 'offline') continue;
+    if (room && isInRoom(f, room)) continue;
     if (w.type !== media.type || w.tmdbId !== media.tmdbId) continue;
     if (media.type === 'series' && (w.season !== media.season || w.episode !== media.episode)) continue;
     if (typeof w.pos !== 'number' || !Number.isFinite(w.pos) || typeof w.at !== 'number') continue;
