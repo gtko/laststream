@@ -118,3 +118,8 @@ export function probeWithCache(
 ): Promise<MediaProbe | null> {
   return cache.probe(key, fn);
 }
+
+/** Sonde en cache pour `key`, sans rien lancer : undefined si absente ou expirée. Ne touche jamais le réseau. */
+export function peekProbeWithCache(key: string, cache: ProbeCache<MediaProbe> = probeCache): MediaProbe | undefined {
+  return cache.get(key);
+}

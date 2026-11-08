@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.38 – 2026-11-08
+
+- LAST-1626 : fiabilité du lecteur natif Android (#10) — @gtko
+
 ## v1.0.37 – 2026-11-08
 
 - LAST-1620 / LAST-1621 : watch party, sources lisibles, repli vers la même release, synchro au repli, pastille de salon, réactions en direct (#9) — @gtko

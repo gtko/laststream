@@ -206,13 +206,22 @@ object PlayerLogic {
     /** Activité finie : `pending` n'est effacé que s'il est encore celui de cette activité (jamais celui du média suivant). */
     fun <T : Any> shouldClearPending(current: T?, own: T?): Boolean = current == null || current === own
 
-    /** Carte « Épisode suivant » : dès le générique, jamais pendant une intro ou un récap. */
-    fun showNextCard(segments: List<SkipSegment>, t: Double, duration: Double, hasNext: Boolean): Boolean {
-        if (!hasNext || !(duration > 0)) return false
+    /**
+     * Carte « Épisode suivant » : dès le générique, jamais pendant une intro ou un récap, et plus du tout une fois
+     * « Ignorer » ou « Lire maintenant » cliqué (`dismissed`) jusqu'au prochain média ou à l'abandon de la demande.
+     */
+    fun showNextCard(segments: List<SkipSegment>, t: Double, duration: Double, hasNext: Boolean, dismissed: Boolean = false): Boolean {
+        if (dismissed || !hasNext || !(duration > 0)) return false
         val start = creditsStart(segments, duration) ?: return false
         if (t < start) return false
         return segments.none { (it.kind == "intro" || it.kind == "recap") && t >= it.start && t < it.end }
     }
+
+    /** Demande d'épisode suivant : une seule à la fois, tant que le JS n'a pas répondu (ou que le délai a expiré). */
+    fun nextRequestAllowed(inFlight: Boolean): Boolean = !inFlight
+
+    /** Relâcher la barre ne cherche la vidéo qu'au vrai relâché : une annulation (ACTION_CANCEL) ne saute pas. */
+    fun scrubReleaseSeeks(cancelled: Boolean): Boolean = !cancelled
 
     /** Position après un saut relatif, bornée à la durée connue. */
     fun seekTarget(position: Double, delta: Double, duration: Double): Double {

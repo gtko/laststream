@@ -111,3 +111,19 @@ export function allowedOrigins(): string[] {
     .map((origin) => origin.trim())
     .filter((origin) => origin !== '');
 }
+
+/**
+ * PROBE_HOSTS : liste blanche des hôtes dont les liens directs sans infoHash peuvent être sondés pour lire l'audio.
+ * Noms d'hôte seuls (sans schéma ni chemin), séparés par des virgules ; espaces tolérés, casse ignorée. Absente ou vide :
+ * ensemble vide, donc aucune sonde réseau. CDN de fichiers uniquement, jamais l’hôte d’un addon ni d’un résolveur : un lien
+ * d’addon y serait appelé depuis l’IP du serveur, ce qui ferait débrider le lien (interdit).
+ */
+export function configuredProbeHosts(): ReadonlySet<string> {
+  const raw = runtimeEnv().get('PROBE_HOSTS') ?? '';
+  return new Set(
+    raw
+      .split(',')
+      .map((host) => host.trim().toLowerCase())
+      .filter((host) => host !== ''),
+  );
+}

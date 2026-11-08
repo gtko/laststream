@@ -6,7 +6,7 @@ import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import { isEdgeRequest } from '../config/edge.js';
 import { platform, type UserBackend } from '../platform/index.js';
-import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
+import { configuredProbeHosts, configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
 import { getStreams, getStreamsStatus, type PipelineContext } from '../pipeline.js';
 import type { DeviceFetchEntry } from '../sources/device-fetch.js';
 import { warmUpstreamManifest } from '../sources/upstream.js';
@@ -119,6 +119,7 @@ export function registerStreamRoutes(app: App, deps: AppDeps, backend: UserBacke
     configToken: c.req.param('config') as string,
     secret: deps.secret,
     fetch: deps.fetch,
+    probeHosts: configuredProbeHosts(),
     torrentCache: playState.torrentCache,
     packStore: playState.packStore,
     wait,

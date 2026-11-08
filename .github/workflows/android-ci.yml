@@ -1,0 +1,52 @@
+name: Android CI
+
+# Application Android (apps/mobile) : tests unitaires Kotlin du lecteur natif, des téléchargements et des mises à jour.
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/mobile/**', '.github/workflows/android-ci.yml', '!**/*.md']
+  pull_request:
+    branches: [main]
+    paths: ['apps/mobile/**', '.github/workflows/android-ci.yml', '!**/*.md']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Setup Node 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Setup JDK 21
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        packages: 'platform-tools platforms;android-35'
+    # Les tests unitaires n'utilisent pas l'interface web : un webDir minimal suffit à `cap sync` (plugins Capacitor).
+    - name: Capacitor sync
+      working-directory: apps/mobile
+      run: |
+        mkdir -p ../web/dist
+        test -f ../web/dist/index.html || echo '<!doctype html><title>ci</title>' > ../web/dist/index.html
+        npm ci
+        npx cap sync android
+    - name: Unit tests
+      working-directory: apps/mobile/android
+      # gradlew est enregistré sans bit exécutable dans git : on l'appelle via bash.
+      run: bash ./gradlew testDebugUnitTest

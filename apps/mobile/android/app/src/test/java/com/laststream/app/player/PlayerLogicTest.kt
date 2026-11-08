@@ -170,4 +170,20 @@ class PlayerLogicTest {
         assertEquals(listOf(2, 5), PlayerLogic.episodesOf(d, 1).map { it.episode })
         assertEquals(0, PlayerLogic.episodesOf(null, 1).size)
     }
+
+    @Test fun nextCardStaysHiddenOnceDismissedOrRequested() {
+        // « Ignorer » ou « Lire maintenant » : la carte ne revient pas au tick suivant (LAST-1626).
+        assertFalse(PlayerLogic.showNextCard(segs, 2510.0, 2700.0, true, dismissed = true))
+        assertTrue(PlayerLogic.showNextCard(segs, 2510.0, 2700.0, true, dismissed = false))
+    }
+
+    @Test fun nextRequestNotEmittedTwice() {
+        assertTrue(PlayerLogic.nextRequestAllowed(inFlight = false))
+        assertFalse(PlayerLogic.nextRequestAllowed(inFlight = true))
+    }
+
+    @Test fun scrubReleaseSeeksOnlyWhenNotCancelled() {
+        assertTrue(PlayerLogic.scrubReleaseSeeks(cancelled = false))
+        assertFalse(PlayerLogic.scrubReleaseSeeks(cancelled = true))
+    }
 }

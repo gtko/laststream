@@ -73,6 +73,9 @@ class MiniPlayer private constructor(private val host: Activity, val core: Playb
                 true
             } catch (_: Exception) {
                 m.detachViews()
+                // Échec de la mise en place : la vignette n'est plus enregistrée, et l'état repasse en plein écran.
+                if (PlayerHub.mini === m) PlayerHub.mini = null
+                PlayerHub.machine.expand()
                 false
             }
         }
@@ -267,8 +270,9 @@ class MiniPlayer private constructor(private val host: Activity, val core: Playb
         updateProgress()
     }
 
-    override fun setHeading(title: String, subtitle: String) {
-        core.req = core.req?.copy(title = title.ifEmpty { core.req?.title ?: "" }, subtitle = subtitle)
+    override fun setHeading(title: String?, subtitle: String?) {
+        val r = core.req ?: return
+        core.req = r.copy(title = if (title.isNullOrEmpty()) r.title else title, subtitle = subtitle ?: r.subtitle)
     }
 
     override fun setSegments(list: List<SkipSegment>) { core.segments = list }
