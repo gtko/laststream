@@ -252,7 +252,7 @@ impl PartialUi for WebView {
                                     }
                                 }, true);
                                 }}catch(e){}
-                            window.addEventListener("load", function() {if(initShellComm) try { initShellComm() } catch(e) {}}, false)
+                            window.addEventListener("load", function() {if(typeof window.initShellComm === 'function') try { window.initShellComm() } catch(e) {}}, false)
 
                             "##, |_| Ok(())).or_report("WebView2: script du shell non injecté")?;
                             Ok(())
