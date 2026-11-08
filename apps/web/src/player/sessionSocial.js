@@ -373,7 +373,8 @@ function syncNativeSocial(p = S.P) {
   eng.setSocial(payload);
 }
 
-/** Barrière côté JS (défense en profondeur) : jamais de note ni de réponse si le social est coupé (enfant, invisible, cinéma). */
+/** Barrière côté JS (défense en profondeur) : jamais de note ni de réponse si le social est coupé (enfant, invisible, cinéma).
+ * Exception : en salon, une réaction native suit `nativeReactOn` et peut retomber sur une note, comme sur le web. */
 function nativeSocialOn() {
   const st = getSocialState();
   return nativeSocialOf({ available: socialLive, kid: isKidProfile(), status: st.status, cinema: cinemaOn(st.cinema, Date.now()) }, []).enabled;
