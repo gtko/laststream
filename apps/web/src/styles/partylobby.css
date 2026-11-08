@@ -417,6 +417,10 @@ body.has-party-lobby { overflow: hidden; }
 .pl-src-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
 .pl-src-main b { font-weight: 700; }
 .pl-src-meta { font-size: 12px; color: var(--muted); }
+.pl-src-prov { font-size: 12px; font-weight: 600; color: var(--soft); }
+.pl-src-more { font-weight: 700; padding: 1px 6px; border-radius: 999px; background: var(--pl-chip); color: var(--muted); }
+.pl-src-detail { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.pl-src-file { flex-basis: 100%; min-width: 0; font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-src-badge { flex: none; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--pl-chip); }
 .pl-src-badge.is-host { color: var(--pl-ok); }
 .pl-src-badge.is-other { color: var(--pl-warn); }

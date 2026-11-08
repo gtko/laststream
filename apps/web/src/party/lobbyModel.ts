@@ -1,6 +1,7 @@
 import type { Lang } from '../data/stream';
 import type { PartyParticipant } from '../data/socialApi';
 import { sourceKeyOf, type SourceView } from '../sources/info';
+import { groupReleases, providerOf, releaseName, sourceDetail } from '../sources/release';
 import { languageChanged, sourceLabel } from './sourceChoice';
 import {
   COUNTDOWN_DEFAULT_SEC, type ControlMode, type EventKind, type ReactionMode, type VoteView, type WaitLateMode,
@@ -158,6 +159,14 @@ export interface SourceRow {
   badge: 'host' | 'other' | null;
   /** Pourquoi cette source ne passe pas dans ce navigateur (ligne d'avertissement), null si elle passe. */
   warn: string | null;
+  /** Addon ou fournisseur d'origine (« Lumpi », « StreamFusion · AllDebrid ») ; vide si inconnu. */
+  provider: string;
+  /** Autres fournisseurs qui proposent la même release (regroupés sur cette ligne, essayés en premier au repli). */
+  others: number;
+  /** Nom du fichier ou de la release ; vide si inconnu. */
+  release: string;
+  /** « WEB-DL · HEVC · DV · EAC3 5.1 · 12,4 Mb/s · 85 seeders » (ce qui est connu). */
+  detail: string;
 }
 
 const SOURCE_ROWS_MAX = 8;
@@ -175,17 +184,24 @@ export function buildSourceRows(
   views: readonly SourceView[],
   opts: { selectedKey: string; hostLabel: string | null; roomLanguage: Lang | null; compat?: (v: SourceView) => string | null; order?: string[] },
 ): SourceRow[] {
-  const byKey = new Map<string, SourceView>();
+  const sorted: SourceView[] = [];
+  const seen = new Set<string>();
   for (const v of [...views].filter((x) => x.playable).sort((a, b) => b.score - a.score || a.index - b.index)) {
-    if (!byKey.has(sourceKeyOf(v))) byKey.set(sourceKeyOf(v), v);
+    if (!seen.has(sourceKeyOf(v))) { seen.add(sourceKeyOf(v)); sorted.push(v); }
   }
+  // Une ligne par release : les doublons d'autres fournisseurs s'y regroupent. La source affichée reste celle déjà choisie ou
+  // déjà affichée (sa clé ne change pas d'un sondage à l'autre), sinon la mieux classée.
+  const shownBefore = opts.order ?? [];
+  const groups = groupReleases(sorted, (members) => members.find((m) => sourceKeyOf(m) === opts.selectedKey)
+    ?? members.map((m) => ({ m, at: shownBefore.indexOf(sourceKeyOf(m)) })).filter((x) => x.at >= 0).sort((a, b) => a.at - b.at)[0]?.m);
+  const byKey = new Map(groups.map((g) => [sourceKeyOf(g.lead), g] as const));
   const order = opts.order ?? [];
   for (const key of byKey.keys()) if (!order.includes(key)) order.push(key);
   const keys = order.filter((key) => byKey.has(key));
   const top = keys.slice(0, SOURCE_ROWS_MAX);
   if (byKey.has(opts.selectedKey) && !top.includes(opts.selectedKey)) top[top.length - 1] = opts.selectedKey;
   const shown = top.map((key) => byKey.get(key)!);
-  return shown.map((v) => {
+  return shown.map(({ lead: v, others }) => {
     const label = sourceLabel(v);
     const badge = opts.hostLabel && label === opts.hostLabel ? 'host' : languageChanged(v, opts.roomLanguage) ? 'other' : null;
     return {
@@ -195,6 +211,10 @@ export function buildSourceRows(
       selected: sourceKeyOf(v) === opts.selectedKey,
       badge,
       warn: opts.compat?.(v) ?? null,
+      provider: providerOf(v),
+      others,
+      release: releaseName(v),
+      detail: sourceDetail(v),
     };
   });
 }

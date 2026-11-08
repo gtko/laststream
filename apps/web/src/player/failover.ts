@@ -1,4 +1,6 @@
 import { copySignature, type SourceView } from '../sources/info';
+import { providerOf, sameRelease } from '../sources/release';
+import { sourceLabel } from '../party/sourceChoice';
 
 /* Reprise automatique : ordre des sources à essayer et détection des blocages. Fonctions pures, testées. */
 
@@ -9,16 +11,45 @@ const HARD_STALL_LIMIT_MS = 60_000;
 const STARTUP_LIMIT_MS = 45_000;
 
 /**
- * Sources à essayer après `current` : d'abord les copies équivalentes (même qualité, source, codec, langues),
- * puis les autres lisibles dans l'ordre de `ranked` en gardant la langue d'abord. `tried` : indices déjà essayés.
+ * Échec lié au fichier lui-même (décodage, format illisible) : la même release chez un autre fournisseur échouerait pareil.
+ * Les échecs de lien (débridage, 404, délai, blocage du flux) dépendent du fournisseur : le même fichier ailleurs a sa chance.
  */
-export function failoverOrder(ranked: readonly SourceView[], current: SourceView, tried: ReadonlySet<number>): SourceView[] {
+export function fileLevelFailure(reason: string | null | undefined): boolean {
+  return /media-error:[34]\b|illisible|non pris en charge|format|codec|décod/i.test(String(reason ?? ''));
+}
+
+/**
+ * Sources à essayer après `current` : d'abord la même release proposée par un autre fournisseur (même hash, même fichier, même
+ * taille), puis les copies équivalentes (même qualité, source, codec, langues), puis les autres lisibles dans l'ordre de
+ * `ranked` en gardant la langue d'abord. `tried` : indices déjà essayés. `reason` : cause de l'échec ; un échec du fichier
+ * lui-même (`fileLevelFailure`) renvoie la même release en dernier.
+ */
+export function failoverOrder(ranked: readonly SourceView[], current: SourceView, tried: ReadonlySet<number>, reason?: string | null): SourceView[] {
   const sig = copySignature(current);
   const open = ranked.filter((v) => v.playable && !tried.has(v.index) && v.index !== current.index);
-  const copies = open.filter((v) => copySignature(v) === sig);
-  const sameLang = open.filter((v) => copySignature(v) !== sig && v.hasFrench === current.hasFrench);
-  const rest = open.filter((v) => copySignature(v) !== sig && v.hasFrench !== current.hasFrench);
-  return [...copies, ...sameLang, ...rest];
+  const twins = open.filter((v) => sameRelease(v, current));
+  const others = open.filter((v) => !sameRelease(v, current));
+  const copies = others.filter((v) => copySignature(v) === sig);
+  const sameLang = others.filter((v) => copySignature(v) !== sig && v.hasFrench === current.hasFrench);
+  const rest = others.filter((v) => copySignature(v) !== sig && v.hasFrench !== current.hasFrench);
+  return fileLevelFailure(reason) ? [...copies, ...sameLang, ...rest, ...twins] : [...twins, ...copies, ...sameLang, ...rest];
+}
+
+/** « Lumpi (VF · 4K) », ou le seul libellé quand le fournisseur est inconnu. */
+export function sourceWho(v: SourceView): string {
+  const who = providerOf(v);
+  return who ? who + ' (' + sourceLabel(v) + ')' : sourceLabel(v);
+}
+
+/**
+ * Message du repli automatique : ce qui a échoué et ce qui est essayé maintenant, avec le fournisseur, et « même fichier » quand
+ * c'est la même release chez un autre fournisseur. `attempt` / `max` : rang de l'essai.
+ */
+export function failoverStatusText(failed: SourceView | null, reason: string, next: SourceView, attempt: number, max: number, extra = ''): string {
+  const why = String(reason || 'échec').replace(/\.+$/, '');
+  const head = failed ? 'Échec de ' + sourceWho(failed) + ' : ' + why + '. ' : why + '. ';
+  const twin = failed && sameRelease(failed, next) ? ' · même fichier' : '';
+  return head + 'Essai de ' + sourceWho(next) + twin + (extra ? ' · ' + extra : '') + ' (' + attempt + '/' + max + ')';
 }
 
 export type StallVerdict = 'ok' | 'stalled' | 'startup-timeout';
@@ -202,9 +233,11 @@ export function attemptsAfterStable(attempts: number, currentIndex: number, stab
 export function pickRaceCandidate(
   ranked: readonly SourceView[], current: SourceView, tried: ReadonlySet<number>, bad: ReadonlySet<string>, keyOf: (v: SourceView) => string,
 ): SourceView | null {
-  const open = failoverOrder(ranked, current, tried).filter((v) => !bad.has(keyOf(v)));
+  const order = failoverOrder(ranked, current, tried);
+  const open = order.filter((v) => !bad.has(keyOf(v)));
   const ease = (v: SourceView): number => (v.appAudio === 'unsupported' ? 5 : v.web === 'direct' ? 0 : v.convert === 'audio' ? 1 : v.web === 'unknown' ? 2 : 3);
-  const score = (v: SourceView): number => (v.hasFrench === current.hasFrench ? 0 : 100) + ease(v) * 10 + (v.status === 'cached' ? 0 : 1);
+  // La même release chez un autre fournisseur passe avant tout le reste (même fichier : même langue, même lecture navigateur).
+  const score = (v: SourceView): number => (sameRelease(v, current) ? 0 : 1000) + (v.hasFrench === current.hasFrench ? 0 : 100) + ease(v) * 10 + (v.status === 'cached' ? 0 : 1);
   const sorted = open.map((v, i) => ({ v, i })).sort((a, b) => score(a.v) - score(b.v) || a.i - b.i);
   return sorted.length ? sorted[0].v : null;
 }
