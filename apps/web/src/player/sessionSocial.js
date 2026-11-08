@@ -8,7 +8,7 @@ import { isKidProfile } from '../data/auth';
 import { partyBridge } from '../party/bridge';
 import { partyReactLimit } from '../party/reactLimit';
 import { knownMessages } from './messageBubble';
-import { freshIncoming, handleNativeReact, handleNativeReply, nativeSocialOf, partyReactMessageOf, toNativeMessage, toNativeNotes, watchingViewers } from './nativeSocial';
+import { freshIncoming, handleNativeReact, handleNativeReply, nativeSocialOf, partyReactMessageOf, roomViewers, toNativeMessage, toNativeNotes, watchingViewers } from './nativeSocial';
 import { openShareDialog } from '../ui/socialHooks.js';
 import { cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, roomNames, startPolicy, toggleElement, untilFor } from './playbackSocial';
 import { clusterNotes, crossing, liveFlashDue, mediaKey, rearmed, upsertNotes } from './notesTimeline';
@@ -105,7 +105,7 @@ export function startNotes(p) {
   const media = notesAllowed() ? noteMediaOf(p) : null;
   // Écho des réactions de salon suivi pour tout titre lu, avec ou sans notes (LAST-1615) ; retiré à la fin de la session (stopNotes).
   if (p.partyEcho) p.partyEcho();
-  const unsubParty = partyBridge.onChange(bindPartyReact);
+  const unsubParty = partyBridge.onChange(onPartyChange);
   bindPartyReact();
   p.partyEcho = () => { unsubParty(); unbindPartyReact(); p.partyEcho = null; };
   // En salon, « Réagir » reste visible sans notes : la réaction de salon marche sans note (seul le salon actif la garde).
@@ -262,6 +262,12 @@ function unbindPartyReact() {
   partyClient = null;
 }
 
+/** Salon changé (connexion, membres, fin) : écho rebranché, couche native à jour (avatars et rangée) (LAST-1627). */
+function onPartyChange() {
+  bindPartyReact();
+  syncNativeSocial();
+}
+
 /** Réaction de salon reçue : au natif, une bulle (pas de réactions flottantes) ; le web l'affiche déjà (LAST-1615). */
 function onPartyReact(d) {
   const eng = nativeEngineOf(S.P);
@@ -322,6 +328,10 @@ export function deleteReaction(id) {
 /** Moteur natif de la session, ou null : le pont ne lui parle que lorsqu'il est actif. */
 const nativeEngineOf = (p) => (p && p.engine && p.engine.kind === 'native' ? p.engine : null);
 const nativeMeId = () => (getSocialState().me ? getSocialState().me.pid : null);
+/** Salon actif avec son client : la réaction native et les avatars passent par lui (LAST-1627). */
+const inParty = () => partyBridge.isActive() && !!partyBridge.client;
+/** Mon nom dans le salon actif (participant « moi »), ou null si le salon ne l'a pas encore donné. */
+const roomMeName = () => (partyBridge.client && partyBridge.client.you ? partyBridge.client.you.username : null);
 /** Social disponible pour le titre lu (réglé par startSocialPlayback). */
 let socialLive = false;
 /** Messages déjà traités pour le natif, et début du mode : mêmes principes que la bulle web. */
@@ -350,8 +360,13 @@ function syncNativeSocial(p = S.P) {
   if (p.notes) syncNativeNotes(p.notes);
   const now = Date.now();
   const st = getSocialState();
-  const viewers = socialLive && !socialHidden().has('friendsPresence') ? watchingViewers(st, presenceMediaOf(p), now, eng.state().duration, roomMembers()) : [];
-  const payload = nativeSocialOf({ available: socialLive, kid: isKidProfile(), status: st.status, cinema: cinemaOn(st.cinema, now) }, viewers);
+  const room = inParty();
+  const shown = !socialHidden().has('friendsPresence');
+  // Salon : avatars = membres du salon, sans moi (LAST-1627). Hors salon : amis qui regardent le titre, inchangé.
+  const viewers = room
+    ? (shown ? roomViewers(roomMembers() || [], roomMeName()) : [])
+    : (socialLive && shown ? watchingViewers(st, presenceMediaOf(p), now, eng.state().duration, roomMembers()) : []);
+  const payload = nativeSocialOf({ available: socialLive, kid: isKidProfile(), status: st.status, cinema: cinemaOn(st.cinema, now), room }, viewers);
   const key = JSON.stringify(payload);
   if (key === nativeSocialKey) return;
   nativeSocialKey = key;
@@ -373,9 +388,14 @@ function pushNativeMessages(p, st) {
   for (const m of fresh) eng.pushMessage(toNativeMessage(m, st));
 }
 
+/** Réaction posée dans le natif : en salon, elle part au salon même si le social amis est coupé ; profil enfant toujours exclu (LAST-1627). */
+function nativeReactOn() {
+  return inParty() ? !isKidProfile() : nativeSocialOn();
+}
+
 /** Réaction posée dans le natif : même chemin que « Réagir ici » (note optimiste, 429 affiché en toast). */
 export function onNativeReact(d) {
-  if (!nativeSocialOn()) return;
+  if (!nativeReactOn()) return;
   handleNativeReact(d, { react: (pos, emoji) => postReact({ pos, kind: 'emoji', body: emoji }) });
 }
 

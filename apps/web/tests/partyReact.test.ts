@@ -11,6 +11,7 @@ const h = vi.hoisted(() => {
     postNote: vi.fn(),
     allowed: { value: true },
     status: { value: 'visible' as string },
+    kid: { value: false },
     live: { cb: null as null | ((m: unknown, n: unknown) => void) },
     S: {
       P: null as any,
@@ -33,7 +34,8 @@ vi.mock('../src/data/socialStore', async (importOriginal) => ({
   subscribe: () => () => undefined,
   endCinema: vi.fn(), loadPrefs: vi.fn(), sendMessage: vi.fn(), setCinemaHidden: vi.fn(), startCinema: vi.fn(),
 }));
-vi.mock('../src/data/socialV2Api', () => ({ deleteNote: vi.fn(), getNotes: () => new Promise(() => undefined), postNote: h.postNote, updateNote: vi.fn() }));
+vi.mock('../src/data/auth', async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), isKidProfile: () => h.kid.value }));
+vi.mock('../src/data/socialV2Api', () =>({ deleteNote: vi.fn(), getNotes: () => new Promise(() => undefined), postNote: h.postNote, updateNote: vi.fn() }));
 vi.mock('../src/data/socialV3Api', () => ({ getHeatmap: () => new Promise(() => undefined), getMissed: vi.fn() }));
 vi.mock('../src/relay/sourceUrl', () => ({ relayableUrl: vi.fn() }));
 vi.mock('../src/player/presenceV2', () => ({ setPresenceMedia: vi.fn() }));
@@ -90,6 +92,7 @@ beforeEach(() => {
   }));
   h.allowed.value = true;
   h.status.value = 'visible';
+  h.kid.value = false;
   client = fakeParty();
   partyBridge.client = client as any;
   S.P = player();
@@ -263,6 +266,14 @@ describe('réaction native en salon (LAST-1627)', () => {
     S.P = { ...player(), engine: nativeEngine() };
     startNotes(S.P);
     onNativeReact({ emoji: '<script>', pos: 1 });
+    expect(client.sendReact).not.toHaveBeenCalled();
+  });
+
+  it('en salon, profil enfant : la réaction native n’est pas envoyée (règle du natif conservée)', () => {
+    h.kid.value = true;
+    S.P = { ...player(), engine: nativeEngine() };
+    startNotes(S.P);
+    onNativeReact({ emoji: '🔥', pos: 100 });
     expect(client.sendReact).not.toHaveBeenCalled();
   });
 
