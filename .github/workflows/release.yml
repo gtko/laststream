@@ -238,8 +238,11 @@ jobs:
       with:
         distribution: temurin
         java-version: '21'
+    # Le paquet par defaut 'tools' n'existe plus dans sdkmanager : on installe explicitement ce que le build utilise (compileSdk 35).
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+      with:
+        packages: 'platform-tools platforms;android-35'
     # La release est signee par signingConfigs.debug (apps/mobile/android/app/build.gradle) : meme cle que les APK deja installes.
     - name: Restore the signing keystore
       env:
