@@ -42,7 +42,7 @@ let replaying = false;
 /** Au prochain rendu, défiler tout en bas (après un envoi ou à l'ouverture du chat). */
 let stickBottom = false;
 let renderQueued = false;
-/** Bandeau des participants (haut gauche du lecteur) et bandeau d'événement (haut centre) ; événements lisibles du salon pour le chat. */
+/** Pastille des participants (barre d'icônes du haut à droite du lecteur) et bandeau d'événement (haut centre) ; événements lisibles du salon pour le chat. */
 let band = null;
 let eventEl = null;
 let eventTimer = 0;
@@ -421,7 +421,31 @@ function onEvent(c, ev) {
   renderSoon();
 }
 
-/** Bandeau des participants (haut gauche) : avatars, « N en salle », écart de synchronisation, micro bientôt, masquer le chat. */
+/** Pastille de salon (barre d'icônes du haut à droite) : détail ouvert au clic, au survol ou au clavier. */
+let popOpen = false;
+let hoverOn = false;
+const CHIP_AVS = 3;
+
+/** Texte lu par un lecteur d'écran sur la pastille : le détail visible (nombre, synchro) sans l'ouvrir. */
+function chipLabel(n, sync) {
+  return 'Salon : ' + n + ' en salle, ' + sync.text.toLowerCase();
+}
+
+/** Ouvre ou ferme le détail de la pastille (aria-expanded suit). `refocus` rend le focus au bouton à la fermeture. */
+function setPop(on, refocus) {
+  popOpen = on;
+  if (!band) return;
+  const pop = band.querySelector('.ps-pop');
+  const chip = band.querySelector('[data-ps-chip]');
+  const shown = popOpen || hoverOn;
+  if (pop) pop.hidden = !shown;
+  if (chip) {
+    chip.setAttribute('aria-expanded', shown ? 'true' : 'false');
+    if (refocus && !on) chip.focus();
+  }
+}
+
+/** Pastille compacte : avatars empilés (3 au plus, « +N »), point d'état (vert synchronisé, orange sinon) ; détail dans la bulle. */
 function renderBand() {
   if (!band) return;
   const c = partyBridge.client;
@@ -430,28 +454,45 @@ function renderBand() {
   if (eventEl && !live) eventEl.hidden = true;
   if (!live) return;
   const list = c.participants || [];
-  const shown = list.slice(0, 4);
+  const shown = list.slice(0, CHIP_AVS);
   const more = list.length - shown.length;
   const sync = syncText(partyBridge.controller ? partyBridge.controller.drift : null);
-  band.innerHTML = '<div class="ps-avs" aria-hidden="true">' + shown.map((p) => avatarHTML(p).replace('class="wp-av', 'class="wp-av ps-av')).join('') +
-    (more > 0 ? '<span class="wp-av ps-av ps-more">+' + more + '</span>' : '') + '</div>' +
-    '<div class="ps-info"><div class="ps-n">' + list.length + ' en salle</div><div class="ps-sync' + (sync.ok ? '' : ' is-off') + '" data-ps-sync role="status">' + esc(sync.text) + '</div></div>' +
-    '<button type="button" class="ps-btn" disabled aria-label="Micro (bientôt disponible)" title="Micro : bientôt">' +
+  const label = chipLabel(list.length, sync);
+  const chatLbl = open ? 'Masquer la discussion' : 'Afficher la discussion';
+  band.innerHTML = '<button type="button" class="ps-chip" data-ps-chip aria-expanded="false" aria-haspopup="true" aria-controls="ps-pop" aria-label="' + esc(label) + '" title="' + esc(label) + '">' +
+    '<span class="ps-avs" aria-hidden="true">' + shown.map((p) => avatarHTML(p).replace('class="wp-av', 'class="wp-av ps-av')).join('') +
+    (more > 0 ? '<span class="wp-av ps-av ps-more">+' + more + '</span>' : '') + '</span>' +
+    '<span class="ps-dot' + (sync.ok ? '' : ' is-off') + '" data-ps-dot aria-hidden="true"></span></button>' +
+    '<div class="ps-pop" id="ps-pop" role="group" aria-label="Salon" hidden>' +
+    '<div class="ps-n">' + list.length + ' en salle</div>' +
+    '<div class="ps-sync' + (sync.ok ? '' : ' is-off') + '" data-ps-sync role="status">' + esc(sync.text) + '</div>' +
+    '<div class="ps-row"><button type="button" class="ps-btn" disabled aria-label="Micro (bientôt disponible)" title="Micro : bientôt">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M4 4l16 16"/></svg></button>' +
-    '<button type="button" class="ps-btn" data-ps-chat aria-pressed="' + (open ? 'true' : 'false') + '" aria-label="' + (open ? 'Masquer la discussion' : 'Afficher la discussion') + '" title="' + (open ? 'Masquer la discussion' : 'Afficher la discussion') + '">' +
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>';
+    '<button type="button" class="ps-btn" data-ps-chat aria-pressed="' + (open ? 'true' : 'false') + '" aria-label="' + chatLbl + '" title="' + chatLbl + '">' +
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button></div></div>';
+  setPop(popOpen, false);
 }
 
-/** Met à jour seulement la ligne de synchronisation (chaque seconde). */
+/** Met à jour seulement le détail de synchronisation et le point d'état (chaque seconde). */
 function updateSync() {
   if (!band || band.hidden) return;
   const el = band.querySelector('[data-ps-sync]');
   if (!el) return;
   const sync = syncText(partyBridge.controller ? partyBridge.controller.drift : null);
-  if (el.textContent !== sync.text) el.textContent = sync.text;
-  // Passage à « désynchronisé » : réaffiche le bandeau (une fois par bascule, pas à chaque seconde).
+  if (el.textContent !== sync.text) {
+    el.textContent = sync.text;
+    const chip = band.querySelector('[data-ps-chip]');
+    if (chip) {
+      const label = chipLabel((partyBridge.client.participants || []).length, sync);
+      chip.setAttribute('aria-label', label);
+      chip.title = label;
+    }
+  }
+  // Passage à « désynchronisé » : réaffiche les commandes (une fois par bascule, pas à chaque seconde) ; le point passe orange.
   if (!sync.ok && !el.classList.contains('is-off')) requestWake(band);
   el.classList.toggle('is-off', !sync.ok);
+  const dot = band.querySelector('[data-ps-dot]');
+  if (dot) dot.classList.toggle('is-off', !sync.ok);
 }
 
 /** Rafraîchit seulement les compteurs (sans reconstruire le panneau) : débit montant, nombre d'invités et bandeau de compatibilité. */
@@ -530,7 +571,9 @@ export function mountPartyPanel(root, opts) {
   eventEl.className = 'ps-event';
   eventEl.setAttribute('role', 'status');
   eventEl.hidden = true;
-  root.appendChild(band);
+  // La pastille se range dans la barre d'icônes du haut à droite (à côté du bouton « Watch party ») ; à défaut, dans la racine.
+  const topRight = root.querySelector('.lp-top-r');
+  if (topRight) topRight.prepend(band); else root.appendChild(band);
   root.appendChild(eventEl);
   root.appendChild(floats);
   root.appendChild(panel);
@@ -543,6 +586,10 @@ export function mountPartyPanel(root, opts) {
   panel.addEventListener('input', onInput, { signal });
   panel.addEventListener('keydown', onKeyDown, { signal });
   band.addEventListener('click', onBandClick, { signal });
+  band.addEventListener('mouseenter', () => onBandHover(true), { signal });
+  band.addEventListener('mouseleave', () => onBandHover(false), { signal });
+  band.addEventListener('keydown', onBandKey, { signal });
+  band.addEventListener('focusout', onBandFocusOut, { signal });
   tickTimer = setInterval(() => { updateRelayLine(); updateCountdown(); updateSync(); }, 1000);
 }
 
@@ -566,6 +613,8 @@ export function unmountPartyPanel() {
   for (const el of [band, eventEl, floats, panel]) el.remove();
   rootEl.classList.remove('has-party-panel');
   rootEl = null;
+  popOpen = false;
+  hoverOn = false;
   panel = null;
   floats = null;
   band = null;
@@ -723,7 +772,27 @@ async function inviteAfterCreate() {
 /** Bandeau : « Masquer / Afficher la discussion » (le micro est désactivé, bientôt). */
 function onBandClick(e) {
   const t = e.target instanceof Element ? e.target : null;
-  if (t && t.closest('[data-ps-chat]')) togglePartyPanel();
+  if (!t) return;
+  if (t.closest('[data-ps-chat]')) { togglePartyPanel(); return; }
+  if (t.closest('[data-ps-chip]')) setPop(!popOpen, false);
+}
+
+/** Survol : le détail s'ouvre ; il se referme à la sortie du pointeur (sauf s'il a été ouvert au clic ou au clavier). */
+function onBandHover(on) {
+  hoverOn = on;
+  setPop(popOpen, false);
+}
+
+/** Échap ferme le détail (focus rendu à la pastille) sans fermer le lecteur ; le focus qui sort de la pastille le referme aussi. */
+function onBandKey(e) {
+  if (e.key !== 'Escape' || !(popOpen || hoverOn)) return;
+  e.stopPropagation();
+  e.preventDefault();
+  hoverOn = false;
+  setPop(false, true);
+}
+function onBandFocusOut(e) {
+  if (popOpen && band && !band.contains(e.relatedTarget)) setPop(false, false);
 }
 
 function onClick(e) {

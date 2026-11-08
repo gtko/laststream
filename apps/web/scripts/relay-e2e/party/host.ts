@@ -18,6 +18,8 @@ function position(client: PartyClient | null): number {
   return s.playing ? Math.max(0, s.pos + (client.serverNow() - s.at) / 1000) : s.pos;
 }
 
+const reacts: Array<{ by: string; emoji: string }> = [];
+
 const handle = {
   ready: false,
   error: null as string | null,
@@ -31,6 +33,9 @@ const handle = {
   play: () => handle.client?.control('play', position(handle.client)) ?? false,
   pause: () => handle.client?.control('pause', position(handle.client)) ?? false,
   sendChat: (text: string) => handle.client?.sendChat(text) ?? false,
+  sendReact: (emoji: string, pos?: number) => handle.client?.sendReact(emoji, pos) ?? false,
+  /** Réactions reçues du salon (écho compris), dans l'ordre d'arrivée. */
+  reacts: () => reacts.slice(),
   setSubtitles: (tracks: PartySubtitleTrack[]) => handle.session?.setSubtitles(tracks),
 };
 (window as unknown as { __host: typeof handle }).__host = handle;
@@ -48,6 +53,7 @@ try {
   const source = urlRangeSource({ url: media, mime: 'video/mp4' });
   const client = new PartyClient({ connect: async () => new WebSocket(ws) as unknown as SocketLike });
   handle.client = client;
+  client.on('react', (r) => reacts.push({ by: r.by, emoji: r.emoji }));
   handle.session = new HostRelaySession({ client, source });
   client.start();
   handle.ready = true;
