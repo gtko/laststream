@@ -2,6 +2,8 @@
   // Worker Cloudflare « lastaddon-core » : même application Hono que le serveur Node (src/worker.ts), plateforme Workers.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lastaddon-core",
+  // Worker Previews (Workers Builds, branches hors main) : bloc requis par `wrangler preview`. Vide = aucune liaison de production héritée.
+  "previews": {},
   "main": "src/worker.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
