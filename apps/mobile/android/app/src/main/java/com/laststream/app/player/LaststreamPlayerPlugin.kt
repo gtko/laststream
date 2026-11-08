@@ -35,13 +35,15 @@ class LaststreamPlayerPlugin : Plugin() {
      * (`open` vient de partir, l'activité n'est pas encore prête), `onPending` applique la commande à la requête en attente.
      */
     private fun ui(call: PluginCall, onPending: ((OpenRequest) -> OpenRequest)? = null, block: (PlayerControl) -> Unit) {
-        val a = PlayerHub.control()
-        if (a == null) {
-            val p = PlayerHub.pending
-            if (p != null && onPending != null) { PlayerHub.pending = onPending(p); call.resolve(); return }
-            call.reject("Aucun lecteur ouvert", "no_player"); return
-        }
+        // Tout se décide sur le fil principal, celui où `onCreate` enregistre l'activité et lit `pending` : pas de fusion perdue entre les deux.
         main.post {
+            val a = PlayerHub.control()
+            if (a == null) {
+                val p = PlayerHub.pending
+                if (p != null && onPending != null) { PlayerHub.pending = onPending(p); call.resolve() }
+                else call.reject("Aucun lecteur ouvert", "no_player")
+                return@post
+            }
             try { block(a); call.resolve() } catch (e: Exception) { call.reject(e.message ?: "erreur", "player_error") }
         }
     }
