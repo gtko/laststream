@@ -7,16 +7,18 @@
  *    requête complémentaire : le moov est lu à l'offset exact qu'indique la chaîne des boîtes (fin de la boîte
  *    qui dépasse la zone), sur tailBytes octets. Le moov tronqué en début de zone est relu à partir de son offset.
  *
- * Sécurité : les requêtes passent par fetchBytes (schéma http(s), redirections revalidées, au plus MAX_REDIRECTS)
- * avec un agent au DNS épinglé : une adresse non publique, y compris atteinte par redirection ou par rebinding,
- * est refusée à la connexion. Les URL ne sont jamais journalisées ni incluses dans les erreurs.
+ * Sécurité : les requêtes passent par fetchBytes (schéma http(s), au plus MAX_REDIRECTS) avec un agent au DNS épinglé :
+ * une adresse non publique, y compris atteinte par rebinding, est refusée à la connexion. Une redirection n'est suivie
+ * que vers le même hôte ; un autre hôte arrête la sonde (null) avant tout appel à ce nouvel hôte, sans passer par la
+ * garde de débridage (le rappel onCrossHostRedirect signale l'hôte d'origine). Les URL ne sont jamais journalisées
+ * ni incluses dans les erreurs.
  *
  * Limite : un serveur qui ignore l'en-tête Range renvoie 200 avec le fichier entier ; au-delà de la taille lue,
  * la sonde échoue (null) plutôt que de tout télécharger.
  */
 
 import { platform, type OutboundDispatcher } from '../platform/index.js';
-import { type FetchFn, fetchBytes } from '../sources/http.js';
+import { CrossHostRedirectError, type FetchFn, fetchBytes } from '../sources/http.js';
 import { type MkvProbe, isEbml, parseMkv } from './ebml.js';
 import { type Mp4Info, isMp4Head, parseMoov, scanTopLevelBoxes } from './mp4.js';
 import {
@@ -39,6 +41,11 @@ export interface ProbeOptions {
   tailBytes?: number;
   /** Délai par requête, en millisecondes. Défaut : 4000. */
   timeoutMs?: number;
+  /**
+   * Appelé quand une redirection quitte l'hôte de l'URL sondée : la sonde rend null sans contacter le nouvel hôte.
+   * Reçoit le nom d'hôte d'origine. Un rappel qui lève une exception n'a aucun effet sur le résultat.
+   */
+  onCrossHostRedirect?: (host: string) => void;
 }
 
 /** Résultat d'une sonde réussie. */
@@ -73,6 +80,7 @@ async function readRange(
   const result = await fetchBytes(fetchFn, url, { headers }, timeoutMs, {
     maxBytes: length,
     dispatcher: probeDispatcher(),
+    sameHostOnly: true,
   });
   const offsetHonored = result.status === 206 || (result.status === 200 && start === 0);
   if (!offsetHonored) throw new Error('plage non servie');
@@ -163,7 +171,17 @@ export async function probeMedia(url: string, options: ProbeOptions = {}): Promi
       readRange(fetchFn, url, start, length, timeoutMs);
     const info = await readMp4Info(read, head, tailBytes);
     return info === undefined ? null : fromMp4(info);
-  } catch {
+  } catch (error) {
+    if (error instanceof CrossHostRedirectError) notifyCrossHost(options, url);
     return null;
+  }
+}
+
+/** Signale l'hôte d'origine d'une sonde arrêtée par une redirection. Ne lève jamais. */
+function notifyCrossHost(options: ProbeOptions, url: string): void {
+  try {
+    options.onCrossHostRedirect?.(new URL(url).hostname);
+  } catch {
+    // Rappel en échec ou URL invalide : sans effet sur le résultat de la sonde.
   }
 }

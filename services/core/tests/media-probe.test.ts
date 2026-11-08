@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FetchFn } from '../src/sources/http.js';
 import { probeMedia } from '../src/media/probe.js';
+import { resetDebridReportThrottle, setDebridBlockReporter } from '../src/egress/debrid-guard.js';
 import { buildMkv, buildMp4, moovOffsetOf, rangeServer } from './media-fixtures.js';
 
 const MKV_URL = 'https://cdn.example.com/media/film.mkv';
@@ -186,9 +187,10 @@ describe('probeMedia : échecs et sécurité', () => {
     expect(urls).toEqual([MKV_URL]);
   });
 
-  it('suit une redirection vers une adresse publique', async () => {
+  it('suit une redirection vers le même hôte', async () => {
     const file = buildMkv();
-    const target = 'https://93.184.216.34/film.mkv';
+    const target = 'https://cdn.example.com/media/film-direct.mkv';
+    const onCrossHostRedirect = vi.fn();
     const { fetch, urls } = scripted([
       () => new Response(null, { status: 302, headers: { location: target } }),
       () =>
@@ -198,10 +200,11 @@ describe('probeMedia : échecs et sécurité', () => {
         }),
     ]);
 
-    const result = await probeMedia(MKV_URL, { fetch });
+    const result = await probeMedia(MKV_URL, { fetch, onCrossHostRedirect });
 
     expect(urls).toEqual([MKV_URL, target]);
     expect(result?.audio).toHaveLength(2);
+    expect(onCrossHostRedirect).not.toHaveBeenCalled();
   });
 
   it('envoie Range et Accept-Encoding identity, sans jamais journaliser l URL', async () => {
@@ -228,5 +231,79 @@ describe('probeMedia : échecs et sécurité', () => {
     }) as unknown as FetchFn;
 
     await expect(probeMedia(MKV_URL, { fetch })).resolves.toBeNull();
+  });
+});
+
+describe('probeMedia : redirections limitées au même hôte', () => {
+  afterEach(() => {
+    setDebridBlockReporter(undefined);
+    resetDebridReportThrottle();
+  });
+
+  it('suit une redirection http vers https sur le même hôte', async () => {
+    const file = buildMkv();
+    const target = 'https://cdn.example.com/media/film.mkv';
+    const { fetch, urls } = scripted([
+      () => new Response(null, { status: 302, headers: { location: target } }),
+      () =>
+        new Response(new Uint8Array(file), {
+          status: 206,
+          headers: { 'content-range': `bytes 0-${file.length - 1}/${file.length}` },
+        }),
+    ]);
+
+    const result = await probeMedia('http://cdn.example.com/media/film.mkv', { fetch });
+
+    expect(urls).toEqual(['http://cdn.example.com/media/film.mkv', target]);
+    expect(result?.audio).toHaveLength(2);
+  });
+
+  it('ne suit pas une redirection vers un autre hôte public : un seul appel, null, hôte d origine signalé', async () => {
+    const file = buildMkv();
+    const onCrossHostRedirect = vi.fn();
+    const { fetch, urls } = scripted([
+      () => new Response(null, { status: 302, headers: { location: 'https://93.184.216.34/film.mkv' } }),
+      () =>
+        new Response(new Uint8Array(file), {
+          status: 206,
+          headers: { 'content-range': `bytes 0-${file.length - 1}/${file.length}` },
+        }),
+    ]);
+
+    const result = await probeMedia(MKV_URL, { fetch, onCrossHostRedirect });
+
+    expect(result).toBeNull();
+    expect(urls).toEqual([MKV_URL]);
+    expect(onCrossHostRedirect).toHaveBeenCalledTimes(1);
+    expect(onCrossHostRedirect).toHaveBeenCalledWith('cdn.example.com');
+  });
+
+  it('ne contacte jamais un hôte de débridage par redirection : un seul appel, aucun événement ni journal', async () => {
+    const reporter = vi.fn();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    setDebridBlockReporter(reporter);
+    const { fetch, urls } = scripted([
+      () => new Response(null, { status: 302, headers: { location: 'https://x.debrid.it/dl/abc' } }),
+    ]);
+
+    expect(await probeMedia(MKV_URL, { fetch })).toBeNull();
+    expect(urls).toEqual([MKV_URL]);
+    expect(reporter).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('un rappel qui lève une exception ne change pas le résultat', async () => {
+    const { fetch } = scripted([
+      () => new Response(null, { status: 302, headers: { location: 'https://93.184.216.34/film.mkv' } }),
+    ]);
+
+    const result = await probeMedia(MKV_URL, {
+      fetch,
+      onCrossHostRedirect: () => {
+        throw new Error('rappel en échec');
+      },
+    });
+
+    expect(result).toBeNull();
   });
 });
