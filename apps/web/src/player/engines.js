@@ -442,11 +442,13 @@ export class MpvEngine extends Emitter {
 /** Lecteur natif Android (libVLC, plugin Capacitor) : l'activité native porte l'image, le son et ses propres contrôles ;
  * ce moteur ne fait que relayer ses évènements (état, pistes, fin, erreur) et ses commandes. */
 export class NativeEngine extends Emitter {
-  constructor(plugin) {
+  /** `clock` : horloge en ms (injectable pour les tests). La position est interpolée entre deux évènements du natif. */
+  constructor(plugin, clock = () => Date.now()) {
     super();
     this.kind = 'native';
     this.plugin = plugin;
-    this.p = { time: 0, duration: 0, paused: false, buffering: true, rate: 1 };
+    this.clock = clock;
+    this.p = { time: 0, at: clock(), duration: 0, paused: false, buffering: true, rate: 1 };
     this.audio = [];
     this.subs = [];
     this.loaded = false;
@@ -459,7 +461,8 @@ export class NativeEngine extends Emitter {
     on('ended', (d) => { this.setState(d); this.emit('ended'); });
     on('error', (d) => this.emit('error', new Error('native:' + (d.code || 'inconnue'))));
     // La fermeture par l'utilisateur est toujours transmise, même si la session prépare déjà une autre source.
-    plugin.addListener('closed', (d) => { this.setState(d || {}); this.emit('closed', d); }).catch(() => {});
+    // Activité fermée : la position reçue est la dernière ; elle ne doit plus avancer avec l'horloge.
+    plugin.addListener('closed', (d) => { this.setState({ ...(d || {}), paused: true }); this.emit('closed', d); }).catch(() => {});
     on('selectSource', (d) => this.emit('selectSource', d));
     on('selectEpisode', (d) => this.emit('selectEpisode', d));
     on('loadSeason', (d) => this.emit('loadSeason', d));
@@ -474,6 +477,8 @@ export class NativeEngine extends Emitter {
 
   setState(d) {
     const p = this.p;
+    // La position interpolée jusqu'ici devient la base, avant que les nouveaux champs ne s'appliquent (pas de saut).
+    this.rebase(this.clock());
     if (typeof d.position === 'number') p.time = d.position;
     if (typeof d.duration === 'number' && d.duration > 0) p.duration = d.duration;
     if (typeof d.paused === 'boolean') p.paused = d.paused;
@@ -482,11 +487,25 @@ export class NativeEngine extends Emitter {
     if (!this.loaded && p.duration > 0 && p.time > 0) { this.loaded = true; this.emit('ready'); }
   }
 
+  /** Position à l'instant `now` : entre deux évènements, la lecture avance au rythme de la vitesse, bornée à la durée. */
+  positionAt(now) {
+    const p = this.p;
+    if (p.paused || p.buffering || !this.loaded || !this.live) return p.time;
+    const t = Math.max(0, p.time + ((now - p.at) / 1000) * (p.rate || 1));
+    return p.duration > 0 ? Math.min(t, p.duration) : t;
+  }
+
+  /** Fait de la position interpolée à `now` la nouvelle base (instant `now`). */
+  rebase(now) {
+    this.p.time = this.positionAt(now);
+    this.p.at = now;
+  }
+
   async load({ url, startAt, open }) {
     clearTimeout(this.closeTimer);
     this.live = true;
     this.loaded = false;
-    this.p = { time: startAt || 0, duration: 0, paused: false, buffering: true, rate: 1 };
+    this.p = { time: startAt || 0, at: this.clock(), duration: 0, paused: false, buffering: true, rate: 1 };
     this.audio = [];
     this.subs = [];
     await this.plugin.open({ ...open, url, startPosition: startAt || 0 });
@@ -515,16 +534,18 @@ export class NativeEngine extends Emitter {
   minimize() { return this.plugin.minimize().then((r) => !!(r && r.mini), () => false); }
   expand() { return this.plugin.expand().then((r) => !!(r && r.mini), () => false); }
 
-  play() { this.plugin.play().catch(() => {}); }
-  pause() { this.plugin.pause().catch(() => {}); }
-  seek(t) { this.p.time = Math.max(0, t); this.plugin.seek({ position: Math.max(0, t) }).catch(() => {}); }
+  // Commandes locales : l'état change tout de suite (sans attendre l'évènement du natif), pour que le contrôleur de watch party
+  // ne prenne pas son écho pour une action locale.
+  play() { this.rebase(this.clock()); this.p.paused = false; this.plugin.play().catch(() => {}); }
+  pause() { this.rebase(this.clock()); this.p.paused = true; this.plugin.pause().catch(() => {}); }
+  seek(t) { this.p.time = Math.max(0, t); this.p.at = this.clock(); this.plugin.seek({ position: Math.max(0, t) }).catch(() => {}); }
   setVolume() { /* volume du système */ }
   setMuted() { /* volume du système */ }
   setRate(r) { this.plugin.setRate({ rate: r }).catch(() => {}); }
 
   state() {
     const p = this.p;
-    return { time: p.time, duration: p.duration, paused: p.paused, ended: false, seeking: false, buffering: p.buffering, buffered: [], cacheTime: null, volume: 1, muted: false, rate: p.rate, pip: false };
+    return { time: this.positionAt(this.clock()), duration: p.duration, paused: p.paused, ended: false, seeking: false, buffering: p.buffering, buffered: [], cacheTime: null, volume: 1, muted: false, rate: p.rate, pip: false };
   }
 
   audioTracks() { return nativeAudioTracks(this.audio); }

@@ -77,7 +77,7 @@ describe('NativeEngine', () => {
 
   it('ouvre le lecteur, relaie l’état et signale « ready »', async () => {
     const { plugin, fire } = fakePlugin();
-    const e = new NativeEngine(plugin);
+    const e = new NativeEngine(plugin, () => 0); // horloge figée : la position n'est pas interpolée entre les évènements
     const ready = vi.fn();
     e.on('ready', ready);
     await e.load({ url: 'http://x/a.mkv', startAt: 42, open: { title: 'T' } });
