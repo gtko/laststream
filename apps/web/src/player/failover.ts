@@ -36,7 +36,7 @@ export function failoverOrder(ranked: readonly SourceView[], current: SourceView
 }
 
 /** « Lumpi (VF · 4K) », ou le seul libellé quand le fournisseur est inconnu. */
-export function sourceWho(v: SourceView): string {
+function sourceWho(v: SourceView): string {
   const who = providerOf(v);
   return who ? who + ' (' + sourceLabel(v) + ')' : sourceLabel(v);
 }
