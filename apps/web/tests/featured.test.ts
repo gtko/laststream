@@ -242,6 +242,20 @@ describe('En vedette (collections) : cache du jour', () => {
     await featuredCollections({ now: new Date(2026, 9, 4, 10), profileId: 'cache-p', region: 'FR', watched: WATCHED, history: [], cache: false, fetch: fakeTmdb(forced) });
     expect(forced.length).toBeGreaterThan(0);
   });
+
+  it('même jour : un genre banni ou une région changés refont la sélection', async () => {
+    const base = { now: new Date(2026, 9, 5, 9), profileId: 'cache-b', watched: WATCHED, history: [], banned: new Set<number>() } as const;
+    await featuredCollections({ ...base, region: 'FR', fetch: fakeTmdb([]) });
+    const same: Call[] = [];
+    await featuredCollections({ ...base, region: 'FR', fetch: fakeTmdb(same) });
+    expect(same).toHaveLength(0);
+    const bannedNow: Call[] = [];
+    await featuredCollections({ ...base, region: 'FR', banned: new Set([27]), fetch: fakeTmdb(bannedNow) });
+    expect(bannedNow.length).toBeGreaterThan(0);
+    const otherRegion: Call[] = [];
+    await featuredCollections({ ...base, region: 'BE', banned: new Set([27]), fetch: fakeTmdb(otherRegion) });
+    expect(otherRegion.length).toBeGreaterThan(0);
+  });
 });
 
 describe('En vedette (collections) : dossiers du moteur (generatedFolder)', () => {

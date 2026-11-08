@@ -280,11 +280,11 @@ export function rememberFeaturedCollections(tiles: readonly GenTile[], now: Date
   }
 }
 
-/** Tuiles du jour pour ce profil (cache localStorage par jour), ou null. */
-function readCache(profileId: string, today: string): GenTile[] | null {
+/** Tuiles du jour pour ce profil (cache localStorage par jour, région et genres bannis : `stamp`), ou null. */
+function readCache(profileId: string, stamp: string): GenTile[] | null {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(CACHE_PREFIX + profileId) ?? 'null');
-    if (!isRecord(raw) || raw.day !== today || !Array.isArray(raw.tiles)) return null;
+    if (!isRecord(raw) || raw.day !== stamp || !Array.isArray(raw.tiles)) return null;
     const tiles = raw.tiles.filter(isGenTile);
     return tiles.length >= MIN_TILES ? tiles : null;
   } catch {
@@ -292,9 +292,9 @@ function readCache(profileId: string, today: string): GenTile[] | null {
   }
 }
 
-function writeCache(profileId: string, today: string, tiles: readonly GenTile[]): void {
+function writeCache(profileId: string, stamp: string, tiles: readonly GenTile[]): void {
   try {
-    localStorage.setItem(CACHE_PREFIX + profileId, JSON.stringify({ day: today, tiles }));
+    localStorage.setItem(CACHE_PREFIX + profileId, JSON.stringify({ day: stamp, tiles }));
   } catch {
     /* stockage indisponible : pas de cache, la sélection est refaite au prochain appel */
   }
@@ -357,14 +357,14 @@ function addCredits(json: unknown, actors: Map<number, number>, directors: Map<n
 /** Personnes des listes de popularité TMDB, selon leur département. */
 function addPopular(json: unknown, actors: Map<number, number>, directors: Map<number, number>): void {
   for (const p of listOf(json, 'results')) {
-    if (!isRecord(p) || typeof p.id !== 'number') continue;
+    if (!isRecord(p) || typeof p.id !== 'number' || p.adult === true) continue;
     if (p.known_for_department === 'Acting') bump(actors, p.id, 0.5);
     else if (p.known_for_department === 'Directing') bump(directors, p.id, 0.5);
   }
 }
 
 function personTile(kind: 'cast' | 'crew', json: unknown, today: string, banned: ReadonlySet<GenreKey>): GenTile | null {
-  if (!isRecord(json) || typeof json.id !== 'number') return null;
+  if (!isRecord(json) || typeof json.id !== 'number' || json.adult === true) return null;
   const id = json.id;
   const name = str(json.name);
   const profile = str(json.profile_path);
@@ -422,13 +422,15 @@ export async function featuredCollections(opts: FeaturedCollectionsOptions = {})
     const now = opts.now ?? new Date();
     const today = localIso(now);
     const profileId = opts.profileId ?? currentProfileId();
+    const region = opts.region ?? defaultRegion();
+    const banned: ReadonlySet<GenreKey> = opts.banned ?? bannedGenreIds();
+    // Le cache du jour dépend aussi de la région et des genres bannis : un réglage changé en cours de journée refait la sélection.
+    const stamp = `${today}|${region}|${[...banned].map(String).sort().join(',')}`;
     if (opts.cache !== false) {
-      const cached = readCache(profileId, today);
+      const cached = readCache(profileId, stamp);
       if (cached) return cached;
     }
-    const region = opts.region ?? defaultRegion();
     const fetchFn: Fetch = opts.fetch ?? tmdb;
-    const banned: ReadonlySet<GenreKey> = opts.banned ?? bannedGenreIds();
     const watched: readonly WatchedTitle[] = opts.watched ?? safeWatched();
     const recent = recentKeys(opts.history ?? readFeaturedHistory(profileId), today);
     const weigh = (base: number, id: string): number => Math.max(MIN_WEIGHT, recent.has(id) ? base - RECENT_PENALTY : base);
@@ -542,7 +544,7 @@ export async function featuredCollections(opts: FeaturedCollectionsOptions = {})
       picked.length,
       rnd,
     ).map((c) => c.tile);
-    if (opts.cache !== false) writeCache(profileId, today, tiles);
+    if (opts.cache !== false) writeCache(profileId, stamp, tiles);
     return tiles;
   } catch {
     return [];
