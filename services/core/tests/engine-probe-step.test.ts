@@ -4,7 +4,7 @@ import type { Ranked } from '../src/engine/types.js';
 import { resetDebridReportThrottle, setDebridBlockReporter } from '../src/egress/debrid-guard.js';
 import type { FetchFn } from '../src/sources/http.js';
 import type { MediaProbe, ProbeOptions } from '../src/media/probe.js';
-import { ProbeCache } from '../src/media/probe-cache.js';
+import { ProbeCache, probeCacheKey } from '../src/media/probe-cache.js';
 import { cand, ranked as asRanked } from './engine-fixtures.js';
 import { buildMkv, rangeServer } from './media-fixtures.js';
 
@@ -301,5 +301,129 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     expect(memo.size()).toBe(500);
     expect(memo.get('h0.example.com')).toBeUndefined();
     expect(memo.get('h500.example.com')).toBe(true);
+  });
+});
+
+const ADDON_SEGMENT_URL = 'https://addon.example/eyJhbGciOiJIUzI1NiJ9abcdefghijklmnop1234/resolve/x/Film.mkv';
+const TOKEN_40 = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
+const FILM_URL = 'https://cdn.example/films/Film.2020.1080p.mkv';
+
+/** Torrent résolu par un débrideur : lien direct avec infoHash. */
+function directWithHash(url: string, hash: string): Ranked {
+  return asRanked(cand({ raw: { url, infoHash: hash, title: 'Film.2024.1080p.WEB-DL' } }));
+}
+
+/** Candidat direct sans infoHash écarté : aucun appel réseau de sonde, candidat rendu tel quel. */
+async function expectNeverProbed(input: Ranked): Promise<void> {
+  const server = rangeServer(buildMkv());
+  const out = await enrichWithProbe([input], {
+    cache: new ProbeCache<MediaProbe>(),
+    fetch: server.fetch,
+    resolverHosts: newResolverHostMemo(),
+    topN: 1,
+  });
+  expect(server.calls).toHaveLength(0);
+  expect(out[0]).toBe(input);
+}
+
+describe('enrichWithProbe : aucun appel réseau vers un lien d\'addon', () => {
+  it('lien direct avec infoHash, sonde absente du cache : aucun appel, candidat inchangé', async () => {
+    const server = rangeServer(buildMkv());
+    const input = [directWithHash(DIRECT_URL, HASH_A)];
+
+    const out = await enrichWithProbe(input, {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: server.fetch,
+      resolverHosts: newResolverHostMemo(),
+      topN: 5,
+    });
+
+    expect(server.calls).toHaveLength(0);
+    expect(out[0]).toBe(input[0]);
+  });
+
+  it('lien direct avec infoHash, sonde en cache : aucun appel, candidat enrichi depuis le cache', async () => {
+    const server = rangeServer(buildMkv());
+    const cache = new ProbeCache<MediaProbe>();
+    cache.set(probeCacheKey(HASH_A), FR_EN);
+
+    const out = await enrichWithProbe([directWithHash(DIRECT_URL, HASH_A)], {
+      cache,
+      fetch: server.fetch,
+      resolverHosts: newResolverHostMemo(),
+      topN: 5,
+    });
+
+    expect(server.calls).toHaveLength(0);
+    expect(out[0].directVerified).toBe(true);
+    expect(out[0].verifiedLanguages).toEqual(VERIFIED_FR_EN);
+  });
+
+  it('le cache seul s\'applique même au-delà de topN sondes', async () => {
+    const probe = probeMock();
+    const cache = new ProbeCache<MediaProbe>();
+    cache.set(probeCacheKey(HASH_A), FR_EN);
+    const input = [directAt(0), directWithHash(DIRECT_URL, HASH_A)];
+
+    const out = await enrichWithProbe(input, { probe, cache, topN: 1 });
+
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(out[0].directVerified).toBe(true);
+    expect(out[1].verifiedLanguages).toEqual(VERIFIED_FR_EN);
+  });
+
+  it('lien direct avec infoHash absent du cache : ne consomme pas topN, la sonde porte sur le lien sans infoHash', async () => {
+    const probe = probeMock();
+    const input = [directWithHash('https://cdn.example.com/media/hashed.mkv', HASH_A), directAt(0)];
+
+    await enrichWithProbe(input, { probe, cache: new ProbeCache<MediaProbe>(), topN: 1 });
+
+    expect(probe.mock.calls.map((call) => call[0])).toEqual(['https://cdn.example.com/media/0.mkv']);
+  });
+
+  it('segment de chemin opaque (configuration d\'addon base64) : jamais sondé', async () => {
+    await expectNeverProbed(direct(ADDON_SEGMENT_URL));
+  });
+
+  it('segment de chemin opaque sans chemin de résolution : jamais sondé', async () => {
+    await expectNeverProbed(direct('https://addon.example/eyJhbGciOiJIUzI1NiJ9abcdefghijklmnop1234/Film.mkv'));
+  });
+
+  it('valeur de query opaque (jeton de 40 caractères) : jamais sondé', async () => {
+    await expectNeverProbed(direct(`https://h.example/play?token=${TOKEN_40}`));
+  });
+
+  it('sans extension vidéo finale : jamais sondé', async () => {
+    await expectNeverProbed(direct('https://h.example/watch/123'));
+  });
+
+  it('fichier vidéo nu (extension .mkv, aucun jeton) : sondé', async () => {
+    const server = rangeServer(buildMkv());
+    const input = [direct(FILM_URL)];
+
+    const out = await enrichWithProbe(input, {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: server.fetch,
+      resolverHosts: newResolverHostMemo(),
+      topN: 1,
+    });
+
+    expect(server.calls.map((call) => call.url)).toEqual([FILM_URL]);
+    expect(out[0].directVerified).toBe(true);
+  });
+
+  it('les candidats écartés ne consomment pas topN : la sonde porte sur le premier éligible', async () => {
+    const probe = probeMock();
+    const input = [
+      direct('https://h.example/watch/123'),
+      direct(`https://h.example/play?token=${TOKEN_40}`),
+      direct(ADDON_SEGMENT_URL),
+      direct(FILM_URL),
+      directAt(9),
+    ];
+
+    await enrichWithProbe(input, { probe, cache: new ProbeCache<MediaProbe>(), topN: 1 });
+
+    expect(probe.mock.calls.map((call) => call[0])).toEqual([FILM_URL]);
   });
 });

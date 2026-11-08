@@ -2,14 +2,27 @@
  * Étape de sonde du moteur : lit l'audio réel des meilleurs candidats éligibles, puis enrichit leurs langues et
  * pistes vérifiées. Le cache de sondes est injectable (défaut : cache partagé de 30 jours).
  *
- * Éligibilité, dans l'ordre du classement : seuls les liens directs http(s) sont sondés tels quels. Le serveur n'appelle
- * jamais AllDebrid : les candidats sans lien direct ne sont pas sondés. Une sonde dont une redirection quitte l'hôte
- * est arrêtée avant tout appel au nouvel hôte ; cet hôte d'origine est mémorisé 24 h (isolat), et ses liens ne sont
- * plus sondés (candidat rendu tel quel, hors topN).
+ * Aucun appel serveur vers un lien d'addon : un lien de résolution débridé, appelé depuis l'IP du serveur, serait
+ * débridé chez le tiers. Éligibilité, par candidat, dans l'ordre du classement :
+ * 1. Candidat direct AVEC infoHash (torrent résolu par un débrideur) : jamais d'appel réseau. Si le cache contient déjà
+ *    sa sonde (clé probeCacheKey(infoHash, fileIdx)), elle est appliquée ; sinon le candidat reste inchangé.
+ * 2. Candidat direct SANS infoHash : sondé seulement si toutes ces conditions sont vraies :
+ *    - c'est une URL http(s) ;
+ *    - le dernier segment du chemin, décodé, se termine par .mkv, .mp4, .m4v, .webm, .avi, .mov, .ts ou .m2ts
+ *      (insensible à la casse) ;
+ *    - aucun segment du chemin ni aucune valeur de la query n'est opaque : 32 caractères ou plus, dans l'alphabet
+ *      base64 / base64url (configuration, clé, jeton) ;
+ *    - l'URL ne correspond pas à isDebridResolverUrl ;
+ *    - son hôte n'est pas mémorisé (voir ci-dessous) ;
+ *    - assertNotDebrid ne lève pas.
+ * 3. Sinon : pas de plan. Le candidat est rendu tel quel et ne compte pas dans topN.
+ *
+ * Une sonde dont une redirection quitte l'hôte est arrêtée avant tout appel au nouvel hôte ; cet hôte d'origine est
+ * mémorisé 24 h (isolat), et ses liens ne sont plus sondés (candidat rendu tel quel, hors topN).
  *
  * Règles :
- * - topN : nombre de candidats éligibles à sonder. topN <= 0 ne fait rien. Les candidats de même clé de cache
- *   partagent une seule sonde.
+ * - topN : nombre de sondes réseau (règle 2) à lancer. topN <= 0 ne fait rien, cache compris. Les candidats de la
+ *   règle 1 ne consomment pas topN. Les candidats de même clé de cache partagent une seule sonde.
  * - Concurrence : au plus PROBE_CONCURRENCY sondes à la fois. Budget : à l'échéance de budgetMs, les candidats déjà
  *   sondés sont gardés, les autres restent inchangés, et la fonction rend la main (les sondes en cours se terminent
  *   en arrière-plan sans effet sur le résultat).
@@ -22,7 +35,7 @@ import { createHash } from 'node:crypto';
 import { assertNotDebrid, DebridEgressBlockedError, isDebridResolverUrl } from '../egress/debrid-guard.js';
 import type { FetchFn } from '../sources/http.js';
 import { type MediaProbe, probeMedia } from '../media/probe.js';
-import { ProbeCache, probeCacheKey, probeWithCache } from '../media/probe-cache.js';
+import { ProbeCache, peekProbeWithCache, probeCacheKey, probeWithCache } from '../media/probe-cache.js';
 import type { AudioTrack } from '../media/tracks.js';
 import type { Lang } from '../types.js';
 import { type Ranked, type VerifiedAudio, fileIdxOf, infoHashOf, isDirect } from './types.js';
@@ -40,6 +53,12 @@ const CHANNEL_LAYOUTS: ReadonlyMap<number, string> = new Map([
   [6, '5.1'],
   [8, '7.1'],
 ]);
+/** Extension vidéo exigée pour sonder un lien direct sans infoHash (insensible à la casse). */
+const MEDIA_EXTENSION = /\.(?:mkv|mp4|m4v|webm|avi|mov|ts|m2ts)$/i;
+/** Longueur à partir de laquelle un segment ou une valeur de query est opaque (configuration, clé, jeton). */
+const OPAQUE_MIN_LENGTH = 32;
+/** Alphabet d'une valeur opaque : base64 et base64url. */
+const OPAQUE_ALPHABET = /^[A-Za-z0-9+/=_-]+$/;
 
 /** Durée pendant laquelle un hôte qui a redirigé une sonde vers un autre hôte n'est plus sondé : 24 heures. */
 const RESOLVER_HOST_TTL_MS = 24 * 60 * 60 * 1000;
@@ -59,7 +78,7 @@ const sharedResolverHosts = newResolverHostMemo();
 
 /** Options de l'étape. Seul `topN` est obligatoire. */
 export interface EnrichWithProbeOptions {
-  /** Nombre de candidats éligibles à sonder. 0 désactive l'étape. */
+  /** Nombre de sondes réseau à lancer. 0 désactive l'étape. */
   topN: number;
   /** Sonde injectable (tests). Défaut : probeMedia. */
   probe?: typeof probeMedia;
@@ -73,11 +92,11 @@ export interface EnrichWithProbeOptions {
   resolverHosts?: ResolverHostMemo;
 }
 
-/** Ce qu'il faut pour sonder un candidat : clé de cache, et lien à sonder (obtenu seulement si la sonde manque). */
-interface Plan {
-  key: string;
-  link: () => Promise<string>;
-}
+/**
+ * Ce qu'il faut pour traiter un groupe de candidats. `cacheOnly` : lecture du cache seul, sans aucun appel réseau (il
+ * n'y a pas de `link`). Sinon : sonde du lien `link`, demandé seulement si la clé est absente du cache.
+ */
+type Plan = { key: string; cacheOnly: true } | { key: string; cacheOnly: false; link: () => Promise<string> };
 
 /** Candidats partageant une même clé : une seule sonde, dont le résultat est appliqué à chacun. */
 interface Job {
@@ -86,13 +105,49 @@ interface Job {
   members: number[];
 }
 
-function isHttpUrl(value: string): boolean {
+/** URL parsée si elle est http(s), sinon undefined. */
+function httpUrlOf(value: string): URL | undefined {
   try {
-    const { protocol } = new URL(value);
-    return protocol === 'https:' || protocol === 'http:';
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url : undefined;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+/** Segment ou valeur décodé, ou undefined si son encodage est invalide. */
+function decodedOf(value: string): string | undefined {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Valeur opaque : longue et dans l'alphabet base64 / base64url. */
+function isOpaque(value: string): boolean {
+  return value.length >= OPAQUE_MIN_LENGTH && OPAQUE_ALPHABET.test(value);
+}
+
+/**
+ * Vrai si l'URL ressemble à un fichier vidéo nu : le dernier segment décodé porte une extension vidéo, et ni segment ni
+ * valeur de query n'est opaque (testés bruts et décodés). Un encodage invalide est refusé.
+ */
+function isMediaFileUrl(url: URL): boolean {
+  const segments = url.pathname.split('/');
+  const last = decodedOf(segments.at(-1) ?? '');
+  if (last === undefined || !MEDIA_EXTENSION.test(last)) return false;
+  for (const segment of segments) {
+    const decoded = decodedOf(segment);
+    if (decoded === undefined || isOpaque(segment) || isOpaque(decoded)) return false;
+  }
+  for (const part of url.search.slice(1).split('&')) {
+    // Valeur après le premier '='. Sans '=', la partie entière est la valeur.
+    const value = part.slice(part.indexOf('=') + 1);
+    const decoded = decodedOf(value);
+    if (decoded === undefined || isOpaque(value) || isOpaque(decoded)) return false;
+  }
+  return true;
 }
 
 function sha256(value: string): string {
@@ -103,55 +158,77 @@ function isLang(value: string): value is Lang {
   return LANGS.has(value);
 }
 
-/** Plan de sonde d'un candidat, ou undefined s'il n'est pas éligible (seul un lien direct l'est). */
-function planOf(c: Ranked, resolverHosts: ResolverHostMemo): Plan | undefined {
+/** Règle 1 : candidat direct avec infoHash. Lecture du cache seul, jamais d'appel réseau. */
+function cachePlanOf(c: Ranked): Plan | undefined {
   const hash = infoHashOf(c);
-  const fileIdx = fileIdxOf(c);
-  if (isDirect(c)) {
-    const url = c.raw.url ?? '';
-    if (!isHttpUrl(url)) return undefined;
-    // Jamais de sonde vers un hôte de débridage depuis le serveur : écarté et signalé par la garde de sortie.
-    try {
-      assertNotDebrid(url, 'probe');
-    } catch (error) {
-      if (error instanceof DebridEgressBlockedError) return undefined;
-      throw error;
-    }
-    // Pas de sonde d'un lien de résolution de débrideur (StremThru, ElfHosted, /resolve/<débrideur>/…) : il serait débridé
-    // chez le tiers avec l'IP du serveur. Le candidat reste proposé, sans vérification audio.
-    if (isDebridResolverUrl(url)) return undefined;
-    // Hôte qui a déjà redirigé une sonde vers un autre hôte : ses liens ne sont plus sondés.
-    if (resolverHosts.get(new URL(url).hostname) !== undefined) return undefined;
-    return { key: hash === undefined ? sha256(url) : probeCacheKey(hash, fileIdx), link: async () => url };
-  }
-  return undefined;
+  if (!isDirect(c) || hash === undefined) return undefined;
+  return { key: probeCacheKey(hash, fileIdxOf(c)), cacheOnly: true };
 }
 
-/** Groupes des candidats éligibles, dans l'ordre du classement, limités à topN candidats. */
-function planJobs(ranked: readonly Ranked[], opts: EnrichWithProbeOptions, resolverHosts: ResolverHostMemo): Job[] {
-  const jobs = new Map<string, Job>();
-  let picked = 0;
-  for (let index = 0; index < ranked.length && picked < opts.topN; index += 1) {
-    const plan = planOf(ranked[index], resolverHosts);
-    if (plan === undefined) continue;
-    picked += 1;
-    const job = jobs.get(plan.key) ?? { plan, members: [] };
-    job.members.push(index);
-    jobs.set(plan.key, job);
+/** Règle 2 : sonde réseau d'un candidat direct sans infoHash, ou undefined si le candidat n'est pas éligible. */
+function probePlanOf(c: Ranked, resolverHosts: ResolverHostMemo): Plan | undefined {
+  if (!isDirect(c) || infoHashOf(c) !== undefined) return undefined;
+  const url = c.raw.url ?? '';
+  const parsed = httpUrlOf(url);
+  if (parsed === undefined) return undefined;
+  // Garde de sortie : un lien vers un hôte de débridage est écarté et signalé.
+  try {
+    assertNotDebrid(url, 'probe');
+  } catch (error) {
+    if (error instanceof DebridEgressBlockedError) return undefined;
+    throw error;
   }
-  return [...jobs.values()];
+  if (!isMediaFileUrl(parsed)) return undefined;
+  // Pas de sonde d'un lien de résolution de débrideur (StremThru, ElfHosted, /resolve/<débrideur>/…) : il serait débridé
+  // chez le tiers avec l'IP du serveur. Le candidat reste proposé, sans vérification audio.
+  if (isDebridResolverUrl(url)) return undefined;
+  // Hôte qui a déjà redirigé une sonde vers un autre hôte : ses liens ne sont plus sondés.
+  if (resolverHosts.get(parsed.hostname) !== undefined) return undefined;
+  return { key: sha256(url), cacheOnly: false, link: async () => url };
+}
+
+function addMember(jobs: Map<string, Job>, plan: Plan, index: number): void {
+  const job = jobs.get(plan.key) ?? { plan, members: [] };
+  job.members.push(index);
+  jobs.set(plan.key, job);
 }
 
 /**
- * Sonde du groupe. Le lien n'est demandé que si la clé est absente du cache (probeWithCache ne lance `fn` que dans
- * ce cas, et partage les appels concurrents d'une même clé).
+ * Groupes à traiter. Les candidats de la règle 1 sont tous retenus, sans compter dans topN ; les sondes réseau de la
+ * règle 2 sont limitées aux topN premières, dans l'ordre du classement.
+ */
+function planJobs(ranked: readonly Ranked[], opts: EnrichWithProbeOptions, resolverHosts: ResolverHostMemo): Job[] {
+  const cached = new Map<string, Job>();
+  const probes = new Map<string, Job>();
+  let picked = 0;
+  for (let index = 0; index < ranked.length; index += 1) {
+    const cachePlan = cachePlanOf(ranked[index]);
+    if (cachePlan !== undefined) {
+      addMember(cached, cachePlan, index);
+      continue;
+    }
+    if (picked >= opts.topN) continue;
+    const plan = probePlanOf(ranked[index], resolverHosts);
+    if (plan === undefined) continue;
+    picked += 1;
+    addMember(probes, plan, index);
+  }
+  // Le cache seul passe en premier : il ne lance aucune sonde, donc ni la concurrence ni le budget ne le retardent.
+  return [...cached.values(), ...probes.values()];
+}
+
+/**
+ * Résultat du groupe. Pour le cache seul, lecture sans appel réseau. Sinon, sonde du lien, demandé seulement si la clé
+ * est absente du cache (probeWithCache ne lance `fn` que dans ce cas, et partage les appels concurrents d'une même clé).
  */
 function probeJob(job: Job, opts: EnrichWithProbeOptions, resolverHosts: ResolverHostMemo): Promise<MediaProbe | null> {
+  const { plan } = job;
+  if (plan.cacheOnly === true) return Promise.resolve(peekProbeWithCache(plan.key, opts.cache) ?? null);
   const probe = opts.probe ?? probeMedia;
   return probeWithCache(
-    job.plan.key,
+    plan.key,
     async () => {
-      const url = await job.plan.link();
+      const url = await plan.link();
       return probe(url, {
         fetch: opts.fetch,
         onCrossHostRedirect: (host) => resolverHosts.set(host, true),
@@ -230,9 +307,9 @@ async function withinBudget(work: Promise<unknown>, budgetMs: number): Promise<v
 }
 
 /**
- * Enrichit les topN premiers candidats éligibles (cachés chez le débrideur avec infoHash, ou liens directs http(s))
- * avec les langues et pistes audio réellement lues. Renvoie un nouveau tableau dans le même ordre ; les candidats
- * non sondés, en échec ou hors budget sont renvoyés tels quels. Ne lève jamais.
+ * Enrichit les candidats dont la sonde est en cache (infoHash, règle 1) et les topN premiers liens directs sondables
+ * (règle 2) avec les langues et pistes audio réellement lues. Renvoie un nouveau tableau dans le même ordre ; les
+ * candidats non sondés, en échec ou hors budget sont renvoyés tels quels. Ne lève jamais.
  */
 export async function enrichWithProbe(ranked: Ranked[], opts: EnrichWithProbeOptions): Promise<Ranked[]> {
   if (!(opts.topN > 0)) return ranked;

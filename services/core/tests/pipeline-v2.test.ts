@@ -115,8 +115,8 @@ describe('pipeline v2 : sonde audio et langues vérifiées', () => {
     const { fetch } = routedFetch([
       CINEMETA,
       upstreamWith([
-        { name: 'Upstream', title: 'Film.2024.VFF.1080p.WEB-DL.H264-AAA', url: 'https://cdn.test/aaa' },
-        { name: 'Upstream', title: 'Film.2024.VFF.720p.WEB-DL.H264-BBB', url: 'https://cdn.test/bbb' },
+        { name: 'Upstream', title: 'Film.2024.VFF.1080p.WEB-DL.H264-AAA', url: 'https://cdn.test/aaa.mkv' },
+        { name: 'Upstream', title: 'Film.2024.VFF.720p.WEB-DL.H264-BBB', url: 'https://cdn.test/bbb.mkv' },
       ]),
     ]);
     const config = cfg({
@@ -126,7 +126,7 @@ describe('pipeline v2 : sonde audio et langues vérifiées', () => {
     });
     const result = await getStreams(config, movie('tt7100003'), ctxFor(fetch, { probe }));
 
-    expect(result.streams.map((s) => s.url)).toEqual(['https://cdn.test/aaa']);
+    expect(result.streams.map((s) => s.url)).toEqual(['https://cdn.test/aaa.mkv']);
     expect(result.streams[0]?.laststream).toMatchObject({ verifiedLanguages: ['fr'] });
     expect(result.streams[0]?.description?.split('\n')[0]).toContain('🇫🇷 ✓');
   });
