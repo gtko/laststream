@@ -42,6 +42,11 @@ export function watchingViewers(s: SocialState, media: WatchMedia | null, now: n
   return friendsWatching(s, media, now, duration, room).map((f) => viewerOf(f.pid, f.name));
 }
 
+/** Spectateurs en salon (LAST-1627) : les membres du salon, sauf moi (`me` : mon nom dans le salon, null si inconnu). */
+export function roomViewers(members: readonly { username: string }[], me: string | null): NativeViewer[] {
+  return members.filter((m) => m.username !== me).map((m) => viewerOf(m.username, m.username));
+}
+
 /** Ce qui décide si le social apparaît côté natif. */
 export interface NativeSocialGate {
   /** Social disponible pour ce titre : session serveur, titre avec identifiant TMDB. */
@@ -51,11 +56,15 @@ export interface NativeSocialGate {
   status: Status;
   /** Mode cinéma actif à cet instant. */
   cinema: boolean;
+  /** Salon actif (LAST-1627) : la rangée et les réactions vont au salon, sans dépendre du social « amis ». */
+  room?: boolean;
 }
 
 /** Charge utile de `setSocial`. `enabled` faux : aucun spectateur n'est envoyé. */
 export function nativeSocialOf(gate: NativeSocialGate, viewers: readonly NativeViewer[]): NativeSocial {
-  const enabled = gate.available && !gate.kid && gate.status !== 'invisible' && !gate.cinema;
+  const social = gate.available && !gate.kid && gate.status !== 'invisible' && !gate.cinema;
+  // En salon, la rangée reste active même sans social « amis » (indisponible, invisible, cinéma) ; le profil enfant reste exclu.
+  const enabled = gate.room ? !gate.kid : social;
   return { enabled, quick: [...NATIVE_QUICK], more: [...NATIVE_MORE], viewers: enabled ? viewers.map((v) => ({ ...v })) : [] };
 }
 

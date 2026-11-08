@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { NativeEngine } from '../src/player/engines.js';
 import {
-  NATIVE_MORE, NATIVE_QUICK, freshIncoming, handleNativeReact, handleNativeReply, nativeSocialOf, reactionOf, replyOf, toNativeMessage, toNativeNotes, watchingViewers,
+  NATIVE_MORE, NATIVE_QUICK, freshIncoming, handleNativeReact, handleNativeReply, nativeSocialOf, reactionOf, replyOf, roomViewers, toNativeMessage, toNativeNotes, watchingViewers,
 } from '../src/player/nativeSocial';
 import { REPLY_EMOJIS, SEND_FAILED, SEND_LIMIT } from '../src/player/messageBubble';
 import type { Message, Note } from '../src/data/socialV2Api';
@@ -51,6 +51,20 @@ describe('pont social natif : mapping', () => {
       expect(s.enabled).toBe(false);
       expect(s.viewers).toEqual([]);
     }
+  });
+
+  it('setSocial en salon (LAST-1627) : rangée active sans social amis ; profil enfant toujours exclu', () => {
+    const v = [{ id: 'lou', name: 'Lou', initial: 'L' }];
+    for (const g of [{ available: false, status: 'invisible' as const, cinema: true }, { available: false, status: 'online' as const, cinema: false }]) {
+      expect(nativeSocialOf({ kid: false, room: true, ...g }, v)).toMatchObject({ enabled: true, quick: [...NATIVE_QUICK], viewers: v });
+    }
+    expect(nativeSocialOf({ available: true, kid: true, status: 'online', cinema: false, room: true }, v)).toMatchObject({ enabled: false, viewers: [] });
+  });
+
+  it('spectateurs de salon (LAST-1627) : les membres, sans moi ; sans moi connu, tous', () => {
+    const members = [{ username: 'Greg' }, { username: 'Lou' }, { username: 'Ana · salon' }];
+    expect(roomViewers(members, 'Greg')).toEqual([{ id: 'Lou', name: 'Lou', initial: 'L' }, { id: 'Ana · salon', name: 'Ana · salon', initial: 'A' }]);
+    expect(roomViewers(members, null)).toHaveLength(3);
   });
 
   it('spectateurs : amis qui regardent le même titre, données fraîches seulement', () => {
