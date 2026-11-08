@@ -44,6 +44,14 @@ export class UnsafeTargetError extends SourceError {
   }
 }
 
+/** Redirection vers un autre hôte que la requête initiale, refusée avant tout envoi (option sameHostOnly). Message sans URL. */
+export class CrossHostRedirectError extends SourceError {
+  constructor() {
+    super('redirection vers un autre hôte refusée');
+    this.name = 'CrossHostRedirectError';
+  }
+}
+
 /** Paramètres de requête considérés comme secrets. */
 const SECRET_PARAMS = 'apikey|api_key|access_token|token|passkey|key|secret|password';
 
@@ -239,6 +247,11 @@ export type UrlGuard = (url: URL) => Promise<void>;
 export interface BodyOptions {
   maxBytes?: number;
   guard?: UrlGuard;
+  /**
+   * Ne suit que les redirections vers le même hôte que la requête initiale (le protocole peut changer). Un saut vers un
+   * autre hôte lève CrossHostRedirectError avant tout envoi vers lui. Défaut : désactivé.
+   */
+  sameHostOnly?: boolean;
   /** Agent de connexion (DNS épinglé). Sans lui, le mode public utilise l'agent épinglé partagé. */
   dispatcher?: OutboundDispatcher;
 }
@@ -260,8 +273,9 @@ async function discardBody(response: Response): Promise<void> {
 /**
  * Requête avec délai couvrant l'en-tête ET la lecture complète du corps, renvoyée en octets.
  * Sécurité : schéma http(s) seul ; redirections gérées à la main (redirect: 'manual'), au plus
- * MAX_REDIRECTS, chaque saut revalidé (checkOutboundUrl puis `guard` si fourni) ; corps limité à
- * `body.maxBytes` (défaut MAX_BODY_BYTES). Les erreurs sont des SourceError sans URL.
+ * MAX_REDIRECTS, chaque saut revalidé (checkOutboundUrl puis `guard` si fourni) ; avec `body.sameHostOnly`, un saut
+ * vers un autre hôte est refusé avant tout envoi ; corps limité à `body.maxBytes` (défaut MAX_BODY_BYTES).
+ * Les erreurs sont des SourceError sans URL.
  * Santé des fournisseurs : un appel vers une API de fournisseur mesuré est compté (réussi, ou échec : réseau, délai,
  * statut 5xx). La mesure n'échoue jamais et ne change ni le résultat ni l'erreur de la requête.
  */
@@ -276,6 +290,7 @@ export async function fetchBytes(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const provider = providerOfUrl(url);
   const started = Date.now();
+  const originHost = hostnameOf(url);
   try {
     const publicMode = isPublicMode();
     // DNS contrôlé à la connexion (agent épinglé) : mode public ou garde active. Chaque saut repasse par là.
@@ -301,7 +316,10 @@ export async function fetchBytes(
       if (redirects >= MAX_REDIRECTS) {
         throw new SourceError(`trop de redirections (plus de ${MAX_REDIRECTS})`);
       }
-      target = resolveLocation(location, target);
+      const next = resolveLocation(location, target);
+      // Refus avant l'envoi : le nouvel hôte n'est ni contacté, ni contrôlé par la garde de débridage.
+      if (body.sameHostOnly === true && hostnameOf(next) !== originHost) throw new CrossHostRedirectError();
+      target = next;
     }
   } catch (err) {
     if (err instanceof SourceError || err instanceof DebridEgressBlockedError) throw err;
@@ -323,6 +341,15 @@ export async function fetchText(
 ): Promise<TextResult> {
   const result = await fetchBytes(fetchFn, url, init, timeoutMs);
   return { status: result.status, ok: result.ok, text: new TextDecoder('utf-8').decode(result.bytes) };
+}
+
+/** Nom d'hôte d'une URL (minuscules, sans port) ; chaîne vide si l'URL est invalide. */
+function hostnameOf(value: string): string {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return '';
+  }
 }
 
 function resolveLocation(location: string, base: string): string {

@@ -3,7 +3,9 @@
  * pistes vérifiées. Le cache de sondes est injectable (défaut : cache partagé de 30 jours).
  *
  * Éligibilité, dans l'ordre du classement : seuls les liens directs http(s) sont sondés tels quels. Le serveur n'appelle
- * jamais AllDebrid : les candidats sans lien direct ne sont pas sondés.
+ * jamais AllDebrid : les candidats sans lien direct ne sont pas sondés. Une sonde dont une redirection quitte l'hôte
+ * est arrêtée avant tout appel au nouvel hôte ; cet hôte d'origine est mémorisé 24 h (isolat), et ses liens ne sont
+ * plus sondés (candidat rendu tel quel, hors topN).
  *
  * Règles :
  * - topN : nombre de candidats éligibles à sonder. topN <= 0 ne fait rien. Les candidats de même clé de cache
@@ -20,7 +22,7 @@ import { createHash } from 'node:crypto';
 import { assertNotDebrid, DebridEgressBlockedError, isDebridResolverUrl } from '../egress/debrid-guard.js';
 import type { FetchFn } from '../sources/http.js';
 import { type MediaProbe, probeMedia } from '../media/probe.js';
-import { type ProbeCache, probeCacheKey, probeWithCache } from '../media/probe-cache.js';
+import { ProbeCache, probeCacheKey, probeWithCache } from '../media/probe-cache.js';
 import type { AudioTrack } from '../media/tracks.js';
 import type { Lang } from '../types.js';
 import { type Ranked, type VerifiedAudio, fileIdxOf, infoHashOf, isDirect } from './types.js';
@@ -39,6 +41,22 @@ const CHANNEL_LAYOUTS: ReadonlyMap<number, string> = new Map([
   [8, '7.1'],
 ]);
 
+/** Durée pendant laquelle un hôte qui a redirigé une sonde vers un autre hôte n'est plus sondé : 24 heures. */
+const RESOLVER_HOST_TTL_MS = 24 * 60 * 60 * 1000;
+/** Nombre maximal d'hôtes mémorisés par isolat. */
+const RESOLVER_HOST_MAX = 500;
+
+/** Hôtes d'origine à ne plus sonder : clé = nom d'hôte, valeur = true. */
+export type ResolverHostMemo = ProbeCache<true>;
+
+/** Nouvelle mémoire des hôtes résolveurs (24 h, 500 hôtes). L'horloge est injectable (tests). */
+export function newResolverHostMemo(now?: () => number): ResolverHostMemo {
+  return new ProbeCache<true>({ ttlMs: RESOLVER_HOST_TTL_MS, maxEntries: RESOLVER_HOST_MAX, now });
+}
+
+/** Mémoire partagée de l'isolat, utilisée par défaut. */
+const sharedResolverHosts = newResolverHostMemo();
+
 /** Options de l'étape. Seul `topN` est obligatoire. */
 export interface EnrichWithProbeOptions {
   /** Nombre de candidats éligibles à sonder. 0 désactive l'étape. */
@@ -51,6 +69,8 @@ export interface EnrichWithProbeOptions {
   fetch?: FetchFn;
   /** Budget global de l'étape, en millisecondes. Défaut : 4000. */
   budgetMs?: number;
+  /** Hôtes à ne plus sonder après une redirection vers un autre hôte. Défaut : mémoire partagée de l'isolat. */
+  resolverHosts?: ResolverHostMemo;
 }
 
 /** Ce qu'il faut pour sonder un candidat : clé de cache, et lien à sonder (obtenu seulement si la sonde manque). */
@@ -84,7 +104,7 @@ function isLang(value: string): value is Lang {
 }
 
 /** Plan de sonde d'un candidat, ou undefined s'il n'est pas éligible (seul un lien direct l'est). */
-function planOf(c: Ranked): Plan | undefined {
+function planOf(c: Ranked, resolverHosts: ResolverHostMemo): Plan | undefined {
   const hash = infoHashOf(c);
   const fileIdx = fileIdxOf(c);
   if (isDirect(c)) {
@@ -100,17 +120,19 @@ function planOf(c: Ranked): Plan | undefined {
     // Pas de sonde d'un lien de résolution de débrideur (StremThru, ElfHosted, /resolve/<débrideur>/…) : il serait débridé
     // chez le tiers avec l'IP du serveur. Le candidat reste proposé, sans vérification audio.
     if (isDebridResolverUrl(url)) return undefined;
+    // Hôte qui a déjà redirigé une sonde vers un autre hôte : ses liens ne sont plus sondés.
+    if (resolverHosts.get(new URL(url).hostname) !== undefined) return undefined;
     return { key: hash === undefined ? sha256(url) : probeCacheKey(hash, fileIdx), link: async () => url };
   }
   return undefined;
 }
 
 /** Groupes des candidats éligibles, dans l'ordre du classement, limités à topN candidats. */
-function planJobs(ranked: readonly Ranked[], opts: EnrichWithProbeOptions): Job[] {
+function planJobs(ranked: readonly Ranked[], opts: EnrichWithProbeOptions, resolverHosts: ResolverHostMemo): Job[] {
   const jobs = new Map<string, Job>();
   let picked = 0;
   for (let index = 0; index < ranked.length && picked < opts.topN; index += 1) {
-    const plan = planOf(ranked[index]);
+    const plan = planOf(ranked[index], resolverHosts);
     if (plan === undefined) continue;
     picked += 1;
     const job = jobs.get(plan.key) ?? { plan, members: [] };
@@ -124,13 +146,16 @@ function planJobs(ranked: readonly Ranked[], opts: EnrichWithProbeOptions): Job[
  * Sonde du groupe. Le lien n'est demandé que si la clé est absente du cache (probeWithCache ne lance `fn` que dans
  * ce cas, et partage les appels concurrents d'une même clé).
  */
-function probeJob(job: Job, opts: EnrichWithProbeOptions): Promise<MediaProbe | null> {
+function probeJob(job: Job, opts: EnrichWithProbeOptions, resolverHosts: ResolverHostMemo): Promise<MediaProbe | null> {
   const probe = opts.probe ?? probeMedia;
   return probeWithCache(
     job.plan.key,
     async () => {
       const url = await job.plan.link();
-      return probe(url, { fetch: opts.fetch });
+      return probe(url, {
+        fetch: opts.fetch,
+        onCrossHostRedirect: (host) => resolverHosts.set(host, true),
+      });
     },
     opts.cache,
   );
@@ -211,13 +236,14 @@ async function withinBudget(work: Promise<unknown>, budgetMs: number): Promise<v
  */
 export async function enrichWithProbe(ranked: Ranked[], opts: EnrichWithProbeOptions): Promise<Ranked[]> {
   if (!(opts.topN > 0)) return ranked;
-  const jobs = planJobs(ranked, opts);
+  const resolverHosts = opts.resolverHosts ?? sharedResolverHosts;
+  const jobs = planJobs(ranked, opts, resolverHosts);
   if (jobs.length === 0) return ranked;
 
   const enriched = new Map<number, Ranked>();
   const work = runLimited(jobs, PROBE_CONCURRENCY, async (job) => {
     try {
-      const probed = await probeJob(job, opts);
+      const probed = await probeJob(job, opts, resolverHosts);
       if (probed === null) return;
       for (const index of job.members) enriched.set(index, enrich(ranked[index], probed));
     } catch {

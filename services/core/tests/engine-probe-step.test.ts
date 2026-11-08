@@ -1,9 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-import { enrichWithProbe } from '../src/engine/probe-step.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { enrichWithProbe, newResolverHostMemo } from '../src/engine/probe-step.js';
 import type { Ranked } from '../src/engine/types.js';
+import { resetDebridReportThrottle, setDebridBlockReporter } from '../src/egress/debrid-guard.js';
+import type { FetchFn } from '../src/sources/http.js';
 import type { MediaProbe, ProbeOptions } from '../src/media/probe.js';
 import { ProbeCache } from '../src/media/probe-cache.js';
 import { cand, ranked as asRanked } from './engine-fixtures.js';
+import { buildMkv, rangeServer } from './media-fixtures.js';
 
 const HASH_A = 'a'.repeat(40);
 const DIRECT_URL = 'https://cdn.example.com/media/film.mkv';
@@ -155,5 +158,148 @@ describe('enrichWithProbe : cas limites', () => {
 
     expect(out).toBe(input);
     expect(probe).not.toHaveBeenCalled();
+  });
+});
+
+const HOUR_MS = 60 * 60 * 1000;
+const OTHER_HOST_URL = 'https://autre.example.org/media/film.mkv';
+
+/** Fetch de sonde : chaque requête reçoit une redirection 302 vers `location`. */
+function redirectTo(location: string) {
+  return vi.fn(async () => new Response(null, { status: 302, headers: { location } }));
+}
+
+describe('enrichWithProbe : redirection vers un autre hôte', () => {
+  afterEach(() => {
+    setDebridBlockReporter(undefined);
+    resetDebridReportThrottle();
+  });
+
+  it('une redirection vers un autre hôte arrête la sonde après un seul appel, sans changer le candidat', async () => {
+    const memo = newResolverHostMemo();
+    const fetch = redirectTo(OTHER_HOST_URL);
+    const input = [direct(DIRECT_URL)];
+
+    const out = await enrichWithProbe(input, {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: fetch as unknown as FetchFn,
+      resolverHosts: memo,
+      topN: 1,
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(out[0]).toBe(input[0]);
+    expect(out[0].directVerified).toBeUndefined();
+    expect(memo.get('cdn.example.com')).toBe(true);
+  });
+
+  it('redirection vers un hôte de débridage : un seul appel, aucun événement Sentry', async () => {
+    const reporter = vi.fn();
+    setDebridBlockReporter(reporter);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fetch = redirectTo('https://x.debrid.it/dl/abc');
+    const input = [direct(DIRECT_URL)];
+
+    const out = await enrichWithProbe(input, {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: fetch as unknown as FetchFn,
+      resolverHosts: newResolverHostMemo(),
+      topN: 1,
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(out[0]).toBe(input[0]);
+    expect(reporter).not.toHaveBeenCalled();
+  });
+
+  it('hôte mémorisé : un nouveau candidat de cet hôte n est plus sondé, sans appel réseau', async () => {
+    const memo = newResolverHostMemo();
+    const fetch = redirectTo(OTHER_HOST_URL);
+    await enrichWithProbe([direct(DIRECT_URL)], {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: fetch as unknown as FetchFn,
+      resolverHosts: memo,
+      topN: 1,
+    });
+    fetch.mockClear();
+    const input = [directAt(7)];
+
+    const out = await enrichWithProbe(input, {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: fetch as unknown as FetchFn,
+      resolverHosts: memo,
+      topN: 1,
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(out[0]).toBe(input[0]);
+  });
+
+  it('un hôte mémorisé ne compte pas dans topN : le candidat d un autre hôte est sondé', async () => {
+    const memo = newResolverHostMemo();
+    memo.set('cdn.example.com', true);
+    const server = rangeServer(buildMkv());
+    const input = [directAt(0), direct(OTHER_HOST_URL)];
+
+    const out = await enrichWithProbe(input, {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: server.fetch,
+      resolverHosts: memo,
+      topN: 1,
+    });
+
+    expect(server.calls.map((call) => call.url)).toEqual([OTHER_HOST_URL]);
+    expect(out[0]).toBe(input[0]);
+    expect(out[1].directVerified).toBe(true);
+  });
+
+  it('mémoire expirée après 24 h : l hôte est de nouveau sondé', async () => {
+    let now = 0;
+    const memo = newResolverHostMemo(() => now);
+    memo.set('cdn.example.com', true);
+    const server = rangeServer(buildMkv());
+
+    now = 23 * HOUR_MS;
+    await enrichWithProbe([directAt(0)], {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: server.fetch,
+      resolverHosts: memo,
+      topN: 1,
+    });
+    expect(server.calls).toHaveLength(0);
+
+    now = 25 * HOUR_MS;
+    const out = await enrichWithProbe([directAt(0)], {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: server.fetch,
+      resolverHosts: memo,
+      topN: 1,
+    });
+    expect(server.calls).toHaveLength(1);
+    expect(out[0].directVerified).toBe(true);
+  });
+
+  it('lien direct 206 sur un hôte non mémorisé : sondé comme avant', async () => {
+    const server = rangeServer(buildMkv());
+    const input = [direct(OTHER_HOST_URL)];
+
+    const out = await enrichWithProbe(input, {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: server.fetch,
+      resolverHosts: newResolverHostMemo(),
+      topN: 1,
+    });
+
+    expect(out[0].directVerified).toBe(true);
+    expect(out[0].verifiedLanguages).toEqual(['fr', 'en', 'multi']);
+  });
+
+  it('mémoire bornée à 500 hôtes : le plus ancien est évincé', () => {
+    const memo = newResolverHostMemo();
+    for (let index = 0; index < 501; index += 1) memo.set(`h${index}.example.com`, true);
+
+    expect(memo.size()).toBe(500);
+    expect(memo.get('h0.example.com')).toBeUndefined();
+    expect(memo.get('h500.example.com')).toBe(true);
   });
 });
