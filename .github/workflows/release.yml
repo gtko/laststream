@@ -1,0 +1,317 @@
+name: Release
+
+# Release automatique a chaque merge de PR sur main : bump de version (labels release:minor / release:major, sinon patch),
+# CHANGELOG.md, commit "release: vX.Y.Z" + tag annote vX.Y.Z, installeur Windows + APK Android, puis release GitHub publiee
+# (banniere, changelog, assets). Pas de macOS. Le televersement R2 et l'auto-update restent manuels (upload.ps1).
+# Label release:skip sur la PR : aucune release.
+# workflow_dispatch(tag) : relance les builds et la publication d'un tag vX.Y.Z existant, sans nouveau bump.
+# Prerequis du depot : voir README.md, section "Releases automatiques" (secrets, permissions d'ecriture, protection de main).
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag vX.Y.Z existant dont il faut relancer les builds et la publication (aucun nouveau bump)'
+        required: true
+        type: string
+
+# Lecture seule par defaut ; chaque job declare ce dont il a besoin.
+permissions:
+  contents: read
+
+# Une seule release a la fois sur main ; une release en cours n'est jamais annulee (les suivantes attendent).
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    # PR venant d'un fork : pas de release (la branche n'est pas dans le depot, pas de secrets). workflow_dispatch reste autorise.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && !contains(github.event.pull_request.labels.*.name, 'release:skip') && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      skip: ${{ steps.guard.outputs.skip }}
+      version: ${{ steps.out.outputs.version }}
+      tag: ${{ steps.out.outputs.tag }}
+      version_code: ${{ steps.out.outputs.version_code }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TZ: UTC
+    steps:
+    # main (et non le sha de merge de la PR) : les releases precedentes y sont deja, et le push doit etre un fast-forward.
+    - name: checkout main
+      uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+    - name: Setup Node 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    # resvg-js livre son binaire precompile par optionalDependencies : aucun script d'installation a executer.
+    - name: Install the release scripts
+      run: npm ci --ignore-scripts
+      working-directory: scripts/release
+    - name: Guard against a release commit on top of main
+      id: guard
+      run: |
+        subject="$(git log -1 --format=%s)"
+        if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ] && [[ "$subject" == release:\ v* ]]; then
+          echo "HEAD de main est deja un commit de release ($subject) : rien a faire."
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    # --- Mode merge de PR : bump, changelog, banniere, commit, tag, release brouillon -------------------------------
+    - name: Collect the merged PRs since the last tag
+      id: prs
+      if: ${{ steps.guard.outputs.skip != 'true' && github.event_name != 'workflow_dispatch' }}
+      env:
+        # Titre, auteur et labels viennent de l'evenement : passes par l'environnement, jamais interpoles dans le script.
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+      run: |
+        set -euo pipefail
+        last_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+        echo "last_tag=$last_tag" >> "$GITHUB_OUTPUT"
+        echo "Dernier tag : ${last_tag:-aucun}"
+        : > raw.jsonl
+        if [ -n "$last_tag" ]; then
+          for sha in $(git rev-list --first-parent "$last_tag..HEAD"); do
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/pulls" \
+              --jq '.[] | select(.merged_at != null and .base.ref == "main") | {number, title, author: .user.login}' >> raw.jsonl
+          done
+        fi
+        # La PR courante est toujours incluse (premiere release, ou API en retard) ; doublons retires, plus recentes d'abord.
+        jq -n --arg n "$PR_NUMBER" --arg t "$PR_TITLE" --arg a "$PR_AUTHOR" \
+          '{number: ($n | tonumber), title: $t, author: $a}' >> raw.jsonl
+        jq -s 'unique_by(.number) | sort_by(.number) | reverse' raw.jsonl > prs.json
+        jq '[.[:5][].title]' prs.json > highlights.json
+        echo "PR incluses : $(jq 'length' prs.json)"
+    - name: Bump version, changelog and banner
+      id: bump
+      if: ${{ steps.guard.outputs.skip != 'true' && github.event_name != 'workflow_dispatch' }}
+      env:
+        PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        LAST_TAG: ${{ steps.prs.outputs.last_tag }}
+      run: |
+        set -euo pipefail
+        date_utc="$(date -u +%F)"
+        version="$(node scripts/release/version.mjs --labels "$PR_LABELS" ${LAST_TAG:+--last-tag "$LAST_TAG"} --write)"
+        if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "::error::Version inattendue : $version"; exit 1; fi
+        node scripts/release/changelog.mjs --version "$version" --date "$date_utc" --prs prs.json --out CHANGELOG.md --section-out section.md
+        node scripts/release/banner.mjs --version "$version" --date "$date_utc" --highlights highlights.json --out banner.png
+        # Tags v* deja crees aujourd'hui (UTC), avant celui-ci : suffixe du versionCode Android.
+        tags_today="$(git for-each-ref --format='%(creatordate:short)' 'refs/tags/v[0-9]*' | grep -c "^${date_utc}$" || true)"
+        version_code="$(node scripts/release/android-version.mjs --date "$date_utc" --tags-today "$tags_today")"
+        {
+          echo "version=$version"
+          echo "date=$date_utc"
+          echo "version_code=$version_code"
+        } >> "$GITHUB_OUTPUT"
+    - name: Commit, push main and tag
+      if: ${{ steps.guard.outputs.skip != 'true' && github.event_name != 'workflow_dispatch' }}
+      env:
+        VERSION: ${{ steps.bump.outputs.version }}
+      run: |
+        set -euo pipefail
+        git config user.name 'github-actions[bot]'
+        git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+        git add CHANGELOG.md apps/desktop/Cargo.toml apps/desktop/Cargo.lock apps/desktop/setup/Laststream.iss
+        git commit -m "release: v${VERSION}"
+        pushed=false
+        for attempt in 1 2 3; do
+          if git push origin HEAD:main; then pushed=true; break; fi
+          echo "Push refuse (essai $attempt/3) : rebase sur origin/main."
+          git pull --rebase origin main
+        done
+        if [ "$pushed" != "true" ]; then
+          echo "::error::Push sur main impossible apres 3 essais (main protegee ? voir README, Releases automatiques)."
+          exit 1
+        fi
+        # Le tag est pose apres le push : un rebase aurait change le sha du commit.
+        git tag -a "v${VERSION}" -m "Laststream v${VERSION}"
+        git push origin "v${VERSION}"
+    - name: Create the draft release
+      if: ${{ steps.guard.outputs.skip != 'true' && github.event_name != 'workflow_dispatch' }}
+      env:
+        VERSION: ${{ steps.bump.outputs.version }}
+      run: |
+        set -euo pipefail
+        {
+          echo "![Laststream v${VERSION}](https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/banner.png)"
+          echo
+          cat section.md
+          echo
+          echo "Téléchargements : installeur Windows, APK Android."
+        } > body.md
+        gh release create "v${VERSION}" banner.png --draft --verify-tag --title "Laststream v${VERSION}" --notes-file body.md
+
+    # --- Mode workflow_dispatch : tag existant, aucun bump ----------------------------------------------------------
+    - name: Reuse an existing tag
+      id: redo
+      if: ${{ steps.guard.outputs.skip != 'true' && github.event_name == 'workflow_dispatch' }}
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
+      run: |
+        set -euo pipefail
+        if ! [[ "$INPUT_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+          echo "::error::Tag invalide '$INPUT_TAG' : format vX.Y.Z attendu"
+          exit 1
+        fi
+        version="${BASH_REMATCH[1]}"
+        git rev-parse -q --verify "refs/tags/${INPUT_TAG}" > /dev/null || { echo "::error::Le tag $INPUT_TAG n'existe pas"; exit 1; }
+        # versionCode recalcule comme a la creation du tag : date du tag et rang du tag parmi ceux du meme jour.
+        date_utc="$(git for-each-ref --format='%(creatordate:short)' "refs/tags/${INPUT_TAG}")"
+        tags_before="$(git for-each-ref --sort=creatordate --format='%(creatordate:short) %(refname:short)' 'refs/tags/v[0-9]*' \
+          | awk -v d="$date_utc" -v t="$INPUT_TAG" '$2 == t { print n + 0; found = 1; exit } $1 == d { n++ } END { if (!found) print n + 0 }')"
+        version_code="$(node scripts/release/android-version.mjs --date "$date_utc" --tags-today "$tags_before")"
+        {
+          echo "version=$version"
+          echo "version_code=$version_code"
+        } >> "$GITHUB_OUTPUT"
+        if ! gh release view "$INPUT_TAG" > /dev/null 2>&1; then
+          gh release create "$INPUT_TAG" --draft --verify-tag --title "Laststream $INPUT_TAG" \
+            --notes "Téléchargements : installeur Windows, APK Android. Voir CHANGELOG.md pour le détail."
+        fi
+
+    - name: Expose version, tag and version code
+      id: out
+      if: ${{ steps.guard.outputs.skip != 'true' }}
+      env:
+        VERSION: ${{ steps.bump.outputs.version || steps.redo.outputs.version }}
+        VERSION_CODE: ${{ steps.bump.outputs.version_code || steps.redo.outputs.version_code }}
+      run: |
+        {
+          echo "version=$VERSION"
+          echo "tag=v$VERSION"
+          echo "version_code=$VERSION_CODE"
+        } >> "$GITHUB_OUTPUT"
+
+  # Installeur Windows : workflow reutilisable, dependances preparees dans son propre run (deps=artifact), sans publier la release.
+  desktop:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.skip != 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+      deps: artifact
+      publish: false
+    # Secret explicite (pas de heritage) : seul le secret de signature de latest.json est passe au workflow reutilisable.
+    secrets:
+      LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
+
+  android:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
+    steps:
+    - name: checkout the tag
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ format('refs/tags/{0}', needs.prepare.outputs.tag) }}
+        persist-credentials: false
+    - name: Setup Node 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Setup JDK 21
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+    # La release est signee par signingConfigs.debug (apps/mobile/android/app/build.gradle) : meme cle que les APK deja installes.
+    - name: Restore the signing keystore
+      env:
+        ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+      run: |
+        set -euo pipefail
+        if [ -z "$ANDROID_DEBUG_KEYSTORE_B64" ]; then
+          echo "::error::Secret ANDROID_DEBUG_KEYSTORE_B64 absent : impossible de signer l'APK avec la cle des versions precedentes."
+          exit 1
+        fi
+        mkdir -p "$HOME/.android"
+        printf '%s' "$ANDROID_DEBUG_KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
+        test -s "$HOME/.android/debug.keystore"
+    - name: Build the web app (apps/web/dist, webDir of Capacitor)
+      working-directory: apps/web
+      run: |
+        npm ci
+        npm run build:ci
+    - name: Capacitor sync
+      working-directory: apps/mobile
+      run: |
+        npm ci
+        npx cap sync android
+    - name: Assemble the signed release APK
+      working-directory: apps/mobile/android
+      run: ./gradlew assembleRelease "-PlsVersionCode=${VERSION_CODE}" "-PlsVersionName=${VERSION}"
+    - name: Rename the APK
+      run: |
+        set -euo pipefail
+        mkdir -p dist
+        count="$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' | wc -l)"
+        if [ "$count" -ne 1 ]; then echo "::error::Un seul APK attendu, $count trouve(s)"; exit 1; fi
+        cp "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk')" "dist/Laststream-${VERSION}.apk"
+    - name: Upload the APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-apk
+        path: dist/Laststream-*.apk
+        if-no-files-found: error
+
+  publish:
+    needs: [prepare, desktop, android]
+    if: ${{ needs.prepare.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+    - name: Download the Windows assets
+      uses: actions/download-artifact@v4
+      with:
+        name: desktop-release
+        path: dl/desktop
+    - name: Download the APK
+      uses: actions/download-artifact@v4
+      with:
+        name: android-apk
+        path: dl/android
+    - name: Upload the assets and publish the release
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        installers=(dl/desktop/Laststream-Setup-*.exe)
+        apks=(dl/android/Laststream-*.apk)
+        if [ "${#installers[@]}" -ne 1 ] || [ "${#apks[@]}" -ne 1 ]; then
+          echo "::error::Un installeur et un APK attendus (${#installers[@]} installeur(s), ${#apks[@]} APK)"
+          exit 1
+        fi
+        for f in dl/desktop/latest.json dl/desktop/latest.json.sig; do test -s "$f" || { echo "::error::$f absent"; exit 1; }; done
+        gh release upload "$TAG" "${installers[0]}" "${installers[0]}.sha256" dl/desktop/latest.json dl/desktop/latest.json.sig "${apks[0]}" --clobber
+        gh release edit "$TAG" --draft=false --latest

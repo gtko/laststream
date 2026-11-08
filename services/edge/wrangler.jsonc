@@ -1,6 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "laststream-edge",
+  // Worker Previews (Workers Builds, branches hors main) : bloc requis par `wrangler preview`. Vide = aucune liaison de production héritée.
+  "previews": {},
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
