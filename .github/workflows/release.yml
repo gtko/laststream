@@ -268,7 +268,8 @@ jobs:
         npx cap sync android
     - name: Assemble the signed release APK
       working-directory: apps/mobile/android
-      run: ./gradlew assembleRelease "-PlsVersionCode=${VERSION_CODE}" "-PlsVersionName=${VERSION}"
+      # gradlew est enregistre sans bit executable dans git (mode 100644) : on l'appelle via bash.
+      run: bash ./gradlew assembleRelease "-PlsVersionCode=${VERSION_CODE}" "-PlsVersionName=${VERSION}"
     - name: Rename the APK
       run: |
         set -euo pipefail
