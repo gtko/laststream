@@ -7,6 +7,7 @@ import {
   allowedOrigins,
   assertStartupEnv,
   configuredPublicUrl,
+  configuredProbeHosts,
   DEFAULT_ALLOWED_ORIGINS,
   parsePublicUrl,
 } from '../src/config/runtime-env.js';
@@ -162,5 +163,19 @@ describe('allowedOrigins', () => {
   it('liste séparée par des virgules, espaces tolérés', () => {
     vi.stubEnv('LASTADDON_ALLOWED_ORIGINS', ' https://ui.example.test , http://localhost:9000,');
     expect(allowedOrigins()).toEqual(['https://ui.example.test', 'http://localhost:9000']);
+  });
+});
+
+describe('configuredProbeHosts (PROBE_HOSTS)', () => {
+  it('absente ou vide : ensemble vide, aucune sonde réseau', () => {
+    vi.stubEnv('PROBE_HOSTS', '');
+    expect(configuredProbeHosts()).toEqual(new Set());
+    vi.stubEnv('PROBE_HOSTS', ' , ');
+    expect(configuredProbeHosts()).toEqual(new Set());
+  });
+
+  it('liste séparée par des virgules, espaces tolérés, noms en minuscules', () => {
+    vi.stubEnv('PROBE_HOSTS', 'a.example, B.example');
+    expect(configuredProbeHosts()).toEqual(new Set(['a.example', 'b.example']));
   });
 });

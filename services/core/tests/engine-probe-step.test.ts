@@ -4,12 +4,14 @@ import type { Ranked } from '../src/engine/types.js';
 import { resetDebridReportThrottle, setDebridBlockReporter } from '../src/egress/debrid-guard.js';
 import type { FetchFn } from '../src/sources/http.js';
 import type { MediaProbe, ProbeOptions } from '../src/media/probe.js';
-import { ProbeCache } from '../src/media/probe-cache.js';
+import { ProbeCache, probeCacheKey } from '../src/media/probe-cache.js';
 import { cand, ranked as asRanked } from './engine-fixtures.js';
 import { buildMkv, rangeServer } from './media-fixtures.js';
 
 const HASH_A = 'a'.repeat(40);
 const DIRECT_URL = 'https://cdn.example.com/media/film.mkv';
+/** Liste blanche PROBE_HOSTS qui couvre l'hôte des liens de test. */
+const CDN_HOSTS: ReadonlySet<string> = new Set(['cdn.example.com']);
 
 const FR_EN: MediaProbe = {
   container: 'mkv',
@@ -49,6 +51,7 @@ describe('enrichWithProbe : liens directs', () => {
     const [out] = await enrichWithProbe([direct(DIRECT_URL)], {
       probe,
       cache: new ProbeCache<MediaProbe>(),
+      probeHosts: CDN_HOSTS,
       topN: 1,
     });
 
@@ -63,6 +66,7 @@ describe('enrichWithProbe : liens directs', () => {
     const out = await enrichWithProbe(input, {
       probe: probeMock(null),
       cache: new ProbeCache<MediaProbe>(),
+      probeHosts: CDN_HOSTS,
       topN: 1,
     });
 
@@ -76,6 +80,7 @@ describe('enrichWithProbe : liens directs', () => {
     await enrichWithProbe([direct('ftp://cdn.example.com/film.mkv')], {
       probe,
       cache: new ProbeCache<MediaProbe>(),
+      probeHosts: CDN_HOSTS,
       topN: 1,
     });
 
@@ -88,6 +93,7 @@ describe('enrichWithProbe : liens directs', () => {
     const out = await enrichWithProbe([direct(DIRECT_URL), direct(DIRECT_URL)], {
       probe,
       cache: new ProbeCache<MediaProbe>(),
+      probeHosts: CDN_HOSTS,
       topN: 2,
     });
 
@@ -106,6 +112,7 @@ describe('enrichWithProbe : liens directs', () => {
     const out = await enrichWithProbe(input, {
       probe,
       cache: new ProbeCache<MediaProbe>(),
+      probeHosts: CDN_HOSTS,
       topN: 2,
       budgetMs: 50,
     });
@@ -130,6 +137,7 @@ describe('enrichWithProbe : liens directs', () => {
     const out = await enrichWithProbe(input, {
       probe,
       cache: new ProbeCache<MediaProbe>(),
+      probeHosts: CDN_HOSTS,
       topN: 5,
       budgetMs: 2000,
     });
@@ -183,6 +191,7 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     const out = await enrichWithProbe(input, {
       cache: new ProbeCache<MediaProbe>(),
       fetch: fetch as unknown as FetchFn,
+      probeHosts: CDN_HOSTS,
       resolverHosts: memo,
       topN: 1,
     });
@@ -203,6 +212,7 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     const out = await enrichWithProbe(input, {
       cache: new ProbeCache<MediaProbe>(),
       fetch: fetch as unknown as FetchFn,
+      probeHosts: CDN_HOSTS,
       resolverHosts: newResolverHostMemo(),
       topN: 1,
     });
@@ -218,6 +228,7 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     await enrichWithProbe([direct(DIRECT_URL)], {
       cache: new ProbeCache<MediaProbe>(),
       fetch: fetch as unknown as FetchFn,
+      probeHosts: CDN_HOSTS,
       resolverHosts: memo,
       topN: 1,
     });
@@ -227,6 +238,7 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     const out = await enrichWithProbe(input, {
       cache: new ProbeCache<MediaProbe>(),
       fetch: fetch as unknown as FetchFn,
+      probeHosts: CDN_HOSTS,
       resolverHosts: memo,
       topN: 1,
     });
@@ -244,6 +256,7 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     const out = await enrichWithProbe(input, {
       cache: new ProbeCache<MediaProbe>(),
       fetch: server.fetch,
+      probeHosts: new Set(['cdn.example.com', 'autre.example.org']),
       resolverHosts: memo,
       topN: 1,
     });
@@ -263,6 +276,7 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     await enrichWithProbe([directAt(0)], {
       cache: new ProbeCache<MediaProbe>(),
       fetch: server.fetch,
+      probeHosts: CDN_HOSTS,
       resolverHosts: memo,
       topN: 1,
     });
@@ -272,6 +286,7 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     const out = await enrichWithProbe([directAt(0)], {
       cache: new ProbeCache<MediaProbe>(),
       fetch: server.fetch,
+      probeHosts: CDN_HOSTS,
       resolverHosts: memo,
       topN: 1,
     });
@@ -286,6 +301,7 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     const out = await enrichWithProbe(input, {
       cache: new ProbeCache<MediaProbe>(),
       fetch: server.fetch,
+      probeHosts: new Set(['autre.example.org']),
       resolverHosts: newResolverHostMemo(),
       topN: 1,
     });
@@ -301,5 +317,204 @@ describe('enrichWithProbe : redirection vers un autre hôte', () => {
     expect(memo.size()).toBe(500);
     expect(memo.get('h0.example.com')).toBeUndefined();
     expect(memo.get('h500.example.com')).toBe(true);
+  });
+});
+
+const ADDON_SEGMENT_URL = 'https://addon.example/eyJhbGciOiJIUzI1NiJ9abcdefghijklmnop1234/resolve/x/Film.mkv';
+const ADDON_OPAQUE_URL = 'https://addon.example/eyJhbGciOiJIUzI1NiJ9abcdefghijklmnop1234/Film.mkv';
+const TOKEN_40 = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
+const FILM_URL = 'https://cdn.example/films/Film.2020.1080p.mkv';
+
+/** Torrent résolu par un débrideur : lien direct avec infoHash. */
+function directWithHash(url: string, hash: string): Ranked {
+  return asRanked(cand({ raw: { url, infoHash: hash, title: 'Film.2024.1080p.WEB-DL' } }));
+}
+
+/** Candidat direct écarté : aucun appel réseau de sonde, candidat rendu tel quel. Sans `probeHosts`, liste vide. */
+async function expectNeverProbed(input: Ranked, probeHosts?: ReadonlySet<string>): Promise<void> {
+  const server = rangeServer(buildMkv());
+  const out = await enrichWithProbe([input], {
+    cache: new ProbeCache<MediaProbe>(),
+    fetch: server.fetch,
+    probeHosts,
+    resolverHosts: newResolverHostMemo(),
+    topN: 1,
+  });
+  expect(server.calls).toHaveLength(0);
+  expect(out[0]).toBe(input);
+}
+
+describe('enrichWithProbe : aucun appel réseau vers un lien d\'addon', () => {
+  it('lien direct avec infoHash, sonde absente du cache : aucun appel, candidat inchangé', async () => {
+    const server = rangeServer(buildMkv());
+    const input = [directWithHash(DIRECT_URL, HASH_A)];
+
+    const out = await enrichWithProbe(input, {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: server.fetch,
+      probeHosts: CDN_HOSTS,
+      resolverHosts: newResolverHostMemo(),
+      topN: 5,
+    });
+
+    expect(server.calls).toHaveLength(0);
+    expect(out[0]).toBe(input[0]);
+  });
+
+  it('lien direct avec infoHash, sonde en cache : aucun appel, candidat enrichi depuis le cache', async () => {
+    const server = rangeServer(buildMkv());
+    const cache = new ProbeCache<MediaProbe>();
+    cache.set(probeCacheKey(HASH_A), FR_EN);
+
+    const out = await enrichWithProbe([directWithHash(DIRECT_URL, HASH_A)], {
+      cache,
+      fetch: server.fetch,
+      resolverHosts: newResolverHostMemo(),
+      topN: 5,
+    });
+
+    expect(server.calls).toHaveLength(0);
+    expect(out[0].directVerified).toBe(true);
+    expect(out[0].verifiedLanguages).toEqual(VERIFIED_FR_EN);
+  });
+
+  it('le cache seul s\'applique même au-delà de topN sondes', async () => {
+    const probe = probeMock();
+    const cache = new ProbeCache<MediaProbe>();
+    cache.set(probeCacheKey(HASH_A), FR_EN);
+    const input = [directAt(0), directWithHash(DIRECT_URL, HASH_A)];
+
+    const out = await enrichWithProbe(input, { probe, cache, probeHosts: CDN_HOSTS, topN: 1 });
+
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(out[0].directVerified).toBe(true);
+    expect(out[1].verifiedLanguages).toEqual(VERIFIED_FR_EN);
+  });
+
+  it('lien direct avec infoHash absent du cache : ne consomme pas topN, la sonde porte sur le lien sans infoHash', async () => {
+    const probe = probeMock();
+    const input = [directWithHash('https://cdn.example.com/media/hashed.mkv', HASH_A), directAt(0)];
+
+    await enrichWithProbe(input, { probe, cache: new ProbeCache<MediaProbe>(), probeHosts: CDN_HOSTS, topN: 1 });
+
+    expect(probe.mock.calls.map((call) => call[0])).toEqual(['https://cdn.example.com/media/0.mkv']);
+  });
+
+  it('segment de chemin opaque (configuration d\'addon base64) : jamais sondé', async () => {
+    await expectNeverProbed(direct(ADDON_SEGMENT_URL));
+  });
+
+  it('segment de chemin opaque sans chemin de résolution : jamais sondé', async () => {
+    await expectNeverProbed(direct(ADDON_OPAQUE_URL));
+  });
+
+  it('valeur de query opaque (jeton de 40 caractères) : jamais sondé', async () => {
+    await expectNeverProbed(direct(`https://h.example/play?token=${TOKEN_40}`));
+  });
+
+  it('sans extension vidéo finale : jamais sondé', async () => {
+    await expectNeverProbed(direct('https://h.example/watch/123'));
+  });
+
+  it('fichier vidéo nu sur un hôte listé (extension .mkv, aucun jeton) : sondé', async () => {
+    const server = rangeServer(buildMkv());
+    const input = [direct(FILM_URL)];
+
+    const out = await enrichWithProbe(input, {
+      cache: new ProbeCache<MediaProbe>(),
+      fetch: server.fetch,
+      probeHosts: new Set(['cdn.example']),
+      resolverHosts: newResolverHostMemo(),
+      topN: 1,
+    });
+
+    expect(server.calls.map((call) => call.url)).toEqual([FILM_URL]);
+    expect(out[0].directVerified).toBe(true);
+  });
+
+  it('les candidats écartés ne consomment pas topN : la sonde porte sur le premier éligible', async () => {
+    const probe = probeMock();
+    const input = [
+      direct('https://h.example/watch/123'),
+      direct(`https://h.example/play?token=${TOKEN_40}`),
+      direct(ADDON_SEGMENT_URL),
+      direct(FILM_URL),
+      directAt(9),
+    ];
+
+    await enrichWithProbe(input, {
+      probe,
+      cache: new ProbeCache<MediaProbe>(),
+      probeHosts: new Set(['h.example', 'addon.example', 'cdn.example', 'cdn.example.com']),
+      topN: 1,
+    });
+
+    expect(probe.mock.calls.map((call) => call[0])).toEqual([FILM_URL]);
+  });
+});
+
+describe('enrichWithProbe : liste blanche probeHosts', () => {
+  it('sans liste blanche (défaut) : un fichier vidéo nu n\'est jamais sondé', async () => {
+    await expectNeverProbed(direct(FILM_URL));
+  });
+
+  it('sans liste blanche (défaut) : un lien direct vers un CDN ordinaire n\'est jamais sondé', async () => {
+    const probe = probeMock();
+
+    const out = await enrichWithProbe([direct(DIRECT_URL)], {
+      probe,
+      cache: new ProbeCache<MediaProbe>(),
+      topN: 1,
+    });
+
+    expect(probe).not.toHaveBeenCalled();
+    expect(out[0].directVerified).toBeUndefined();
+  });
+
+  it('liste blanche : seul l\'hôte listé est sondé, correspondance exacte', async () => {
+    const probe = probeMock();
+    const input = [direct(FILM_URL), direct('https://other.example/Film.mkv'), direct(DIRECT_URL)];
+
+    await enrichWithProbe(input, {
+      probe,
+      cache: new ProbeCache<MediaProbe>(),
+      probeHosts: new Set(['cdn.example']),
+      topN: 3,
+    });
+
+    expect(probe.mock.calls.map((call) => call[0])).toEqual([FILM_URL]);
+  });
+
+  it('liste blanche : pas de sous-domaine implicite (example.com ne couvre pas cdn.example.com)', async () => {
+    const probe = probeMock();
+
+    await enrichWithProbe([direct(DIRECT_URL)], {
+      probe,
+      cache: new ProbeCache<MediaProbe>(),
+      probeHosts: new Set(['example.com']),
+      topN: 1,
+    });
+
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('hôte listé, lien de résolveur (/resolve/<débrideur>/) : jamais sondé (défense en profondeur)', async () => {
+    await expectNeverProbed(direct('https://addon.example/resolve/alldebrid/KEY/Film.mkv'), new Set(['addon.example']));
+  });
+
+  it('hôte listé, segment opaque : jamais sondé (défense en profondeur)', async () => {
+    await expectNeverProbed(direct(ADDON_OPAQUE_URL), new Set(['addon.example']));
+  });
+
+  it('contournement : JWT à points dans un segment : jamais sondé, même sans liste blanche', async () => {
+    await expectNeverProbed(direct('https://addon.example/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig/Film.mkv'));
+  });
+
+  it('contournement : configuration en clair alldebrid=KEY|providers=… : jamais sondée, même sans liste blanche', async () => {
+    await expectNeverProbed(direct('https://addon.example/alldebrid=KEY|providers=yts/stream/Film.mkv'));
+  });
+
+  it('contournement : identifiant court de résolveur : jamais sondé, même sans liste blanche', async () => {
+    await expectNeverProbed(direct('https://addon.example/x/abc123/Film.mkv'));
   });
 });

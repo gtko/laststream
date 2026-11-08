@@ -73,6 +73,8 @@ export interface PipelineContext {
   cache?: LruCache<PipelineResult> | false;
   /** Sonde média injectable (tests). Défaut : sonde réelle, avec le fetch du contexte. */
   probe?: typeof probeMedia;
+  /** Liste blanche des hôtes sondables (PROBE_HOSTS, lue par la route). Absente ou vide : aucune sonde réseau. */
+  probeHosts?: ReadonlySet<string>;
   /** Durée de chaque étape, en ms (script de vérification live). Absent : aucune mesure, aucun journal. */
   stageTimer?: (stage: string, ms: number) => void;
   /** Budgets des étapes (tests). Défaut : STAGE_BUDGET_MS. */
@@ -599,6 +601,7 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
           topN: config.audio.probeTopN,
           fetch: fetchFn,
           probe: ctx.probe,
+          probeHosts: ctx.probeHosts,
           budgetMs: budget.probe,
         }),
       ranked,
