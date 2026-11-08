@@ -1,5 +1,5 @@
 import type { PartyClient } from './client';
-import { driftAction, expectedPosition } from './sync';
+import { driftAction, expectedPosition, type DriftAction } from './sync';
 
 /* Lecture partagée : chaque participant (hôte ou invité) envoie ses actions locales (play, pause, seek) au salon et applique
  * l'état diffusé à son lecteur, quel que soit le moteur (HTML5/HLS, mpv, libVLC natif) : seule l'interface minimale
@@ -20,7 +20,7 @@ export interface PlayerLike {
   pause(): void;
   seek(to: number): void;
   setRate(rate: number): void;
-  /** La vitesse de lecture est réglable (libVLC : par prudence, non). */
+  /** La vitesse de lecture est réglable (lecteur natif : non, la correction passe par des sauts). */
   canRate: boolean;
 }
 
@@ -181,10 +181,13 @@ export class PartyController {
     }
     const expected = expectedPosition(st, this.client.serverNow());
     const dur = p.duration();
-    const target = dur > 0 ? Math.min(expected, Math.max(0, dur - 0.5)) : expected;
+    // Sans vitesse réglable (natif), la cible s'arrête à 1 s de la fin, et non 0,5 s.
+    const target = dur > 0 ? Math.min(expected, Math.max(0, dur - (p.canRate ? 0.5 : 1))) : expected;
+    // Sans vitesse réglable, local et cible dans la dernière seconde et demie : aucune correction (sinon re-seek en boucle).
+    const atEnd = !p.canRate && dur > 0 && p.time() >= dur - 1.5 && target >= dur - 1.5;
     this.drift = p.buffering() ? this.drift : p.time() - target;
     if (!st.playing) {
-      const seekTo = Math.abs(p.time() - target) >= 0.5 ? target : null;
+      const seekTo = !atEnd && Math.abs(p.time() - target) >= 0.5 ? target : null;
       if (p.paused() && seekTo === null) {
         if (this.correcting) this.restoreRate(p);
         return;
@@ -206,7 +209,7 @@ export class PartyController {
       return;
     }
     // L'hôte est l'horloge de référence : il ne se cale que par saut (pas de vitesse corrective, qui ferait osciller son rapport).
-    const action = driftAction(p.time(), target, true, { canRate: p.canRate && !this.client.isHost, correcting: this.correcting });
+    const action: DriftAction = atEnd ? { kind: 'none' } : driftAction(p.time(), target, true, { canRate: p.canRate && !this.client.isHost, correcting: this.correcting });
     if (action.kind === 'none') {
       if (this.correcting) this.restoreRate(p);
     } else if (action.kind === 'rate') {

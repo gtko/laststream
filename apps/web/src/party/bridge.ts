@@ -131,7 +131,8 @@ export function playerOf(a: SessionAdapter | null): PlayerLike | null {
   const e = a?.engine;
   if (!a || !e) return null;
   return {
-    ready: () => a.ready,
+    // Lecteur natif : prêt seulement après sa première image (avant, sa position n'est pas mesurable).
+    ready: () => a.ready && (e.kind !== 'native' || !!(e as EngineLike & { loaded?: boolean }).loaded),
     time: () => e.state().time || 0,
     duration: () => e.state().duration || 0,
     paused: () => !!e.state().paused,
@@ -141,8 +142,8 @@ export function playerOf(a: SessionAdapter | null): PlayerLike | null {
     pause: () => { e.pause(); },
     seek: (t) => { e.seek(t); },
     setRate: (r) => { e.setRate(r); },
-    // libVLC : la vitesse est rapportée dans son état ; si elle manque, la correction passe par des sauts.
-    canRate: e.kind !== 'native' || typeof e.state().rate === 'number',
+    // Lecteur natif (libVLC) : vitesse non réglable par ce moteur ; la correction de dérive passe par des sauts (≥ 1 s).
+    canRate: e.kind !== 'native',
   };
 }
 
