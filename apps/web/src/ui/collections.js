@@ -1,17 +1,16 @@
 /* Collections : tuiles paysage animées au survol, hub (#/collections), page d'un dossier (#/collection/{id}) et rangées
  * d'accueil (En vedette, Services de streaming, collections du jour).
  * Collections inspirées de Focale (MIT) et Kaptain. Le JSON (~900 Ko) est chargé à la demande. */
-import { isKidProfile, kidMaxAge } from '../data/auth';
+import { isKidProfile } from '../data/auth';
 import {
   CREDIT, FOR_YOU_ID, SERVICES_CATEGORY, featuredFolders, folderById, loadCatalog, rotatingRows, searchCatalog, serviceFolders, serviceSlug,
 } from '../data/collections/catalog';
 import { folderBackdrop, newCtx, resolveUntil, usableSources } from '../data/collections/engine';
-import { featuredItems, rememberFeatured } from '../data/featured';
+import { featuredCollections, generatedFolder, rememberFeaturedCollections } from '../data/featured';
 import { filterAvailable } from './avail.js';
 import { register, toItem } from './catalog.js';
-import { IMG, REDUCE, STILL } from './constants.js';
+import { REDUCE, STILL } from './constants.js';
 import { detailEl } from './dom.js';
-import { ficheHash } from './ficheRoute.js';
 import { teardownFiche } from './fiche.js';
 import { svcError, topBar } from './fragments.js';
 import { infiniteList } from './infinite.js';
@@ -158,6 +157,7 @@ offs.push(listen(document, 'error', (e) => {
   if (img.classList.contains('ct-img')) coverFallback(img);
   else if (img.classList.contains('ct-logo')) { const t = img.closest('.ct'); if (t) t.classList.remove('has-logo'); img.remove(); }
   else if (img.classList.contains('ct-gif')) img.remove();
+  else if (img.classList.contains('gt-img')) img.remove(); // tuile générée : le dégradé palette reste
 }, true));
 window[GLOBAL_KEY] = () => { offs.forEach((off) => off()); stopGif(); };
 
@@ -309,9 +309,14 @@ export async function showCollection(id) {
   if (token !== state.token) return;
   catalogRef = cat;
   if (id === FOR_YOU_ID) { location.replace('#/browse/ai'); return; }
-  const folder = folderById(cat, id);
+  let folder = folderById(cat, id);
+  const generated = !folder && id.startsWith('gen-');
+  if (generated) {
+    try { folder = await generatedFolder(id); } catch (_) { folder = null; }
+    if (token !== state.token) return;
+  }
   if (!folder) { detailEl.innerHTML = svcError('Collection introuvable.'); return; }
-  const category = cat.catOf.get(id);
+  const category = generated ? null : cat.catOf.get(id);
   const slug = serviceSlug(folder);
   const hasMovie = usableSources(folder, 'movie').length > 0;
   const hasTv = usableSources(folder, 'tv').length > 0;
@@ -324,6 +329,7 @@ export async function showCollection(id) {
     (bg ? '<img class="cf-bg" src="' + esc(bg) + '" alt="" decoding="async" referrerpolicy="no-referrer">' : '') +
     '<span class="cf-shade" aria-hidden="true"></span>' +
     '<div class="cf-in">' +
+    (generated ? '<p class="svc-eyebrow"><a href="#/" data-go>En vedette</a></p>' : '') +
     (category ? '<p class="svc-eyebrow"><a href="#/collections/' + esc(category.id) + '" data-go>' + esc(category.title) + '</a></p>' : '') +
     (folder.logo ? '<img class="cf-logo" src="' + esc(folder.logo) + '" alt="" referrerpolicy="no-referrer">' : '') +
     '<h1 class="svc-title cf-title' + (folder.logo ? ' sr-only' : '') + '" id="svc-title" tabindex="-1">' + esc(folder.title) + '</h1>' +
@@ -374,24 +380,44 @@ const rowSection = (id, title, inner, link) =>
   '<section class="row-section" id="' + id + '" aria-labelledby="h-' + id + '"><h2 class="row-title" id="h-' + id + '">' + esc(title) + (link || '') + '</h2>' + inner + '</section>';
 const rowLink = (href, label) => ' <a class="row-link" href="' + esc(href) + '" data-go>' + esc(label) + '</a>';
 
-/**
- * Tuile large d'un titre de « En vedette » : même forme qu'un dossier (xl), fond du titre en couverture, clic vers sa fiche.
- * @param {{key: string, type: 'movie'|'tv', id: number, name: string, backdropPath: string}} it titre du pool (featured.ts)
- */
-const featuredTile = (it) => folderTile(
-  { id: 'feat-' + it.key.replace(':', '-'), title: it.name, cover: IMG('w1280', it.backdropPath), logo: '', gif: '' },
-  { size: 'xl', href: ficheHash(it.type, it.id) },
-);
+const GEN_KICKER = { cast: 'Acteur', crew: 'Réalisateur', keyword: 'Thème', classic: 'Classique', decade: 'Décennie' };
+const genImg = (cls, url) => '<img class="gt-img ' + cls + '" src="' + esc(url) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">';
 
 /**
- * « En vedette » : huit titres tirés chaque jour dans le pool du profil (featured.ts), en tuiles larges. Si le pool est
- * insuffisant, l'ancienne collection (SPOTLIGHTS, visuels versionnés) prend le relais.
+ * Tuile large d'une collection générée (TMDB) : personne = fond flouté + portrait détouré à droite ; thème, classique,
+ * décennie = mosaïque de fonds. Le dégradé palette reste visible si une image casse (gt-img retiré sur erreur).
+ * @param {{id: string, kind: string, title: string, kicker?: string, portrait?: string, backdrops?: string[], subtitle?: string}} t
+ */
+export function genTile(t) {
+  const pal = palette(t.title);
+  const kind = GEN_KICKER[t.kind] ? t.kind : 'keyword';
+  const kicker = t.kicker || GEN_KICKER[kind];
+  const bds = (t.backdrops || []).filter(Boolean).slice(0, 3);
+  let art;
+  if (kind === 'cast' || kind === 'crew') {
+    art = (bds[0] ? genImg('gt-bg', bds[0]) : '') + (t.portrait ? genImg('gt-portrait', t.portrait) : '');
+  } else {
+    art = '<span class="gt-mosaic gt-n' + bds.length + '">' + bds.map((u) => genImg('gt-cell', u)).join('') + '</span>';
+    if (kind === 'decade') {
+      const m = /\d{4}|\d{2}/.exec(t.title);
+      if (m) art += '<span class="gt-year" aria-hidden="true">' + esc(m[0].slice(-2)) + 's</span>';
+    }
+  }
+  return '<a class="ct ct-xl ct-gen ct-gen-' + kind + '" href="#/collection/' + esc(t.id) + '" data-go data-folder="' + esc(t.id) + '" style="--c1:' + pal.c1 + ';--c2:' + pal.c2 +
+    '" aria-label="' + esc(kicker + ' : ' + t.title) + '"><span class="ct-media">' + art + '<span class="ct-shade gt-shade" aria-hidden="true"></span>' +
+    '<span class="gt-text" aria-hidden="true"><span class="gt-kicker">' + esc(kicker) + '</span><span class="gt-title">' + esc(t.title) + '</span>' +
+    (t.subtitle ? '<span class="gt-sub">' + esc(t.subtitle) + '</span>' : '') + '</span></span></a>';
+}
+
+/**
+ * « En vedette » : collections générées depuis TMDB (acteurs, réalisateurs, thèmes, classiques, décennie), tirées chaque jour
+ * (featured.ts). Si rien n'est disponible, l'ancienne collection (SPOTLIGHTS, visuels versionnés) prend le relais.
  */
 export async function renderFeatured(now = new Date()) {
   if (isKidProfile()) return false;
   try {
-    const picks = await featuredItems({ now, isKid: isKidProfile(), kidMaxAge: kidMaxAge(), genreHints: [...state.byKey.values()] });
-    let tiles = picks.map(featuredTile);
+    const picks = await featuredCollections({ now });
+    let tiles = picks.map(genTile);
     if (!tiles.length) {
       const cat = await loadCatalog();
       catalogRef = cat;
@@ -400,7 +426,7 @@ export async function renderFeatured(now = new Date()) {
     const slot = document.getElementById('feat-slot');
     if (!slot || !tiles.length || state.status !== 'ready') return false;
     slot.innerHTML = rowSection('vedette', 'En vedette', '<div class="row ct-row ct-row-xl" data-nav>' + tiles.join('') + '</div>');
-    if (picks.length) rememberFeatured(picks, now);
+    if (picks.length) rememberFeaturedCollections(picks, now);
     return true;
   } catch (_) { return false; }
 }

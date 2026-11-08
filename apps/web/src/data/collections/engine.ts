@@ -30,6 +30,8 @@ export interface SourceFilters {
   withoutGenres?: string;
   withKeywords?: string;
   withoutKeywords?: string;
+  withCast?: string;
+  withCrew?: string;
   watchRegion?: string;
   withWatchProviders?: string;
   withOriginCountry?: string;
@@ -87,6 +89,8 @@ export function mapFilters(f: SourceFilters = {}, media: Media, region: string, 
   set('without_genres', f.withoutGenres);
   set('with_keywords', f.withKeywords);
   set('without_keywords', f.withoutKeywords);
+  set('with_cast', f.withCast);
+  set('with_crew', f.withCrew);
   set('with_origin_country', f.withOriginCountry);
   set('with_companies', f.withCompanies);
   if (tv) set('with_networks', f.withNetworks); // les réseaux n'existent que pour les séries
