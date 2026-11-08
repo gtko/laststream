@@ -89,6 +89,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
 
     private val handler = Handler(Looper.getMainLooper())
     private var nextDismissed = false
+    /** Demande d'épisode suivant en cours : le JS n'a pas encore chargé le média suivant. */
+    private var nextRequested = false
     private var controlsVisible = false
     private var panelName: String? = null
     private var closedSent = false
@@ -112,9 +114,10 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private val aspect: AspectMode get() = core.aspect
     private val rate: Double get() = core.rate
     private val subDelayMs: Long get() = core.subDelayMs
-    private val errored: Boolean get() = core.errored
-    private val lastPos: Double get() = core.lastPos
-    private val lastDur: Double get() = core.lastDur
+    // Lus dès la construction de l'interface (SocialOverlay lit la durée à sa création) : `core` n'existe pas encore alors.
+    private val errored: Boolean get() = ::core.isInitialized && core.errored
+    private val lastPos: Double get() = if (::core.isInitialized) core.lastPos else 0.0
+    private val lastDur: Double get() = if (::core.isInitialized) core.lastDur else 0.0
     private val audioTracks: List<TrackInfo> get() = core.audioTracks
     private val subTracks: List<TrackInfo> get() = core.subTracks
 
@@ -164,7 +167,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     override fun onStart() {
         super.onStart()
         if (resumeOnStart && ::core.isInitialized) { resumeOnStart = false; setPlaying(true) }
-        if (nextStalledPending) handler.post(nextStalledRunnable) // retour d'arrière-plan avec un « suivant » resté sans réponse
+        if (stalledPending) handler.post(stalledRunnable) // retour d'arrière-plan avec un « suivant » resté sans réponse
     }
 
     override fun onStop() {
@@ -194,6 +197,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         if (SocialLogic.shouldResetOnDestroy(isFinishing, handedOff, PlayerHub.socialOverlay === social)) PlayerHub.social = SocialState()
         if (PlayerHub.socialOverlay === social) PlayerHub.socialOverlay = null
         social?.destroy()
+        images.shutdown()
         if (::core.isInitialized && !handedOff) {
             if (!closedSent && !silentClose && isFinishing) emitClosed()
             // `pending` n'est effacé que s'il est encore le nôtre : après un épisode suivant, il appartient au prochain média.
@@ -589,6 +593,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         closePanel()
         showSpinner(msg)
         if (::core.isInitialized) player.pause()
+        armStallFallback() // pas de réponse du JS : le spinner ne reste pas et la lecture reprend
     }
 
     private fun buildSourcesPanel() {
@@ -684,10 +689,11 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     // ---------- Chargement d'un média ----------
 
     override fun load(r: OpenRequest) {
-        handler.removeCallbacks(nextStalledRunnable)
-        nextStalledPending = false
+        handler.removeCallbacks(stalledRunnable)
+        stalledPending = false
         ownPending = r
         nextDismissed = false
+        nextRequested = false
         setHeading(r.title, r.subtitle)
         setNextEpisode(r.nextEpisode)
         setSources(r.sources)
@@ -701,10 +707,12 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         showControls()
     }
 
-    override fun setHeading(title: String, subtitle: String) {
-        if (title.isNotEmpty()) titleView.text = title
-        subtitleView.text = subtitle
-        subtitleView.visibility = if (subtitle.isEmpty()) View.GONE else View.VISIBLE
+    override fun setHeading(title: String?, subtitle: String?) {
+        if (!title.isNullOrEmpty()) titleView.text = title
+        if (subtitle != null) {
+            subtitleView.text = subtitle
+            subtitleView.visibility = if (subtitle.isEmpty()) View.GONE else View.VISIBLE
+        }
     }
 
     override fun setSegments(list: List<SkipSegment>) {
@@ -779,21 +787,31 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     }
 
     private fun requestNextEpisode() {
+        if (!PlayerLogic.nextRequestAllowed(nextRequested)) return
+        nextRequested = true
+        nextDismissed = true // la carte ne revient pas au tick suivant pendant que la demande est en cours
         nextCard.visibility = View.GONE
         showSpinner("Épisode suivant…")
         player.pause()
         emitEvent("nextEpisode", JSObject().put("position", lastPos).put("duration", lastDur))
-        // Si le JS ne lance rien (invité de salon, aucun épisode suivant), le spinner ne doit pas rester indéfiniment.
-        handler.removeCallbacks(nextStalledRunnable)
-        handler.postDelayed(nextStalledRunnable, PlayerLogic.NEXT_REQUEST_TIMEOUT_MS)
+        armStallFallback()
     }
 
-    private var nextStalledPending = false
+    /** Si le JS ne répond pas (invité de salon, aucun épisode suivant, source ou épisode introuvable), le spinner ne reste pas indéfiniment. */
+    private fun armStallFallback() {
+        handler.removeCallbacks(stalledRunnable)
+        handler.postDelayed(stalledRunnable, PlayerLogic.NEXT_REQUEST_TIMEOUT_MS)
+    }
 
-    private val nextStalledRunnable = Runnable {
+    private var stalledPending = false
+
+    private val stalledRunnable = Runnable {
         if (isFinishing || !::core.isInitialized) return@Runnable
-        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !isInPictureInPictureMode) { nextStalledPending = true; return@Runnable }
-        nextStalledPending = false
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !isInPictureInPictureMode) { stalledPending = true; return@Runnable }
+        stalledPending = false
+        // Demande abandonnée : la carte peut être proposée de nouveau, et la lecture reprend.
+        nextRequested = false
+        nextDismissed = false
         hideSpinner()
         setPlaying(true)
     }
@@ -810,7 +828,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             skipLabel.text = PlayerLogic.skipLabel(seg)
             skipButton.visibility = View.VISIBLE
         } else skipButton.visibility = View.GONE
-        val showNext = !nextDismissed && nextEpisode != null && !errored && PlayerLogic.showNextCard(segments, lastPos, lastDur, true) && !isInPictureInPictureMode
+        val showNext = nextEpisode != null && !errored && PlayerLogic.showNextCard(segments, lastPos, lastDur, true, nextDismissed) && !isInPictureInPictureMode
         nextCard.visibility = if (showNext) View.VISIBLE else View.GONE
         if (nextCard.visibility == View.VISIBLE && skipButton.visibility == View.VISIBLE) skipButton.visibility = View.GONE
     }

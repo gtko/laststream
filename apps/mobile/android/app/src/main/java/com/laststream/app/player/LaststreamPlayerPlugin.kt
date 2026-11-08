@@ -30,11 +30,20 @@ class LaststreamPlayerPlugin : Plugin() {
 
     private val main = Handler(Looper.getMainLooper())
 
-    /** Commande vers le lecteur en cours : la vignette si elle est affichée, sinon l'activité plein écran. */
-    private fun ui(call: PluginCall, block: (PlayerControl) -> Unit) {
-        val a = PlayerHub.control()
-        if (a == null) { call.reject("Aucun lecteur ouvert", "no_player"); return }
+    /**
+     * Commande vers le lecteur en cours : la vignette si elle est affichée, sinon l'activité plein écran. Pendant une ouverture
+     * (`open` vient de partir, l'activité n'est pas encore prête), `onPending` applique la commande à la requête en attente.
+     */
+    private fun ui(call: PluginCall, onPending: ((OpenRequest) -> OpenRequest)? = null, block: (PlayerControl) -> Unit) {
+        // Tout se décide sur le fil principal, celui où `onCreate` enregistre l'activité et lit `pending` : pas de fusion perdue entre les deux.
         main.post {
+            val a = PlayerHub.control()
+            if (a == null) {
+                val p = PlayerHub.pending
+                if (p != null && onPending != null) { PlayerHub.pending = onPending(p); call.resolve() }
+                else call.reject("Aucun lecteur ouvert", "no_player")
+                return@post
+            }
             try { block(a); call.resolve() } catch (e: Exception) { call.reject(e.message ?: "erreur", "player_error") }
         }
     }
@@ -67,19 +76,19 @@ class LaststreamPlayerPlugin : Plugin() {
     @PluginMethod
     fun update(call: PluginCall) {
         val d = call.data
-        ui(call) { a ->
+        ui(call, onPending = { p -> p.withUpdate(d) }) { a ->
             if (d.has("skipSegments")) a.setSegments(OpenRequest.parseSegments(d.optJSONArray("skipSegments")))
             if (d.has("sources")) a.setSources(OpenRequest.parseSources(d.optJSONArray("sources")))
             if (d.has("episodes")) a.setEpisodes(OpenRequest.parseEpisodes(d.optJSONObject("episodes")))
             if (d.has("nextEpisode")) a.setNextEpisode(OpenRequest.parseNext(d.optJSONObject("nextEpisode")))
-            if (d.has("title") || d.has("subtitle")) a.setHeading(d.optString("title", ""), d.optString("subtitle", ""))
+            if (d.has("title") || d.has("subtitle")) a.setHeading(if (d.has("title")) d.optString("title", "") else null, if (d.has("subtitle")) d.optString("subtitle", "") else null)
         }
     }
 
     @PluginMethod
     fun addSubtitles(call: PluginCall) {
         val list = OpenRequest.parseSubtitles(call.data.optJSONArray("subtitles"))
-        ui(call) { it.addSubtitles(list) }
+        ui(call, onPending = { p -> p.withSubtitles(list) }) { it.addSubtitles(list) }
     }
 
     @PluginMethod fun play(call: PluginCall) = ui(call) { it.setPlaying(true) }

@@ -180,6 +180,7 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
             }
             MediaPlayer.Event.Playing -> {
                 buffering = false
+                errored = false // la lecture a repris : le spinner et la carte suivante redeviennent normaux
                 hideBusy()
                 ui?.playing(true)
                 handler.postDelayed({ afterStart() }, 600)
@@ -400,6 +401,8 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
     // ---------- Focus audio ----------
 
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        // Perte définitive : le système a repris le focus, la prochaine lecture doit le redemander.
+        if (change == AudioManager.AUDIOFOCUS_LOSS) audioFocusHeld = false
         if ((change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) && !released && player.isPlaying) player.pause()
     }
 
