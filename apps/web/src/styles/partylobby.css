@@ -168,26 +168,32 @@ body.has-party-lobby { overflow: hidden; }
 }
 
 /* ---------- En lecture : bandeau, événements, réactions signées ---------- */
-.ps-band { position: absolute; top: 20px; left: 20px; z-index: 9; display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 12px 0 8px; border-radius: 14px;
-  background: rgba(23, 21, 31, 0.88); border: 1px solid #33303f; color: var(--text); backdrop-filter: blur(8px); }
-.ps-band, .ps-event { transition: top 0.25s ease; }
-.lp.is-ui .ps-band { top: 72px; }
-.lp.is-ui .ps-event { top: 76px; }
+/* Pastille de salon : dans la barre d'icônes du haut à droite (.lp-top-r) ; détail dans une bulle (clic, survol ou clavier). */
+.ps-band { position: relative; display: flex; align-items: center; flex: none; }
 .ps-band[hidden], .ps-event[hidden] { display: none; }
 .lp.is-mini .ps-band, .lp.is-mini .ps-event { display: none; }
+.ps-event { transition: top 0.25s ease; }
+.lp.is-ui .ps-event { top: 76px; }
+.ps-chip { position: relative; display: inline-flex; align-items: center; min-height: 44px; padding: 0 10px 0 8px; border-radius: 22px; background: transparent; color: var(--text); cursor: pointer; }
+.ps-chip:hover, .ps-chip[aria-expanded="true"] { background: rgba(255, 255, 255, 0.12); }
+.ps-chip:focus-visible, .ps-btn:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .ps-avs { display: flex; }
-.ps-av { width: 36px; height: 36px; font-size: 15px; border: 2px solid #17151f; margin-left: -6px; }
+.ps-av { width: 24px; height: 24px; font-size: 11px; border: 2px solid #17151f; margin-left: -8px; }
 .ps-avs .ps-av:first-child { margin-left: 0; }
-.ps-more { display: grid; place-items: center; background: #3a3647; color: var(--muted); font-size: 12px; border-radius: 28%; font-weight: 800; font-family: var(--ff-title); }
-.ps-info { font-size: 12px; line-height: 1.35; min-width: 0; }
+.ps-more { display: grid; place-items: center; background: #3a3647; color: var(--muted); font-size: 10px; border-radius: 28%; font-weight: 800; font-family: var(--ff-title); }
+.ps-dot { width: 9px; height: 9px; margin-left: 6px; border-radius: 50%; background: var(--pl-ok); box-shadow: 0 0 0 2px rgba(23, 21, 31, 0.8); }
+.ps-dot.is-off { background: var(--pl-warn); }
+.ps-pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; min-width: 190px; padding: 10px 12px; border-radius: 12px; display: grid; gap: 4px; font-size: 12px; line-height: 1.35;
+  background: rgba(23, 21, 31, 0.96); border: 1px solid #33303f; color: var(--text); backdrop-filter: blur(8px); }
+.ps-pop[hidden] { display: none; }
 .ps-n { font-weight: 700; }
 .ps-sync { color: var(--pl-ok); }
 .ps-sync.is-off { color: var(--pl-warn); }
-.ps-btn { width: 34px; height: 34px; border-radius: 9px; background: var(--pl-chip-on); display: grid; place-items: center; color: var(--text); }
-.ps-btn:first-of-type { margin-left: 6px; }
+.ps-row { display: flex; gap: 6px; margin-top: 4px; }
+.ps-btn { width: 44px; height: 34px; border-radius: 9px; background: var(--pl-chip-on); display: grid; place-items: center; color: var(--text); cursor: pointer; }
 .ps-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .ps-btn svg { width: 16px; height: 16px; }
-.ps-btn:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+@media (pointer: coarse) { .ps-btn { height: 44px; } }
 .ps-event { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); z-index: 9; max-width: calc(100% - 520px); min-width: 0; height: 40px; padding: 0 14px 0 8px; border-radius: 20px; display: flex; align-items: center; gap: 8px;
   background: rgba(23, 21, 31, 0.9); font-size: 13px; color: var(--text); animation: ps-drop 0.25s ease-out; }
 .ps-event .wp-av { width: 24px; height: 24px; font-size: 11px; }
@@ -273,9 +279,9 @@ body.has-party-lobby { overflow: hidden; }
 /* Android portrait : vidéo en haut, bandeau, chat dessous, barre d'emojis, champ de message. */
 @media (max-width: 767px) and (orientation: portrait) {
   /* Mobile portrait : la bande de salle est une zone de mise en page sous la vidéo, pas une surcouche : jamais masquée. */
-  .lp.lp:not(.is-ui) .ps-band, .lp.lp:not(.is-ui) .ps-event { opacity: 1; visibility: visible; pointer-events: auto; }
+  .lp.lp:not(.is-ui) .ps-event { opacity: 1; visibility: visible; pointer-events: auto; }
   .lp.has-party-panel { bottom: auto; height: 56.25vw; }
-  .lp-party { position: fixed; top: calc(56.25vw + 64px); right: 0; bottom: 0; left: 0; width: auto; height: auto; padding: 0 0 8px; gap: 0; border: 0; background: var(--bg); backdrop-filter: none; overflow: hidden; z-index: 7; }
+  .lp-party { position: fixed; top: 56.25vw; right: 0; bottom: 0; left: 0; width: auto; height: auto; padding: 0 0 8px; gap: 0; border: 0; background: var(--bg); backdrop-filter: none; overflow: hidden; z-index: 7; }
   .lp-party .wp-close { display: none; }
   .lp-party > * { order: 5; }
   .lp-party .wp-chatsec { order: 1; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
@@ -291,15 +297,10 @@ body.has-party-lobby { overflow: hidden; }
   .lp-party .wp-send .btn::before { content: '→'; font-size: 20px; font-weight: 800; }
   .lp-party .wp-chars { display: none; }
   .lp-party .wp-head, .lp-party .wp-subrow, .lp-party .wp-menu, .lp-party .wp-actions, .lp-party .wp-wait, .lp-party .wp-sub, .lp-party .wp-users, .lp-party .wp-invite, .lp-party .wp-more-box, .lp-party .wp-note, .lp-party .wp-status { display: none; }
-  .lp.is-ui .ps-band, .ps-band { position: fixed; top: 56.25vw; left: 0; right: 0; height: 64px; padding: 0 14px; border-radius: 0; border: 0; border-bottom: 1px solid var(--line); background: var(--bg); backdrop-filter: none; z-index: 8; }
-  .ps-info { flex: 1; }
-  .ps-btn { width: 40px; height: 40px; border-radius: 12px; background: var(--surface); }
-  .ps-btn:first-of-type { margin-left: 0; }
-  .lp.is-ui .ps-event, .ps-event { top: calc(56.25vw + 72px); max-width: calc(100% - 24px); z-index: 8; height: 32px; font-size: 12px; background: transparent; padding: 0; }
+  .lp.is-ui .ps-event, .ps-event { top: calc(56.25vw + 8px); max-width: calc(100% - 24px); z-index: 8; height: 32px; font-size: 12px; background: transparent; padding: 0; }
   .lp-party-floats { bottom: auto; top: 56.25vw; height: 0; }
 }
 @media (pointer: coarse) and (min-width: 768px), (max-width: 767px) and (orientation: landscape) {
-  .lp.is-ui .ps-band { top: 64px; }
   .lp.is-ui .ps-event { top: 68px; }
 }
 @media (max-width: 767px) and (orientation: landscape) {
@@ -417,6 +418,10 @@ body.has-party-lobby { overflow: hidden; }
 .pl-src-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
 .pl-src-main b { font-weight: 700; }
 .pl-src-meta { font-size: 12px; color: var(--muted); }
+.pl-src-prov { font-size: 12px; font-weight: 600; color: var(--soft); }
+.pl-src-more { font-weight: 700; padding: 1px 6px; border-radius: 999px; background: var(--pl-chip); color: var(--muted); }
+.pl-src-detail { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.pl-src-file { flex-basis: 100%; min-width: 0; font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-src-badge { flex: none; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--pl-chip); }
 .pl-src-badge.is-host { color: var(--pl-ok); }
 .pl-src-badge.is-other { color: var(--pl-warn); }

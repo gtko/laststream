@@ -189,7 +189,7 @@ export async function playView(view, startAt, opts = {}) {
   syncTicks(); // le moteur est détruit, la phase repasse à « loading » : le démarrage doit être surveillé même si la boucle dormait (pause, onglet caché)
   const line = (v) => sourceLine(v) + (v.status === 'cached' ? ' ⚡' : '');
   if (isOfflineView(view)) { await playLocal(p, view, startAt, stale); return; }
-  S.ui.setLoading(p.meta.title || 'Lecture', 'Préparation du lien…', loaderExtra(2, { source: line(view), ...(p.memStart ? { steps: MEMORY_STEPS } : {}) }));
+  S.ui.setLoading(p.meta.title || 'Lecture', opts.notice || 'Préparation du lien…', loaderExtra(2, { source: line(view), ...(p.memStart ? { steps: MEMORY_STEPS } : {}) }));
   // Course : la source choisie démarre seule ; passé 6 s, la suivante part en parallèle, la première prête gagne (12 s au plus
   // par candidat, 25 s ou 3 échecs au total).
   const race = raceCandidates({

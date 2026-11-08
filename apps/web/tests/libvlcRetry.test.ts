@@ -50,7 +50,8 @@ describe('retryOnLibvlc (session simulée)', () => {
     failover('Erreur de lecture (x)');
     expect(playView).toHaveBeenCalledTimes(1);
     expect(playView.mock.calls[0][0]).not.toBe(X);
-    expect(playView.mock.calls[0][2]).toBeUndefined();
+    expect(playView.mock.calls[0][2]?.shellBackend).toBeUndefined();
+    expect(playView.mock.calls[0][2]?.notice).toContain('Erreur de lecture');
   });
 
   it('une autre source Y obtient sa propre relance', () => {

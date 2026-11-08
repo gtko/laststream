@@ -2,7 +2,8 @@
 import { requestKey, webCompatContext } from '../sources/load';
 import { failoverCandidates } from '../sources/webCompat';
 import { currentOs } from './appDownload';
-import { failoverOrder, pickRaceCandidate } from './failover';
+import { failoverOrder, failoverStatusText, pickRaceCandidate } from './failover';
+import { partyBridge } from '../party/bridge';
 import { isOfflineView, offlineFailureView } from './offlinePlay';
 import { forgetLaunch } from './launchCache';
 import { badSources, markBad, sourceKey } from './memory';
@@ -14,7 +15,7 @@ import { searchAndPlay, searchInstead } from './session.js';
 import { loaderExtra } from './sessionOpen.js';
 import { playView, releaseLocal } from './sessionPlay.js';
 import { S, badKey, MAX_ATTEMPTS, originalLangOf } from './sessionState.js';
-import { languageChanged, partyFallbackNotice, roomLangOf, sourceLabel } from '../party/sourceChoice';
+import { languageChanged, partyFallbackNotice, roomLangOf } from '../party/sourceChoice';
 import { expandPlayer } from './sessionUi.js';
 
 
@@ -96,18 +97,27 @@ export function retryOnLibvlc(p, engine) {
   return true;
 }
 
-/** Repli automatique : copie équivalente d'abord, puis source suivante. */
+/**
+ * Repli automatique : la même release chez un autre fournisseur d'abord, puis une copie équivalente, puis la source suivante.
+ * En salon, ce participant se déclare non prêt le temps du repli (le salon l'attend selon « attendre les retardataires ») et la
+ * source suivante démarre à la position du salon, pas à sa position locale figée par l'échec.
+ */
 export function failover(reason) {
   const p = S.P;
   if (!p || p.failing) return;
   p.failing = true;
   if (isOfflineView(p.view)) { localFailure(/media-error:[34]\b/.test(reason) ? 'video' : /bloquée|trop de temps/.test(reason) ? 'stalled' : 'error', reason); return; }
   const time = p.engine ? p.engine.state().time : 0;
-  const options = failoverOrder(fallbackPool(p), p.view, p.tried);
+  const options = failoverOrder(fallbackPool(p), p.view, p.tried, reason);
   // Une source en échec n'est plus rejouée à la relance ; démarrée depuis la mémoire sans autre choix connu : recherche complète.
   forgetLaunch(requestKey(p.req), sourceKey(p.view));
-  if (p.fromCache && (!options.length || p.attempts >= MAX_ATTEMPTS)) { searchInstead(p, time > 5 ? time : p.startAt || 0); return; }
+  // Position du salon seulement s'il diffuse ce titre et cet épisode (l'épisode suivant n'est annoncé qu'une fois sa source prête).
+  const roomAt = partyBridge.roomPosition({ id: p.req.id, season: p.cur ? p.cur.season : null, episode: p.cur ? p.cur.episode : null });
+  const resumeAt = roomAt !== null ? roomAt : time > 5 ? time : p.startAt || 0;
+  if (p.fromCache && (!options.length || p.attempts >= MAX_ATTEMPTS)) { partyBridge.sourceFailing(); searchInstead(p, resumeAt); return; }
   if (!options.length || p.attempts >= MAX_ATTEMPTS) {
+    // Plus rien à essayer : le salon ne doit pas rester retenu par ce participant.
+    partyBridge.sourceFailed();
     try { p.engine.pause(); } catch (_) { /* ignoré */ }
     if (p.engine.kind === 'native') p.engine.closeNow();
     expandPlayer();
@@ -118,11 +128,10 @@ export function failover(reason) {
   const next = options[0];
   // Salon : une source de repli hors de la langue du salon est annoncée, jamais lue en silence.
   const roomLang = roomLangOf(p.launchOpts && p.launchOpts.partyLang, originalLangOf(p));
-  const label = languageChanged(next, roomLang)
-    ? sourceLabel(next) + ' · hors langue du salon'
-    : [next.quality, next.sourceType, next.langs.map((l) => l.label).join('/')].filter(Boolean).join(' · ');
-  S.ui.toast('Source indisponible, essai de la suivante : ' + label, 5000);
-  playView(next, time > 5 ? time : p.startAt || 0);
+  const notice = failoverStatusText(p.view, reason, next, Math.min(p.attempts + 1, MAX_ATTEMPTS), MAX_ATTEMPTS, languageChanged(next, roomLang) ? 'hors langue du salon' : '');
+  S.ui.toast(notice, 6000);
+  partyBridge.sourceFailing();
+  playView(next, resumeAt, { notice });
 }
 
 /**

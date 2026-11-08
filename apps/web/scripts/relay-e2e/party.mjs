@@ -7,7 +7,11 @@
 //       est affiché sur sa page, et la lecture reprend seule quand son tampon atteint le seuil (45 s au plus) ;
 //   (b) chat dans les deux sens (l'invité écrit -> l'hôte reçoit ; l'hôte écrit -> l'invité voit), texte HTML échappé ;
 //   (c) plein écran disponible (document.fullscreenEnabled, bouton présent, clic et touche F sans erreur) ;
-//   (d) pause manuelle pendant l'attente : une fois l'attente terminée, la lecture n'est pas relancée.
+//   (d) pause manuelle pendant l'attente : une fois l'attente terminée, la lecture n'est pas relancée ;
+//   (e) réactions en direct (LAST-1621) : une réaction envoyée par une page apparaît chez l'autre en moins de 2 s sous forme
+//       d'élément flottant visible (page invitée, et panneau du lecteur src/ui/partypanel.js branché sur un vrai PartyClient
+//       via party/live.html) ; l'émetteur voit aussi sa propre réaction. Le lecteur vidéo complet n'est pas lancé : seuls le
+//       panneau, le bridge et le client du salon le sont.
 // Captures (--shots <dossier>) : commandes, infos « i », sous-titres, chat, bandeau d'attente, plein écran (invité) et panneau hôte
 // (page harnais party/panel.ts avec données factices).
 //
@@ -354,6 +358,25 @@ async function hostPanelShot() {
   check('p2', 'panneau hôte : chat affiché en texte (HTML échappé)', info.chatTags === 0 && info.chatText.includes('<b>gras</b>'), `${info.chatTags} balise(s) active(s)`);
 }
 
+/** Élément flottant réellement visible : taille non nulle, non transparent, non masqué, dans la fenêtre. */
+const VISIBLE_FLOAT = (selector) => {
+  return [...document.querySelectorAll(selector)].some((el) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0
+      && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight;
+  });
+};
+/** Attend une condition en page ; renvoie le délai (ms) ou -1 si elle n'arrive pas dans `limit`. */
+async function within(page, fn, arg, limit = 2000) {
+  const t = Date.now();
+  const ok = await page.waitForFunction(fn, arg, { timeout: limit, polling: 25 }).then(() => true, () => false);
+  return ok ? Date.now() - t : -1;
+}
+
+/** Chemin du WebSocket invité (même forme que guestWsPath de src/party/join.ts). */
+const guestWsPath = (roomId, token, name) => `/party/${encodeURIComponent(roomId)}/ws?t=${encodeURIComponent(token)}&name=${encodeURIComponent(name)}`;
+
 const hostPlaying = (host) => host.evaluate(() => window.__host.state()?.playing === true);
 
 let hostPage = null;
@@ -512,6 +535,54 @@ try {
   check('d1', 'pause manuelle pendant l’attente : pas de reprise à la fin de l’attente', closed && !resumedAfterPause,
     `attente terminée ${closed ? 'oui' : 'non'}, lecture relancée ${resumedAfterPause ? 'oui' : 'non'}`);
   await bob.ctx.close();
+
+  // ---- (e) réactions en direct ----
+  // Page invitée (Ana) : elle réagit depuis le tiroir de chat, l'hôte la reçoit ; l'hôte réagit, elle voit l'emoji flotter.
+  await clickControl(ana.page, '[data-id="chat"]');
+  await ana.page.waitForSelector('.gc-react button:not([disabled])', { timeout: 10000 });
+  const nHost = (await hostPage.evaluate(() => window.__host.reacts().length));
+  await ana.page.click('.gc-react button');
+  const dAna = await within(hostPage, (n) => window.__host.reacts().length > n && window.__host.reacts().slice(n).some((r) => r.by === 'Ana'), nHost);
+  check('e1', 'réaction de l’invité : l’hôte la reçoit en moins de 2 s', dAna >= 0, dAna >= 0 ? `${dAna} ms` : 'non reçue');
+  const dOwn = await within(ana.page, VISIBLE_FLOAT, '.gc-fl');
+  check('e2', 'réaction de l’invité : l’émetteur voit son propre emoji flotter', dOwn >= 0, dOwn >= 0 ? `${dOwn} ms` : 'aucun emoji visible');
+  await sleep(2000);
+  await hostPage.evaluate(() => window.__host.sendReact('🔥'));
+  const dGuestFloat = await within(ana.page, VISIBLE_FLOAT, '.gc-fl');
+  check('e3', 'réaction de l’hôte : emoji flottant visible chez l’invité en moins de 2 s', dGuestFloat >= 0, dGuestFloat >= 0 ? `${dGuestFloat} ms` : 'aucun emoji visible');
+
+  // Panneau du lecteur (src/ui/partypanel.js) sur un vrai client du salon : Zoe, invitée par lien.
+  const zInv = await api('POST', `/party/${room.id}/invite-link`, { token: room.token, body: { profileId: room.profile } });
+  const zEntry = await api('POST', `/party/${room.id}/guest`, { body: { token: zInv.body.token, name: 'Zoe' } });
+  if (zEntry.status !== 200 && zEntry.status !== 201) throw new Error(`entrée invitée refusée (${zEntry.status})`);
+  const zoeWs = `${WS}${guestWsPath(room.id, zEntry.body.sessionToken, zEntry.body.name ?? 'Zoe')}`;
+  const zCtx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  const zoe = await zCtx.newPage();
+  zoe.on('pageerror', (e) => pageErrors.push(`Zoe: ${redact(e.message)}`));
+  await zoe.goto(`${ORIGIN}/scripts/relay-e2e/party/live.html?${new URLSearchParams({ ws: zoeWs })}`, { waitUntil: 'domcontentloaded' });
+  await zoe.waitForFunction(() => window.__live && (window.__live.ready || window.__live.error), null, { timeout: 60000 });
+  await zoe.waitForFunction(() => window.__live.status() === 'open', null, { timeout: 30000 });
+  await zoe.evaluate(() => window.__live.openPanel());
+  await sleep(1200);
+  await hostPage.evaluate(() => window.__host.sendReact('😂'));
+  const dZoe = await within(zoe, VISIBLE_FLOAT, '.lp-party-floats .ps-float');
+  check('e4', 'panneau du lecteur : réaction de l’hôte, élément flottant visible en moins de 2 s', dZoe >= 0, dZoe >= 0 ? `${dZoe} ms` : 'aucun élément flottant visible');
+  if (dZoe < 0) {
+    log(`diagnostic panneau : ${JSON.stringify(await zoe.evaluate(() => ({
+      status: window.__live.status(), closeCode: window.__live.closeCode, reacts: window.__live.reacts(), floats: document.querySelector('.lp-party-floats')?.outerHTML.slice(0, 400) ?? null,
+      panelHidden: document.querySelector('.lp-party')?.hidden ?? null, band: document.querySelector('.ps-band')?.hidden ?? null,
+    })).catch((e) => String(e.message).slice(0, 200)))}`);
+  }
+  await sleep(3400);
+  const nHost2 = await hostPage.evaluate(() => window.__host.reacts().length);
+  await zoe.waitForSelector('[data-wp-react]', { timeout: 10000 });
+  await zoe.click('[data-wp-react]');
+  const dZoeSent = await within(hostPage, (n) => window.__host.reacts().slice(n).some((r) => r.by === 'Zoe'), nHost2);
+  check('e5', 'panneau du lecteur : sa réaction arrive à l’hôte en moins de 2 s', dZoeSent >= 0, dZoeSent >= 0 ? `${dZoeSent} ms` : 'non reçue');
+  const dZoeOwn = await within(zoe, VISIBLE_FLOAT, '.lp-party-floats .ps-float');
+  check('e6', 'panneau du lecteur : l’émetteur voit sa propre réaction tout de suite', dZoeOwn >= 0, dZoeOwn >= 0 ? `${dZoeOwn} ms` : 'aucun élément flottant visible');
+  await shot(zoe, '08-lecteur-reaction.png');
+  await zCtx.close();
 } catch (error) {
   check('e2e', 'scénario terminé sans exception', false, error.message);
   if (hostPage) log(`diagnostic hôte : ${JSON.stringify(await hostPage.evaluate(() => ({ ready: window.__host?.ready, error: window.__host?.error, status: window.__host?.status?.(), state: window.__host?.state?.(), waiting: window.__host?.waiting?.(), chat: window.__host?.chat?.().length })).catch((e) => String(e.message).slice(0, 200)))}`);

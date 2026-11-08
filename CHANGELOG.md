@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.37 – 2026-11-08
+
+- LAST-1620 / LAST-1621 : watch party, sources lisibles, repli vers la même release, synchro au repli, pastille de salon, réactions en direct (#9) — @gtko
+
 ## v1.0.36 – 2026-11-08
 
 - LAST-1622 : la sonde serveur ne suit plus les redirections vers un autre hôte (#8) — @gtko

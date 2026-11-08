@@ -178,6 +178,13 @@ function rowIdOf(key) {
   return id;
 }
 
+/** Fournisseur d'une ligne (« Lumpi ») et doublons regroupés (« +2 fournisseurs », essayés en premier si la source échoue). */
+function sourceProviderHTML(r) {
+  if (!r.provider && !r.others) return '';
+  const more = r.others > 0 ? ' <span class="pl-src-more" title="Même fichier chez ' + r.others + ' autre' + (r.others > 1 ? 's' : '') + ' fournisseur' + (r.others > 1 ? 's' : '') + ' : essayé' + (r.others > 1 ? 's' : '') + ' en premier si celui-ci échoue">+' + r.others + '</span>' : '';
+  return '<span class="pl-src-prov">' + esc(r.provider || 'Fournisseur inconnu') + more + '</span>';
+}
+
 /** « Ma source » : les sources trouvées (langue, qualité), celle qui sera lancée au départ, et ce qui la rapproche de l'hôte. */
 function sourcesHTML() {
   if (prep.phase === 'idle') return '';
@@ -199,7 +206,10 @@ function sourcesHTML() {
   const focusable = rows.some((r) => r.selected) ? '' : rows[0] && rowIdOf(rows[0].key);
   const list = rows.map((r) => '<button type="button" role="radio" class="pl-src-row' + (r.selected ? ' on' : '') + '" aria-checked="' + (r.selected ? 'true' : 'false') + '"' +
     ' data-pl-source data-key="' + rowIdOf(r.key) + '" tabindex="' + (r.selected || rowIdOf(r.key) === focusable ? '0' : '-1') + '">' +
-    '<span class="pl-src-dot" aria-hidden="true"></span><span class="pl-src-main"><b>' + esc(r.label) + '</b>' + (r.meta ? '<span class="pl-src-meta">' + esc(r.meta) + '</span>' : '') + (r.warn ? '<span class="pl-src-compat">' + esc(r.warn) + '</span>' : '') + '</span>' +
+    '<span class="pl-src-dot" aria-hidden="true"></span><span class="pl-src-main"><b>' + esc(r.label) + '</b>' + (r.meta ? '<span class="pl-src-meta">' + esc(r.meta) + '</span>' : '') + sourceProviderHTML(r) +
+    (r.detail ? '<span class="pl-src-detail">' + esc(r.detail) + '</span>' : '') +
+    (r.release ? '<span class="pl-src-file" title="' + esc(r.release) + '">' + esc(r.release) + '</span>' : '') +
+    (r.warn ? '<span class="pl-src-compat">' + esc(r.warn) + '</span>' : '') + '</span>' +
     (r.badge ? '<span class="pl-src-badge is-' + r.badge + '">' + esc(SOURCE_BADGE_TEXT[r.badge]) + '</span>' : '') + '</button>').join('');
   return '<section class="pl-src" aria-labelledby="pl-src-t"><div class="pl-row"><div class="pl-lb pl-grow" id="pl-src-t">Ma source</div>' +
     '<span class="pl-src-status" role="status">' + esc(sourceSearchText(found, src.searching)) + '</span></div>' +

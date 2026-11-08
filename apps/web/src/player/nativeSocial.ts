@@ -38,8 +38,8 @@ export function toNativeNotes(list: readonly Note[], meId: string | null | undef
 }
 
 /** Spectateurs du titre : amis et foyer qui le regardent (même règle que la puce « Un ami regarde aussi »). */
-export function watchingViewers(s: SocialState, media: WatchMedia | null, now: number, duration: number): NativeViewer[] {
-  return friendsWatching(s, media, now, duration).map((f) => viewerOf(f.pid, f.name));
+export function watchingViewers(s: SocialState, media: WatchMedia | null, now: number, duration: number, room: readonly { username: string }[] | null = null): NativeViewer[] {
+  return friendsWatching(s, media, now, duration, room).map((f) => viewerOf(f.pid, f.name));
 }
 
 /** Ce qui décide si le social apparaît côté natif. */
