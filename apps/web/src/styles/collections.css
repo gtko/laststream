@@ -29,6 +29,39 @@
 .ct-m { width: clamp(210px, 19vw, 340px); }
 .ct-l { width: clamp(240px, 24vw, 420px); }
 .ct-xl { width: clamp(280px, 33vw, 560px); }
+/* ---------- Tuiles générées (En vedette) ---------- */
+.gt-img { position: absolute; max-width: none; object-fit: cover; }
+.gt-bg { inset: 0; width: 100%; height: 100%; filter: blur(3px) brightness(0.55) saturate(1.1); transform: scale(1.06); }
+.gt-portrait {
+  right: 0; bottom: 0; height: 115%; width: auto; max-width: 62%; object-fit: contain; object-position: right bottom;
+  -webkit-mask-image: linear-gradient(to left, #000 55%, transparent 100%), linear-gradient(to top, #000 62%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to left, #000 55%, transparent 100%), linear-gradient(to top, #000 62%, transparent 100%);
+  mask-composite: intersect;
+  transition: transform 0.4s ease;
+}
+.gt-mosaic { position: absolute; inset: 0; display: grid; gap: 3px; }
+.gt-mosaic .gt-img { position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0; }
+.gt-n1 { grid-template: 1fr / 1fr; }
+.gt-n2 { grid-template: 1fr / 1.6fr 1fr; }
+.gt-n3 { grid-template: 1fr 1fr / 1.7fr 1fr; }
+.gt-n3 .gt-img:first-child { grid-row: 1 / span 2; }
+.gt-mosaic::after { content: ""; position: absolute; inset: 0; background: linear-gradient(135deg, var(--c1), var(--c2)); opacity: 0.38; mix-blend-mode: multiply; pointer-events: none; }
+.ct-gen-classic .gt-cell { filter: sepia(0.75) grayscale(0.45) contrast(1.05); }
+.gt-year {
+  position: absolute; z-index: 1; right: 4%; top: 2%; font-family: var(--ff-title); font-weight: 900; font-size: clamp(64px, 9vw, 140px);
+  line-height: 1; letter-spacing: -0.04em; color: rgba(255, 255, 255, 0.22); text-shadow: 0 2px 24px rgba(0, 0, 0, 0.35); pointer-events: none;
+}
+.ct-gen .gt-shade { background: linear-gradient(0deg, rgba(12, 11, 17, 0.88), rgba(12, 11, 17, 0.2) 55%, rgba(12, 11, 17, 0.05)); }
+.ct-gen-cast .gt-shade, .ct-gen-crew .gt-shade { background: linear-gradient(0deg, rgba(12, 11, 17, 0.85), rgba(12, 11, 17, 0.1) 55%), linear-gradient(90deg, rgba(12, 11, 17, 0.55), transparent 60%); }
+.gt-text { position: absolute; z-index: 2; left: 0; bottom: 0; max-width: 68%; display: flex; flex-direction: column; gap: 3px; padding: 14px 18px; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8); }
+.gt-kicker { font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.gt-title { font-family: var(--ff-title); font-weight: 800; font-size: clamp(20px, 2vw, 34px); line-height: 1.1; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.gt-sub { font-size: 13px; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ct-gen:hover .gt-portrait, .ct-gen:focus-visible .gt-portrait { transform: scale(1.04); }
+@media (max-width: 720px) { .gt-text { padding: 10px 12px; } .gt-title { font-size: clamp(18px, 5.4vw, 24px); } .gt-sub { font-size: 12px; } }
+@media (prefers-reduced-motion: reduce) { .gt-portrait { transition: none; } .ct-gen:hover .gt-portrait, .ct-gen:focus-visible .gt-portrait { transform: none; } }
+
 .ct-all-in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 12px; }
 .ct-all-in b { font-family: var(--ff-title); font-weight: 800; font-size: clamp(16px, 1.4vw, 22px); }
 .ct-all-in i { font-style: normal; font-size: 28px; color: var(--accent); }
