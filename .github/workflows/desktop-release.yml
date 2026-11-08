@@ -296,6 +296,8 @@ jobs:
 
   publish:
     needs: build
+    # Sans ce if, success() implicite tient compte des ancetres : fetch-deps ou stage-deps est toujours saute, donc publish aussi.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 20
     defaults:
