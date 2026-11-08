@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.39 – 2026-11-08
+
+- LAST-1625 : zéro appel serveur vers un lien d'addon (sonde en liste blanche) (#11) — @gtko
+
 ## v1.0.38 – 2026-11-08
 
 - LAST-1626 : fiabilité du lecteur natif Android (#10) — @gtko
