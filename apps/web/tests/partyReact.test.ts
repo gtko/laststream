@@ -10,6 +10,7 @@ const h = vi.hoisted(() => {
     toast,
     postNote: vi.fn(),
     allowed: { value: true },
+    status: { value: 'visible' as string },
     live: { cb: null as null | ((m: unknown, n: unknown) => void) },
     S: {
       P: null as any,
@@ -26,7 +27,7 @@ vi.mock('../src/data/socialStore', async (importOriginal) => ({
   onNoteRemoved: () => () => undefined,
   getState: () => ({
     me: { pid: 'p-me', handle: { name: 'Moi', tag: 'A1B2', full: 'Moi#A1B2' }, avatarColor: '#ff5a36' },
-    status: 'visible',
+    status: h.status.value,
     cinema: { active: false, since: 0, until: 0, count: 0, hidden: [] },
   }),
   subscribe: () => () => undefined,
@@ -44,7 +45,7 @@ vi.mock('../src/player/sessionState.js', () => ({ S: h.S, notesAllowed: () => h.
 vi.mock('../src/player/playbackSocial', async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), isTouchLayout: () => false }));
 
 import type { Note } from '../src/data/socialV2Api';
-import { notesTick, openReactHere, postReact, startNotes, stopNotes } from '../src/player/sessionSocial.js';
+import { friendChipTick, notesTick, onNativeReact, openReactHere, postReact, startNotes, stopNotes } from '../src/player/sessionSocial.js';
 import { partyBridge } from '../src/party/bridge';
 import { partyReactLimit } from '../src/party/reactLimit';
 import { partyReactMessageOf } from '../src/player/nativeSocial';
@@ -67,6 +68,7 @@ const fakeParty = () => {
     status: 'open',
     settings: {} as Record<string, unknown>,
     participants: [{ username: 'Lou' }] as Array<{ username: string }>,
+    you: null as { username: string } | null,
     sendReact: vi.fn((_emoji: string, _pos?: number | null) => true),
     on(ev: string, fn: Handler) { handlers[ev] = fn; return () => { delete handlers[ev]; }; },
   };
@@ -87,6 +89,7 @@ beforeEach(() => {
     note: note('srv-1', data.pos, { author: { pid: 'p-me', handle: { name: 'Moi', tag: 'A1B2', full: 'Moi#A1B2' }, avatarColor: '#ff5a36' } }),
   }));
   h.allowed.value = true;
+  h.status.value = 'visible';
   client = fakeParty();
   partyBridge.client = client as any;
   S.P = player();
@@ -232,6 +235,76 @@ describe('réaction de salon au lecteur natif (LAST-1615)', () => {
     expect(partyReactMessageOf({ by: 'bob', emoji: '🔥' }, 'x')).toMatchObject({ id: 'x', body: '🔥', from: { name: 'bob' } });
     expect(partyReactMessageOf({ by: 'bob', emoji: '' }, 'x')).toBeNull();
     expect(partyReactMessageOf({ emoji: '🔥' }, 'x')).toBeNull();
+  });
+});
+
+// LAST-1627 : sur Android, une réaction posée dans le natif part au salon même si le social amis est coupé ; en salon, les
+// avatars du natif sont les membres du salon (hors moi). Hors salon, rien ne change.
+const nativeEngine = () => ({ kind: 'native', state: () => ({ time: 100, duration: 7200 }), pushMessage: vi.fn(), setNotes: vi.fn(), setSocial: vi.fn() });
+
+describe('réaction native en salon (LAST-1627)', () => {
+  it('en salon, statut invisible : la réaction posée dans le natif part au salon', () => {
+    h.status.value = 'invisible';
+    S.P = { ...player(), engine: nativeEngine() };
+    startNotes(S.P);
+    onNativeReact({ emoji: '🔥', pos: 100 });
+    expect(client.sendReact).toHaveBeenCalledWith('🔥', 100);
+  });
+
+  it('en salon, social amis indisponible (titre sans notes) : la réaction part au salon', () => {
+    h.allowed.value = false;
+    S.P = { ...player(), engine: nativeEngine() };
+    startNotes(S.P);
+    onNativeReact({ emoji: '😂', pos: 42 });
+    expect(client.sendReact).toHaveBeenCalledWith('😂', 42);
+  });
+
+  it('en salon, un emoji hors de la rangée native reste rejeté sans envoi', () => {
+    S.P = { ...player(), engine: nativeEngine() };
+    startNotes(S.P);
+    onNativeReact({ emoji: '<script>', pos: 1 });
+    expect(client.sendReact).not.toHaveBeenCalled();
+  });
+
+  it('hors salon, social indisponible : la réaction native n’envoie rien (inchangé)', () => {
+    partyBridge.client = null;
+    S.P = { ...player(), engine: nativeEngine() };
+    startNotes(S.P);
+    onNativeReact({ emoji: '🔥', pos: 100 });
+    expect(h.postNote).not.toHaveBeenCalled();
+    expect(flash).not.toHaveBeenCalled();
+  });
+});
+
+describe('avatars natifs en salon (LAST-1627)', () => {
+  it('en salon, les avatars du natif sont les membres du salon, sans moi', () => {
+    client.participants = [{ username: 'Greg' }, { username: 'Lou' }, { username: 'Ana · salon' }];
+    client.you = { username: 'Greg' };
+    const eng = nativeEngine();
+    S.P = { ...player(), engine: eng };
+    friendChipTick(S.P, { time: 100, duration: 7200 });
+    expect(eng.setSocial).toHaveBeenLastCalledWith(expect.objectContaining({
+      enabled: true,
+      viewers: [{ id: 'Lou', name: 'Lou', initial: 'L' }, { id: 'Ana · salon', name: 'Ana · salon', initial: 'A' }],
+    }));
+  });
+
+  it('un changement de membres met les avatars à jour sans attendre le relevé', () => {
+    client.you = { username: 'Greg' };
+    const eng = nativeEngine();
+    S.P = { ...player(), engine: eng };
+    startNotes(S.P);
+    client.participants = [{ username: 'Greg' }, { username: 'Max' }];
+    (partyBridge as unknown as { emit(): void }).emit();
+    expect(eng.setSocial).toHaveBeenLastCalledWith(expect.objectContaining({ viewers: [{ id: 'Max', name: 'Max', initial: 'M' }] }));
+  });
+
+  it('hors salon, la couche native n’affiche aucun membre de salon', () => {
+    partyBridge.client = null;
+    const eng = nativeEngine();
+    S.P = { ...player(), engine: eng };
+    friendChipTick(S.P, { time: 100, duration: 7200 });
+    expect(eng.setSocial).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false, viewers: [] }));
   });
 });
 
