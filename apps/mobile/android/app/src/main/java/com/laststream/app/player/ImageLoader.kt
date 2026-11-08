@@ -19,6 +19,7 @@ class ImageLoader {
     private val main = Handler(Looper.getMainLooper())
 
     fun load(url: String, view: ImageView) {
+        if (pool.isShutdown) return
         view.tag = url
         cache.get(url)?.let { view.setImageBitmap(it); return }
         pool.execute {
@@ -26,6 +27,11 @@ class ImageLoader {
             cache.put(url, bmp)
             main.post { if (view.tag == url) view.setImageBitmap(bmp) }
         }
+    }
+
+    /** Fermeture de l'activité : les téléchargements en cours sont interrompus, plus rien ne se charge ensuite. */
+    fun shutdown() {
+        pool.shutdownNow()
     }
 
     private fun fetch(url: String): Bitmap? {

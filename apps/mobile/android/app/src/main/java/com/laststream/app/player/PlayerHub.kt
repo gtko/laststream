@@ -23,6 +23,19 @@ data class OpenRequest(
     /** Mise en tampon réseau de libVLC, en ms (réglage « Mémoire tampon » : standard 3000, grand 8000, maximum 30000). */
     val networkCachingMs: Int = 3000,
 ) {
+    /** Mise à jour partielle (`update`) : seules les clés présentes dans la requête changent. */
+    fun withUpdate(d: JSONObject): OpenRequest = copy(
+        title = if (d.has("title")) d.optString("title", "") else title,
+        subtitle = if (d.has("subtitle")) d.optString("subtitle", "") else subtitle,
+        skipSegments = if (d.has("skipSegments")) parseSegments(d.optJSONArray("skipSegments")) else skipSegments,
+        sources = if (d.has("sources")) parseSources(d.optJSONArray("sources")) else sources,
+        episodes = if (d.has("episodes")) parseEpisodes(d.optJSONObject("episodes")) else episodes,
+        nextEpisode = if (d.has("nextEpisode")) parseNext(d.optJSONObject("nextEpisode")) else nextEpisode,
+    )
+
+    /** Sous-titres ajoutés après l'ouverture : fusionnés, sans doublon d'URL. */
+    fun withSubtitles(list: List<SubtitleSource>): OpenRequest = copy(subtitles = (subtitles + list).distinctBy { it.url })
+
     companion object {
         fun fromJson(o: JSONObject): OpenRequest? {
             val url = o.optString("url", "").trim()
@@ -129,7 +142,8 @@ data class OpenRequest(
 /** Commandes du pont JS, communes au plein écran (PlayerActivity) et à la vignette (MiniPlayer). */
 interface PlayerControl {
     fun load(r: OpenRequest)
-    fun setHeading(title: String, subtitle: String)
+    /** Champ `null` : absent de la mise à jour, la valeur courante reste. */
+    fun setHeading(title: String?, subtitle: String?)
     fun setSegments(list: List<SkipSegment>)
     fun setSources(list: List<SourceItem>)
     fun setEpisodes(d: EpisodesData?)

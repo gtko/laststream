@@ -66,4 +66,40 @@ class OpenRequestTest {
         assertEquals(60000, OpenRequest.fromJson(JSONObject("""{"url":"u","networkCachingMs":999999}"""))!!.networkCachingMs)
         assertEquals(1000, OpenRequest.fromJson(JSONObject("""{"url":"u","networkCachingMs":5}"""))!!.networkCachingMs)
     }
+
+    private val pending = OpenRequest(
+        url = "u", title = "Dune", subtitle = "S1:É2",
+        subtitles = listOf(SubtitleSource("http://s/1.srt", "fr", "Français")),
+        nextEpisode = NextEpisodeInfo("S1:É3", null),
+    )
+
+    @Test fun updateSansSousTitreGardeLeSousTitre() {
+        // `subtitle` absent de la mise à jour : la valeur en attente ne doit pas être effacée (LAST-1626).
+        val r = pending.withUpdate(JSONObject("""{"title":"Dune 2"}"""))
+        assertEquals("Dune 2", r.title)
+        assertEquals("S1:É2", r.subtitle)
+        assertEquals("S1:É3", r.nextEpisode?.title)
+    }
+
+    @Test fun updateSousTitreVideEfface() {
+        // Présent mais vide : c'est bien une demande d'effacement.
+        val r = pending.withUpdate(JSONObject("""{"subtitle":""}"""))
+        assertEquals("Dune", r.title)
+        assertEquals("", r.subtitle)
+    }
+
+    @Test fun updateRemplaceSeulementLesCleesPresentes() {
+        val r = pending.withUpdate(JSONObject("""{"skipSegments":[{"kind":"intro","start":60,"end":150}]}"""))
+        assertEquals(1, r.skipSegments.size)
+        assertEquals("S1:É3", r.nextEpisode?.title)
+        assertEquals(pending.subtitles, r.subtitles)
+        assertNull(pending.withUpdate(JSONObject("""{"nextEpisode":null}""")).nextEpisode)
+    }
+
+    @Test fun sousTitresAjoutesSansDoublon() {
+        // Fusion : les sous-titres déjà en attente restent, les doublons ne se répètent pas.
+        val en = pending.copy(subtitles = listOf(SubtitleSource("http://s/a.srt", "fr", "A"), SubtitleSource("http://s/b.srt", "fr", "B")))
+        val r = en.withSubtitles(listOf(SubtitleSource("http://s/b.srt", "fr", "B bis"), SubtitleSource("http://s/c.srt", "en", "C")))
+        assertEquals(listOf("http://s/a.srt", "http://s/b.srt", "http://s/c.srt"), r.subtitles.map { it.url })
+    }
 }

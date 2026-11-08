@@ -125,10 +125,12 @@ class ScrubberView(context: Context) : View(context) {
                     if (e.actionMasked == MotionEvent.ACTION_UP && markerAt(e.x, e.y) === tm) onMarkerTap?.invoke(tm)
                     return true
                 }
-                fraction = fractionAt(e.x)
+                // Annulation (ACTION_CANCEL) : le glissé se termine sans chercher la vidéo.
+                val seek = PlayerLogic.scrubReleaseSeeks(e.actionMasked == MotionEvent.ACTION_CANCEL)
+                if (seek) fraction = fractionAt(e.x)
                 dragging = false
                 invalidate()
-                onScrub?.invoke(fraction, true)
+                if (seek) onScrub?.invoke(fraction, true)
             }
         }
         return true
