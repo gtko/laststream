@@ -76,8 +76,8 @@ describe('moteur natif : position interpolée entre deux évènements', () => {
   it('avance avec l’horloge pendant la lecture, au rythme de la vitesse', async () => {
     const n = await nativeAt(1000);
     n.fire('state', frame({ position: 50, rate: 2 }));
-    n.clock.now += 1500;
-    expect(n.engine.state().time).toBeCloseTo(53, 6);
+    n.clock.now += 800;
+    expect(n.engine.state().time).toBeCloseTo(51.6, 6);
   });
 
   it('ne bouge pas en pause, pendant un chargement, ni avant la première image', async () => {
@@ -97,7 +97,7 @@ describe('moteur natif : position interpolée entre deux évènements', () => {
 
   it('reste bornée à la durée', async () => {
     const n = await nativeAt(1000);
-    n.fire('state', frame({ position: 2990 }));
+    n.fire('state', frame({ position: 2999.5 }));
     n.clock.now += 60_000;
     expect(n.engine.state().time).toBe(3000);
   });
@@ -177,6 +177,79 @@ describe('moteur natif : bornes de fin', () => {
     g.fire('state', frame({ position: 100, duration: 100 }));
     for (let t = 100_600; t <= 105_000; t += 600) { g.clock.now = t; g.ctl.tick(g.player); }
     expect(g.plugin.seek).not.toHaveBeenCalled();
+    expect(g.sent).toEqual([]);
+  });
+});
+
+describe('moteur natif : plafond de l’interpolation', () => {
+  it('sans évènement du natif pendant 3 s, la position n’avance que d’une seconde', async () => {
+    const n = await nativeAt(1000);
+    n.fire('state', frame({ position: 50 }));
+    n.clock.now += 3000;
+    expect(n.engine.state().time).toBeCloseTo(51, 6);
+  });
+});
+
+describe('moteur natif : une commande locale fait foi jusqu’à confirmation ou 2 s', () => {
+  it('pause() : un état périmé paused:false reçu dans les 2 s ne reprend pas la lecture', async () => {
+    const n = await nativeAt(1000);
+    n.fire('state', frame({ position: 50 }));
+    n.engine.pause();
+    n.clock.now += 700;
+    n.fire('state', frame({ position: 50, paused: false }));
+    expect(n.engine.state().paused).toBe(true);
+  });
+
+  it('play() : un état périmé paused:true reçu dans les 2 s ne met pas en pause', async () => {
+    const n = await nativeAt(1000);
+    n.fire('state', frame({ position: 50, paused: true }));
+    n.engine.play();
+    n.clock.now += 700;
+    n.fire('state', frame({ position: 50, paused: true }));
+    expect(n.engine.state().paused).toBe(false);
+  });
+
+  it('sans confirmation au bout de 2 s, le natif fait foi', async () => {
+    const n = await nativeAt(1000);
+    n.fire('state', frame({ position: 50 }));
+    n.engine.pause();
+    n.clock.now += 2500;
+    n.fire('state', frame({ position: 50, paused: false }));
+    expect(n.engine.state().paused).toBe(false);
+  });
+
+  it('une confirmation efface la commande : un changement ultérieur du natif est pris', async () => {
+    const n = await nativeAt(1000);
+    n.fire('state', frame({ position: 50 }));
+    n.engine.pause();
+    n.clock.now += 100;
+    n.fire('state', frame({ position: 50, paused: true }));
+    n.clock.now += 100;
+    n.fire('state', frame({ position: 50, paused: false }));
+    expect(n.engine.state().paused).toBe(false);
+  });
+});
+
+describe('contrôleur : une commande locale n’est pas défaite par un état périmé du natif', () => {
+  it('reprise du salon : le natif renvoie paused:true en retard, rien n’est envoyé au salon', async () => {
+    const g = await guestRig({ playing: true, pos: 100 });
+    g.fire('state', frame({ position: 100, paused: true }));
+    g.ctl.tick(g.player); // le salon joue : le natif reprend
+    expect(g.plugin.play).toHaveBeenCalledTimes(1);
+    g.clock.now = 100_600; g.ctl.tick(g.player);
+    g.fire('state', frame({ position: 100, paused: true })); // état périmé
+    g.clock.now = 101_200; g.ctl.tick(g.player);
+    expect(g.sent).toEqual([]);
+  });
+
+  it('pause du salon : le natif renvoie paused:false en retard, rien n’est envoyé au salon', async () => {
+    const g = await guestRig({ playing: false, pos: 100 });
+    g.fire('state', frame({ position: 100, paused: false }));
+    g.ctl.tick(g.player); // le salon est en pause : le natif se met en pause
+    expect(g.plugin.pause).toHaveBeenCalledTimes(1);
+    g.clock.now = 100_600; g.ctl.tick(g.player);
+    g.fire('state', frame({ position: 100, paused: false })); // état périmé
+    g.clock.now = 101_200; g.ctl.tick(g.player);
     expect(g.sent).toEqual([]);
   });
 });

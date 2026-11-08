@@ -439,6 +439,11 @@ export class MpvEngine extends Emitter {
   togglePip() { return Promise.resolve(); }
 }
 
+/** Délai pendant lequel une commande locale (play/pause) fait foi sur l'état périmé que le natif peut encore renvoyer. */
+const NATIVE_INTENT_MS = 2000;
+/** Avance maximale de la position interpolée sans évènement du natif (ms). */
+const NATIVE_INTERP_MAX_MS = 1000;
+
 /** Lecteur natif Android (libVLC, plugin Capacitor) : l'activité native porte l'image, le son et ses propres contrôles ;
  * ce moteur ne fait que relayer ses évènements (état, pistes, fin, erreur) et ses commandes. */
 export class NativeEngine extends Emitter {
@@ -454,6 +459,8 @@ export class NativeEngine extends Emitter {
     this.loaded = false;
     this.live = false;
     this.closeTimer = null;
+    /** Commande locale récente { paused, until } : le natif ne la contredit pas avant sa confirmation ou son délai. */
+    this.intent = null;
     const on = (ev, fn) => { plugin.addListener(ev, (d) => { if (this.live) fn(d || {}); }).catch(() => {}); };
     on('state', (d) => { this.setState(d); this.emit('state'); });
     on('progress', (d) => { this.setState(d); this.emit('state'); });
@@ -462,7 +469,7 @@ export class NativeEngine extends Emitter {
     on('error', (d) => this.emit('error', new Error('native:' + (d.code || 'inconnue'))));
     // La fermeture par l'utilisateur est toujours transmise, même si la session prépare déjà une autre source.
     // Activité fermée : la position reçue est la dernière ; elle ne doit plus avancer avec l'horloge.
-    plugin.addListener('closed', (d) => { this.setState({ ...(d || {}), paused: true }); this.emit('closed', d); }).catch(() => {});
+    plugin.addListener('closed', (d) => { this.intent = null; this.setState({ ...(d || {}), paused: true }); this.emit('closed', d); }).catch(() => {});
     on('selectSource', (d) => this.emit('selectSource', d));
     on('selectEpisode', (d) => this.emit('selectEpisode', d));
     on('loadSeason', (d) => this.emit('loadSeason', d));
@@ -478,20 +485,31 @@ export class NativeEngine extends Emitter {
   setState(d) {
     const p = this.p;
     // La position interpolée jusqu'ici devient la base, avant que les nouveaux champs ne s'appliquent (pas de saut).
-    this.rebase(this.clock());
+    const now = this.clock();
+    this.rebase(now);
     if (typeof d.position === 'number') p.time = d.position;
     if (typeof d.duration === 'number' && d.duration > 0) p.duration = d.duration;
-    if (typeof d.paused === 'boolean') p.paused = d.paused;
+    if (typeof d.paused === 'boolean') this.applyPaused(d.paused, now);
     if (typeof d.buffering === 'boolean') p.buffering = d.buffering;
     if (typeof d.rate === 'number') p.rate = d.rate;
     if (!this.loaded && p.duration > 0 && p.time > 0) { this.loaded = true; this.emit('ready'); }
   }
 
-  /** Position à l'instant `now` : entre deux évènements, la lecture avance au rythme de la vitesse, bornée à la durée. */
+  /** État « en pause » rapporté par le natif. Une commande locale récente fait foi : un état qui la contredit est périmé
+   * (le natif n'a pas encore pris la commande) et ignoré, jusqu'à sa confirmation ou son délai. */
+  applyPaused(paused, now) {
+    const it = this.intent;
+    this.intent = null;
+    if (it && now < it.until && paused !== it.paused) { this.intent = it; return; }
+    this.p.paused = paused;
+  }
+
+  /** Position à l'instant `now` : entre deux évènements, la lecture avance au rythme de la vitesse, sans dépasser une seconde
+   * après le dernier évènement, et bornée à la durée. */
   positionAt(now) {
     const p = this.p;
     if (p.paused || p.buffering || !this.loaded || !this.live) return p.time;
-    const t = Math.max(0, p.time + ((now - p.at) / 1000) * (p.rate || 1));
+    const t = Math.max(0, p.time + (Math.min(now - p.at, NATIVE_INTERP_MAX_MS) / 1000) * (p.rate || 1));
     return p.duration > 0 ? Math.min(t, p.duration) : t;
   }
 
@@ -505,6 +523,7 @@ export class NativeEngine extends Emitter {
     clearTimeout(this.closeTimer);
     this.live = true;
     this.loaded = false;
+    this.intent = null;
     this.p = { time: startAt || 0, at: this.clock(), duration: 0, paused: false, buffering: true, rate: 1 };
     this.audio = [];
     this.subs = [];
@@ -536,8 +555,15 @@ export class NativeEngine extends Emitter {
 
   // Commandes locales : l'état change tout de suite (sans attendre l'évènement du natif), pour que le contrôleur de watch party
   // ne prenne pas son écho pour une action locale.
-  play() { this.rebase(this.clock()); this.p.paused = false; this.plugin.play().catch(() => {}); }
-  pause() { this.rebase(this.clock()); this.p.paused = true; this.plugin.pause().catch(() => {}); }
+  play() { this.command(false); this.plugin.play().catch(() => {}); }
+  pause() { this.command(true); this.plugin.pause().catch(() => {}); }
+  /** Commande locale optimiste : l'état change tout de suite et fait foi le temps que le natif la confirme. */
+  command(paused) {
+    const now = this.clock();
+    this.rebase(now);
+    this.p.paused = paused;
+    this.intent = { paused, until: now + NATIVE_INTENT_MS };
+  }
   seek(t) { this.p.time = Math.max(0, t); this.p.at = this.clock(); this.plugin.seek({ position: Math.max(0, t) }).catch(() => {}); }
   setVolume() { /* volume du système */ }
   setMuted() { /* volume du système */ }
