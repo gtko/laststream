@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.35 – 2026-11-08
+
+- LAST-1623 : shell desktop, plus de « initShellComm is not defined » (#7) — @gtko
+
 ## v1.0.34 – 2026-11-08
 
 - LAST-1619 : « En vedette » en collections générées depuis TMDB (#6) — @gtko
