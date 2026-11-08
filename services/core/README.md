@@ -101,6 +101,7 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | `LASTADDON_PUBLIC` | `0` | Mettre `1` pour exposer le serveur sur Internet (mode public). Les URL des addons amont saisies dans la configuration ne peuvent plus pointer vers une adresse privée, de boucle locale ou de lien local (voir « Sécurité »). Exige `LASTADDON_PUBLIC_URL`. |
 | `LASTADDON_FFMPEG` / `LASTADDON_FFPROBE` | PATH | Binaires de la détection locale des segments de saut (voir « Segments de saut détectés localement »). Sans eux : PATH, puis `bin/` à côté de l'application. `LASTADDON_SKIP_DETECT=0` désactive la détection ; `LASTADDON_SKIP_DETECT_MAX_MB` (400) plafonne les octets lus par job. |
 | `LASTADDON_ALLOWED_ORIGINS` | `http://localhost:8089,http://localhost:8080` | Origines (liste séparée par des virgules) autorisées en CORS sur les endpoints `/config/*` et `/user/*`. Les routes manifest et stream restent ouvertes (`*`). |
+| `PROBE_HOSTS` | aucun | Liste blanche des hôtes (noms seuls, séparés par des virgules, correspondance exacte) dont les liens directs sans infoHash peuvent être sondés pour lire l'audio (voir « Langues audio vérifiées »). Vide : aucune sonde réseau. |
 | `LASTADDON_DATA_DIR` | `./data` | Dossier de la base SQLite des données utilisateur (`laststream.db`). Relatif à la racine du projet. Voir « Données utilisateur ». |
 | `LASTADDON_UI_DIR` | aucun | Dossier de l'interface web compilée (contient `index.html`), servi à la racine. Chemin absolu conseillé. Équivalent de `--ui`. Voir « Distribution ». |
 | `LASTADDON_STREAMING_SERVER` | `http://127.0.0.1:11470` | Serveur de streaming local relayé sous `/_ss/*` quand l'interface est servie. Origine locale uniquement (`localhost`, `127.0.0.1` ou `[::1]`). Voir « Distribution ». |
@@ -383,7 +384,7 @@ Raisons d'échec de `/play/c`, avec leur statut HTTP et leur titre affiché (tex
 
 Les langues annoncées par le nom de release ne sont pas toujours celles de la piste audio. Pour les meilleurs candidats, le serveur lit l'en-tête du fichier et relève les pistes audio réelles.
 
-- **Ce qui est sondé** : les liens directs http(s) uniquement. Un torrent n'est jamais sondé côté serveur.
+- **Ce qui est sondé** : les liens directs http(s) dont l'hôte figure dans la variable `PROBE_HOSTS` (liste blanche, vide par défaut : aucune sonde réseau). Un lien d'addon ou de résolution débridé n'est jamais sondé, et un torrent non plus.
 - **Comment** : requêtes HTTP `Range` sur les conteneurs MKV/WebM (EBML) et MP4/MOV. L'en-tête (3 Mo) suffit en général ; pour un MP4 dont l'index est en fin de fichier, une requête complémentaire de 2 Mo au plus est faite. Le fichier n'est jamais téléchargé en entier. Chaque requête a un délai de 4 s ; trois sondes tournent en parallèle, dans un budget global de 4 s.
 - **Quels candidats** : `audio.probeTopN` (défaut 5, de 0 à 20) premiers candidats éligibles, dans l'ordre du classement. `0` désactive la sonde. Les candidats qui partagent une même copie ne sont sondés qu'une fois.
 - **Affichage** : les langues vérifiées s'affichent avec leur drapeau, suivies de `✓` ; les langues seulement annoncées sont suffixées de `?` (Détaillé, Compact) ou de « (annoncé) » (Netflix). Deux langues vérifiées ou plus ajoutent `multi`.

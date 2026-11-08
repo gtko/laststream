@@ -273,6 +273,7 @@ describe('sonde de sources (probe-step)', () => {
     await enrichWithProbe([direct('https://dl.alldebrid.com/dl/abc/film.mkv'), direct('https://cdn.example.com/film.mkv')], {
       probe,
       cache: new ProbeCache<MediaProbe>(),
+      probeHosts: new Set(['cdn.example.com', 'dl.alldebrid.com']),
       topN: 5,
     });
 
@@ -289,6 +290,7 @@ describe('sonde de sources : liens de résolution', () => {
     await enrichWithProbe([direct('https://torrentio.strem.fun/resolve/alldebrid/KEY/h/null/0/f.mkv'), direct('https://cdn.example.com/f.mkv')], {
       probe,
       cache: new ProbeCache<MediaProbe>(),
+      probeHosts: new Set(['torrentio.strem.fun', 'cdn.example.com']),
       topN: 5,
     });
     expect(probe.mock.calls.map((call) => (call as unknown as string[])[0])).toEqual(['https://cdn.example.com/f.mkv']);

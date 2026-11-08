@@ -124,7 +124,7 @@ describe('pipeline v2 : sonde audio et langues vérifiées', () => {
       languages: { preferred: ['fr'], fallbackToOthers: false },
       audio: { verifiedLanguagesOnly: true },
     });
-    const result = await getStreams(config, movie('tt7100003'), ctxFor(fetch, { probe }));
+    const result = await getStreams(config, movie('tt7100003'), ctxFor(fetch, { probe, probeHosts: new Set(['cdn.test']) }));
 
     expect(result.streams.map((s) => s.url)).toEqual(['https://cdn.test/aaa.mkv']);
     expect(result.streams[0]?.laststream).toMatchObject({ verifiedLanguages: ['fr'] });

@@ -2,19 +2,22 @@
  * Étape de sonde du moteur : lit l'audio réel des meilleurs candidats éligibles, puis enrichit leurs langues et
  * pistes vérifiées. Le cache de sondes est injectable (défaut : cache partagé de 30 jours).
  *
- * Aucun appel serveur vers un lien d'addon : un lien de résolution débridé, appelé depuis l'IP du serveur, serait
- * débridé chez le tiers. Éligibilité, par candidat, dans l'ordre du classement :
+ * Le serveur ne contacte jamais un lien d'addon : un lien de résolution débridé, appelé depuis l'IP du serveur, serait
+ * débridé chez le tiers. Le réseau n'est sollicité que pour les hôtes de la liste blanche `probeHosts` (vide par défaut,
+ * câblée par la variable PROBE_HOSTS). Éligibilité, par candidat, dans l'ordre du classement :
  * 1. Candidat direct AVEC infoHash (torrent résolu par un débrideur) : jamais d'appel réseau. Si le cache contient déjà
- *    sa sonde (clé probeCacheKey(infoHash, fileIdx)), elle est appliquée ; sinon le candidat reste inchangé.
+ *    sa sonde (clé probeCacheKey(infoHash, fileIdx)), elle est appliquée ; sinon le candidat reste inchangé. Aucun code
+ *    n'écrit actuellement ces clés : le cache pourra être alimenté plus tard par une sonde côté client.
  * 2. Candidat direct SANS infoHash : sondé seulement si toutes ces conditions sont vraies :
  *    - c'est une URL http(s) ;
+ *    - assertNotDebrid ne lève pas (hôte de débridage écarté et signalé) ;
+ *    - son hôte (URL.hostname, en minuscules, correspondance exacte) figure dans probeHosts ;
  *    - le dernier segment du chemin, décodé, se termine par .mkv, .mp4, .m4v, .webm, .avi, .mov, .ts ou .m2ts
  *      (insensible à la casse) ;
  *    - aucun segment du chemin ni aucune valeur de la query n'est opaque : 32 caractères ou plus, dans l'alphabet
  *      base64 / base64url (configuration, clé, jeton) ;
  *    - l'URL ne correspond pas à isDebridResolverUrl ;
- *    - son hôte n'est pas mémorisé (voir ci-dessous) ;
- *    - assertNotDebrid ne lève pas.
+ *    - son hôte n'est pas mémorisé (voir ci-dessous).
  * 3. Sinon : pas de plan. Le candidat est rendu tel quel et ne compte pas dans topN.
  *
  * Une sonde dont une redirection quitte l'hôte est arrêtée avant tout appel au nouvel hôte ; cet hôte d'origine est
@@ -59,6 +62,8 @@ const MEDIA_EXTENSION = /\.(?:mkv|mp4|m4v|webm|avi|mov|ts|m2ts)$/i;
 const OPAQUE_MIN_LENGTH = 32;
 /** Alphabet d'une valeur opaque : base64 et base64url. */
 const OPAQUE_ALPHABET = /^[A-Za-z0-9+/=_-]+$/;
+/** Liste blanche vide : aucune sonde réseau d'un lien direct sans infoHash. Défaut de l'étape. */
+const NO_PROBE_HOSTS: ReadonlySet<string> = new Set<string>();
 
 /** Durée pendant laquelle un hôte qui a redirigé une sonde vers un autre hôte n'est plus sondé : 24 heures. */
 const RESOLVER_HOST_TTL_MS = 24 * 60 * 60 * 1000;
@@ -90,6 +95,11 @@ export interface EnrichWithProbeOptions {
   budgetMs?: number;
   /** Hôtes à ne plus sonder après une redirection vers un autre hôte. Défaut : mémoire partagée de l'isolat. */
   resolverHosts?: ResolverHostMemo;
+  /**
+   * Liste blanche : hôtes (URL.hostname, en minuscules, correspondance exacte, sans sous-domaine implicite) dont les liens
+   * directs sans infoHash peuvent être sondés. Défaut : ensemble vide, donc aucune sonde réseau. Câblée par PROBE_HOSTS.
+   */
+  probeHosts?: ReadonlySet<string>;
 }
 
 /**
@@ -158,7 +168,10 @@ function isLang(value: string): value is Lang {
   return LANGS.has(value);
 }
 
-/** Règle 1 : candidat direct avec infoHash. Lecture du cache seul, jamais d'appel réseau. */
+/**
+ * Règle 1 : candidat direct avec infoHash. Lecture du cache seul, jamais d'appel réseau. Aucun code n'écrit actuellement
+ * ces clés (probeCacheKey) : la règle reste en place pour une sonde côté client, à venir.
+ */
 function cachePlanOf(c: Ranked): Plan | undefined {
   const hash = infoHashOf(c);
   if (!isDirect(c) || hash === undefined) return undefined;
@@ -166,7 +179,7 @@ function cachePlanOf(c: Ranked): Plan | undefined {
 }
 
 /** Règle 2 : sonde réseau d'un candidat direct sans infoHash, ou undefined si le candidat n'est pas éligible. */
-function probePlanOf(c: Ranked, resolverHosts: ResolverHostMemo): Plan | undefined {
+function probePlanOf(c: Ranked, resolverHosts: ResolverHostMemo, probeHosts: ReadonlySet<string>): Plan | undefined {
   if (!isDirect(c) || infoHashOf(c) !== undefined) return undefined;
   const url = c.raw.url ?? '';
   const parsed = httpUrlOf(url);
@@ -178,6 +191,8 @@ function probePlanOf(c: Ranked, resolverHosts: ResolverHostMemo): Plan | undefin
     if (error instanceof DebridEgressBlockedError) return undefined;
     throw error;
   }
+  // Liste blanche (PROBE_HOSTS) : seul un hôte explicitement autorisé est sondé. Correspondance exacte, sans sous-domaine.
+  if (!probeHosts.has(parsed.hostname)) return undefined;
   if (!isMediaFileUrl(parsed)) return undefined;
   // Pas de sonde d'un lien de résolution de débrideur (StremThru, ElfHosted, /resolve/<débrideur>/…) : il serait débridé
   // chez le tiers avec l'IP du serveur. Le candidat reste proposé, sans vérification audio.
@@ -208,7 +223,7 @@ function planJobs(ranked: readonly Ranked[], opts: EnrichWithProbeOptions, resol
       continue;
     }
     if (picked >= opts.topN) continue;
-    const plan = probePlanOf(ranked[index], resolverHosts);
+    const plan = probePlanOf(ranked[index], resolverHosts, opts.probeHosts ?? NO_PROBE_HOSTS);
     if (plan === undefined) continue;
     picked += 1;
     addMember(probes, plan, index);
