@@ -130,4 +130,15 @@ class PlayerUiLogicTest {
         assertEquals(360, PlayerUiLogic.panelWidth(360, 460))
         assertEquals(0, PlayerUiLogic.panelWidth(-5, 460))
     }
+
+    @Test fun nextCardWidthFollowsUsableWidth() {
+        // Large écran : la carte garde sa largeur maximale.
+        assertEquals(520, PlayerUiLogic.nextCardWidth(1200, 232, 520, 240))
+        // Encoche : la largeur utile (sans les marges d'encoche) réduit la carte, plus de débordement à droite.
+        assertEquals(700 - 232, PlayerUiLogic.nextCardWidth(700, 232, 520, 240))
+        // Très étroit : au moins le minimum, jamais plus que la place utile.
+        assertEquals(240, PlayerUiLogic.nextCardWidth(400, 232, 520, 240))
+        assertEquals(200, PlayerUiLogic.nextCardWidth(200, 232, 520, 240))
+        assertEquals(0, PlayerUiLogic.nextCardWidth(-10, 232, 520, 240))
+    }
 }

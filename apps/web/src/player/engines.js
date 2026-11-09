@@ -479,6 +479,7 @@ export class NativeEngine extends Emitter {
     // Couche sociale (LAST-1612) : réaction et réponse posées dans le natif, erreur à afficher.
     on('react', (d) => this.emit('react', d));
     on('reply', (d) => this.emit('reply', d));
+    on('replyText', (d) => this.emit('replyText', d));
     on('socialError', (d) => this.emit('socialError', d));
   }
 

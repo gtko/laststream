@@ -15,6 +15,12 @@ data class SocialMessage(val id: String, val from: SocialViewer, val body: Strin
 /** Marqueur affiché sur la barre : plusieurs notes voisines regroupées. */
 data class SocialMarker(val fraction: Double, val pos: Double, val emoji: String, val count: Int)
 
+/** Synchro du salon : calé, en rattrapage, ou en attente du tampon d'un membre. */
+enum class RoomSync { SYNCED, CATCHING, WAITING }
+
+/** Salon actif (LAST-1632) : membres (moi compris), rôle et synchro, envoyés par le JS avec `setSocial`. */
+data class SocialRoom(val members: Int, val host: Boolean, val sync: RoomSync)
+
 /** État social tenu côté natif (alimenté par `setSocial` / `setNotes`). Désactivé tant que `setSocial` n'est pas appelé. */
 data class SocialState(
     val enabled: Boolean = false,
@@ -22,6 +28,8 @@ data class SocialState(
     val more: List<String> = emptyList(),
     val viewers: List<SocialViewer> = emptyList(),
     val notes: List<SocialNote> = emptyList(),
+    /** Salon actif, null hors salon. */
+    val room: SocialRoom? = null,
 )
 
 /** Logique pure de la couche sociale (testée sans Android). */
@@ -74,7 +82,42 @@ object SocialLogic {
         more = parseStrings(o.optJSONArray("more")),
         viewers = parseViewers(o.optJSONArray("viewers")),
         notes = previous.notes,
+        room = parseRoom(o.optJSONObject("room")),
     )
+
+    /** Salon reçu du JS ; null s'il est absent (hors salon, ou JS antérieur). Synchro inconnue : « synchronisé ». */
+    fun parseRoom(o: JSONObject?): SocialRoom? {
+        if (o == null) return null
+        val sync = when (o.optString("sync", "")) {
+            "catching" -> RoomSync.CATCHING
+            "waiting" -> RoomSync.WAITING
+            else -> RoomSync.SYNCED
+        }
+        return SocialRoom(o.optInt("members", 1).coerceAtLeast(1), o.optBoolean("host", false), sync)
+    }
+
+    /** Libellé de la pastille : « 3 en salle » en salon, sinon « 2 avec vous » (amis qui regardent). */
+    fun countLabel(room: SocialRoom?, viewers: Int): String = if (room != null) "${room.members} en salle" else PlayerUiLogic.viewersLabel(viewers)
+
+    /** Ligne de synchro sous le nombre : texte et point vert (synchronisé) ou ambre (rattrapage, attente). */
+    fun syncLabel(sync: RoomSync): String = when (sync) {
+        RoomSync.SYNCED -> "Synchronisé"
+        RoomSync.CATCHING -> "Rattrapage…"
+        RoomSync.WAITING -> "En attente d'un membre"
+    }
+
+    fun syncOk(sync: RoomSync): Boolean = sync == RoomSync.SYNCED
+
+    /** Pastille du salon visible : en salon toujours (la synchro compte même seul), sinon s'il y a des spectateurs. */
+    fun showRoomPill(enabled: Boolean, room: SocialRoom?, viewers: Int): Boolean = enabled && (room != null || viewers > 0)
+
+    /** Mention « seul l'hôte lance l'épisode suivant » : pour un invité en salon seulement. */
+    fun showHostNote(enabled: Boolean, room: SocialRoom?): Boolean = enabled && room != null && !room.host
+
+    const val REPLY_TEXT_MAX = 500
+
+    /** Réponse texte saisie : rognée et bornée ; null si vide (rien ne part vers le JS). */
+    fun replyText(raw: String): String? = raw.trim().take(REPLY_TEXT_MAX).ifEmpty { null }
 
     fun parseMessage(o: JSONObject): SocialMessage? {
         val from = parseViewer(o.optJSONObject("from")) ?: return null
@@ -148,11 +191,28 @@ class BubbleQueue(private val max: Int = SocialLogic.BUBBLE_MAX, private val ttl
         prune(nowMs)
         if (entries.any { it.msg.id == msg.id }) return false
         entries.add(Entry(msg, nowMs + ttlMs))
-        while (entries.size > max) entries.removeAt(0)
+        // La plus ancienne cède sa place, sauf une bulle épinglée (réponse en cours de saisie).
+        while (entries.size > max) {
+            val i = entries.indexOfFirst { it.expiresAt != Long.MAX_VALUE }
+            if (i < 0) break
+            entries.removeAt(i)
+        }
         return true
     }
 
     fun prune(nowMs: Long) { entries.removeAll { it.expiresAt <= nowMs } }
+
+    /** Réponse en cours de saisie (LAST-1632) : la bulle n'expire plus et ne cède plus sa place, jusqu'à `unpin`. */
+    fun pin(id: String) {
+        val i = entries.indexOfFirst { it.msg.id == id }
+        if (i >= 0) entries[i] = Entry(entries[i].msg, Long.MAX_VALUE)
+    }
+
+    /** Fin de saisie sans envoi : la bulle repart pour une durée de vie complète. */
+    fun unpin(id: String, nowMs: Long) {
+        val i = entries.indexOfFirst { it.msg.id == id && it.expiresAt == Long.MAX_VALUE }
+        if (i >= 0) entries[i] = Entry(entries[i].msg, nowMs + ttlMs)
+    }
 
     fun remove(id: String) { entries.removeAll { it.msg.id == id } }
 

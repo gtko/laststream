@@ -109,7 +109,7 @@ object PlayerUiLogic {
         return out
     }
 
-    /** « 1 avec vous », « 3 avec vous » : le natif ne sait pas s'il s'agit d'un salon ou d'amis qui regardent. */
+    /** « 1 avec vous », « 3 avec vous » : amis qui regardent le titre, hors salon (en salon : « N en salle », SocialLogic.countLabel). */
     fun viewersLabel(n: Int): String = "$n avec vous"
 
     private val AVATAR_COLORS = intArrayOf(0xFFFF5A36.toInt(), 0xFF6EC6FF.toInt(), 0xFFC9C4D6.toInt(), 0xFF4ADE80.toInt(), 0xFFF5B942.toInt())
@@ -120,6 +120,13 @@ object PlayerUiLogic {
     /** Réactions d'autres membres arrivées depuis le dernier relevé, proches de la position courante : elles flottent à l'écran. */
     fun freshReactions(notes: List<SocialNote>, seen: Set<String>, position: Double, window: Double = FRESH_REACTION_WINDOW_S): List<SocialNote> =
         notes.filter { it.id.isNotEmpty() && it.id !in seen && !it.mine && it.kind == "emoji" && it.body.isNotBlank() && abs(it.pos - position) <= window }
+
+    /**
+     * Largeur de la carte « épisode suivant » (px) : `max`, réduite à la place laissée à gauche (`leftReserved`) dans la largeur
+     * utile `available` (encoches déduites), au moins `min` mais jamais plus que `available`.
+     */
+    fun nextCardWidth(available: Int, leftReserved: Int, max: Int, min: Int): Int =
+        minOf(max, available - leftReserved).coerceAtLeast(min).coerceAtMost(available.coerceAtLeast(0))
 
     /** Largeur d'un panneau latéral : `wanted`, bornée à la largeur disponible. */
     fun panelWidth(available: Int, wanted: Int): Int = minOf(wanted, available).coerceAtLeast(0)

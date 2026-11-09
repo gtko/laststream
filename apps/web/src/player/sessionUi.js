@@ -16,7 +16,7 @@ import { failover, retryOnLibvlc } from './sessionFailover.js';
 import { externalAfterError } from './externalScreen.js';
 import { onNativeSource, onNativeTrack, syncNative } from './sessionNative.js';
 import { ensureEpisodes } from './sessionOpen.js';
-import { deleteReaction, editReaction, onCinema, onNativeReact, onNativeReply, partyAdapter, postReact, socialHidden } from './sessionSocial.js';
+import { deleteReaction, editReaction, onCinema, onNativeReact, onNativeReply, onNativeReplyText, partyAdapter, postReact, socialHidden } from './sessionSocial.js';
 import { S, AUTOPIP_KEY, getCaps, miniState, storeGet, storeSet } from './sessionState.js';
 import { addonThumb, cancelAddonThumb, rangeThumb, thumbsAllowedNow, thumbSourceOf } from './sessionThumbs.js';
 import * as playerState from './playerState';
@@ -239,5 +239,6 @@ export function bindEngine(e) {
   // Couche sociale du lecteur natif (LAST-1612) : réaction et réponse posées dans le natif, erreur à afficher.
   e.on('react', (d) => { if (S.P && S.P.engine === e) onNativeReact(d); });
   e.on('reply', (d) => { if (S.P && S.P.engine === e) onNativeReply(d); });
+  e.on('replyText', (d) => { if (S.P && S.P.engine === e) onNativeReplyText(d); });
   e.on('socialError', (d) => { if (S.P && S.P.engine === e && d && d.message) S.ui.toast(String(d.message), 3500); });
 }
