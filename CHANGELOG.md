@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.45 – 2026-11-09
+
+- Admin, clés des services : blocs espacés et bouton « Tester » par API (#19) — @gtko
+- web : parrainage, champ « Nom de profil » décalé (pastille d'initiale invisible) (#16) — @gtko
+- web : plus de défilement horizontal sur téléphone (Android) (#13) — @gtko
+
 ## v1.0.44 – 2026-11-09
 
 - Lecture : liens Lumio jamais sondés par le serveur, liens partagés propres à l'épisode (#21) — @gtko
