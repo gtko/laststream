@@ -95,32 +95,51 @@ describe('flux de version Windows depuis R2', () => {
   });
 });
 
-describe('flux de version Android depuis R2', () => {
+describe('flux de version Android depuis la release GitHub', () => {
   const A = '/app/android/latest.json';
-  const env = (stored, core) => ({
-    APP_FILES: {
-      async get(key) {
-        if (key !== 'android/latest.json' || !stored) return null;
-        return { size: 2, httpEtag: '"a"', body: '{}', writeHttpMetadata() {} };
-      },
-    },
-    CORE: { fetch: core },
-  });
-  it('présent dans R2 : 200, JSON, cache court', async () => {
-    const r = await worker.fetch(new Request(`https://laststream.example${A}`), env(true, async () => new Response('core', { status: 500 })));
+  const FEED = {
+    versionCode: 2026110951, versionName: '1.0.45',
+    url: 'https://github.com/gtko/laststream/releases/download/v1.0.45/Laststream-1.0.45.apk',
+    sha256: 'a'.repeat(64), size: 10, notes: 'Laststream v1.0.45',
+  };
+  const run = async (github, init = {}) => {
+    const realFetch = globalThis.fetch;
+    const calls = [];
+    globalThis.fetch = async (url) => { calls.push(String(url)); return github(); };
+    let relayed = 0;
+    try {
+      const r = await worker.fetch(new Request(`https://laststream.example${A}`, init), {
+        CORE: { fetch: async () => { relayed += 1; return Response.json({ versionCode: 1 }); } },
+      });
+      return { r, calls, relayed };
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  };
+  it('flux valide : 200, JSON, cache court, lu sur la dernière release', async () => {
+    const { r, calls, relayed } = await run(() => Response.json(FEED));
     assert.equal(r.status, 200);
     assert.equal(r.headers.get('content-type'), 'application/json');
     assert.equal(r.headers.get('cache-control'), 'public, max-age=300');
+    assert.deepEqual(await r.json(), FEED);
+    assert.deepEqual(calls, ['https://github.com/gtko/laststream/releases/latest/download/android-latest.json']);
+    assert.equal(relayed, 0);
   });
-  it('absent de R2 : relais habituel (ancien flux servi avec l\'application)', async () => {
-    let relayed = 0;
-    const r = await worker.fetch(new Request(`https://laststream.example${A}`), env(false, async () => { relayed += 1; return Response.json({ versionCode: 1 }); }));
-    assert.equal(relayed, 1);
-    assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { versionCode: 1 });
+  it('flux absent (404) ou APK hors du dépôt : relais habituel', async () => {
+    for (const github of [
+      () => new Response('Not Found', { status: 404 }),
+      () => Response.json({ ...FEED, url: 'https://evil.example/x.apk' }),
+      () => Response.json({ ...FEED, sha256: 'xyz' }),
+      () => { throw new Error('réseau'); },
+    ]) {
+      const { r, relayed } = await run(github);
+      assert.equal(relayed, 1);
+      assert.deepEqual(await r.json(), { versionCode: 1 });
+    }
   });
-  it('POST refusé', async () => {
-    const r = await worker.fetch(new Request(`https://laststream.example${A}`, { method: 'POST' }), env(true, async () => new Response('core')));
+  it('POST refusé sans appel à GitHub', async () => {
+    const { r, calls } = await run(() => Response.json(FEED), { method: 'POST' });
     assert.equal(r.status, 405);
+    assert.deepEqual(calls, []);
   });
 });
