@@ -184,6 +184,11 @@ function appFile(pathname) {
   if (/^\/app\/windows\/Laststream-Setup-\d+\.\d+\.\d+\.exe$/.test(pathname)) {
     return { key: 'windows/' + name, type: 'application/vnd.microsoft.portable-executable', attachment: true, name };
   }
+  // Flux de version Android (publié par le workflow Release) : réécrit à chaque release, donc cache court. Absent de R2 :
+  // la requête suit le relais habituel (ancien latest.json servi avec l'application web).
+  if (pathname === '/app/android/latest.json') {
+    return { key: 'android/latest.json', type: 'application/json', cache: 'public, max-age=300', fallback: true };
+  }
   // Flux de version Windows (voir laststream-shell-ng/upload.ps1) : réécrit à chaque release, donc cache court.
   if (pathname === '/app/windows/latest.json') {
     return { key: 'windows/latest.json', type: 'application/json', cache: 'public, max-age=300' };
@@ -208,7 +213,7 @@ async function route(request, env) {
   if (file) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
     const obj = await env.APP_FILES.get(file.key, { range: request.headers });
-    if (!obj) return json(404, { error: 'not_found' });
+    if (!obj) return file.fallback ? relay(request, env) : json(404, { error: 'not_found' });
     const headers = new Headers();
     obj.writeHttpMetadata(headers);
     headers.set('content-type', file.type);

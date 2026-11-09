@@ -76,7 +76,7 @@ describe('flux de version Windows depuis R2', () => {
     assert.equal(exe.headers.get('cache-control'), 'public, max-age=86400, immutable');
     assert.equal((await get(F, { method: 'POST' })).status, 405);
     const seen = [];
-    for (const p of ['/app/windows/other.json', '/app/windows/latest.json.bak', '/app/android/latest.json']) {
+    for (const p of ['/app/windows/other.json', '/app/windows/latest.json.bak', '/app/android/other.json']) {
       assert.notEqual((await get(p, {}, seen)).status, 200, p);
     }
     assert.deepEqual(seen, []);
@@ -92,5 +92,35 @@ describe('flux de version Windows depuis R2', () => {
       assert.notEqual((await get(p, {}, seen)).status, 200, p);
     }
     assert.deepEqual(seen, []);
+  });
+});
+
+describe('flux de version Android depuis R2', () => {
+  const A = '/app/android/latest.json';
+  const env = (stored, core) => ({
+    APP_FILES: {
+      async get(key) {
+        if (key !== 'android/latest.json' || !stored) return null;
+        return { size: 2, httpEtag: '"a"', body: '{}', writeHttpMetadata() {} };
+      },
+    },
+    CORE: { fetch: core },
+  });
+  it('présent dans R2 : 200, JSON, cache court', async () => {
+    const r = await worker.fetch(new Request(`https://laststream.example${A}`), env(true, async () => new Response('core', { status: 500 })));
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), 'application/json');
+    assert.equal(r.headers.get('cache-control'), 'public, max-age=300');
+  });
+  it('absent de R2 : relais habituel (ancien flux servi avec l\'application)', async () => {
+    let relayed = 0;
+    const r = await worker.fetch(new Request(`https://laststream.example${A}`), env(false, async () => { relayed += 1; return Response.json({ versionCode: 1 }); }));
+    assert.equal(relayed, 1);
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { versionCode: 1 });
+  });
+  it('POST refusé', async () => {
+    const r = await worker.fetch(new Request(`https://laststream.example${A}`, { method: 'POST' }), env(true, async () => new Response('core')));
+    assert.equal(r.status, 405);
   });
 });
