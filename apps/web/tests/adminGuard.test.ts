@@ -79,7 +79,7 @@ describe('rendu de la console', () => {
     const detail = document.getElementById('detail')!;
     expect(Array.from(detail.querySelectorAll('[data-adm-sec]')).map((b) => b.querySelector('.adm-navi-l')!.textContent)).toEqual([
       'Tableau de bord', 'À traiter', 'Comptes', 'Invitations', 'En ligne',
-      'Sources et addons', 'Performance', 'Caches et stockage', 'Tâches planifiées',
+      'Sources et addons', 'Performance', 'Caches et stockage', 'Tâches planifiées', 'Clés des services',
       'Watch parties', 'Modération',
       'Réglages', 'Annonces', 'Journal d’audit',
     ]);

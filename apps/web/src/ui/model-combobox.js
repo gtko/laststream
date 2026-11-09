@@ -1,4 +1,4 @@
-/* Choix du modèle OpenRouter (Réglages > Serveur) : combobox ARIA avec recherche sans accents, groupes par fournisseur,
+/* Choix du modèle OpenRouter (Administration > Clés des services) : combobox ARIA avec recherche sans accents, groupes par fournisseur,
  * tri, badges et tarifs ; feuille du bas sur mobile ; saisie libre en repli (erreur réseau ou identifiant personnalisé).
  * La valeur enregistrée reste la chaîne id du modèle, dans un champ caché `name` (lu tel quel par settings.js).
  * Le HTML est une chaîne (comme le reste de la page) ; l'état vit dans une WeakMap par racine et les événements sont

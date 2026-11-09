@@ -1,7 +1,7 @@
 /* Page #/settings : lastAddon (schéma, clés, addons Stremio), lecture, apparence, région. */
 import { applyTestResults, initSources, serializeSources, sourcesHTML } from './settings-sources.js';
 import { pruneCatalogsFor } from './addonCatalogSettings.js';
-import { decodeConfig, encodeConfig, getSchema, isMask, testConfig } from '../data/configApi';
+import { decodeConfig, encodeConfig, testConfig } from '../data/configApi';
 import { testServer } from '../data/serverTest';
 import { DEFAULT_BASE, getBase, getConfig, getCustom, getMode, isAndroidApp, isConfigured, normalizeBase, saveSettings } from '../data/config';
 import { laststreamBase, PUBLIC_PROBE_MS, probeHealth, serverChoiceVisible, switchServer } from '../data/serverMode';
@@ -21,7 +21,6 @@ import { userStore } from '../data/userStore';
 import { auth, canAdmin, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { creditsLinkHTML } from './credits.js';
-import { modelComboHTML } from './model-combobox.js';
 import { homePanelHTML } from './homeprefs.js';
 import { updateSupported } from '../data/appUpdate';
 import { tvPanelHTML } from './settings-tv.js';
@@ -40,29 +39,13 @@ import { topBar } from './fragments.js';
 import { applyDownloadToggle, downloadsStorageCard } from './settings-downloads.js';
 import { state } from './state.js';
 
-const SERVICE_FALLBACK = {
-  tmdbToken: ['Jeton TMDB (lecture v4)', 'Catalogues, fiches et recommandations.'],
-  mdblistApiKey: ['Clé MDBList', 'Notes IMDb, Rotten Tomatoes, Metacritic, Letterboxd.'],
-  tvdbApiKey: ['Clé TheTVDB', 'Saisons et prochain épisode des séries.'],
-  tvdbPin: ['PIN d’abonné TVDB', 'Seulement pour une clé v4 personnelle.'],
-  openrouterApiKey: ['Clé OpenRouter', 'Recommandations IA et textes sur les personnes.'],
-  openrouterModel: ['Modèle OpenRouter', 'Identifiant du modèle utilisé pour les textes.'],
-  fanartApiKey: ['Clé Fanart.tv', 'Facultative.'],
-  introdbApiKey: ['Clé IntroDB', 'Segments intro, reprise et générique.'],
-  animeskipClientId: ['Client ID Anime Skip', 'Repères de saut des séries d’animation.'],
-  tmdbApiKey: ['Clé API TMDB (v3)', 'Facultative.'],
-};
 
-/** État de la page : configuration en cours d'édition (secrets masqués) et configuration chiffrée de départ. */
-const ed = { cfg: null, schema: null, loaded: false, error: '', loading: false, token: 0 };
-
-const secretPlaceholder = (v) => (isMask(v) ? (v.last4 ? 'Enregistrée (' + v.last4 + ')' : 'Enregistrée') : 'Non définie');
-
-function serviceDefs() {
-  const props = ed.schema && ed.schema.properties && ed.schema.properties.services && ed.schema.properties.services.properties;
-  if (props) return Object.entries(props).map(([k, v]) => [k, v.title || k, v.description || '']);
-  return Object.entries(SERVICE_FALLBACK).map(([k, [t, d]]) => [k, t, d]);
-}
+/**
+ * État de la page : configuration en cours d'édition (secrets masqués) et configuration chiffrée de départ. Les clés des
+ * services ne se règlent plus ici mais dans l'administration (Plateforme > Clés des services) ; celles déjà enregistrées
+ * dans le compte restent dans la configuration (le serveur s'en sert en dernier recours).
+ */
+const ed = { cfg: null, loaded: false, error: '', loading: false, token: 0 };
 
 const stackInput = (label, desc, attrs) => fieldRow(label, desc, (id) => '<input class="set-input" id="' + id + '" ' + attrs + '>', { stack: true });
 const msgP = (id, text) => '<p class="set-msg" id="' + id + '" role="status">' + esc(text || '') + '</p>';
@@ -252,19 +235,12 @@ function serverChoiceHTML() {
 }
 
 function serverPanelInner() {
-  const c = ed.cfg || {};
-  const sv = c.services || {};
   const android = isAndroidApp();
   const choice = serverChoiceVisible();
   const base = getBase() || (android ? '' : DEFAULT_BASE);
-  const services = serviceDefs().map(([k, title, desc]) => (k === 'openrouterModel'
-    ? fieldRow(title, desc, (id) => modelComboHTML(id, sv[k] || 'openai/gpt-4o-mini'), { stack: true })
-    : stackInput(title, desc, 'type="password" autocomplete="off" name="svc.' + k + '" placeholder="' + esc(secretPlaceholder(sv[k])) + '"'))).join('');
   return card('Adresse', choice ? serverChoiceHTML() : stackInput('Adresse du serveur', 'Le serveur qui fournit le catalogue, les notes, la TV et les sources.',
     'type="url" name="base" value="' + esc(base) + '" placeholder="http://localhost:7000"') +
-    actions('<button type="button" class="btn btn-ghost btn-sm" data-set-ping>Tester l’adresse</button>')) +
-    card('Clés des services', services + actions('<button type="button" class="btn btn-ghost btn-sm" data-set-test="services">Tester les clés</button>') +
-      '<div class="set-tests" id="set-tests-services" aria-live="polite"></div>', { desc: 'Catalogues, notes, saisons et recommandations. Laisse un champ vide pour garder la clé enregistrée.' });
+    actions('<button type="button" class="btn btn-ghost btn-sm" data-set-ping>Tester l’adresse</button>'));
 }
 
 function sourcesPanelInner() {
@@ -284,7 +260,7 @@ function serverFormHTML(cats) {
   const status = ed.loading ? 'Chargement de la configuration…' : ed.error ? ed.error : ed.loaded ? 'Configuration chargée.' : isConfigured() ? '' : 'Aucune configuration enregistrée : renseigne l’adresse puis enregistre.';
   const cat = (id) => cats.find((c) => c.id === id);
   return '<form id="set-la" class="set-form" autocomplete="off">' +
-    panelHTML(cat('server'), 'Adresse du serveur et clés des services.', serverPanelInner()) +
+    panelHTML(cat('server'), 'Adresse du serveur. Les clés des services se règlent dans l’administration.', serverPanelInner()) +
     panelHTML(cat('sources'), 'Tes extensions Stremio, dans l’ordre où elles sont interrogées.', sourcesPanelInner()) +
     '<div class="set-savebar"><div class="set-savebar-t">' + msgP('set-la-msg', status) +
     '<p class="set-note">Les clés sont chiffrées par le serveur ; ce navigateur ne garde que la configuration chiffrée.</p></div>' +
@@ -397,7 +373,6 @@ async function loadConfig() {
   try {
     const base = getBase();
     if (!base) { ed.loading = false; return; }
-    ed.schema = await getSchema(base).catch(() => null);
     const enc = getConfig();
     const decoded = enc ? await decodeConfig(enc, base) : null;
     if (token !== ed.token) return;
@@ -421,7 +396,6 @@ export async function showSettings() {
   document.title = 'Réglages · Laststream';
   ed.loaded = false;
   ed.cfg = null;
-  ed.schema = null;
   initSources([]);
   resetHouseholdList();
   detailEl.innerHTML = pageHTML();
@@ -438,14 +412,6 @@ export async function showSettings() {
 function buildConfig(form) {
   const cfg = JSON.parse(JSON.stringify(ed.cfg || {}));
   const f = form.elements;
-  cfg.services = cfg.services || {};
-  serviceDefs().forEach(([k]) => {
-    const inp = f['svc.' + k];
-    if (!inp) return;
-    const v = inp.value.trim();
-    if (v) cfg.services[k] = v;
-    else if (k === 'openrouterModel') delete cfg.services[k];
-  });
   // Langues : dérivées de la langue audio principale (« Audio et sous-titres »). VF/MULTI d'abord si le français est choisi,
   // VOSTFR accepté si les sous-titres sont activés, les autres langues toujours en dernier recours.
   const lp = getLangPrefs();
@@ -494,8 +460,9 @@ async function runTest(kind, btn) {
   try {
     const { base, config } = await encodeFromForm(form);
     const res = await testConfig(config, base);
-    if (kind === 'services') showTests('services', res.services);
-    else { const src = res.sources.filter((x) => x.type !== 'alldebrid'); showTests('sources', src); applyTestResults(src); }
+    const src = res.sources.filter((x) => x.type !== 'alldebrid');
+    showTests('sources', src);
+    applyTestResults(src);
   } catch (err) {
     if (box) box.innerHTML = '<p class="set-test is-ko">' + esc(issuesText(err) || 'Test impossible : vérifie l’adresse et la configuration.') + '</p>';
   } finally {

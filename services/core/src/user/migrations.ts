@@ -986,6 +986,21 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX evening_guests_pid ON evening_guests (pid);
     `,
   },
+  {
+    version: 35,
+    name: 'clés de services serveur : OpenRouter (clé et modèle) gérés aussi par le propriétaire',
+    sql: `
+      -- SQLite ne modifie pas une contrainte CHECK : la table est recréée avec la liste élargie, lignes conservées.
+      CREATE TABLE server_services_v35 (
+        field TEXT PRIMARY KEY CHECK (field IN ('tmdbToken', 'tmdbApiKey', 'mdblistApiKey', 'tvdbApiKey', 'tvdbPin', 'fanartApiKey', 'introdbApiKey', 'skipdbApiKey', 'animeskipClientId', 'openrouterApiKey', 'openrouterModel')),
+        sealed TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO server_services_v35 (field, sealed, updated_at) SELECT field, sealed, updated_at FROM server_services;
+      DROP TABLE server_services;
+      ALTER TABLE server_services_v35 RENAME TO server_services;
+    `,
+  },
 ];
 
 /**

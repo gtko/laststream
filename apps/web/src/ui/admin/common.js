@@ -43,6 +43,7 @@ export function adminErr(err) {
     case 'tv_admin_unavailable': return 'L’API TV n’est pas encore branchée sur ce serveur.';
     case 'party_unavailable': return 'Watch parties indisponibles sur ce serveur (mode Node).';
     case 'not_found': return 'Introuvable.';
+    case 'account_config_missing': return 'Ton compte n’a aucune clé enregistrée.';
     default: return err.status === 501 ? 'Fonction indisponible sur ce serveur.' : 'Erreur (' + err.code + ').';
   }
 }

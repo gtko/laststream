@@ -86,7 +86,7 @@ describe('base migrée jusqu’à 23 (social v3), puis code actuel : annonces so
     const stub = workerEnv.USER_STORE.getByName(USER_STORE_NAME);
     await rollBackTo23(stub);
     await restartWithCurrentCode(stub);
-    expect(await versionsApplied(stub)).toEqual(Array.from({ length: 34 }, (_, i) => i + 1));
+    expect(await versionsApplied(stub)).toEqual(Array.from({ length: 35 }, (_, i) => i + 1));
 
     // Diagnostic direct de la méthode RPC : son erreur réelle (message) apparaît ici si elle échoue.
     const backend = createDurableObjectUserBackend(workerEnv.USER_STORE, USER_STORE_NAME);

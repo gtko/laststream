@@ -7,14 +7,14 @@ import type { SqlDb } from '../src/user/sql.js';
 const tables = (db: SqlDb): string[] =>
   (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((row) => row.name);
 
-/** Versions présentes : 1 à 34, contiguës (social v2 en 14 à 17, social v3 en 18 à 23, administration en 24 à 26, invitations du foyer en 27, billets de parrainage en 28, marquage « vu » manuel en 29, session TV du compte en 30, fin d'extrait des liens publics en 31, services du serveur en 32, coups de cœur des amis en 33, soirées planifiées en 34). */
-const EXPECTED_VERSIONS = Array.from({ length: 34 }, (_, i) => i + 1);
+/** Versions présentes : 1 à 35, contiguës (social v2 en 14 à 17, social v3 en 18 à 23, administration en 24 à 26, invitations du foyer en 27, billets de parrainage en 28, marquage « vu » manuel en 29, session TV du compte en 30, fin d'extrait des liens publics en 31, services du serveur en 32, coups de cœur des amis en 33, soirées planifiées en 34, clés OpenRouter du serveur en 35). */
+const EXPECTED_VERSIONS = Array.from({ length: 35 }, (_, i) => i + 1);
 
 describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), social v3 (18 à 23), administration (24 à 26)', () => {
   it('numérotation continue, v13 = title_starts, social v2 en 14 à 17, social v3 en 18 à 23, annonces en 24, révocation d invitations en 25, sessions (user-agent, dernière activité) en 26', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual(EXPECTED_VERSIONS);
     expect(MIGRATIONS[12]?.name).toMatch(/^lancements de titres par pays/);
-    expect(MIGRATIONS.slice(13).map((m) => m.version)).toEqual([14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]);
+    expect(MIGRATIONS.slice(13).map((m) => m.version)).toEqual([14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]);
   });
 
   it('base déjà en v13 (déployée depuis main) : applique 14 à 30 sans toucher à title_starts', () => {
@@ -33,7 +33,7 @@ describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), soc
     expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((r) => (r as { version: number }).version)).toEqual(
       MIGRATIONS.map((m) => m.version),
     );
-    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(34);
+    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(35);
     expect(tables(db)).toEqual(
       expect.arrayContaining(['title_starts', 'profile_friendships', 'profile_presence', 'messages', 'notes', 'note_creations', 'live_ticket_nonces', 'share_links', 'shared_lists', 'announcements', 'inbox_dismissed']),
     );
@@ -69,5 +69,19 @@ describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), soc
     ]);
     expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(Math.max(...MIGRATIONS.map((m) => m.version)));
+  });
+});
+
+describe('migration 35 : clés OpenRouter du serveur', () => {
+  it('une base en v34 garde ses clés serveur et accepte ensuite la clé et le modèle OpenRouter', () => {
+    const db = wrapSqlite(new DatabaseSync(':memory:'));
+    migrate(db, MIGRATIONS.filter((m) => m.version <= 34));
+    db.prepare('INSERT INTO server_services (field, sealed, updated_at) VALUES (?, ?, ?)').run('tmdbToken', 'scelle', 1);
+    expect(() => db.prepare('INSERT INTO server_services (field, sealed, updated_at) VALUES (?, ?, ?)').run('openrouterApiKey', 'x', 1)).toThrow();
+    migrate(db);
+    expect(db.prepare('SELECT field, sealed, updated_at FROM server_services').all()).toEqual([{ field: 'tmdbToken', sealed: 'scelle', updated_at: 1 }]);
+    db.prepare('INSERT INTO server_services (field, sealed, updated_at) VALUES (?, ?, ?)').run('openrouterApiKey', 'a', 2);
+    db.prepare('INSERT INTO server_services (field, sealed, updated_at) VALUES (?, ?, ?)').run('openrouterModel', 'b', 2);
+    expect(() => db.prepare('INSERT INTO server_services (field, sealed, updated_at) VALUES (?, ?, ?)').run('inconnu', 'c', 2)).toThrow();
   });
 });

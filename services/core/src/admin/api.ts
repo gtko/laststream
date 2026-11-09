@@ -1,3 +1,4 @@
+import { getServerServices, serverServicesEnv } from '../config/server-services.js';
 import type { AppDeps } from '../deps.js';
 import { type App, type Ctx, newApp } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
@@ -17,6 +18,7 @@ import { isCachePrefix } from './cache-types.js';
 import { registerAnnouncementAdminRoutes } from './ops-announcements.js';
 import { registerControlRoutes } from './ops-control.js';
 import { registerOpsRoutes } from './ops-platform.js';
+import { registerServicesRoutes } from './ops-services.js';
 import { ELEVATION_TTL_MS, signElevation, verifyElevation } from './elevation.js';
 import type { MaintenanceGate } from './maintenance.js';
 import {
@@ -556,8 +558,11 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
   });
 
   registerAnnouncementAdminRoutes(router, { owner, elevated, audit, admin });
-  registerOpsRoutes(router, { deps, owner, elevated, audit, metrics: metricsOf, caches: cachesOf });
-  registerControlRoutes(router, { deps, owner, admin, metrics: metricsOf, caches: cachesOf, party });
+  const servicesEnv = () => serverServicesEnv(deps.secret, users());
+  const serverKeys = () => getServerServices(servicesEnv());
+  registerOpsRoutes(router, { deps, owner, elevated, audit, metrics: metricsOf, caches: cachesOf, serverKeys });
+  registerControlRoutes(router, { deps, owner, admin, metrics: metricsOf, caches: cachesOf, party, serverKeys });
+  registerServicesRoutes(router, { deps, owner, elevated, audit, users, admin, servicesEnv });
 
   router.all('*', () => {
     throw new UserApiError(404, 'not_found');
