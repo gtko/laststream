@@ -7,7 +7,7 @@ import { toast } from '../dom.js';
 import { modelComboHTML } from '../model-combobox.js';
 import { fieldRow } from '../settings-ui.js';
 import { esc } from '../util.js';
-import { admCard, attempt, badge, loaded, sectionHead } from './common.js';
+import { admCard, adminErr, attempt, badge, loaded, sectionHead } from './common.js';
 import '../../styles/admin-platform.css';
 import { loadInto } from './view-state.js';
 
@@ -39,6 +39,30 @@ const SERVICE_GROUPS = [
 
 const SOURCE_LABEL = { db: 'Administration', env: 'Variable du serveur' };
 
+/**
+ * Fournisseur testé depuis la ligne d'une clé (POST /admin/providers/:id/test), avec les clés effectives du serveur. Les autres
+ * champs (PIN, repères de saut) n'ont pas de test : le PIN est testé avec la clé TheTVDB.
+ */
+const TEST_OF = { tmdbToken: 'tmdb', mdblistApiKey: 'mdblist', fanartApiKey: 'fanart', tvdbApiKey: 'tvdb', openrouterApiKey: 'openrouter' };
+/** Champs dont la présence rend le fournisseur testable (TMDB : jeton v4 ou clé v3). */
+const TEST_NEEDS = { tmdb: ['tmdbToken', 'tmdbApiKey'], mdblist: ['mdblistApiKey'], fanart: ['fanartApiKey'], tvdb: ['tvdbApiKey'], openrouter: ['openrouterApiKey'] };
+const TEST_ERROR = { rejected: 'clé refusée', http: 'erreur HTTP', timeout: 'délai dépassé', network: 'réseau injoignable' };
+
+/** Le fournisseur a-t-il une clé en place (administration ou variable du serveur) ? */
+export const testable = (provider, keys) => (TEST_NEEDS[provider] || []).some((f) => keys[f] && keys[f].set);
+
+/** Résultat d'un test, en texte : en cours, réussi (latence), échec (statut, raison) ou erreur de l'appel. */
+export function testNoteHTML(t) {
+  if (!t) return '';
+  if (t.state === 'running') return '<span class="adm-spin" aria-hidden="true"></span><span>Test en cours…</span>';
+  if (t.state === 'error') return '<span class="adm-test-r is-bad">' + esc(t.error) + '</span>';
+  const r = t.result || {};
+  const ms = Number.isFinite(r.latencyMs) ? Math.round(r.latencyMs) + ' ms' : '';
+  if (r.ok) return '<span class="adm-test-r is-ok">Clé valide' + (ms ? ' · ' + ms : '') + '</span>';
+  const why = [r.status != null ? 'HTTP ' + r.status : '', TEST_ERROR[r.error] || r.error || ''].filter(Boolean).join(' · ');
+  return '<span class="adm-test-r is-bad">Échec' + (why ? ' · ' + esc(why) : '') + (ms ? ' · ' + ms : '') + '</span>';
+}
+
 /** Texte du champ vide : ce qui est en place aujourd'hui. */
 export function keyPlaceholder(st) {
   if (!st || !st.set) return 'Non définie';
@@ -51,13 +75,23 @@ function sourceBadge(st) {
   return badge(SOURCE_LABEL[st.source] || st.source, st.source === 'db' ? 'ok' : '');
 }
 
-function keyRow(field, label, desc, st) {
+function testButton(provider, keys, t) {
+  const on = testable(provider, keys);
+  return '<button type="button" class="btn btn-ghost btn-sm" data-adm-svc-test="' + esc(provider) + '" data-adm-focus="svc-test:' + esc(provider) + '"' +
+    (t && t.state === 'running' ? ' aria-busy="true" disabled' : '') + (on ? '' : ' disabled title="Aucune clé à tester"') + '>Tester</button>';
+}
+
+function keyRow(field, label, desc, keys, tests) {
+  const st = keys[field];
   const clear = st && st.source === 'db'
     ? '<button type="button" class="btn btn-ghost btn-sm" data-adm-svc-clear="' + esc(field) + '" data-adm-focus="svc-clear:' + esc(field) + '">Effacer</button>'
     : '';
+  const provider = TEST_OF[field];
+  const t = provider ? tests[provider] : null;
   return fieldRow(label, desc, (id) => '<div class="adm-svc-row">' +
     '<input class="set-input" id="' + id + '" type="password" name="svc.' + esc(field) + '" autocomplete="off" spellcheck="false" placeholder="' + esc(keyPlaceholder(st)) + '" data-adm-focus="svc:' + esc(field) + '">' +
-    sourceBadge(st) + clear + '</div>', { stack: true });
+    sourceBadge(st) + (provider || clear ? '<span class="adm-svc-acts">' + (provider ? testButton(provider, keys, t) : '') + clear + '</span>' : '') +
+    (provider ? '<p class="adm-test adm-svc-test" role="status">' + testNoteHTML(t) + '</p>' : '') + '</div>', { stack: true });
 }
 
 function modelRow(label, desc, st) {
@@ -70,9 +104,10 @@ export function servicesHTML(S) {
   return sectionHead('Clés des services', 'Clés partagées par tous les comptes. Elles ne quittent jamais le serveur.', importBtn) +
     loaded(S.serviceKeys, (r) => {
       const keys = r.services || {};
-      return '<form id="adm-svc" class="set-form adm-settings" autocomplete="off">' +
+      const tests = S.svcTests || {};
+      return '<form id="adm-svc" class="set-form adm-settings adm-svc" autocomplete="off">' +
         '<p class="adm-banner" role="note">Une clé enregistrée ici passe avant la variable du serveur, qui passe avant la clé saisie dans un compte. Laisse un champ vide pour garder la clé en place.</p>' +
-        SERVICE_GROUPS.map(([title, desc, fields]) => admCard(title, fields.map(([f, l, d]) => (f === MODEL ? modelRow(l, d, keys[f]) : keyRow(f, l, d, keys[f]))).join(''), { desc })).join('') +
+        SERVICE_GROUPS.map(([title, desc, fields]) => admCard(title, fields.map(([f, l, d]) => (f === MODEL ? modelRow(l, d, keys[f]) : keyRow(f, l, d, keys, tests))).join(''), { desc })).join('') +
         '<p class="set-msg" id="adm-svc-msg" role="status"></p><div class="set-actions"><button type="submit" class="btn btn-primary">Enregistrer</button></div></form>';
     });
 }
@@ -93,6 +128,7 @@ export function servicesPatch(form, keys) {
 }
 
 function applyKeys(ctx, services) {
+  ctx.S.svcTests = {}; // les clés ont changé : les résultats de test précédents ne valent plus
   ctx.S.serviceKeys = { status: 'ready', error: '', value: { services } };
   ctx.paint();
 }
@@ -129,7 +165,22 @@ async function importKeys(ctx) {
   toast(n ? n + (n > 1 ? ' clés importées' : ' clé importée') : 'Aucune clé à importer dans ton compte');
 }
 
+/** Teste un fournisseur avec la clé en place sur le serveur (pas la saisie non enregistrée). Élévation demandée au besoin. */
+export async function testService(ctx, provider, runner = api.testProvider) {
+  const tests = ctx.S.svcTests || (ctx.S.svcTests = {});
+  const repaint = () => { if (ctx.isCurrent()) ctx.paint(); };
+  tests[provider] = { state: 'running' };
+  repaint();
+  try {
+    tests[provider] = { state: 'done', result: await runner(provider) };
+  } catch (err) {
+    tests[provider] = { state: 'error', error: adminErr(err) };
+  }
+  repaint();
+}
+
 function bindServices(root, ctx) {
+  root.querySelectorAll('[data-adm-svc-test]').forEach((b) => b.addEventListener('click', () => testService(ctx, b.dataset.admSvcTest)));
   const form = root.querySelector('#adm-svc');
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); save(ctx, root, form); });
   root.querySelectorAll('[data-adm-svc-clear]').forEach((b) => b.addEventListener('click', () => clearKey(ctx, b.dataset.admSvcClear)));

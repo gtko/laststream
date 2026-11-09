@@ -1,7 +1,8 @@
 // Console d'administration, Plateforme > Clés des services : rendu de l'état masqué (origine, quatre derniers caractères,
 // jamais de valeur), modification envoyée (champs saisis, modèle changé seulement), effacement et import sous élévation.
 import { describe, expect, it, vi } from 'vitest';
-import { keyPlaceholder, servicesHTML, servicesPatch } from '../src/ui/admin/services.js';
+import { keyPlaceholder, servicesHTML, servicesPatch, testable, testNoteHTML, testService } from '../src/ui/admin/services.js';
+import { UserApiError } from '../src/data/userApi';
 import type { ServiceKeys } from '../src/data/adminApi';
 
 vi.mock('../src/ui/dom.js', () => ({ toast: vi.fn() }));
@@ -58,5 +59,33 @@ describe('clés des services : modification envoyée', () => {
 
   it('modèle changé : envoyé', () => {
     expect(servicesPatch(formOf(KEYS, { openrouterModel: 'openai/gpt-4o' }), KEYS)).toEqual({ openrouterModel: 'openai/gpt-4o' });
+  });
+});
+
+describe('clés des services : test de chaque API', () => {
+  it('un bouton « Tester » par fournisseur, désactivé sans clé en place', () => {
+    formOf(KEYS, {});
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-adm-svc-test]')];
+    expect(buttons.map((b) => b.dataset.admSvcTest)).toEqual(['tmdb', 'mdblist', 'fanart', 'tvdb', 'openrouter']);
+    const state = Object.fromEntries(buttons.map((b) => [b.dataset.admSvcTest, b.disabled]));
+    expect(state).toEqual({ tmdb: false, mdblist: false, fanart: true, tvdb: true, openrouter: true });
+  });
+
+  it('TMDB testable avec le jeton v4 ou la clé v3', () => {
+    expect(testable('tmdb', { tmdbApiKey: { set: true, source: 'env' } })).toBe(true);
+    expect(testable('tmdb', {})).toBe(false);
+  });
+
+  it('résultat affiché sur la ligne : réussite, échec avec la raison, erreur de l’appel', async () => {
+    const S: any = { serviceKeys: ready({ services: KEYS }) };
+    const ctx = { S, isCurrent: () => true, paint: vi.fn() };
+    await testService(ctx, 'tmdb', async () => ({ id: 'tmdb', ok: true, status: 200, latencyMs: 142 }));
+    expect(testNoteHTML(S.svcTests.tmdb)).toContain('Clé valide · 142 ms');
+    await testService(ctx, 'mdblist', async () => ({ id: 'mdblist', ok: false, status: 401, latencyMs: 90, error: 'rejected' }));
+    expect(testNoteHTML(S.svcTests.mdblist)).toContain('HTTP 401 · clé refusée');
+    await testService(ctx, 'tvdb', async () => { throw new UserApiError(429, 'rate_limited'); });
+    expect(testNoteHTML(S.svcTests.tvdb)).toContain('Trop de requêtes');
+    document.body.innerHTML = servicesHTML(S);
+    expect(document.body.textContent).toContain('Clé valide · 142 ms');
   });
 });
