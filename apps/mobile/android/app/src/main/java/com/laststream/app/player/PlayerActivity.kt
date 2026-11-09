@@ -77,7 +77,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private lateinit var bigPlay: FrameLayout
     private lateinit var skipButton: LinearLayout
     private lateinit var skipLabel: TextView
-    private lateinit var endLayer: FrameLayout
+    private lateinit var endLayer: LinearLayout
     private lateinit var nextCard: LinearLayout
     private lateinit var nextTitle: TextView
     private lateinit var nextStill: ImageView
@@ -120,6 +120,10 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private var dragActive = false
     private var dragStart = 0f
     private var brightness = -1f
+    /** Volume maximal lu au début du glisser, et dernier cran / niveau appliqués (pas d'appel système redondant). */
+    private var dragMaxVolume = 0
+    private var dragLastVolume = -1
+    private var dragLastBrightness = -1f
 
     // L'état de lecture vit dans PlaybackCore (partagé avec la vignette) ; l'activité n'en garde qu'une vue.
     private var req: OpenRequest?
@@ -242,6 +246,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         ui.visibility = if (isInPictureInPictureMode) View.GONE else View.VISIBLE
+        // La luminosité choisie au glisser ne s'applique qu'au plein écran : en PiP, celle du système reprend.
+        if (brightness >= 0f) applyWindowBrightness(if (isInPictureInPictureMode) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else PlayerUiLogic.windowBrightness(brightness))
         if (!isInPictureInPictureMode) enterImmersive()
     }
 
@@ -435,6 +441,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
                 }
             }
             onStep = { delta -> seekBy(delta) }
+            onScrubCancel = { scheduleHide() } // glissé annulé : pas de saut, mais le masquage automatique reprend
         }
         box.addView(scrubber, LinearLayout.LayoutParams(-1, -2))
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(kit.dp(12), kit.dp(2), 0, 0) }
@@ -510,12 +517,13 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     /** Onde du double-tap : apparaît, grossit légèrement puis s'efface. */
     private fun ripple(v: TextView) {
         v.animate().cancel()
+        v.animate().setStartDelay(0) // un double-tap répété ne doit pas hériter du délai de fondu
         v.visibility = View.VISIBLE
         v.alpha = 1f
         v.scaleX = 0.85f
         v.scaleY = 0.85f
         v.animate().scaleX(1.05f).scaleY(1.05f).setDuration(220).withEndAction {
-            v.animate().alpha(0f).setStartDelay(250).setDuration(300).withEndAction { v.visibility = View.GONE; v.animate().setStartDelay(0) }.start()
+            v.animate().alpha(0f).setStartDelay(250).setDuration(300).withEndAction { v.visibility = View.GONE }.start()
         }.start()
     }
 
@@ -537,13 +545,15 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     }
 
     private fun buildEndLayer() {
-        endLayer = FrameLayout(this).apply { visibility = View.GONE }
+        // Une seule ligne en bas : « Passer le générique » à gauche, carte de l'épisode suivant à droite.
+        endLayer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM; visibility = View.GONE; setPadding(kit.dp(24), 0, kit.dp(24), 0) }
         val creditsLabel = kit.text("Passer le générique", 14f, Tokens.TEXT, 700, sora = true)
-        val creditsSkip = skipStyleButton(R.drawable.ic_skip_credits, creditsLabel) { requestNextEpisode() }.apply {
+        val creditsSkip = skipStyleButton(R.drawable.ic_skip_credits, creditsLabel) { skipCredits() }.apply {
             visibility = View.VISIBLE
-            contentDescription = "Passer le générique et lancer l’épisode suivant"
+            contentDescription = "Passer le générique"
         }
-        endLayer.addView(creditsSkip, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.BOTTOM).apply { leftMargin = kit.dp(24); bottomMargin = kit.dp(126) })
+        endLayer.addView(creditsSkip, LinearLayout.LayoutParams(-2, -2))
+        endLayer.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = kit.dp(12) })
 
         nextStill = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         val still = FrameLayout(this).apply { background = kit.round(0xFF3A3647.toInt(), 10f); clipToOutline = true; addView(nextStill, FrameLayout.LayoutParams(-1, -1)) }
@@ -589,12 +599,29 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             addView(still, LinearLayout.LayoutParams(kit.dp(176), kit.dp(99)))
             addView(body, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        val cardW = minOf(kit.dp(520), resources.displayMetrics.widthPixels - kit.dp(48))
-        endLayer.addView(nextCard, FrameLayout.LayoutParams(cardW, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(24) })
+        // Place laissée au bouton « Passer le générique » (≈ 220 dp) : la carte se resserre sur les écrans étroits.
+        val cardW = minOf(kit.dp(520), resources.displayMetrics.widthPixels - kit.dp(48 + 232))
+        if (cardW < kit.dp(500)) (still.layoutParams as LinearLayout.LayoutParams).apply { width = kit.dp(120); height = kit.dp(68) }
+        endLayer.addView(nextCard, LinearLayout.LayoutParams(cardW, -2))
         ui.addView(endLayer, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = kit.dp(24) })
     }
 
-    private fun hideEnd() { endLayer.visibility = View.GONE }
+    private fun hideEnd() { endLayer.visibility = View.GONE; updateCenter() }
+
+    /** Trio central masqué (sans perdre sa place) quand l'anneau de chargement ou la carte de fin occupe l'écran. */
+    private fun updateCenter() {
+        val covered = spinner.visibility == View.VISIBLE || endLayer.visibility == View.VISIBLE
+        centerRow.visibility = if (covered) View.INVISIBLE else View.VISIBLE
+    }
+
+    /** « Passer le générique » : scène post-générique s'il y en a une plus loin, sinon épisode suivant. */
+    private fun skipCredits() {
+        val target = PlayerUiLogic.creditsSkipTarget(segments, lastPos)
+        if (target == null) { requestNextEpisode(); return }
+        nextDismissed = true
+        hideEnd()
+        seekTo(target)
+    }
 
     private fun buildPanel() {
         panel = FrameLayout(this).apply {
@@ -624,6 +651,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         lockedLayer = FrameLayout(this).apply {
             visibility = View.GONE
             isClickable = true
+            contentDescription = "Écran verrouillé"
             setOnClickListener { flashUnlock() }
         }
         unlockPill = LinearLayout(this).apply {
@@ -642,6 +670,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             setOnClickListener { flashUnlock() }
             setOnLongClickListener { unlock(); true }
         }
+        ViewCompat.replaceAccessibilityAction(unlockPill, androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_LONG_CLICK, "Déverrouiller", null)
         lockedLayer.addView(unlockPill, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = kit.dp(20) })
         ui.addView(lockedLayer, FrameLayout.LayoutParams(-1, -1))
     }
@@ -701,6 +730,9 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
                     dragActive = true
                     dragY = e.rawY // départ au point où le geste est reconnu : pas de saut
                     dragStart = if (dragKind == DragKind.VOLUME) currentVolume() else currentBrightness()
+                    dragMaxVolume = audio?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 0
+                    dragLastVolume = -1
+                    dragLastBrightness = -1f
                     handler.removeCallbacks(gaugeHide)
                 }
                 if (dragActive) applyDrag(PlayerUiLogic.dragLevel(dragStart, e.rawY - dragY, root.height.toFloat()))
@@ -728,19 +760,27 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         return PlayerUiLogic.startBrightness(window.attributes.screenBrightness, system)
     }
 
+    private fun applyWindowBrightness(value: Float) {
+        val lp = window.attributes
+        if (lp.screenBrightness == value) return
+        lp.screenBrightness = value
+        window.attributes = lp
+    }
+
     private fun applyDrag(level: Float) {
         val gauge = if (dragKind == DragKind.VOLUME) volumeGauge else brightnessGauge
         val shown = if (dragKind == DragKind.VOLUME) {
             val a = audio ?: return
-            val max = a.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            val idx = PlayerUiLogic.volumeIndex(level, max)
-            try { a.setStreamVolume(AudioManager.STREAM_MUSIC, idx, 0) } catch (_: Exception) { } // « Ne pas déranger » peut refuser
-            PlayerUiLogic.volumeLevel(idx, max)
+            val idx = PlayerUiLogic.volumeIndex(level, dragMaxVolume)
+            if (idx != dragLastVolume) {
+                dragLastVolume = idx
+                try { a.setStreamVolume(AudioManager.STREAM_MUSIC, idx, 0) } catch (_: Exception) { } // « Ne pas déranger » peut refuser
+            }
+            PlayerUiLogic.volumeLevel(idx, dragMaxVolume)
         } else {
             brightness = level
-            val lp = window.attributes
-            lp.screenBrightness = PlayerUiLogic.windowBrightness(level)
-            window.attributes = lp
+            val applied = PlayerUiLogic.windowBrightness(level)
+            if (applied != dragLastBrightness) { dragLastBrightness = applied; applyWindowBrightness(applied) }
             level
         }
         gauge.set(shown)
@@ -1108,7 +1148,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             skipButton.visibility = View.VISIBLE
         } else skipButton.visibility = View.GONE
         val showNext = nextEpisode != null && !errored && !locked && PlayerLogic.showNextCard(segments, lastPos, lastDur, true, nextDismissed) && !isInPictureInPictureMode
-        endLayer.visibility = if (showNext) View.VISIBLE else View.GONE
+        val endVis = if (showNext) View.VISIBLE else View.GONE
+        if (endLayer.visibility != endVis) { endLayer.visibility = endVis; updateCenter() }
         if (showNext) {
             nextRing.progress = PlayerUiLogic.countdownFraction(lastPos, PlayerLogic.creditsStart(segments, lastDur), lastDur)
             if (skipButton.visibility == View.VISIBLE) skipButton.visibility = View.GONE
@@ -1165,12 +1206,12 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private fun scheduleHide() {
         handler.removeCallbacks(hideRunnable)
         val playing = ::core.isInitialized && player.isPlaying
-        if (PlayerUiLogic.shouldAutoHide(controlsVisible, playing, panelName != null, scrubberBusy())) handler.postDelayed(hideRunnable, PlayerUiLogic.AUTO_HIDE_MS)
+        if (PlayerUiLogic.shouldAutoHide(controlsVisible, playing, panelName != null, scrubberBusy(), social?.fanOpen == true)) handler.postDelayed(hideRunnable, PlayerUiLogic.AUTO_HIDE_MS)
     }
 
     /** Au-dessus de la barre basse quand les contrôles sont visibles, près du bord sinon. */
     private fun moveOverlays() {
-        val m = kit.dp(if (controlsVisible) 130 else 24)
+        val m = kit.dp(if (controlsVisible) 144 else 24)
         listOf(skipButton, endLayer).forEach { v -> (v.layoutParams as FrameLayout.LayoutParams).bottomMargin = m; v.requestLayout() }
         social?.setControlsVisible(controlsVisible)
     }
@@ -1212,14 +1253,14 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         errorActions.visibility = if (errored) View.VISIBLE else View.GONE
         spinner.visibility = View.VISIBLE
         spinnerRing.invalidate()
-        centerRow.visibility = View.INVISIBLE // l'anneau prend la place du trio central
+        updateCenter() // l'anneau prend la place du trio central
     }
 
     private fun hideSpinner() {
         if (errored) return
         spinner.visibility = View.GONE
         errorActions.visibility = View.GONE
-        centerRow.visibility = View.VISIBLE
+        updateCenter()
     }
 
     private val toastHide = Runnable { toast.visibility = View.GONE }

@@ -202,7 +202,10 @@ class SocialOverlay(
     /** Contrôles visibles : la bulle descend sous la pastille du salon pour ne pas masquer la barre haute. */
     fun setControlsVisible(v: Boolean) {
         controlsShown = v
-        (bubbleBox.layoutParams as FrameLayout.LayoutParams).topMargin = kit.dp(if (v) 128 else 24)
+        (bubbleBox.layoutParams as FrameLayout.LayoutParams).apply {
+            topMargin = kit.dp(if (v) 128 else 24)
+            leftMargin = kit.dp(if (v) 80 else 24) // à droite du bouton verrou (24 + 44 dp)
+        }
         bubbleBox.requestLayout()
         if (!v) closeFan()
     }
@@ -304,6 +307,7 @@ class SocialOverlay(
     }
 
     private fun armExpiry(now: Long) {
+        handler.removeCallbacks(expire)
         bubbles.nextExpiry()?.let { handler.postDelayed(expire, (it - now).coerceAtLeast(50)) }
     }
 

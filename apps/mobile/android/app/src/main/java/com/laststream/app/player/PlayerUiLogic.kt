@@ -28,9 +28,13 @@ object PlayerUiLogic {
     const val FRESH_REACTION_WINDOW_S = 20.0
     const val HEAT_BINS = 48
 
-    /** Contrôles masqués au bout de `AUTO_HIDE_MS` : jamais en pause, panneau ouvert ou barre tenue. */
-    fun shouldAutoHide(visible: Boolean, playing: Boolean, panelOpen: Boolean, scrubbing: Boolean): Boolean =
-        visible && playing && !panelOpen && !scrubbing
+    /** Contrôles masqués au bout de `AUTO_HIDE_MS` : jamais en pause, panneau ou éventail d'emojis ouvert, barre tenue. */
+    fun shouldAutoHide(visible: Boolean, playing: Boolean, panelOpen: Boolean, scrubbing: Boolean, fanOpen: Boolean = false): Boolean =
+        visible && playing && !panelOpen && !scrubbing && !fanOpen
+
+    /** « Passer le générique » : début de la scène post-générique si elle est encore à venir, sinon null (épisode suivant). */
+    fun creditsSkipTarget(segments: List<SkipSegment>, position: Double): Double? =
+        segments.filter { it.kind == "postcredits" && it.start > position }.minByOrNull { it.start }?.start
 
     /** −1 : recul, +1 : avance, 0 : lecture / pause. */
     fun doubleTapDirection(xFraction: Float): Int = when {

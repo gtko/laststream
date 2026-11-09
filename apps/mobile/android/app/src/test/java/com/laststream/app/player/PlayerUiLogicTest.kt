@@ -13,6 +13,7 @@ class PlayerUiLogicTest {
         assertFalse(PlayerUiLogic.shouldAutoHide(visible = true, playing = true, panelOpen = true, scrubbing = false))
         assertFalse(PlayerUiLogic.shouldAutoHide(visible = true, playing = true, panelOpen = false, scrubbing = true))
         assertFalse(PlayerUiLogic.shouldAutoHide(visible = false, playing = true, panelOpen = false, scrubbing = false))
+        assertFalse(PlayerUiLogic.shouldAutoHide(visible = true, playing = true, panelOpen = false, scrubbing = false, fanOpen = true))
         assertEquals(4000L, PlayerUiLogic.AUTO_HIDE_MS)
     }
 
@@ -114,6 +115,14 @@ class PlayerUiLogicTest {
         )
         val fresh = PlayerUiLogic.freshReactions(notes, setOf("e"), 102.0)
         assertEquals(listOf("a"), fresh.map { it.id })
+    }
+
+    @Test fun creditsSkipGoesToPostCreditsWhenAhead() {
+        val credits = SkipSegment("credits", 2900.0, 3000.0)
+        val post = SkipSegment("postcredits", 2950.0, 2990.0)
+        assertEquals(2950.0, PlayerUiLogic.creditsSkipTarget(listOf(credits, post), 2910.0)!!, 0.0)
+        assertEquals(null, PlayerUiLogic.creditsSkipTarget(listOf(credits, post), 2960.0))
+        assertEquals(null, PlayerUiLogic.creditsSkipTarget(listOf(credits), 2910.0))
     }
 
     @Test fun panelWidthBounded() {

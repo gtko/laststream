@@ -17,6 +17,8 @@ class ScrubberView(context: Context) : View(context) {
     var onStep: ((deltaSeconds: Double) -> Unit)? = null
     /** Tap sur un marqueur social : saut à sa position. */
     var onMarkerTap: ((SocialMarker) -> Unit)? = null
+    /** Glissé annulé (ACTION_CANCEL) : aucun saut, mais l'activité reprend le masquage automatique. */
+    var onScrubCancel: (() -> Unit)? = null
 
     private val density = resources.displayMetrics.density
     private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x26FFFFFF }
@@ -73,7 +75,8 @@ class ScrubberView(context: Context) : View(context) {
     }
 
     override fun onMeasure(w: Int, h: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(w), (30 * density).toInt() + extraH)
+        // Zone tactile d'au moins 44 dp ; la piste reste à 12 dp du bas (`trackCy`), la hauteur gagnée est au-dessus.
+        setMeasuredDimension(MeasureSpec.getSize(w), (44 * density).toInt() + extraH)
     }
 
     private fun trackCy() = height - 12f * density
@@ -172,7 +175,7 @@ class ScrubberView(context: Context) : View(context) {
                 dragging = false
                 isPressed = false
                 invalidate()
-                if (seek) onScrub?.invoke(fraction, true)
+                if (seek) onScrub?.invoke(fraction, true) else onScrubCancel?.invoke()
             }
         }
         return true
