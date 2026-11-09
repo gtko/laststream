@@ -94,6 +94,8 @@ body.modal-open { overflow: hidden; }
   transition: background-color 0.2s, transform 0.15s, opacity 0.2s;
 }
 .btn:hover { transform: translateY(-1px); }
+/* Téléphone : un libellé trop long (petit écran, police système agrandie) passe à la ligne au lieu de sortir de son bloc. */
+@media (max-width: 640px) { .btn { white-space: normal; max-width: 100%; text-align: center; } }
 .btn svg { width: 18px; height: 18px; }
 .btn-primary { background: var(--accent); color: var(--on-accent); }
 .btn-primary:hover { background: var(--accent-hover); }
@@ -410,7 +412,8 @@ body.modal-open { overflow: hidden; }
 .video { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 20px 20px 0 0; overflow: hidden; }
 .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 /* ======================= Fiche détail (écran média-center) ======================= */
-#detail { --gutter: clamp(24px, 4vw, 72px); --tabs-h: 64px; position: relative; min-height: 100vh; background: var(--bg); }
+/* Même garde-fou que #app : rien ne doit élargir la page (défilement horizontal sur Android, police système agrandie). */
+#detail { --gutter: clamp(24px, 4vw, 72px); --tabs-h: 64px; position: relative; min-height: 100vh; background: var(--bg); overflow-x: hidden; overflow-x: clip; }
 #detail .row { margin-right: 0; padding-right: 0; scroll-snap-type: none; }
 #detail .card-meta { display: block; }
 .fiche { position: relative; outline: none; }

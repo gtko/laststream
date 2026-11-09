@@ -257,8 +257,8 @@ body.lp-open .ctx-scrim { z-index: 699; } /* le menu passe à 700 au-dessus du m
 .f-eps-head .sw-s { display: none; }
 .f-sec-title .f-newcount { margin-left: 10px; vertical-align: middle; }
 @media (max-width: 640px) {
-  /* Note sur une ligne : libellé à gauche, étoiles à droite, cibles de 44 px de haut. */
-  .f-rate { align-self: stretch; flex-wrap: nowrap; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--line); }
+  /* Note sur une ligne : libellé à gauche, étoiles à droite, cibles de 44 px de haut ; les étoiles passent dessous si la place manque. */
+  .f-rate { align-self: stretch; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--line); }
   .f-rate .star { width: 36px; height: 44px; }
   .f-rate .star svg { width: 28px; height: 28px; margin: 8px 4px; }
   /* Épisodes : saisons sur une ligne, puis une barre d'outils compacte. */

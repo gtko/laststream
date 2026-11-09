@@ -71,7 +71,7 @@
 /* Le haut laisse la place aux boutons ronds de la barre fixe (.f-top : retour, amis). */
 .dl-page { padding: 96px var(--gutter, 40px) 56px; max-width: 1200px; display: flex; flex-direction: column; gap: 20px; }
 .dl-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.dl-h1 { font-family: var(--ff-title); font-size: 32px; font-weight: 700; line-height: 1.1; }
+.dl-h1 { min-width: 0; font-family: var(--ff-title); font-size: 32px; font-weight: 700; line-height: 1.1; overflow-wrap: anywhere; }
 .dl-h1:focus { outline: none; }
 .dl-head-acts { display: flex; gap: 12px; flex-wrap: wrap; }
 .dl-head-acts .btn svg { width: 18px; height: 18px; }
@@ -261,7 +261,7 @@
 /* ---------- Réglages > Lecture > Stockage ---------- */
 #set-dl:focus { outline: none; }
 .dl-seg { display: flex; gap: 4px; padding: 4px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px; width: 100%; }
-.dl-seg button { flex: 1 1 0; min-height: 44px; border-radius: 9px; color: var(--muted); font-weight: 600; font-size: 13px; padding: 0 4px; white-space: nowrap; }
+.dl-seg button { flex: 1 1 0; min-width: 0; min-height: 44px; border-radius: 9px; color: var(--muted); font-weight: 600; font-size: 13px; line-height: 1.2; padding: 0 4px; }
 .dl-seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 .dl-seg button:focus-visible { outline: var(--focus-ring-key); outline-offset: 2px; }
 .dl-seg button:last-child { flex: 1.7 1 0; }
