@@ -57,15 +57,24 @@ export function eveningFor(type: MediaKind, tmdbId: number, now: number = Date.n
   return next ?? null;
 }
 
+/**
+ * Mes proches pour les widgets sociaux : le foyer (autres profils du compte) puis les amis acceptés, sans doublon. Le foyer
+ * compte comme des amis partout (envies, salons, soirées, « ce que regardent tes amis »).
+ */
+export function circleOf(s: Pick<SocialState, 'friends' | 'household'>): FriendV3[] {
+  const seen = new Set<string>();
+  return [...(s.household || []), ...(s.friends || [])].filter((f) => !seen.has(f.pid) && !!seen.add(f.pid));
+}
+
 /** Nom affiché d'un ami : le surnom privé, sinon le nom. */
 export const friendName = (f: Pick<FriendV3, 'nickname' | 'handle'>): string => f.nickname || f.handle.name;
 
 /**
  * Amis qui veulent voir ce titre : ils l'ont ajouté à une liste ou en favori (activité des 30 derniers jours), l'ont mis dans une
- * liste partagée, ou sont inscrits à sa soirée. Amis acceptés seulement, sans les relations en sourdine ; ordre alphabétique.
+ * liste partagée, ou sont inscrits à sa soirée. Foyer et amis acceptés, sans les relations en sourdine ; ordre alphabétique.
  */
 export function wantersOf(s: SocialState, type: MediaKind, tmdbId: number, now: number = Date.now()): FriendV3[] {
-  const friends = new Map(s.friends.filter((f) => !f.muted).map((f) => [f.pid, f]));
+  const friends = new Map(circleOf(s).filter((f) => !f.muted).map((f) => [f.pid, f]));
   const pids = new Set<string>();
   for (const a of s.activity) {
     if (WANT_KINDS.includes(a.kind) && a.media.type === type && a.media.tmdbId === tmdbId && now - a.at <= WANT_WINDOW_MS) pids.add(a.pid);

@@ -95,12 +95,12 @@ describe('non-amis et demande en attente', () => {
   });
 });
 
-describe('foyer exclu', () => {
-  it('un autre profil du même compte n est jamais listé, moi non plus', async () => {
+describe('foyer', () => {
+  it('un autre profil du même compte est listé comme un ami ; moi jamais', async () => {
     await recommendAt(cast.bob, NOW_MS - HOUR, {});
     await recommend(cast.alice2, { tmdbId: 680, title: 'Alien', word: 'Foyer' });
     await recommend(cast.alice, { type: 'series', tmdbId: 1399, title: 'Serie', word: 'Mienne' });
-    expect(await seenBy(cast.alice)).toEqual([cast.bob.pid]);
+    expect([...(await seenBy(cast.alice))].sort()).toEqual([cast.alice2.pid, cast.bob.pid].sort());
   });
 });
 

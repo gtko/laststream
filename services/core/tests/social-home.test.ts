@@ -143,11 +143,13 @@ describe('profil enfant', () => {
 });
 
 describe('foyer', () => {
-  it('un profil du même compte n est jamais listé, moi non plus', async () => {
+  it('un profil du même compte est listé comme un ami ; moi jamais', async () => {
     await playAt(cast.bob, NOW_MS - HOUR, movie(603));
-    await playAt(cast.alice2, NOW_MS - 10 * MINUTE, movie(680));
+    await playAt(cast.alice2, NOW_MS - 10 * MINUTE, movie(603));
     await playAt(cast.alice, NOW_MS - 5 * MINUTE, movie(603));
-    expect(await seenBy(cast.alice)).toEqual({ watching: [cast.bob.pid], progress: [cast.bob.pid] });
+    const seen = await seenBy(cast.alice);
+    expect([...seen.watching].sort()).toEqual([cast.alice2.pid, cast.bob.pid].sort());
+    expect([...seen.progress].sort()).toEqual([cast.alice2.pid, cast.bob.pid].sort());
   });
 });
 
