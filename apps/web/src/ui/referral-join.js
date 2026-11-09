@@ -230,7 +230,7 @@ function showAccount(ctx) {
       '<p class="rf-sub rf-up rf-d1">Ton propre compte, ton foyer, et 4 billets à offrir à ton tour.</p>' +
       '<form id="rf-form" class="rf-form" data-level="0" novalidate>' +
         '<div class="rf-field rf-up rf-d2"><label for="rf-name">Nom de profil</label>' +
-          '<div class="rf-name-row"><span class="rf-av rf-av--form" data-rf-initial aria-hidden="true">?</span>' +
+          '<div class="rf-name-row"><span class="rf-av rf-av--form"' + avatarAttrs(null, AVATAR_COLOR) + ' data-rf-initial aria-hidden="true">?</span>' +
           '<input id="rf-name" class="rf-input" name="username" type="text" minlength="' + NAME_MIN + '" maxlength="' + NAME_MAX + '" autocomplete="username" autocapitalize="none" spellcheck="false" required aria-describedby="rf-handle"></div>' +
           '<p id="rf-handle" class="rf-handle">Identifiant pour tes amis : <strong data-rf-handle>' + esc(previewHandle('')) + '</strong></p></div>' +
         '<div class="rf-field rf-up rf-d3"><label for="rf-pwd">Mot de passe</label>' +
