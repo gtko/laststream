@@ -2,7 +2,8 @@ name: Release
 
 # Release automatique a chaque merge de PR sur main : bump de version (labels release:minor / release:major, sinon patch),
 # CHANGELOG.md, commit "release: vX.Y.Z" + tag annote vX.Y.Z, installeur Windows + APK Android, puis release GitHub publiee
-# (banniere, changelog, assets). Pas de macOS. Le televersement R2 et l'auto-update restent manuels (upload.ps1).
+# (banniere, changelog, assets), puis APK et flux Android sur app.laststream.app (R2, job android-site). Pas de macOS.
+# Pour Windows, le televersement R2 et l'auto-update restent manuels (upload.ps1).
 # Label release:skip sur la PR : aucune release.
 # workflow_dispatch(tag) : relance les builds et la publication d'un tag vX.Y.Z existant, sans nouveau bump.
 # Prerequis du depot : voir README.md, section "Releases automatiques" (secrets, permissions d'ecriture, protection de main).
@@ -319,3 +320,84 @@ jobs:
         for f in dl/desktop/latest.json dl/desktop/latest.json.sig; do test -s "$f" || { echo "::error::$f absent"; exit 1; }; done
         gh release upload "$TAG" "${installers[0]}" "${installers[0]}.sha256" dl/desktop/latest.json dl/desktop/latest.json.sig "${apks[0]}" --clobber
         gh release edit "$TAG" --draft=false --latest
+
+  # APK et flux de version Android sur app.laststream.app (bucket R2 laststream-app-files, servis par le Worker laststream-edge
+  # sur /app/android/) : bouton « Télécharger l'APK » du site et mise à jour en un tap de l'app. L'APK d'abord, le flux ensuite :
+  # une version annoncée est toujours téléchargeable. Sans secrets Cloudflare, l'envoi est sauté (avertissement) et la release
+  # GitHub reste publiée.
+  android-site:
+    needs: [prepare, publish]
+    if: ${{ needs.prepare.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      VERSION_CODE: ${{ needs.prepare.outputs.version_code }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+    - name: Check the Cloudflare secrets
+      id: cf
+      run: |
+        if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+          echo "::warning::Secrets CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID absents : APK non publié sur app.laststream.app."
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        fi
+    - name: checkout the tag (manifest script)
+      if: ${{ steps.cf.outputs.skip != 'true' }}
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ format('refs/tags/{0}', needs.prepare.outputs.tag) }}
+        persist-credentials: false
+        sparse-checkout: apps/web/scripts
+    - name: Setup Node 22
+      if: ${{ steps.cf.outputs.skip != 'true' }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Download the APK
+      if: ${{ steps.cf.outputs.skip != 'true' }}
+      uses: actions/download-artifact@v4
+      with:
+        name: android-apk
+        path: dl/android
+    - name: Build latest.json
+      if: ${{ steps.cf.outputs.skip != 'true' }}
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(dl/android/Laststream-*.apk)
+        if [ "${#apks[@]}" -ne 1 ]; then echo "::error::Un APK attendu, ${#apks[@]} trouvé(s)"; exit 1; fi
+        if ! [[ "$VERSION_CODE" =~ ^[0-9]{10}$ ]]; then echo "::error::versionCode inattendu : $VERSION_CODE"; exit 1; fi
+        mkdir -p site
+        cp "${apks[0]}" "site/laststream-${VERSION_CODE}.apk"
+        node --input-type=module -e '
+          import { statSync, writeFileSync } from "node:fs";
+          import { pathToFileURL } from "node:url";
+          const { buildManifest, sha256File } = await import(pathToFileURL("apps/web/scripts/publish-android.mjs").href);
+          const apk = `site/laststream-${process.env.VERSION_CODE}.apk`;
+          const manifest = buildManifest({
+            versionCode: Number(process.env.VERSION_CODE),
+            versionName: process.env.VERSION,
+            sha256: await sha256File(apk),
+            size: statSync(apk).size,
+            notes: `Laststream ${process.env.TAG}`,
+          });
+          writeFileSync("site/latest.json", JSON.stringify(manifest, null, 2) + "\n");
+        '
+        cat site/latest.json
+    - name: Upload the APK, then latest.json, to R2
+      if: ${{ steps.cf.outputs.skip != 'true' }}
+      run: |
+        set -euo pipefail
+        npx --yes wrangler@4.151.1 r2 object put "laststream-app-files/android/laststream-${VERSION_CODE}.apk" \
+          --file "site/laststream-${VERSION_CODE}.apk" --content-type application/vnd.android.package-archive --remote
+        npx --yes wrangler@4.151.1 r2 object put laststream-app-files/android/latest.json \
+          --file site/latest.json --content-type application/json --cache-control 'public, max-age=300' --remote
+        echo "Publié : https://app.laststream.app/app/android/laststream-${VERSION_CODE}.apk"
