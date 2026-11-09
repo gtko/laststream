@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.42 – 2026-11-09
+
+- LAST-1632 : état du salon et réponse texte dans le lecteur natif Android (#15) — @gtko
+
 ## v1.0.41 – 2026-11-09
 
 - LAST-1628 : refonte de l'interface du lecteur Android (maquette validée) (#14) — @gtko
