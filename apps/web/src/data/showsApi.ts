@@ -24,7 +24,7 @@ export interface Guide {
   at: number;
 }
 
-interface LocalCh extends TvChannel { lowRel?: boolean; num?: number | null }
+export interface LocalCh extends TvChannel { lowRel?: boolean; num?: number | null }
 
 async function fetchCatalog(country: string, language: string): Promise<LocalCh[]> {
   const q = { country, language, page: 1, limit: 500 };
@@ -39,17 +39,18 @@ async function fetchCatalog(country: string, language: string): Promise<LocalCh[
   return raw.map((c) => ({ ...c, lowRel: c.reliability === 'low' || (c.reliability == null && !!c.flaky) }));
 }
 
-/** Chaînes principales : TNT numérotée (ou, pays sans table, les mieux classées), complétées par les numéros absents du catalogue. */
-function mainChannels(catalog: LocalCh[], country: string): GuideChannel[] {
+/**
+ * Chaînes principales : TNT numérotée (ou, pays sans table, les mieux classées), présentes dans le catalogue seulement. Une
+ * chaîne absente du catalogue (flux retiré par le test de santé du serveur) n'apparaît ni dans le guide ni dans les rangées :
+ * rien ne pourrait la lire.
+ */
+export function mainChannels(catalog: LocalCh[], country: string): GuideChannel[] {
   const ranked = rankChannels(catalog, country);
-  const table = NATIONAL[country.toUpperCase()];
-  if (!table) {
+  if (!NATIONAL[country.toUpperCase()]) {
     return ranked.filter((c) => !c.fast).slice(0, MAIN_FALLBACK).map((c) => ({ epgId: c.id, playId: c.id, name: c.name, logo: c.logo, num: null }));
   }
-  const out: GuideChannel[] = ranked.filter((c) => c.num).map((c) => ({ epgId: c.id, playId: c.id, name: c.name, logo: c.logo, num: c.num ?? null }));
-  const have = new Set(out.map((c) => c.num));
-  table.forEach((e) => { if (!have.has(e.num)) out.push({ epgId: e.epg, playId: null, name: e.label, logo: '', num: e.num }); });
-  return out.sort((a, b) => (a.num ?? 99) - (b.num ?? 99));
+  return ranked.filter((c) => c.num).map((c) => ({ epgId: c.id, playId: c.id, name: c.name, logo: c.logo, num: c.num ?? null }))
+    .sort((a, b) => (a.num ?? 99) - (b.num ?? 99));
 }
 
 let guideCache: { at: number; p: Promise<Guide> } | null = null;

@@ -326,8 +326,9 @@ describe('émissions TV (interface)', () => {
     expect(topChef.querySelector('img')!.getAttribute('src')).toContain('/tcb.jpg');
     expect(tonight.find((c) => c.getAttribute('data-showwatch') === 'fr:TF1.fr')).toBeTruthy();
     const nums = Array.from(app.querySelectorAll('#ce-soir .ch-num')).map((n) => Number(n.textContent));
-    expect(nums.slice(0, 3)).toEqual([1, 2, 3]); // ordre officiel des chaînes
-    expect(nums).toContain(6);
+    // Ordre officiel des chaînes ; France 2 (2), absente du catalogue de test, n'a aucun flux lisible : pas au guide.
+    expect(nums.slice(0, 3)).toEqual([1, 3, 6]);
+    expect(nums).not.toContain(2);
     // Les émissions suivies d'office sont cherchées sur TMDB même sans diffusion au guide (« Quotidien » n'est pas au guide).
     const searched = calls.filter((c) => c.includes('/lt/tmdb/search/tv')).map((c) => new URL(c).searchParams.get('query'));
     expect(searched).toContain('Quotidien');
