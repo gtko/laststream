@@ -56,4 +56,11 @@
 /* ---------- Clés des services : champ, origine de la clé, effacement ---------- */
 .adm-svc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; width: 100%; }
 .adm-svc-row .set-input { flex: 1 1 260px; min-width: 0; }
-.adm-svc-row .adm-badge { flex: none; }
+.adm-svc-row > .adm-badge { flex: none; }
+/* « Tester » et « Effacer » restent côte à côte. */
+.adm-svc-acts { display: inline-flex; align-items: center; gap: 10px; flex: none; }
+/* Blocs (bandeau, groupes, enregistrement) espacés : chaque carte respire au-dessus et en dessous. */
+.adm-svc { display: flex; flex-direction: column; gap: 20px; }
+.adm-svc > .set-actions, .adm-svc > .set-msg { margin: 0; }
+/* Résultat du test : sur sa propre ligne, sous le champ. */
+.adm-svc-test { flex: 1 0 100%; margin: 0; }
