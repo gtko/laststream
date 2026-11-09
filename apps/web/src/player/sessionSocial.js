@@ -8,7 +8,7 @@ import { isKidProfile } from '../data/auth';
 import { partyBridge } from '../party/bridge';
 import { partyReactLimit } from '../party/reactLimit';
 import { knownMessages } from './messageBubble';
-import { freshIncoming, handleNativeReact, handleNativeReply, nativeSocialOf, partyReactMessageOf, roomViewers, toNativeMessage, toNativeNotes, watchingViewers } from './nativeSocial';
+import { freshIncoming, handleNativeReact, handleNativeReply, handleNativeReplyText, nativeRoomOf, nativeSocialOf, partyReactMessageOf, roomViewers, toNativeMessage, toNativeNotes, watchingViewers } from './nativeSocial';
 import { openShareDialog } from '../ui/socialHooks.js';
 import { cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, roomNames, startPolicy, toggleElement, untilFor } from './playbackSocial';
 import { clusterNotes, crossing, liveFlashDue, mediaKey, rearmed, upsertNotes } from './notesTimeline';
@@ -366,7 +366,9 @@ function syncNativeSocial(p = S.P) {
   const viewers = room
     ? (shown ? roomViewers(roomMembers() || [], roomMeName()) : [])
     : (socialLive && shown ? watchingViewers(st, presenceMediaOf(p), now, eng.state().duration, roomMembers()) : []);
-  const payload = nativeSocialOf({ available: socialLive, kid: isKidProfile(), status: st.status, cinema: cinemaOn(st.cinema, now), room }, viewers);
+  // État du salon (LAST-1632) : membres, rôle, synchro (attente de tampon ou écart du contrôleur). Seul l'état change la clé, pas l'écart exact.
+  const roomState = room ? nativeRoomOf(partyBridge.client, partyBridge.controller ? partyBridge.controller.drift : null) : null;
+  const payload = nativeSocialOf({ available: socialLive, kid: isKidProfile(), status: st.status, cinema: cinemaOn(st.cinema, now), room }, viewers, roomState);
   const key = JSON.stringify(payload);
   if (key === nativeSocialKey) return;
   nativeSocialKey = key;
@@ -404,6 +406,20 @@ export function onNativeReact(d) {
 export function onNativeReply(d) {
   if (!nativeSocialOn()) return;
   handleNativeReply(d, {
+    messageOf: (id) => knownMessages(getSocialState()).find((m) => m.id === id),
+    send: sendSocialMessage,
+    error: (message) => S.ui.toast(message, 3500),
+  });
+}
+
+/** Réponse texte saisie dans le natif (LAST-1632) : au chat du salon en salon (profil enfant exclu), sinon à l'auteur du message. */
+export function onNativeReplyText(d) {
+  const room = inParty();
+  if (room ? isKidProfile() : !nativeSocialOn()) return;
+  const c = partyBridge.client;
+  const eng = nativeEngineOf(S.P);
+  handleNativeReplyText(d, {
+    chat: room && c ? (text) => c.sendChat(text, eng ? eng.state().time : null) : null,
     messageOf: (id) => knownMessages(getSocialState()).find((m) => m.id === id),
     send: sendSocialMessage,
     error: (message) => S.ui.toast(message, 3500),

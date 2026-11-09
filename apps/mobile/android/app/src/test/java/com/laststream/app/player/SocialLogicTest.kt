@@ -132,4 +132,81 @@ class SocialLogicTest {
         assertFalse(SocialState().enabled)
         assertFalse(SocialLogic.parseState(JSONObject("{}"), SocialState()).enabled)
     }
+
+    // ---------- Salon (LAST-1632) ----------
+
+    @Test fun parsesRoomFromSetSocial() {
+        val s = SocialLogic.parseState(JSONObject("""{"enabled":true,"viewers":[],"room":{"members":3,"host":false,"sync":"catching"}}"""), SocialState())
+        assertEquals(SocialRoom(3, false, RoomSync.CATCHING), s.room)
+        assertEquals(RoomSync.WAITING, SocialLogic.parseRoom(JSONObject("""{"members":2,"host":true,"sync":"waiting"}"""))!!.sync)
+        // Synchro inconnue : synchronisé ; membres absents ou nuls : au moins 1.
+        assertEquals(SocialRoom(1, false, RoomSync.SYNCED), SocialLogic.parseRoom(JSONObject("""{"members":0,"sync":"???"}""")))
+        // Hors salon (null) ou JS antérieur (champ absent) : pas de salon.
+        assertNull(SocialLogic.parseState(JSONObject("""{"enabled":true,"room":null}"""), SocialState()).room)
+        assertNull(SocialLogic.parseState(JSONObject("""{"enabled":true}"""), SocialState()).room)
+    }
+
+    @Test fun roomReplacedOnEachSetSocialAndNotesKept() {
+        val notes = listOf(note(1.0))
+        val prev = SocialState(enabled = true, notes = notes, room = SocialRoom(2, true, RoomSync.SYNCED))
+        val next = SocialLogic.parseState(JSONObject("""{"enabled":true}"""), prev)
+        assertNull(next.room)
+        assertEquals(notes, next.notes)
+    }
+
+    @Test fun pillLabelsInRoomAndOutside() {
+        assertEquals("3 en salle", SocialLogic.countLabel(SocialRoom(3, true, RoomSync.SYNCED), 2))
+        assertEquals("2 avec vous", SocialLogic.countLabel(null, 2))
+        assertEquals("Synchronisé", SocialLogic.syncLabel(RoomSync.SYNCED))
+        assertTrue(SocialLogic.syncOk(RoomSync.SYNCED))
+        assertFalse(SocialLogic.syncOk(RoomSync.CATCHING))
+        assertFalse(SocialLogic.syncOk(RoomSync.WAITING))
+        assertTrue(SocialLogic.syncLabel(RoomSync.WAITING).isNotBlank())
+    }
+
+    @Test fun pillShownInRoomEvenAloneOutsideOnlyWithViewers() {
+        val room = SocialRoom(1, true, RoomSync.SYNCED)
+        assertTrue(SocialLogic.showRoomPill(true, room, 0))
+        assertTrue(SocialLogic.showRoomPill(true, null, 2))
+        assertFalse(SocialLogic.showRoomPill(true, null, 0))
+        assertFalse(SocialLogic.showRoomPill(false, room, 3))
+    }
+
+    @Test fun hostNoteForGuestOnly() {
+        assertTrue(SocialLogic.showHostNote(true, SocialRoom(3, false, RoomSync.SYNCED)))
+        assertFalse(SocialLogic.showHostNote(true, SocialRoom(3, true, RoomSync.SYNCED)))
+        assertFalse(SocialLogic.showHostNote(true, null))
+        assertFalse(SocialLogic.showHostNote(false, SocialRoom(3, false, RoomSync.SYNCED)))
+    }
+
+    @Test fun replyTextTrimmedAndBounded() {
+        assertEquals("ok", SocialLogic.replyText("  ok \n"))
+        assertNull(SocialLogic.replyText("   "))
+        assertEquals(SocialLogic.REPLY_TEXT_MAX, SocialLogic.replyText("x".repeat(SocialLogic.REPLY_TEXT_MAX + 10))!!.length)
+    }
+
+    @Test fun pinnedBubbleNeitherExpiresNorYieldsItsPlace() {
+        val q = BubbleQueue(max = 2, ttlMs = 1000)
+        val m = { id: String -> SocialMessage(id, SocialViewer("a", "A"), "x") }
+        q.push(m("m1"), 0)
+        q.pin("m1")
+        q.push(m("m2"), 10)
+        q.push(m("m3"), 20) // m2 cède sa place, pas m1 épinglé
+        assertEquals(listOf("m1", "m3"), q.active(500).map { it.id })
+        assertEquals(listOf("m1"), q.active(5000).map { it.id })
+    }
+
+    @Test fun unpinGivesAFullLifetime() {
+        val q = BubbleQueue(max = 3, ttlMs = 1000)
+        q.push(SocialMessage("m1", SocialViewer("a", "A"), "x"), 0)
+        q.pin("m1")
+        assertEquals(1, q.active(10_000).size)
+        q.unpin("m1", 10_000)
+        assertEquals(1, q.active(10_999).size)
+        assertEquals(0, q.active(11_000).size)
+        // Une bulle non épinglée garde son échéance.
+        q.push(SocialMessage("m2", SocialViewer("a", "A"), "y"), 20_000)
+        q.unpin("m2", 20_900)
+        assertEquals(0, q.active(21_000).size)
+    }
 }

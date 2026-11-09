@@ -80,6 +80,12 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private lateinit var endLayer: LinearLayout
     private lateinit var nextCard: LinearLayout
     private lateinit var nextTitle: TextView
+    private lateinit var nextStillBox: FrameLayout
+    private lateinit var creditsSkip: View
+    /** Mention de salon pour un invité (LAST-1632) : « seul l'hôte lance l'épisode suivant ». */
+    private lateinit var hostNote: TextView
+    /** Largeur disponible pour laquelle la carte « épisode suivant » a été calée (-1 : pas encore). */
+    private var nextCardFor = -1
     private lateinit var nextStill: ImageView
     private lateinit var nextRing: RingView
     private lateinit var panel: FrameLayout
@@ -342,7 +348,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             position = { lastPos }, duration = { lastDur },
             seek = { seekTo(it) },
             interact = { scheduleHide() },
-            onChanged = { updatePills() },
+            onChanged = { updatePills(); updateHostNote() },
         )
         PlayerHub.socialOverlay = social
         updatePills()
@@ -550,15 +556,33 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         // Une seule ligne en bas : « Passer le générique » à gauche, carte de l'épisode suivant à droite.
         endLayer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM; visibility = View.GONE; setPadding(kit.dp(24), 0, kit.dp(24), 0) }
         val creditsLabel = kit.text("Passer le générique", 14f, Tokens.TEXT, 700, sora = true)
-        val creditsSkip = skipStyleButton(R.drawable.ic_skip_credits, creditsLabel) { skipCredits() }.apply {
+        creditsSkip = skipStyleButton(R.drawable.ic_skip_credits, creditsLabel) { skipCredits() }.apply {
             visibility = View.VISIBLE
             contentDescription = "Passer le générique"
         }
-        endLayer.addView(creditsSkip, LinearLayout.LayoutParams(-2, -2))
+        // Colonne de gauche : « Passer le générique », puis la mention de salon pour un invité (maquette « Fin d'épisode »).
+        hostNote = kit.text("", 13f, Tokens.SECONDARY, 500).apply {
+            text = android.text.SpannableStringBuilder().apply {
+                append("Salon : ", android.text.style.ForegroundColorSpan(Tokens.AMBER), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                append("seul l'hôte lance l'épisode suivant, les invités suivent automatiquement.")
+            }
+            visibility = View.GONE
+            maxWidth = kit.dp(260)
+            setLineSpacing(0f, 1.25f)
+            setPadding(kit.dp(12), kit.dp(10), kit.dp(12), kit.dp(10))
+            background = kit.round(Tokens.CARD_SOFT, 12f, Tokens.BORDER, 1)
+        }
+        val left = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(creditsSkip, LinearLayout.LayoutParams(-2, -2))
+            addView(hostNote, LinearLayout.LayoutParams(-2, -2).apply { topMargin = kit.dp(12) })
+        }
+        endLayer.addView(left, LinearLayout.LayoutParams(-2, -2))
         endLayer.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = kit.dp(12) })
 
         nextStill = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         val still = FrameLayout(this).apply { background = kit.round(0xFF3A3647.toInt(), 10f); clipToOutline = true; addView(nextStill, FrameLayout.LayoutParams(-1, -1)) }
+        nextStillBox = still
         nextTitle = kit.text("", 16f, Tokens.TEXT, 800, sora = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(0, kit.dp(6), 0, kit.dp(10)) }
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(kit.dp(14), 0, 0, 0) }
         body.addView(kit.text("ÉPISODE SUIVANT", 11f, Tokens.ACCENT, 800, sora = true).apply { letterSpacing = 0.08f })
@@ -601,11 +625,33 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             addView(still, LinearLayout.LayoutParams(kit.dp(176), kit.dp(99)))
             addView(body, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        // Place laissée au bouton « Passer le générique » (≈ 220 dp) : la carte se resserre sur les écrans étroits.
-        val cardW = minOf(kit.dp(520), resources.displayMetrics.widthPixels - kit.dp(48 + 232)).coerceAtLeast(kit.dp(240))
-        if (cardW < kit.dp(500)) (still.layoutParams as LinearLayout.LayoutParams).apply { width = kit.dp(120); height = kit.dp(68) }
-        endLayer.addView(nextCard, LinearLayout.LayoutParams(cardW, -2))
+        endLayer.addView(nextCard, LinearLayout.LayoutParams(kit.dp(520), -2))
         ui.addView(endLayer, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = kit.dp(24) })
+        // Largeur de la carte calée sur la place réelle de `ui` (marges d'encoche et barres système comprises), à chaque mise en page.
+        ui.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitNextCard() }
+        updateHostNote()
+    }
+
+    /** Carte « épisode suivant » : largeur bornée par la place laissée à « Passer le générique », vignette réduite si étroite. */
+    private fun fitNextCard() {
+        val available = ui.width - ui.paddingLeft - ui.paddingRight - endLayer.paddingLeft - endLayer.paddingRight
+        if (available <= 0 || available == nextCardFor) return
+        nextCardFor = available
+        creditsSkip.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val cardW = PlayerUiLogic.nextCardWidth(available, creditsSkip.measuredWidth + kit.dp(12), kit.dp(520), kit.dp(240))
+        val compact = cardW < kit.dp(500)
+        ui.post {
+            (nextStillBox.layoutParams as LinearLayout.LayoutParams).apply { width = kit.dp(if (compact) 120 else 176); height = kit.dp(if (compact) 68 else 99) }
+            (nextCard.layoutParams as LinearLayout.LayoutParams).width = cardW
+            nextCard.requestLayout()
+        }
+    }
+
+    /** Mention de salon sur la carte de fin : un invité la voit, l'hôte et hors salon non (LAST-1632). */
+    private fun updateHostNote() {
+        if (!::hostNote.isInitialized) return
+        val s = PlayerHub.social
+        hostNote.visibility = if (SocialLogic.showHostNote(s.enabled, s.room)) View.VISIBLE else View.GONE
     }
 
     private fun hideEnd() { endLayer.visibility = View.GONE; updateCenter() }

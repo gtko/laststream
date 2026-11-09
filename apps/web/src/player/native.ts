@@ -59,8 +59,17 @@ export interface NativeViewer { id: string; name: string; initial?: string; avat
 /** Marqueur de la barre : `pos` en secondes ; `mine` : posé par le profil connecté. */
 export interface NativeNote { id: string; pos: number; kind: 'emoji' | 'text'; body: string; by: NativeViewer; mine: boolean }
 
-/** Couche sociale du lecteur natif. `enabled` faux : rien du social n'apparaît (profil enfant, statut invisible, mode cinéma). */
-export interface NativeSocial { enabled: boolean; quick: string[]; more: string[]; viewers: NativeViewer[] }
+/** État de synchro du salon : calé, en rattrapage (écart d'au moins 1,5 s), ou en attente du tampon d'un membre. */
+type NativeRoomSync = 'synced' | 'catching' | 'waiting';
+
+/** Salon vu par le natif (LAST-1632) : nombre de membres (moi compris), rôle, état de synchro. */
+export interface NativeRoom { members: number; host: boolean; sync: NativeRoomSync }
+
+/**
+ * Couche sociale du lecteur natif. `enabled` faux : rien du social n'apparaît (profil enfant, statut invisible, mode cinéma).
+ * `room` : salon actif (null hors salon) ; un APK antérieur l'ignore.
+ */
+export interface NativeSocial { enabled: boolean; quick: string[]; more: string[]; viewers: NativeViewer[]; room: NativeRoom | null }
 
 /** Message entrant affiché en bulle (haut gauche) par le natif, six secondes, file de trois. */
 export interface NativeMessage { id: string; from: NativeViewer; body: string }
@@ -83,6 +92,8 @@ interface NativeEvents {
   react: { emoji: string; pos: number };
   /** Réponse rapide à un message affiché en bulle. */
   reply: { messageId: string; emoji: '😂' | '❤️' };
+  /** Réponse texte saisie dans la carte de message (LAST-1632) : au chat du salon en salon, sinon à l'auteur du message. */
+  replyText: { messageId: string; text: string };
   /** Erreur à afficher côté web. */
   socialError: { message: string };
 }

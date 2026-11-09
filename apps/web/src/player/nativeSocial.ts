@@ -1,6 +1,8 @@
 import type { Message, Note, Status } from '../data/socialV2Api';
 import type { SocialState } from '../data/socialStore';
-import type { NativeMessage, NativeNote, NativeSocial, NativeViewer } from './native';
+import { CHAT_MAX_CHARS } from '../party/protocol';
+import type { PartyWait } from '../party/client';
+import type { NativeMessage, NativeNote, NativeRoom, NativeSocial, NativeViewer } from './native';
 import { RECENT_MS, REPLY_EMOJIS, SEND_FAILED, SEND_LIMIT, knownMessages, senderOf, shouldShowBubble, truncateText } from './messageBubble';
 import { QUICK_EMOJIS } from './notesTimeline';
 import { FAN_COUNT, MORE_EMOJIS } from './notesView';
@@ -60,12 +62,41 @@ export interface NativeSocialGate {
   room?: boolean;
 }
 
-/** Charge utile de `setSocial`. `enabled` faux : aucun spectateur n'est envoyé. */
-export function nativeSocialOf(gate: NativeSocialGate, viewers: readonly NativeViewer[]): NativeSocial {
+/** Écart (s) à partir duquel le lecteur est « en rattrapage » : même seuil que « Resynchronisation… » du salon web (syncText). */
+export const CATCHUP_DRIFT_S = 1.5;
+
+/** Ce que le natif doit savoir du client de salon. */
+export interface NativeRoomSource {
+  participants: readonly unknown[];
+  isHost: boolean;
+  waiting: PartyWait | null;
+}
+
+/**
+ * Salon au format du natif (LAST-1632) : membres (moi compris, au moins 1), hôte ou invité, et synchro. L'attente du tampon d'un
+ * membre l'emporte sur l'écart ; l'écart (`drift`, signé, null avant la première mesure) ne compte qu'à partir de CATCHUP_DRIFT_S.
+ */
+export function nativeRoomOf(c: NativeRoomSource, drift: number | null): NativeRoom {
+  const waiting = !!c.waiting && c.waiting.who.length > 0;
+  const catching = drift !== null && Number.isFinite(drift) && Math.abs(drift) >= CATCHUP_DRIFT_S;
+  return { members: Math.max(1, c.participants.length), host: c.isHost, sync: waiting ? 'waiting' : catching ? 'catching' : 'synced' };
+}
+
+/**
+ * Charge utile de `setSocial`. `enabled` faux : aucun spectateur ni salon n'est envoyé. `room` : état du salon, transmis
+ * seulement en salon (`gate.room`).
+ */
+export function nativeSocialOf(gate: NativeSocialGate, viewers: readonly NativeViewer[], room: NativeRoom | null = null): NativeSocial {
   const social = gate.available && !gate.kid && gate.status !== 'invisible' && !gate.cinema;
   // En salon, la rangée reste active même sans social « amis » (indisponible, invisible, cinéma) ; le profil enfant reste exclu.
   const enabled = gate.room ? !gate.kid : social;
-  return { enabled, quick: [...NATIVE_QUICK], more: [...NATIVE_MORE], viewers: enabled ? viewers.map((v) => ({ ...v })) : [] };
+  return {
+    enabled,
+    quick: [...NATIVE_QUICK],
+    more: [...NATIVE_MORE],
+    viewers: enabled ? viewers.map((v) => ({ ...v })) : [],
+    room: enabled && gate.room && room ? { ...room } : null,
+  };
 }
 
 /**
@@ -139,6 +170,40 @@ export function handleNativeReply(d: unknown, h: NativeSocialHandlers): Promise<
   const m = h.messageOf(r.messageId);
   if (!m) return null;
   return h.send(m.from, r.emoji).then(() => undefined, (x: unknown) => {
+    h.error((x as { status?: number } | null)?.status === 429 ? SEND_LIMIT : SEND_FAILED);
+  });
+}
+
+/** Réponse texte venant du natif (LAST-1632) : texte non vide une fois rogné, coupé à CHAT_MAX_CHARS ; `messageId` facultatif. */
+export function replyTextOf(d: unknown): { messageId: string; text: string } | null {
+  const r = (d ?? {}) as { messageId?: unknown; text?: unknown };
+  if (typeof r.text !== 'string') return null;
+  const text = r.text.trim().slice(0, CHAT_MAX_CHARS);
+  if (text === '') return null;
+  return { messageId: typeof r.messageId === 'string' ? r.messageId : '', text };
+}
+
+/** Ce que la réponse texte appelle : en salon, le chat du salon (`chat`, faux si non envoyé) ; sinon l'envoi à l'auteur. */
+export interface NativeReplyTextHandlers extends NativeSocialHandlers {
+  /** Chat du salon actif, ou null hors salon. */
+  chat: ((text: string) => boolean) | null;
+}
+
+/**
+ * Réponse texte du natif. En salon, elle part dans le chat du salon (le message d'origine peut être une réaction du salon) ;
+ * hors salon, elle va à l'auteur du message, comme une réponse de la bulle web. Renvoie la promesse de l'envoi (échec affiché),
+ * ou null si la réponse est invalide ou si le message n'est plus connu.
+ */
+export function handleNativeReplyText(d: unknown, h: NativeReplyTextHandlers): Promise<void> | null {
+  const r = replyTextOf(d);
+  if (!r) return null;
+  if (h.chat) {
+    if (!h.chat(r.text)) h.error(SEND_FAILED);
+    return Promise.resolve();
+  }
+  const m = r.messageId ? h.messageOf(r.messageId) : undefined;
+  if (!m) return null;
+  return h.send(m.from, r.text).then(() => undefined, (x: unknown) => {
     h.error((x as { status?: number } | null)?.status === 429 ? SEND_LIMIT : SEND_FAILED);
   });
 }
