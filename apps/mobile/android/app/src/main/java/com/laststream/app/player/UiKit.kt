@@ -25,6 +25,16 @@ object Tokens {
     const val SOFT = 0xFFE4E0EC.toInt()
     const val DIM = 0xFFA19DAE.toInt()
     const val SCRIM = 0xCC0C0B11.toInt()
+    // Habillage LAST-1628 (maquette validée) : cartes, liserés, textes secondaires, états du salon.
+    const val CARD = 0xF017151F.toInt()
+    const val CARD_SOFT = 0xE017151F.toInt()
+    const val BORDER = 0xFF33303F.toInt()
+    const val SECONDARY = 0xFFC9C4D6.toInt()
+    const val GREEN = 0xFF4ADE80.toInt()
+    const val AMBER = 0xFFF5B942.toInt()
+    /** Fond translucide des boutons posés sur la vidéo (rgba(12,11,17,.55)). */
+    const val GLASS = 0x8C0C0B11.toInt()
+    const val SHEET = 0xEB110F18.toInt()
 }
 
 class UiKit(private val ctx: Context) {
@@ -109,6 +119,40 @@ class UiKit(private val ctx: Context) {
         if (res != null) addView(icon(res, 22).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(8) })
         addView(text(label, 14f, Tokens.TEXT, 700))
         setOnClickListener { onClick() }
+    }
+
+    /** Chiffres à chasse fixe (temps, pourcentages) : le texte ne tremble pas en défilant. */
+    fun tabular(t: TextView): TextView = t.apply { fontFeatureSettings = "tnum" }
+
+    /**
+     * Pilule de la barre basse (maquette : 40 dp de haut, liseré blanc 14 %, fond verre) ; la zone tactile fait 44 dp,
+     * le fond est inséré de 2 dp en haut et en bas. `accent` : variante orange (Réagir).
+     */
+    fun pill(res: Int?, label: String, desc: String = label, accent: Boolean = false, onClick: () -> Unit): LinearLayout = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        isFocusable = true
+        isClickable = true
+        contentDescription = desc
+        minimumHeight = dp(44)
+        setPadding(dp(14), 0, dp(14), 0)
+        val fill = if (accent) Tokens.ACCENT else Tokens.GLASS
+        val stroke = if (accent) Tokens.ACCENT else 0x24FFFFFF
+        fun shape(f: Int, s: Int, w: Int) = android.graphics.drawable.InsetDrawable(GradientDrawable().apply {
+            cornerRadius = dp(999).toFloat()
+            setColor(f)
+            setStroke(dp(w), s)
+        }, 0, dp(2), 0, dp(2))
+        background = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), shape(fill, if (accent) Color.WHITE else Tokens.ACCENT, 2))
+            addState(intArrayOf(android.R.attr.state_pressed), shape(if (accent) 0xFFFF7A5C.toInt() else 0x33FFFFFF, stroke, 1))
+            addState(intArrayOf(), shape(fill, stroke, 1))
+        }
+        val fg = if (accent) Tokens.BG else Tokens.TEXT
+        if (res != null) addView(icon(res, 18, fg).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(8) })
+        addView(text(label, 13f, fg, if (accent) 700 else 600))
+        setOnClickListener { onClick() }
+        layoutParams = LinearLayout.LayoutParams(-2, dp(44)).apply { marginStart = dp(6) }
     }
 
     fun spacer(wDp: Int = 0, hDp: Int = 0): View = View(ctx).apply { layoutParams = LinearLayout.LayoutParams(dp(wDp), dp(hDp)) }

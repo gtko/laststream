@@ -11,25 +11,27 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
+import android.text.TextUtils
 import android.util.Rational
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -40,12 +42,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.getcapacitor.JSObject
 import com.laststream.app.R
-import org.json.JSONArray
-import org.json.JSONObject
-import org.videolan.libvlc.LibVLC
-import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
 import java.net.HttpURLConnection
 import java.net.URL
@@ -53,9 +50,10 @@ import kotlin.concurrent.thread
 
 /**
  * Lecteur plein écran natif (libVLC) : décodage matériel, toutes les pistes audio et sous-titres, image dans l'image.
- * L'habillage reprend celui du lecteur web (corail, Sora, masquage automatique, ±10 s, barre de position, panneau
- * « Audio et sous-titres », « Passer l'intro », « Épisode suivant »). La logique de session (progression enregistrée, segments,
- * épisode suivant) reste côté JS : l'activité n'émet que des évènements.
+ * L'habillage suit la maquette validée de LAST-1628, alignée sur le lecteur web : barre haute (retour, titre, réduire, PiP,
+ * réglages), trio central −10 s / lecture / +10 s, barre basse (progression puis pilules), panneaux à droite, salon,
+ * fin d'épisode, gestes (luminosité, volume, double-tap, verrou). La logique de session (progression enregistrée,
+ * segments, épisode suivant) reste côté JS : l'activité n'émet que des évènements.
  */
 class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private lateinit var kit: UiKit
@@ -66,26 +64,36 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private lateinit var ui: FrameLayout
     private lateinit var controls: FrameLayout
     private lateinit var spinner: LinearLayout
+    private lateinit var spinnerRing: RingView
     private lateinit var spinnerMsg: TextView
+    private lateinit var errorActions: LinearLayout
+    private lateinit var errorSources: View
     private lateinit var titleView: TextView
     private lateinit var subtitleView: TextView
     private lateinit var scrubber: ScrubberView
     private var social: SocialOverlay? = null
     private lateinit var timeView: TextView
-    private lateinit var playIcon: FrameLayout
+    private lateinit var centerRow: LinearLayout
     private lateinit var bigPlay: FrameLayout
-    private lateinit var nextButton: LinearLayout
     private lateinit var skipButton: LinearLayout
     private lateinit var skipLabel: TextView
+    private lateinit var endLayer: FrameLayout
     private lateinit var nextCard: LinearLayout
     private lateinit var nextTitle: TextView
     private lateinit var nextStill: ImageView
+    private lateinit var nextRing: RingView
     private lateinit var panel: FrameLayout
     private lateinit var panelBody: LinearLayout
     private lateinit var toast: TextView
     private lateinit var pipButton: FrameLayout
-    private lateinit var sourcesButton: LinearLayout
-    private lateinit var episodesButton: LinearLayout
+    private val pillViews = LinkedHashMap<Pill, View>()
+    private lateinit var lockedLayer: FrameLayout
+    private lateinit var unlockPill: LinearLayout
+    private lateinit var brightnessGauge: LevelGauge
+    private lateinit var volumeGauge: LevelGauge
+    private lateinit var rippleBack: TextView
+    private lateinit var rippleFwd: TextView
+    private lateinit var gestures: GestureDetector
 
     private val handler = Handler(Looper.getMainLooper())
     private var nextDismissed = false
@@ -102,6 +110,16 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private var handedOff = false
     private var panelSeason = 0
     private val images = ImageLoader()
+    /** Écran verrouillé : seul le bouton « appui long pour déverrouiller » répond au toucher. */
+    private var locked = false
+
+    // Glisser vertical (luminosité / volume).
+    private var dragX = 0f
+    private var dragY = 0f
+    private var dragKind = DragKind.NONE
+    private var dragActive = false
+    private var dragStart = 0f
+    private var brightness = -1f
 
     // L'état de lecture vit dans PlaybackCore (partagé avec la vignette) ; l'activité n'en garde qu'une vue.
     private var req: OpenRequest?
@@ -268,7 +286,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         setNextEpisode(c.nextEpisode)
         setSources(c.sources)
         setEpisodes(c.episodes)
-        nextCard.visibility = View.GONE
+        hideEnd()
         skipButton.visibility = View.GONE
         closePanel()
         if (player.isPlaying) { hideSpinner(); updatePlayIcons(true) } else if (c.errored) showSpinner("") else { hideSpinner(); updatePlayIcons(false) }
@@ -291,134 +309,127 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             insets
         }
 
-        spinner = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-        }
-        spinner.addView(ProgressBar(this).apply {
-            isIndeterminate = true
-            indeterminateTintList = android.content.res.ColorStateList.valueOf(Tokens.ACCENT)
-            layoutParams = LinearLayout.LayoutParams(kit.dp(56), kit.dp(56))
-        })
-        spinnerMsg = kit.text("", 15f, Tokens.SOFT, 600).apply { gravity = Gravity.CENTER; setPadding(kit.dp(24), kit.dp(14), kit.dp(24), 0) }
-        spinner.addView(spinnerMsg)
-        ui.addView(spinner, FrameLayout.LayoutParams(-1, -1))
-
         controls = FrameLayout(this)
         ui.addView(controls, FrameLayout.LayoutParams(-1, -1))
+        controls.addView(gradientView(true), FrameLayout.LayoutParams(-1, kit.dp(130), Gravity.TOP))
+        controls.addView(gradientView(false), FrameLayout.LayoutParams(-1, kit.dp(190), Gravity.BOTTOM))
         buildTop()
         buildCenter()
         buildBottom()
+        controls.addView(
+            kit.iconButton(R.drawable.ic_lock, "Verrouiller l’écran", 44, 22, Tokens.GLASS) { lock() },
+            FrameLayout.LayoutParams(kit.dp(44), kit.dp(44), Gravity.START or Gravity.CENTER_VERTICAL).apply { leftMargin = kit.dp(24) },
+        )
 
-        skipLabel = kit.text("", 16f, Tokens.TEXT, 800)
-        skipButton = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            isFocusable = true
-            isClickable = true
-            visibility = View.GONE
-            minimumHeight = kit.dp(52)
-            setPadding(kit.dp(22), 0, kit.dp(22), 0)
-            background = kit.focusBackground(12f, 0xD10C0B11.toInt(), Tokens.TEXT, false)
-            addView(kit.icon(R.drawable.ic_skip, 22).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = kit.dp(10) })
-            addView(skipLabel)
-            setOnClickListener { doSkip() }
-            setOnFocusChangeListener { _, f -> skipLabel.setTextColor(if (f) Tokens.BG else Tokens.TEXT); (getChildAt(0) as ImageView).setColorFilter(if (f) Tokens.BG else Color.WHITE) }
-        }
-        ui.addView(skipButton, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(40); bottomMargin = kit.dp(40) })
+        // Au-dessus des contrôles, centré et à sa taille : les touchers autour continuent d'atteindre la vidéo.
+        buildSpinner()
+        buildGestureFeedback()
+
+        skipLabel = kit.text("", 14f, Tokens.TEXT, 700, sora = true)
+        skipButton = skipStyleButton(R.drawable.ic_skip, skipLabel) { doSkip() }
+        ui.addView(skipButton, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(24); bottomMargin = kit.dp(24) })
 
         social = SocialOverlay(
             this, kit, ui, controls, scrubber,
             position = { lastPos }, duration = { lastDur },
             seek = { seekTo(it) },
             interact = { scheduleHide() },
+            onChanged = { updatePills() },
         )
         PlayerHub.socialOverlay = social
+        updatePills()
 
-        buildNextCard()
+        buildEndLayer()
         buildPanel()
 
         toast = kit.text("", 14f, Tokens.TEXT, 700).apply {
             visibility = View.GONE
             setPadding(kit.dp(16), kit.dp(9), kit.dp(16), kit.dp(9))
-            background = kit.round(0xE617151F.toInt(), 999f, Tokens.LINE, 1)
+            background = kit.round(Tokens.CARD, 999f, Tokens.BORDER, 1)
         }
         ui.addView(toast, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM).apply { bottomMargin = kit.dp(140) })
 
-        val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+        buildLockedLayer()
+
+        gestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent) = true
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 if (panelName != null) closePanel() else if (controlsVisible) hideControls() else showControls()
                 return true
             }
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (e1 == null || panelName != null) return false
+                if (e1 == null || panelName != null || dragActive || root.height <= 0) return false
+                // Réduire en vignette : glisser vers le bas depuis le haut de l'écran (le reste sert à la luminosité / au volume).
+                if (PlayerUiLogic.dragKind(e1.x / root.width, e1.y / root.height) != DragKind.MINIMIZE) return false
                 if (MiniLogic.isMinimizeSwipe(e2.x - e1.x, e2.y - e1.y, velocityY, resources.displayMetrics.density)) return minimize()
                 return false
             }
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                val f = e.x / root.width
-                if (f < 0.35f) seekBy(-PlayerLogic.SEEK_STEP_S) else if (f > 0.65f) seekBy(PlayerLogic.SEEK_STEP_S) else togglePlay()
+                when (PlayerUiLogic.doubleTapDirection(e.x / root.width)) {
+                    -1 -> { seekBy(-PlayerLogic.SEEK_STEP_S, gesture = true); ripple(rippleBack) }
+                    1 -> { seekBy(PlayerLogic.SEEK_STEP_S, gesture = true); ripple(rippleFwd) }
+                    else -> togglePlay()
+                }
                 return true
             }
         })
-        videoLayout.setOnTouchListener { _, e -> gd.onTouchEvent(e) }
-        controls.setOnTouchListener { _, e -> gd.onTouchEvent(e) }
+        videoLayout.setOnTouchListener { _, e -> onSurfaceTouch(e) }
+        controls.setOnTouchListener { _, e -> onSurfaceTouch(e) }
         setContentView(root)
         controls.visibility = View.GONE
     }
 
-    private fun gradient(top: Boolean) = android.graphics.drawable.GradientDrawable(
-        if (top) android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM else android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
-        intArrayOf(0xCC000000.toInt(), 0x00000000),
-    )
+    private fun gradientView(top: Boolean) = View(this).apply {
+        background = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            if (top) intArrayOf(0xB8000000.toInt(), 0x00000000) else intArrayOf(0x00000000, 0xD9000000.toInt()),
+        )
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
 
     private fun buildTop() {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = gradient(true)
-            setPadding(kit.dp(24), kit.dp(16), kit.dp(24), kit.dp(28))
+            setPadding(kit.dp(20), kit.dp(14), kit.dp(20), 0)
         }
-        bar.addView(kit.iconButton(R.drawable.ic_back, "Retour", 48, 26) { if (!minimize()) finishWithClosed() })
+        bar.addView(kit.iconButton(R.drawable.ic_back, "Retour", 44, 22) { if (!minimize()) finishWithClosed() })
         val heading = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(kit.dp(10), 0, kit.dp(10), 0) }
-        titleView = kit.text("", 19f, Tokens.TEXT, 800, sora = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
-        subtitleView = kit.text("", 14f, Tokens.SOFT, 600).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, kit.dp(3), 0, 0) }
+        titleView = kit.text("", 18f, Tokens.TEXT, 800, sora = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        subtitleView = kit.text("", 13f, Tokens.SECONDARY, 500).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(0, kit.dp(3), 0, 0) }
         heading.addView(titleView)
         heading.addView(subtitleView)
         bar.addView(heading, LinearLayout.LayoutParams(0, -2, 1f))
-        if (MiniPlayer.supported(this)) bar.addView(kit.iconButton(R.drawable.ic_minimize, "Réduire en vignette", 48, 26) { minimize() })
-        pipButton = kit.iconButton(R.drawable.ic_pip, "Image dans l’image", 48, 24) { enterPip() }
+        if (MiniPlayer.supported(this)) bar.addView(kit.iconButton(R.drawable.ic_minimize, "Réduire en vignette", 44, 22) { minimize() })
+        pipButton = kit.iconButton(R.drawable.ic_pip, "Image dans l’image", 44, 22) { enterPip() }
         pipButton.visibility = if (pipSupported()) View.VISIBLE else View.GONE
         bar.addView(pipButton)
-        bar.addView(kit.iconButton(R.drawable.ic_gear, "Réglages (vitesse, format)", 48, 24) { openPanel("settings") })
+        bar.addView(kit.iconButton(R.drawable.ic_gear, "Réglages (vitesse, format)", 44, 22) { openPanel("settings") })
         controls.addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
     }
 
     private fun buildCenter() {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        val dim = 0x8C0C0B11.toInt()
-        row.addView(kit.iconButton(R.drawable.ic_back10, "Reculer de 10 s", 64, 30, dim) { seekBy(-PlayerLogic.SEEK_STEP_S) })
-        row.addView(kit.spacer(48))
-        bigPlay = kit.iconButton(R.drawable.ic_play, "Lecture / pause", 92, 42, dim) { togglePlay() }
-        row.addView(bigPlay)
-        row.addView(kit.spacer(48))
-        row.addView(kit.iconButton(R.drawable.ic_fwd10, "Avancer de 10 s", 64, 30, dim) { seekBy(PlayerLogic.SEEK_STEP_S) })
-        controls.addView(row, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+        centerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        centerRow.addView(kit.iconButton(R.drawable.ic_back10, "Reculer de 10 secondes", 56, 26, Tokens.GLASS) { seekBy(-PlayerLogic.SEEK_STEP_S) })
+        centerRow.addView(kit.spacer(36))
+        bigPlay = kit.iconButton(R.drawable.ic_play, "Lecture", 76, 34, Tokens.GLASS) { togglePlay() }
+        centerRow.addView(bigPlay)
+        centerRow.addView(kit.spacer(36))
+        centerRow.addView(kit.iconButton(R.drawable.ic_fwd10, "Avancer de 10 secondes", 56, 26, Tokens.GLASS) { seekBy(PlayerLogic.SEEK_STEP_S) })
+        controls.addView(centerRow, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
     }
 
     private fun buildBottom() {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = gradient(false)
-            setPadding(kit.dp(32), kit.dp(36), kit.dp(32), kit.dp(14))
+            setPadding(kit.dp(16), 0, kit.dp(24), kit.dp(10))
         }
         scrubber = ScrubberView(this).apply {
             onScrub = { f, final ->
                 val dur = lastDur
                 if (dur > 0) {
                     val target = f * dur
-                    timeView.text = PlayerLogic.formatClock(target) + " / " + PlayerLogic.formatClock(dur)
+                    timeView.text = PlayerUiLogic.timeLabel(target, dur)
                     if (final) seekTo(target)
                     scheduleHide()
                 }
@@ -426,111 +437,381 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             onStep = { delta -> seekBy(delta) }
         }
         box.addView(scrubber, LinearLayout.LayoutParams(-1, -2))
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        playIcon = kit.iconButton(R.drawable.ic_play, "Lecture / pause", 48, 26) { togglePlay() }
-        row.addView(playIcon)
-        row.addView(kit.iconButton(R.drawable.ic_back10, "Reculer de 10 s", 48, 26) { seekBy(-PlayerLogic.SEEK_STEP_S) })
-        row.addView(kit.iconButton(R.drawable.ic_fwd10, "Avancer de 10 s", 48, 26) { seekBy(PlayerLogic.SEEK_STEP_S) })
-        timeView = kit.text("0:00 / 0:00", 14f, Tokens.SOFT, 700).apply { setPadding(kit.dp(12), 0, 0, 0) }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(kit.dp(12), kit.dp(2), 0, 0) }
+        timeView = kit.tabular(kit.text("0:00 / 0:00", 14f, Tokens.TEXT, 700))
         row.addView(timeView)
-        row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        nextButton = kit.textButton(R.drawable.ic_next, "Épisode suivant") { requestNextEpisode() }.apply { visibility = View.GONE }
-        row.addView(nextButton)
-        episodesButton = kit.textButton(R.drawable.ic_tracks, "Épisodes") { openPanel("episodes") }.apply { visibility = View.GONE }
-        sourcesButton = kit.textButton(R.drawable.ic_skip, "Sources") { openPanel("sources") }.apply { visibility = View.GONE }
-        row.addView(episodesButton)
-        row.addView(sourcesButton)
-        row.addView(kit.textButton(R.drawable.ic_tracks, "Audio et sous-titres") { openPanel("tracks") })
+        val pills = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL or Gravity.END }
+        pillViews[Pill.REACT] = kit.pill(R.drawable.ic_smile, "Réagir", "Réagir avec un emoji", accent = true) { social?.toggleFan() }
+        pillViews[Pill.EPISODES] = kit.pill(R.drawable.ic_list, "Épisodes") { openPanel("episodes") }
+        pillViews[Pill.TRACKS] = kit.pill(R.drawable.ic_tracks, "Audio et sous-titres") { openPanel("tracks") }
+        pillViews[Pill.SOURCES] = kit.pill(R.drawable.ic_sources, "Sources") { openPanel("sources") }
+        pillViews[Pill.NEXT] = kit.pill(R.drawable.ic_next, "Suivant", "Épisode suivant") { requestNextEpisode() }
+        pillViews.values.forEach { pills.addView(it) }
+        // Petits écrans : les pilules défilent plutôt que de se chevaucher ; alignées à droite quand elles tiennent.
+        val scroller = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; isFillViewport = true; addView(pills, FrameLayout.LayoutParams(-1, -2)) }
+        row.addView(scroller, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = kit.dp(8) })
         box.addView(row, LinearLayout.LayoutParams(-1, -2))
         controls.addView(box, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
     }
 
-    private fun buildNextCard() {
-        nextStill = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setBackgroundColor(0xFF1D1520.toInt()) }
-        nextTitle = kit.text("", 17f, Tokens.TEXT, 700, sora = true).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, kit.dp(4), 0, kit.dp(10)) }
-        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(kit.dp(16), kit.dp(14), kit.dp(16), kit.dp(14)) }
-        body.addView(kit.text("ÉPISODE SUIVANT", 12f, Tokens.ACCENT, 800))
+    /** Pilules visibles selon le contexte (social, épisodes, sources, épisode suivant). */
+    private fun updatePills() {
+        if (pillViews.isEmpty()) return
+        val ready = ::core.isInitialized
+        val visible = PlayerUiLogic.pills(
+            react = social?.reactAvailable == true,
+            hasEpisodes = ready && episodes != null,
+            hasSources = ready && sources.isNotEmpty(),
+            hasNext = ready && nextEpisode != null,
+        )
+        pillViews.forEach { (p, v) -> v.visibility = if (p in visible) View.VISIBLE else View.GONE }
+    }
+
+    private fun buildSpinner() {
+        spinner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            visibility = View.GONE
+        }
+        spinnerRing = RingView(this, 4f, 0x26FFFFFF, Tokens.ACCENT).apply { contentDescription = "Chargement" }
+        spinner.addView(spinnerRing, LinearLayout.LayoutParams(kit.dp(54), kit.dp(54)))
+        spinnerMsg = kit.text("", 13f, Tokens.TEXT, 600).apply {
+            gravity = Gravity.CENTER
+            setPadding(kit.dp(12), kit.dp(6), kit.dp(12), kit.dp(6))
+            background = kit.round(0x990C0B11.toInt(), 999f)
+        }
+        spinner.addView(spinnerMsg, LinearLayout.LayoutParams(-2, -2).apply { topMargin = kit.dp(12) })
+        // Erreur : la recherche d'une autre source continue, mais on peut choisir soi-même ou quitter.
+        errorActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; visibility = View.GONE }
+        errorSources = kit.pill(R.drawable.ic_sources, "Choisir une source") { openPanel("sources") }
+        errorActions.addView(errorSources)
+        errorActions.addView(kit.pill(R.drawable.ic_close, "Fermer", "Fermer le lecteur") { finishWithClosed() })
+        spinner.addView(errorActions, LinearLayout.LayoutParams(-2, -2).apply { topMargin = kit.dp(10) })
+        ui.addView(spinner, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+    }
+
+    private fun buildGestureFeedback() {
+        brightnessGauge = LevelGauge(this, kit, R.drawable.ic_sun, "Luminosité")
+        volumeGauge = LevelGauge(this, kit, R.drawable.ic_volume, "Volume")
+        ui.addView(brightnessGauge, FrameLayout.LayoutParams(kit.dp(52), kit.dp(200), Gravity.START or Gravity.CENTER_VERTICAL).apply { leftMargin = kit.dp(40) })
+        ui.addView(volumeGauge, FrameLayout.LayoutParams(kit.dp(52), kit.dp(200), Gravity.END or Gravity.CENTER_VERTICAL).apply { rightMargin = kit.dp(40) })
+        fun rippleView(label: String) = kit.text(label, 18f, Tokens.TEXT, 800, sora = true).apply {
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x1FFFFFFF) }
+        }
+        rippleBack = rippleView("−10 s")
+        rippleFwd = rippleView("+10 s")
+        ui.addView(rippleBack, FrameLayout.LayoutParams(kit.dp(120), kit.dp(120), Gravity.START or Gravity.CENTER_VERTICAL).apply { leftMargin = kit.dp(110) })
+        ui.addView(rippleFwd, FrameLayout.LayoutParams(kit.dp(120), kit.dp(120), Gravity.END or Gravity.CENTER_VERTICAL).apply { rightMargin = kit.dp(110) })
+    }
+
+    /** Onde du double-tap : apparaît, grossit légèrement puis s'efface. */
+    private fun ripple(v: TextView) {
+        v.animate().cancel()
+        v.visibility = View.VISIBLE
+        v.alpha = 1f
+        v.scaleX = 0.85f
+        v.scaleY = 0.85f
+        v.animate().scaleX(1.05f).scaleY(1.05f).setDuration(220).withEndAction {
+            v.animate().alpha(0f).setStartDelay(250).setDuration(300).withEndAction { v.visibility = View.GONE; v.animate().setStartDelay(0) }.start()
+        }.start()
+    }
+
+    /** Bouton de saut (intro, générique) : liseré blanc, coins presque droits, comme le lecteur web. */
+    private fun skipStyleButton(icon: Int, label: TextView, onClick: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        isFocusable = true
+        isClickable = true
+        visibility = View.GONE
+        minimumHeight = kit.dp(44)
+        setPadding(kit.dp(18), 0, kit.dp(18), 0)
+        background = kit.focusBackground(4f, Tokens.GLASS, Tokens.TEXT, false)
+        foreground = kit.round(Color.TRANSPARENT, 4f, 0xB3FFFFFF.toInt(), 1)
+        addView(kit.icon(icon, 18).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = kit.dp(8) })
+        addView(label)
+        setOnClickListener { onClick() }
+        setOnFocusChangeListener { _, f -> label.setTextColor(if (f) Tokens.BG else Tokens.TEXT); (getChildAt(0) as ImageView).setColorFilter(if (f) Tokens.BG else Color.WHITE) }
+    }
+
+    private fun buildEndLayer() {
+        endLayer = FrameLayout(this).apply { visibility = View.GONE }
+        val creditsLabel = kit.text("Passer le générique", 14f, Tokens.TEXT, 700, sora = true)
+        val creditsSkip = skipStyleButton(R.drawable.ic_skip_credits, creditsLabel) { requestNextEpisode() }.apply {
+            visibility = View.VISIBLE
+            contentDescription = "Passer le générique et lancer l’épisode suivant"
+        }
+        endLayer.addView(creditsSkip, FrameLayout.LayoutParams(-2, -2, Gravity.START or Gravity.BOTTOM).apply { leftMargin = kit.dp(24); bottomMargin = kit.dp(126) })
+
+        nextStill = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
+        val still = FrameLayout(this).apply { background = kit.round(0xFF3A3647.toInt(), 10f); clipToOutline = true; addView(nextStill, FrameLayout.LayoutParams(-1, -1)) }
+        nextTitle = kit.text("", 16f, Tokens.TEXT, 800, sora = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; setPadding(0, kit.dp(6), 0, kit.dp(10)) }
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(kit.dp(14), 0, 0, 0) }
+        body.addView(kit.text("ÉPISODE SUIVANT", 11f, Tokens.ACCENT, 800, sora = true).apply { letterSpacing = 0.08f })
         body.addView(nextTitle)
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val go = kit.textButton(R.drawable.ic_next, "Lire maintenant") { requestNextEpisode() }.apply {
-            background = kit.focusBackground(10f, Tokens.ACCENT, Tokens.ACCENT, true)
-            (getChildAt(0) as ImageView).setColorFilter(Tokens.BG)
-            (getChildAt(1) as TextView).setTextColor(Tokens.BG)
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        nextRing = RingView(this, 3f, 0x400C0B11, Tokens.BG).apply { spinning = false; showPlay = true; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
+        val go = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isFocusable = true
+            isClickable = true
+            contentDescription = "Lire maintenant l’épisode suivant"
+            minimumHeight = kit.dp(44)
+            setPadding(kit.dp(6), 0, kit.dp(14), 0)
+            background = android.graphics.drawable.InsetDrawable(kit.focusBackground(999f, Tokens.ACCENT, Tokens.ACCENT, true), 0, kit.dp(2), 0, kit.dp(2))
+            addView(nextRing, LinearLayout.LayoutParams(kit.dp(30), kit.dp(30)).apply { marginEnd = kit.dp(8) })
+            addView(kit.text("Lire maintenant", 14f, Tokens.BG, 700, sora = true))
+            setOnClickListener { requestNextEpisode() }
         }
         actions.addView(go)
-        actions.addView(kit.textButton(null, "Ignorer") { nextDismissed = true; nextCard.visibility = View.GONE })
+        actions.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isFocusable = true
+            isClickable = true
+            minimumHeight = kit.dp(44)
+            setPadding(kit.dp(14), 0, kit.dp(14), 0)
+            background = android.graphics.drawable.InsetDrawable(kit.focusBackground(999f), 0, kit.dp(2), 0, kit.dp(2))
+            foreground = android.graphics.drawable.InsetDrawable(kit.round(Color.TRANSPARENT, 999f, Tokens.BORDER, 1), 0, kit.dp(2), 0, kit.dp(2))
+            addView(kit.text("Voir le générique", 14f, Tokens.SOFT, 600))
+            setOnClickListener { nextDismissed = true; hideEnd() }
+        }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = kit.dp(8) })
         body.addView(actions)
         nextCard = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            visibility = View.GONE
-            background = kit.round(Tokens.SURFACE, 16f, Tokens.LINE, 1)
-            clipToOutline = true
-            addView(nextStill, LinearLayout.LayoutParams(kit.dp(150), kit.dp(100)))
-            addView(body, LinearLayout.LayoutParams(kit.dp(300), -2))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(kit.dp(12), kit.dp(12), kit.dp(12), kit.dp(12))
+            background = kit.round(Tokens.CARD, 16f, Tokens.BORDER, 1)
+            elevation = kit.dp(18).toFloat()
+            addView(still, LinearLayout.LayoutParams(kit.dp(176), kit.dp(99)))
+            addView(body, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        ui.addView(nextCard, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(40); bottomMargin = kit.dp(40) })
+        val cardW = minOf(kit.dp(520), resources.displayMetrics.widthPixels - kit.dp(48))
+        endLayer.addView(nextCard, FrameLayout.LayoutParams(cardW, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(24) })
+        ui.addView(endLayer, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = kit.dp(24) })
     }
+
+    private fun hideEnd() { endLayer.visibility = View.GONE }
 
     private fun buildPanel() {
         panel = FrameLayout(this).apply {
             visibility = View.GONE
-            setBackgroundColor(0x99000000.toInt())
+            setBackgroundColor(0x8C000000.toInt())
             isClickable = true
             setOnClickListener { closePanel() }
         }
         panelBody = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xF20C0B11.toInt())
+            setPadding(kit.dp(22), kit.dp(18), kit.dp(18), kit.dp(18))
+            // Fond du panneau et liseré gauche de 1 dp (blanc 10 %).
+            background = android.graphics.drawable.LayerDrawable(arrayOf(
+                android.graphics.drawable.ColorDrawable(Tokens.SHEET),
+                android.graphics.drawable.ColorDrawable(0x1AFFFFFF),
+            )).apply { setLayerWidth(1, kit.dp(1)); setLayerGravity(1, Gravity.START or Gravity.FILL_VERTICAL) }
+            elevation = kit.dp(24).toFloat()
             isClickable = true
         }
-        val w = (resources.displayMetrics.widthPixels * 0.9f).toInt().coerceAtMost(kit.dp(620))
-        panel.addView(panelBody, FrameLayout.LayoutParams(w, -1, Gravity.END))
+        panel.addView(panelBody, FrameLayout.LayoutParams(kit.dp(460), -1, Gravity.END))
         ui.addView(panel, FrameLayout.LayoutParams(-1, -1))
     }
 
-    // ---------- Panneaux (audio, sous-titres, réglages) ----------
+    // ---------- Écran verrouillé ----------
 
-    private class Row(val label: String, val selected: Boolean, val onClick: () -> Unit)
-
-    private fun column(title: String, rows: List<Row>, extra: View? = null): LinearLayout {
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(kit.text(title.uppercase(), 12f, Tokens.DIM, 800).apply { setPadding(kit.dp(22), kit.dp(8), kit.dp(22), kit.dp(10)) })
-        rows.forEach { r ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                isFocusable = true
-                isClickable = true
-                minimumHeight = kit.dp(48)
-                setPadding(kit.dp(22), kit.dp(6), kit.dp(14), kit.dp(6))
-                background = kit.focusBackground(8f)
-                tag = if (r.selected) "selected" else null
-                setOnClickListener { r.onClick() }
-            }
-            row.addView(kit.text(r.label, 15f, if (r.selected) Tokens.ACCENT else Tokens.TEXT, if (r.selected) 800 else 600), LinearLayout.LayoutParams(0, -2, 1f))
-            if (r.selected) row.addView(kit.icon(R.drawable.ic_check, 20, Tokens.ACCENT))
-            col.addView(row, LinearLayout.LayoutParams(-1, -2))
+    private fun buildLockedLayer() {
+        lockedLayer = FrameLayout(this).apply {
+            visibility = View.GONE
+            isClickable = true
+            setOnClickListener { flashUnlock() }
         }
-        if (extra != null) col.addView(extra)
+        unlockPill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isFocusable = true
+            isClickable = true
+            isLongClickable = true
+            contentDescription = "Écran verrouillé. Appui long pour déverrouiller"
+            minimumHeight = kit.dp(44)
+            setPadding(kit.dp(16), 0, kit.dp(16), 0)
+            background = kit.focusBackground(999f, 0xB30C0B11.toInt())
+            foreground = kit.round(Color.TRANSPARENT, 999f, 0x33FFFFFF, 1)
+            addView(kit.icon(R.drawable.ic_lock, 18).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = kit.dp(8) })
+            addView(kit.text("Écran verrouillé · appui long pour déverrouiller", 13f, Tokens.TEXT, 700, sora = true))
+            setOnClickListener { flashUnlock() }
+            setOnLongClickListener { unlock(); true }
+        }
+        lockedLayer.addView(unlockPill, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = kit.dp(20) })
+        ui.addView(lockedLayer, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    private val unlockHide = Runnable { unlockPill.animate().alpha(0f).setDuration(250).start() }
+
+    /** Montre le bouton de déverrouillage quelques secondes. */
+    private fun flashUnlock() {
+        unlockPill.animate().cancel()
+        unlockPill.alpha = 1f
+        handler.removeCallbacks(unlockHide)
+        handler.postDelayed(unlockHide, 2500)
+    }
+
+    private fun lock() {
+        if (locked) return
+        closePanel()
+        social?.closeFan()
+        hideControls()
+        locked = true
+        skipButton.visibility = View.GONE
+        hideEnd()
+        social?.setSuppressed(true)
+        lockedLayer.visibility = View.VISIBLE
+        flashUnlock()
+        unlockPill.requestFocus()
+    }
+
+    private fun unlock() {
+        if (!locked) return
+        locked = false
+        handler.removeCallbacks(unlockHide)
+        lockedLayer.visibility = View.GONE
+        social?.setSuppressed(false)
+        showControls()
+    }
+
+    // ---------- Gestes sur la vidéo ----------
+
+    private val audio: AudioManager? by lazy { getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
+    private val dragSlop: Float by lazy { ViewConfiguration.get(this).scaledTouchSlop * 1.5f }
+
+    private fun onSurfaceTouch(e: MotionEvent): Boolean {
+        if (locked) return true
+        gestures.onTouchEvent(e)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                dragX = e.rawX
+                dragY = e.rawY
+                dragActive = false
+                dragKind = if (root.width > 0 && root.height > 0) PlayerUiLogic.dragKind(e.rawX / root.width, e.rawY / root.height) else DragKind.NONE
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!dragActive && panelName == null && (dragKind == DragKind.BRIGHTNESS || dragKind == DragKind.VOLUME) &&
+                    PlayerUiLogic.isVerticalDrag(e.rawX - dragX, e.rawY - dragY, dragSlop)
+                ) {
+                    dragActive = true
+                    dragY = e.rawY // départ au point où le geste est reconnu : pas de saut
+                    dragStart = if (dragKind == DragKind.VOLUME) currentVolume() else currentBrightness()
+                    handler.removeCallbacks(gaugeHide)
+                }
+                if (dragActive) applyDrag(PlayerUiLogic.dragLevel(dragStart, e.rawY - dragY, root.height.toFloat()))
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (dragActive) {
+                dragActive = false
+                handler.postDelayed(gaugeHide, 700)
+            }
+        }
+        return true
+    }
+
+    private val gaugeHide = Runnable {
+        listOf(brightnessGauge, volumeGauge).forEach { g -> g.animate().alpha(0f).setDuration(200).withEndAction { g.visibility = View.GONE }.start() }
+    }
+
+    private fun currentVolume(): Float {
+        val a = audio ?: return 0f
+        return PlayerUiLogic.volumeLevel(a.getStreamVolume(AudioManager.STREAM_MUSIC), a.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+    }
+
+    private fun currentBrightness(): Float {
+        if (brightness >= 0f) return brightness
+        val system = try { Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) } catch (_: Exception) { null }
+        return PlayerUiLogic.startBrightness(window.attributes.screenBrightness, system)
+    }
+
+    private fun applyDrag(level: Float) {
+        val gauge = if (dragKind == DragKind.VOLUME) volumeGauge else brightnessGauge
+        val shown = if (dragKind == DragKind.VOLUME) {
+            val a = audio ?: return
+            val max = a.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val idx = PlayerUiLogic.volumeIndex(level, max)
+            try { a.setStreamVolume(AudioManager.STREAM_MUSIC, idx, 0) } catch (_: Exception) { } // « Ne pas déranger » peut refuser
+            PlayerUiLogic.volumeLevel(idx, max)
+        } else {
+            brightness = level
+            val lp = window.attributes
+            lp.screenBrightness = PlayerUiLogic.windowBrightness(level)
+            window.attributes = lp
+            level
+        }
+        gauge.set(shown)
+        if (gauge.visibility != View.VISIBLE || gauge.alpha < 1f) { gauge.animate().cancel(); gauge.alpha = 1f; gauge.visibility = View.VISIBLE }
+    }
+
+    // ---------- Panneaux (audio, sous-titres, réglages, sources, épisodes) ----------
+
+    private class Row(val label: String, val selected: Boolean, val tag: String = "", val onClick: () -> Unit)
+
+    private fun optionRow(r: Row): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        isFocusable = true
+        isClickable = true
+        minimumHeight = kit.dp(44)
+        setPadding(kit.dp(12), kit.dp(6), kit.dp(12), kit.dp(6))
+        background = kit.focusBackground(12f, if (r.selected) 0x24FF5A36 else Color.TRANSPARENT)
+        tag = if (r.selected) "selected" else null
+        contentDescription = r.label + (if (r.tag.isNotEmpty()) ", " + r.tag else "") + if (r.selected) ", sélectionné" else ""
+        if (r.selected) addView(kit.icon(R.drawable.ic_check, 18, Tokens.ACCENT)) else addView(kit.spacer(18, 18))
+        addView(kit.text(r.label, 14f, if (r.selected) Tokens.TEXT else Tokens.SOFT, 600).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = kit.dp(10) })
+        if (r.tag.isNotEmpty()) addView(kit.text(r.tag, 11f, Tokens.DIM, 700), LinearLayout.LayoutParams(-2, -2).apply { marginStart = kit.dp(8) })
+        setOnClickListener { r.onClick() }
+    }
+
+    private fun heading(title: String) = kit.text(title.uppercase(), 12f, Tokens.DIM, 800, sora = true).apply {
+        letterSpacing = 0.08f
+        setPadding(kit.dp(12), kit.dp(4), kit.dp(12), kit.dp(8))
+    }
+
+    private fun column(title: String, rows: List<Row>): LinearLayout {
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(heading(title))
+        rows.forEach { r -> col.addView(optionRow(r), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = kit.dp(2) }) }
         return col
     }
 
+    /** Décalage des sous-titres par pas de 0,1 s (libVLC `setSpuDelay`, via PlaybackCore). */
     private fun delayControls(): View {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(kit.dp(22), kit.dp(14), kit.dp(14), kit.dp(14)) }
-        box.addView(kit.text("DÉCALAGE", 12f, Tokens.DIM, 800).apply { setPadding(0, 0, 0, kit.dp(8)) })
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val value = kit.text(PlayerLogic.formatDelay(subDelayMs), 15f, Tokens.TEXT, 800).apply { gravity = Gravity.CENTER }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(kit.dp(12), kit.dp(4), kit.dp(12), kit.dp(4))
+            background = kit.round(0x0DFFFFFF, 14f)
+        }
+        box.addView(kit.text("Décalage des sous-titres", 13f, Tokens.SECONDARY, 500), LinearLayout.LayoutParams(0, -2, 1f))
+        val value = kit.tabular(kit.text(PlayerLogic.formatDelay(subDelayMs), 14f, Tokens.TEXT, 700)).apply { gravity = Gravity.CENTER }
         fun step(by: Long) { setSubtitleDelay(subDelayMs + by); value.text = PlayerLogic.formatDelay(subDelayMs) }
-        row.addView(kit.textButton(null, "−0,5 s") { step(-500) })
-        row.addView(value, LinearLayout.LayoutParams(kit.dp(72), -2))
-        row.addView(kit.textButton(null, "+0,5 s") { step(500) })
-        box.addView(row)
+        fun stepButton(label: String, desc: String, by: Long) = kit.text(label, 16f, Tokens.TEXT, 700, sora = true).apply {
+            gravity = Gravity.CENTER
+            isFocusable = true
+            isClickable = true
+            contentDescription = desc
+            background = android.graphics.drawable.InsetDrawable(kit.focusBackground(10f), 0, kit.dp(4), 0, kit.dp(4))
+            foreground = android.graphics.drawable.InsetDrawable(kit.round(Color.TRANSPARENT, 10f, Tokens.BORDER, 1), 0, kit.dp(4), 0, kit.dp(4))
+            setOnClickListener { step(by) }
+        }
+        box.addView(stepButton("−", "Avancer les sous-titres de 0,1 seconde", -PlayerUiLogic.SUB_DELAY_STEP_MS), LinearLayout.LayoutParams(kit.dp(44), kit.dp(44)))
+        box.addView(value, LinearLayout.LayoutParams(kit.dp(64), -2))
+        box.addView(stepButton("+", "Retarder les sous-titres de 0,1 seconde", PlayerUiLogic.SUB_DELAY_STEP_MS), LinearLayout.LayoutParams(kit.dp(44), kit.dp(44)))
         return box
     }
 
     fun openPanel(name: String) {
+        if (locked) return
+        social?.closeFan()
         panelName = name
         showControls()
+        val avail = (ui.width - ui.paddingLeft - ui.paddingRight).takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        (panelBody.layoutParams as FrameLayout.LayoutParams).width = PlayerUiLogic.panelWidth(avail, kit.dp(460))
         refreshPanel()
         panel.visibility = View.VISIBLE
         handler.removeCallbacks(hideRunnable)
@@ -552,39 +833,47 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private fun refreshPanel() {
         val name = panelName ?: return
         panelBody.removeAllViews()
-        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(kit.dp(22), kit.dp(18), kit.dp(10), kit.dp(8)) }
-        head.addView(kit.text(when (name) { "tracks" -> "Audio et sous-titres"; "sources" -> "Sources"; "episodes" -> "Épisodes"; else -> "Réglages" }, 21f, Tokens.TEXT, 800, sora = true), LinearLayout.LayoutParams(0, -2, 1f))
-        head.addView(kit.iconButton(R.drawable.ic_close, "Fermer", 44, 22) { closePanel() })
+        val title = when (name) { "tracks" -> "Audio et sous-titres"; "sources" -> "Sources"; "episodes" -> "Épisodes"; else -> "Réglages" }
+        panelBody.contentDescription = title
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, kit.dp(14)) }
+        head.addView(kit.text(title, 18f, Tokens.TEXT, 800, sora = true), LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(kit.iconButton(R.drawable.ic_close, "Fermer", 44, 20, 0x0FFFFFFF) { closePanel() })
         panelBody.addView(head)
         if (name == "sources") { buildSourcesPanel(); return }
         if (name == "episodes") { buildEpisodesPanel(); return }
         val cols = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val divider = { View(this).apply { setBackgroundColor(0x14FFFFFF) } }
         if (name == "tracks") {
             val audioRows = if (audioTracks.isEmpty()) listOf(Row("Une seule piste", true) {}) else audioTracks.map { t -> Row(t.name, t.selected) { selectAudio(t.id) } }
             val subRows = ArrayList<Row>()
             subRows.add(Row("Désactivés", subTracks.none { it.selected && it.id >= 0 }) { selectSubtitle(-1) })
             subTracks.filter { it.id >= 0 }.forEach { t -> subRows.add(Row(t.name, t.selected) { selectSubtitle(t.id) }) }
-            cols.addView(scroll(column("Audio", audioRows)), LinearLayout.LayoutParams(0, -2, 1f))
-            cols.addView(scroll(column("Sous-titres", subRows, delayControls())), LinearLayout.LayoutParams(0, -2, 1f))
-        } else {
-            val speedRows = PlayerLogic.RATES.map { r -> Row(PlayerLogic.rateLabel(r), kotlin.math.abs(r - rate) < 0.01) { setRate(r); refreshPanel() } }
-            val aspectRows = AspectMode.values().map { a -> Row(a.label, a == aspect) { setAspect(a); refreshPanel() } }
-            cols.addView(scroll(column("Vitesse", speedRows)), LinearLayout.LayoutParams(0, -2, 1f))
-            cols.addView(scroll(column("Format de l’image", aspectRows)), LinearLayout.LayoutParams(0, -2, 1f))
+            cols.addView(scroll(column("Audio", audioRows)), LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = kit.dp(10) })
+            cols.addView(divider(), LinearLayout.LayoutParams(kit.dp(1), -1))
+            cols.addView(scroll(column("Sous-titres", subRows)), LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = kit.dp(14) })
+            panelBody.addView(cols, LinearLayout.LayoutParams(-1, 0, 1f))
+            panelBody.addView(delayControls(), LinearLayout.LayoutParams(-1, -2).apply { topMargin = kit.dp(14) })
+            return
         }
+        val speedRows = PlayerLogic.RATES.map { r -> Row(PlayerLogic.rateLabel(r), kotlin.math.abs(r - rate) < 0.01) { setRate(r); refreshPanel() } }
+        val aspectRows = AspectMode.values().map { a -> Row(a.label, a == aspect) { setAspect(a); refreshPanel() } }
+        cols.addView(scroll(column("Vitesse", speedRows)), LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = kit.dp(10) })
+        cols.addView(divider(), LinearLayout.LayoutParams(kit.dp(1), -1))
+        cols.addView(scroll(column("Format de l’image", aspectRows)), LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = kit.dp(14) })
         panelBody.addView(cols, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
     override fun setSources(list: List<SourceItem>) {
         core.sources = list
-        sourcesButton.visibility = if (list.size > 0) View.VISIBLE else View.GONE
+        updatePills()
+        errorSources.visibility = if (list.isNotEmpty()) View.VISIBLE else View.GONE
         if (panelName == "sources") refreshPanel()
     }
 
     override fun setEpisodes(d: EpisodesData?) {
         val changedCurrent = d?.currentSeason != episodes?.currentSeason
         core.episodes = d
-        episodesButton.visibility = if (d != null) View.VISIBLE else View.GONE
+        updatePills()
         if (d != null && (panelSeason == 0 || changedCurrent)) panelSeason = d.currentSeason
         if (panelName == "episodes") refreshPanel()
     }
@@ -596,33 +885,38 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         armStallFallback() // pas de réponse du JS : le spinner ne reste pas et la lecture reprend
     }
 
+    private fun listRow(selected: Boolean, enabled: Boolean = true): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        isFocusable = enabled
+        isClickable = enabled
+        alpha = if (enabled) 1f else 0.5f
+        minimumHeight = kit.dp(52)
+        setPadding(kit.dp(12), kit.dp(8), kit.dp(12), kit.dp(8))
+        background = kit.focusBackground(12f, if (selected) 0x24FF5A36 else Color.TRANSPARENT)
+        tag = if (selected) "selected" else null
+    }
+
     private fun buildSourcesPanel() {
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, kit.dp(16)) }
-        if (sources.isEmpty()) col.addView(kit.text("Recherche des sources…", 15f, Tokens.DIM, 600).apply { setPadding(kit.dp(22), kit.dp(14), kit.dp(22), 0) })
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, kit.dp(8)) }
+        if (sources.isEmpty()) col.addView(kit.text("Recherche des sources…", 14f, Tokens.DIM, 600).apply { setPadding(kit.dp(12), kit.dp(8), kit.dp(12), 0) })
         PlayerLogic.groupSources(sources).forEach { (group, items) ->
-            col.addView(kit.text(group.uppercase(), 12f, Tokens.DIM, 800).apply { setPadding(kit.dp(22), kit.dp(14), kit.dp(22), kit.dp(8)) })
+            col.addView(heading(group).apply { setPadding(kit.dp(12), kit.dp(10), kit.dp(12), kit.dp(6)) })
             items.forEach { s ->
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    isFocusable = true
-                    isClickable = true
-                    minimumHeight = kit.dp(56)
-                    setPadding(kit.dp(22), kit.dp(8), kit.dp(14), kit.dp(8))
-                    background = kit.focusBackground(8f)
-                    tag = if (s.current) "selected" else null
+                val row = listRow(s.current).apply {
+                    contentDescription = s.label + (if (s.detail.isNotEmpty()) ", " + s.detail else "") + if (s.current) ", source actuelle" else ""
                     setOnClickListener {
                         if (s.current) { closePanel(); return@setOnClickListener }
                         switching("Changement de source…")
                         emitEvent("selectSource", JSObject().put("id", s.id).put("position", lastPos))
                     }
                 }
-                val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-                texts.addView(kit.text(s.label, 15f, if (s.current) Tokens.ACCENT else Tokens.TEXT, if (s.current) 800 else 700))
-                if (s.detail.isNotEmpty()) texts.addView(kit.text(s.detail, 13f, Tokens.DIM, 600).apply { setPadding(0, kit.dp(3), 0, 0) })
+                if (s.current) row.addView(kit.icon(R.drawable.ic_check, 18, Tokens.ACCENT)) else row.addView(kit.spacer(18, 18))
+                val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(kit.dp(10), 0, 0, 0) }
+                texts.addView(kit.text(s.label, 14f, if (s.current) Tokens.TEXT else Tokens.SOFT, if (s.current) 700 else 600))
+                if (s.detail.isNotEmpty()) texts.addView(kit.text(s.detail, 12f, Tokens.DIM, 600).apply { setPadding(0, kit.dp(3), 0, 0) })
                 row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-                if (s.current) row.addView(kit.icon(R.drawable.ic_check, 20, Tokens.ACCENT))
-                col.addView(row, LinearLayout.LayoutParams(-1, -2))
+                col.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = kit.dp(2) })
             }
         }
         panelBody.addView(scroll(col), LinearLayout.LayoutParams(-1, 0, 1f))
@@ -630,61 +924,60 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
 
     private fun buildEpisodesPanel() {
         val d = episodes
-        val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        if (d == null) { panelBody.addView(wrap); return }
-        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(kit.dp(14), 0, kit.dp(14), kit.dp(8)) }
+        if (d == null) return
+        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 0, 0, kit.dp(10)) }
         d.seasons.forEach { s ->
             val on = s.number == panelSeason
-            val b = kit.textButton(null, s.name) {
-                panelSeason = s.number
-                if (PlayerLogic.episodesOf(d, s.number).isEmpty()) emitEvent("loadSeason", JSObject().put("season", s.number))
-                refreshPanel()
+            val b = kit.text(s.name, 13f, if (on) Tokens.BG else Tokens.TEXT, if (on) 700 else 600).apply {
+                gravity = Gravity.CENTER
+                isFocusable = true
+                isClickable = true
+                minHeight = kit.dp(44)
+                setPadding(kit.dp(14), 0, kit.dp(14), 0)
+                background = android.graphics.drawable.InsetDrawable(kit.focusBackground(999f, if (on) Tokens.TEXT else 0x0FFFFFFF), 0, kit.dp(4), 0, kit.dp(4))
+                contentDescription = s.name + if (on) ", saison affichée" else ""
+                setOnClickListener {
+                    panelSeason = s.number
+                    if (PlayerLogic.episodesOf(d, s.number).isEmpty()) emitEvent("loadSeason", JSObject().put("season", s.number))
+                    refreshPanel()
+                }
             }
-            (b.getChildAt(0) as TextView).setTextColor(if (on) Tokens.ACCENT else Tokens.TEXT)
-            (b.getChildAt(0) as TextView).typeface = kit.body(if (on) 800 else 600)
             if (on) b.tag = "season"
-            tabs.addView(b)
+            tabs.addView(b, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = kit.dp(6) })
         }
         if (d.seasons.size > 1) panelBody.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) })
-        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, kit.dp(16)) }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, kit.dp(8)) }
         val eps = PlayerLogic.episodesOf(d, panelSeason)
-        if (eps.isEmpty()) list.addView(kit.text("Chargement…", 15f, Tokens.DIM, 600).apply { setPadding(kit.dp(22), kit.dp(14), kit.dp(22), 0) })
+        if (eps.isEmpty()) list.addView(kit.text("Chargement…", 14f, Tokens.DIM, 600).apply { setPadding(kit.dp(12), kit.dp(8), kit.dp(12), 0) })
         eps.forEach { e ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                isFocusable = e.aired
-                isClickable = e.aired
-                alpha = if (e.aired) 1f else 0.5f
-                setPadding(kit.dp(22), kit.dp(8), kit.dp(14), kit.dp(8))
-                background = kit.focusBackground(8f)
-                tag = if (e.current) "selected" else null
+            val row = listRow(e.current, e.aired).apply {
                 setOnClickListener {
                     if (e.current) { closePanel(); return@setOnClickListener }
                     switching("Changement d’épisode…")
                     emitEvent("selectEpisode", JSObject().put("season", e.season).put("episode", e.episode))
                 }
             }
-            val still = FrameLayout(this).apply { background = kit.round(0xFF1D1520.toInt(), 8f); clipToOutline = true }
+            val still = FrameLayout(this).apply { background = kit.round(0xFF3A3647.toInt(), 8f); clipToOutline = true }
             val img = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
             still.addView(img, FrameLayout.LayoutParams(-1, -1))
             e.still?.let { images.load(it, img) }
             if (e.progress > 0 && !e.watched) {
-                still.addView(View(this).apply { setBackgroundColor(Tokens.ACCENT) }, FrameLayout.LayoutParams((kit.dp(120) * e.progress).toInt().coerceAtLeast(kit.dp(2)), kit.dp(3), Gravity.BOTTOM or Gravity.START))
+                still.addView(View(this).apply { setBackgroundColor(Tokens.ACCENT) }, FrameLayout.LayoutParams((kit.dp(112) * e.progress).toInt().coerceAtLeast(kit.dp(2)), kit.dp(3), Gravity.BOTTOM or Gravity.START))
             }
-            row.addView(still, LinearLayout.LayoutParams(kit.dp(120), kit.dp(68)))
-            val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(kit.dp(14), 0, kit.dp(8), 0) }
-            texts.addView(kit.text(PlayerLogic.episodeTitle(e), 15f, if (e.current) Tokens.ACCENT else Tokens.TEXT, if (e.current) 800 else 700).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
+            row.addView(still, LinearLayout.LayoutParams(kit.dp(112), kit.dp(63)))
+            val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(kit.dp(12), 0, kit.dp(8), 0) }
+            texts.addView(kit.text(PlayerLogic.episodeTitle(e), 14f, if (e.current) Tokens.ACCENT else Tokens.TEXT, if (e.current) 800 else 700).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END })
             val meta = listOf(PlayerLogic.episodeMeta(e), if (e.current) "En cours" else if (!e.aired) "Bientôt" else "").filter { it.isNotEmpty() }.joinToString(" · ")
-            if (meta.isNotEmpty()) texts.addView(kit.text(meta, 13f, Tokens.DIM, 600).apply { setPadding(0, kit.dp(3), 0, 0) })
+            if (meta.isNotEmpty()) texts.addView(kit.text(meta, 12f, Tokens.DIM, 600).apply { setPadding(0, kit.dp(3), 0, 0) })
             row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-            if (e.watched) row.addView(kit.icon(R.drawable.ic_check, 20, Tokens.ACCENT))
-            list.addView(row, LinearLayout.LayoutParams(-1, -2))
+            if (e.watched) row.addView(kit.icon(R.drawable.ic_check, 18, Tokens.ACCENT).apply { contentDescription = "Vu" })
+            row.contentDescription = PlayerLogic.episodeTitle(e) + (if (meta.isNotEmpty()) ", $meta" else "") + if (e.watched) ", vu" else ""
+            list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = kit.dp(2) })
         }
         panelBody.addView(scroll(list), LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
-    private fun scroll(v: View) = ScrollView(this).apply { isFillViewport = true; addView(v) }
+    private fun scroll(v: View) = ScrollView(this).apply { isFillViewport = true; isVerticalScrollBarEnabled = false; addView(v) }
 
     // ---------- Chargement d'un média ----------
 
@@ -698,7 +991,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         setNextEpisode(r.nextEpisode)
         setSources(r.sources)
         setEpisodes(r.episodes)
-        nextCard.visibility = View.GONE
+        hideEnd()
         skipButton.visibility = View.GONE
         showSpinner("")
         closePanel()
@@ -722,7 +1015,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
 
     override fun setNextEpisode(n: NextEpisodeInfo?) {
         core.nextEpisode = n
-        nextButton.visibility = if (n != null) View.VISIBLE else View.GONE
+        updatePills()
         if (n != null) {
             nextTitle.text = n.title
             nextStill.setImageDrawable(null)
@@ -750,32 +1043,17 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
 
     // ---------- Lecture ----------
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     private fun togglePlay() {
         setPlaying(!player.isPlaying)
         showControls()
     }
 
-
-    private fun seekBy(delta: Double) {
+    /** Saut relatif ; `gesture` (double-tap) : l'onde remplace le message et les contrôles restent tels quels. */
+    private fun seekBy(delta: Double, gesture: Boolean = false) {
         val cur = player.time / 1000.0
         val target = PlayerLogic.seekTarget(cur, delta, lastDur)
         seekTo(target)
+        if (gesture) { scheduleHide(); return }
         toast((if (delta > 0) "+" else "−") + kotlin.math.abs(delta).toInt() + " s")
         showControls()
     }
@@ -790,7 +1068,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         if (!PlayerLogic.nextRequestAllowed(nextRequested)) return
         nextRequested = true
         nextDismissed = true // la carte ne revient pas au tick suivant pendant que la demande est en cours
-        nextCard.visibility = View.GONE
+        hideEnd()
         showSpinner("Épisode suivant…")
         player.pause()
         emitEvent("nextEpisode", JSObject().put("position", lastPos).put("duration", lastDur))
@@ -816,21 +1094,25 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         setPlaying(true)
     }
 
-
     // ---------- Boucle périodique : position, boutons de saut, évènements ----------
-
 
     private fun onTickUi() {
         scrubber.setProgress(if (lastDur > 0) lastPos / lastDur else 0.0)
-        if (controlsVisible) timeView.text = PlayerLogic.formatClock(lastPos) + " / " + PlayerLogic.formatClock(lastDur)
+        if (controlsVisible) {
+            timeView.text = PlayerUiLogic.timeLabel(lastPos, lastDur)
+            scrubber.contentDescription = "Position : " + PlayerLogic.formatClock(lastPos) + " sur " + PlayerLogic.formatClock(lastDur)
+        }
         val seg = PlayerLogic.activeSkip(segments, lastPos)
-        if (seg != null && !isInPictureInPictureMode) {
+        if (seg != null && !isInPictureInPictureMode && !locked) {
             skipLabel.text = PlayerLogic.skipLabel(seg)
             skipButton.visibility = View.VISIBLE
         } else skipButton.visibility = View.GONE
-        val showNext = nextEpisode != null && !errored && PlayerLogic.showNextCard(segments, lastPos, lastDur, true, nextDismissed) && !isInPictureInPictureMode
-        nextCard.visibility = if (showNext) View.VISIBLE else View.GONE
-        if (nextCard.visibility == View.VISIBLE && skipButton.visibility == View.VISIBLE) skipButton.visibility = View.GONE
+        val showNext = nextEpisode != null && !errored && !locked && PlayerLogic.showNextCard(segments, lastPos, lastDur, true, nextDismissed) && !isInPictureInPictureMode
+        endLayer.visibility = if (showNext) View.VISIBLE else View.GONE
+        if (showNext) {
+            nextRing.progress = PlayerUiLogic.countdownFraction(lastPos, PlayerLogic.creditsStart(segments, lastDur), lastDur)
+            if (skipButton.visibility == View.VISIBLE) skipButton.visibility = View.GONE
+        }
     }
 
     // ---------- Rappels de PlaybackCore (interface du plein écran) ----------
@@ -863,11 +1145,6 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     override fun seekTo(sec: Double) = core.seekTo(sec)
     override fun stateJson(): JSObject = core.stateJson()
 
-
-
-
-
-
     /** Fermeture à l'initiative de l'utilisateur : `closed` part vers le JS, qui enregistre la progression. */
     private fun finishWithClosed() {
         if (!closedSent) emitClosed()
@@ -887,16 +1164,19 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
 
     private fun scheduleHide() {
         handler.removeCallbacks(hideRunnable)
-        if (controlsVisible && panelName == null && ::core.isInitialized && player.isPlaying) handler.postDelayed(hideRunnable, 3000)
+        val playing = ::core.isInitialized && player.isPlaying
+        if (PlayerUiLogic.shouldAutoHide(controlsVisible, playing, panelName != null, scrubberBusy())) handler.postDelayed(hideRunnable, PlayerUiLogic.AUTO_HIDE_MS)
     }
 
     /** Au-dessus de la barre basse quand les contrôles sont visibles, près du bord sinon. */
     private fun moveOverlays() {
-        val m = kit.dp(if (controlsVisible) 150 else 40)
-        listOf(skipButton, nextCard).forEach { v -> (v.layoutParams as FrameLayout.LayoutParams).bottomMargin = m; v.requestLayout() }
+        val m = kit.dp(if (controlsVisible) 130 else 24)
+        listOf(skipButton, endLayer).forEach { v -> (v.layoutParams as FrameLayout.LayoutParams).bottomMargin = m; v.requestLayout() }
+        social?.setControlsVisible(controlsVisible)
     }
 
     private fun showControls() {
+        if (locked) return
         if (!controlsVisible) {
             controlsVisible = true
             moveOverlays()
@@ -904,6 +1184,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             controls.alpha = 0f
             controls.animate().alpha(1f).setDuration(180).start()
             if (currentFocus == null) bigPlay.requestFocus()
+            if (::core.isInitialized) onTickUi()
         }
         scheduleHide()
     }
@@ -916,24 +1197,29 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         root.requestFocus()
     }
 
-    private fun scrubberBusy() = ::scrubber.isInitialized && scrubber.isPressed
+    private fun scrubberBusy() = ::scrubber.isInitialized && scrubber.isScrubbing
 
     private fun updatePlayIcons(playing: Boolean) {
         updatePipActions()
         val res = if (playing) R.drawable.ic_pause else R.drawable.ic_play
-        listOf(bigPlay, playIcon).forEach { b ->
-            (b.getChildAt(0) as ImageView).setImageDrawable(androidx.core.content.ContextCompat.getDrawable(this, res)?.mutate())
-        }
+        (bigPlay.getChildAt(0) as ImageView).setImageDrawable(ContextCompat.getDrawable(this, res)?.mutate())
+        bigPlay.contentDescription = if (playing) "Pause" else "Lecture"
     }
 
     private fun showSpinner(msg: String) {
-        spinnerMsg.text = msg
-        spinnerMsg.visibility = if (msg.isEmpty()) View.GONE else View.VISIBLE
+        spinnerMsg.text = msg.ifEmpty { "Chargement…" }
+        spinnerMsg.visibility = View.VISIBLE
+        errorActions.visibility = if (errored) View.VISIBLE else View.GONE
         spinner.visibility = View.VISIBLE
+        spinnerRing.invalidate()
+        centerRow.visibility = View.INVISIBLE // l'anneau prend la place du trio central
     }
 
     private fun hideSpinner() {
-        if (!errored) spinner.visibility = View.GONE
+        if (errored) return
+        spinner.visibility = View.GONE
+        errorActions.visibility = View.GONE
+        centerRow.visibility = View.VISIBLE
     }
 
     private val toastHide = Runnable { toast.visibility = View.GONE }
@@ -948,9 +1234,17 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (e.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(e)
         val k = e.keyCode
+        if (locked && (k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_ESCAPE)) {
+            // Écran verrouillé : un retour accidentel ne ferme pas le lecteur, il rappelle comment déverrouiller.
+            flashUnlock()
+            unlockPill.requestFocus()
+            return true
+        }
         when (k) {
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
-                if (panelName != null) closePanel() else if (!minimize()) finishWithClosed()
+                if (panelName != null) closePanel()
+                else if (social?.fanOpen == true) social?.closeFan()
+                else if (!minimize()) finishWithClosed()
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> { togglePlay(); return true }
@@ -960,13 +1254,14 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             KeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(-PlayerLogic.SEEK_STEP_S); return true }
             KeyEvent.KEYCODE_MEDIA_NEXT -> if (nextEpisode != null) { requestNextEpisode(); return true }
         }
+        if (locked) { flashUnlock(); return super.dispatchKeyEvent(e) }
         if (panelName != null) return super.dispatchKeyEvent(e)
         scheduleHide()
         if (!controlsVisible) {
             when (k) {
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                     if (skipButton.visibility == View.VISIBLE) doSkip()
-                    else if (nextCard.visibility == View.VISIBLE) requestNextEpisode()
+                    else if (endLayer.visibility == View.VISIBLE) requestNextEpisode()
                     else togglePlay()
                     return true
                 }
@@ -1011,5 +1306,4 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             toast("Image dans l’image refusée")
         }
     }
-
 }
