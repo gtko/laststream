@@ -22,15 +22,21 @@ export interface SharedLink {
   expiresAt?: string;
 }
 
+const isIndex = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0;
+
 /**
- * Clé de partage d'une copie torrent : `infoHash:fileIdx` (hash en minuscules). Null si le hash est invalide ou si l'index du
- * fichier est absent : sans lui, deux épisodes d'un même pack partageraient la même clé et un autre appareil recevrait le mauvais lien.
+ * Clé de partage d'une copie torrent : `infoHash:fileIdx` (hash en minuscules), suivie de `:s<saison>e<épisode>` pour un
+ * épisode. Null si le hash est invalide ou si l'index du fichier est absent : sans lui, deux épisodes d'un même pack
+ * partageraient la même clé. L'épisode fait partie de la clé parce que le `fileIdx` vient de l'addon et peut être faux
+ * (ou identique pour tout un pack) : l'appareil choisit le fichier par son nom, et un lien d'un épisode ne doit jamais
+ * être servi pour un autre.
  */
-export function sourceKeyFor(copy: { infoHash: string; fileIdx?: number }): string | null {
+export function sourceKeyFor(copy: { infoHash: string; fileIdx?: number }, episode: { season?: number; episode?: number } = {}): string | null {
   const hash = normalizeHash(copy.infoHash);
   const idx = copy.fileIdx;
-  if (hash === null || typeof idx !== 'number' || !Number.isInteger(idx) || idx < 0) return null;
-  const key = `${hash}:${idx}`;
+  if (hash === null || !isIndex(idx)) return null;
+  const ep = isIndex(episode.season) && isIndex(episode.episode) ? `:s${episode.season}e${episode.episode}` : '';
+  const key = `${hash}:${idx}${ep}`;
   return SOURCE_KEY_RE.test(key) ? key : null;
 }
 
