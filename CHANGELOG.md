@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.41 – 2026-11-09
+
+- LAST-1628 : refonte de l'interface du lecteur Android (maquette validée) (#14) — @gtko
+
 ## v1.0.40 – 2026-11-08
 
 - LAST-1627 : watch party sur Android, synchro du lecteur natif, réactions et membres du salon (#12) — @gtko
