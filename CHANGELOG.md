@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.46 – 2026-11-09
+
+- Release : APK et flux Android publiés sur app.laststream.app (#23) — @gtko
+
 ## v1.0.45 – 2026-11-09
 
 - Admin, clés des services : blocs espacés et bouton « Tester » par API (#19) — @gtko
