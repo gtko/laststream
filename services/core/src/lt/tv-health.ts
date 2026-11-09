@@ -6,8 +6,9 @@ import { pruneStreams, type TvCatalog } from './tv-catalog.js';
  * lecture du manifeste HLS puis d'un morceau du premier segment. Un flux en échec plusieurs passages de suite est retiré
  * du catalogue public ; il y revient dès qu'un passage suivant réussit (les flux retirés restent sondés).
  *
- * Le test part des IP de Cloudflare, parfois hors de France : un refus d'accès (401, 403, 429, 451) peut être un
- * géoblocage et ne compte donc ni comme une panne ni comme un succès.
+ * Un refus d'accès (401, 403, 451) est une panne comme une autre : les flux du catalogue ne sont pas géobloqués, une chaîne
+ * qui refuse le test ne se lit pas non plus chez l'utilisateur. Seuls une limite de débit (429) et un refus du proxy (407),
+ * qui ne disent rien du flux, restent sans verdict.
  */
 
 export type StreamVerdict = 'ok' | 'down' | 'unknown';
@@ -24,8 +25,8 @@ const REQUEST_TIMEOUT_MS = 8000;
 const MAX_MANIFEST_BYTES = 512 * 1024;
 const SEGMENT_RANGE = 'bytes=0-1023';
 const MAX_PLAYLIST_DEPTH = 2;
-/** Refus qui peuvent venir du lieu de l'appel (géoblocage, jeton, limite de débit) : sans verdict. */
-const INCONCLUSIVE_STATUS = new Set([401, 403, 407, 429, 451]);
+/** Réponses qui ne disent rien du flux (limite de débit, proxy) : sans verdict. */
+const INCONCLUSIVE_STATUS = new Set([407, 429]);
 
 function statusVerdict(status: number): StreamVerdict {
   if (status < 400) return 'ok';
@@ -143,7 +144,7 @@ async function inspect(fetcher: typeof fetch, url: string, depth: number): Promi
   return start.bytes.byteLength > 0 && !looksLikePage(start.bytes, segmentType) ? 'ok' : 'down';
 }
 
-/** Verdict d'un flux : ok, down (échec franc, délai, DNS, manifeste vide ou page d'erreur), unknown (refus d'accès). */
+/** Verdict d'un flux : ok, down (échec franc, refus d'accès, délai, DNS, manifeste vide ou page d'erreur), unknown (limite de débit). */
 export async function checkStream(fetcher: typeof fetch, url: string): Promise<StreamVerdict> {
   try {
     // Garde de sortie : chaque saut (redirections comprises) est contrôlé avant l'envoi.

@@ -53,12 +53,12 @@ describe('checkStream : manifeste puis segment', () => {
     expect(await check({ 'https://a.example/x.m3u8': 'throw' })).toBe('down');
   });
 
-  it('refus d’accès (géoblocage, jeton, limite) : sans verdict', async () => {
-    for (const status of [401, 403, 429, 451]) {
-      expect(await checkStream(fakeFetch({ 'https://a.example/x.m3u8': () => new Response('non', { status }) }), 'https://a.example/x.m3u8')).toBe('unknown');
-    }
+  it('refus d’accès (401, 403, 451) : panne ; limite de débit et proxy (429, 407) : sans verdict', async () => {
+    const at = (status: number) => checkStream(fakeFetch({ 'https://a.example/x.m3u8': () => new Response('non', { status }) }), 'https://a.example/x.m3u8');
+    for (const status of [401, 403, 451]) expect(await at(status)).toBe('down');
+    for (const status of [407, 429]) expect(await at(status)).toBe('unknown');
     const net = { 'https://a.example/x.m3u8': hls(media), 'https://a.example/seg1.ts': () => new Response('non', { status: 403 }) };
-    expect(await checkStream(fakeFetch(net), 'https://a.example/x.m3u8')).toBe('unknown');
+    expect(await checkStream(fakeFetch(net), 'https://a.example/x.m3u8')).toBe('down');
   });
 
   it('flux direct non HLS : ok s’il envoie des octets de média, panne si vide', async () => {
@@ -167,12 +167,23 @@ describe('applyHealth : retrait après échecs consécutifs, retour automatique'
     expect(health?.[BAD]?.[0]).toBe(0);
   });
 
-  it('un refus d’accès (géoblocage possible) ne compte pas comme échec', async () => {
-    const net = { [BAD]: () => new Response('non', { status: 403 }) };
+  it('un refus d’accès répété retire la chaîne comme une panne ; une limite de débit, jamais', async () => {
+    const refused = { [BAD]: () => new Response('non', { status: 403 }) };
     let health: HealthMap | undefined;
+    let channels = 1;
+    for (let hour = 0; hour <= 12; hour += 6) {
+      const catalog = catalogOf([channel('Refusée', BAD)]);
+      const result = await applyHealth(catalog, health, options(refused, hour));
+      health = result.health;
+      channels = catalog.channels.length;
+    }
+    expect(health?.[BAD]?.[0]).toBe(3);
+    expect(channels).toBe(0);
+    const limited = { [BAD]: () => new Response('non', { status: 429 }) };
+    health = undefined;
     for (let hour = 0; hour <= 36; hour += 6) {
-      const catalog = catalogOf([channel('Geo', BAD)]);
-      const result = await applyHealth(catalog, health, options(net, hour));
+      const catalog = catalogOf([channel('Limitée', BAD)]);
+      const result = await applyHealth(catalog, health, options(limited, hour));
       health = result.health;
       expect(catalog.channels).toHaveLength(1);
     }
@@ -328,25 +339,27 @@ describe('applyHealth : dernier succès et rapport de passage', () => {
     expect(down.health[BAD]).toEqual([2, sec(6)]);
   });
 
-  it('(c) refus 403 et 451 (géoblocage) : ni échec ni succès, le dernier succès ne bouge pas', async () => {
+  it('(c) refus 403 puis 451 : comptés comme échecs, le dernier succès ne bouge pas ; une limite 429 : ni échec ni succès', async () => {
     let status = 200;
     const run = runner(() => (status === 200 ? live(GOOD) : { [GOOD]: () => new Response('non', { status }) }));
     expect((await run(0, [['Bonne', GOOD]])).health[GOOD]).toEqual([0, sec(0), sec(0)]);
     status = 403;
-    expect((await run(6, [['Bonne', GOOD]])).health[GOOD]).toEqual([0, sec(6), sec(0)]);
+    expect((await run(6, [['Bonne', GOOD]])).health[GOOD]).toEqual([1, sec(6), sec(0)]);
     status = 451;
-    const geo = await run(12, [['Bonne', GOOD]]);
-    expect(geo.health[GOOD]).toEqual([0, sec(12), sec(0)]);
-    expect(geo.result.report.removed).toEqual([]);
+    expect((await run(12, [['Bonne', GOOD]])).health[GOOD]).toEqual([2, sec(12), sec(0)]);
+    status = 429;
+    const limited = await run(18, [['Bonne', GOOD]]);
+    expect(limited.health[GOOD]).toEqual([2, sec(18), sec(0)]);
+    expect(limited.result.report.removed).toEqual([]);
   });
 
-  it('(c bis) un refus d’accès ne remet pas non plus un échec à zéro', async () => {
+  it('(c bis) une limite de débit ne remet pas non plus un échec à zéro', async () => {
     let current: Net = {};
     const run = runner(() => current);
     const morte: [string, string][] = [['Morte', BAD]];
     await run(0, morte); // 404 : échec
     await run(6, morte); // 404 : échec
-    current = { [BAD]: () => new Response('non', { status: 403 }) };
+    current = { [BAD]: () => new Response('non', { status: 429 }) };
     const after = await run(12, morte);
     expect(after.health[BAD]).toEqual([2, sec(12)]);
     expect(after.ids).toEqual(['Morte']);
