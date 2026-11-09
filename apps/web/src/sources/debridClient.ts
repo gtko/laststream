@@ -21,6 +21,7 @@ import {
   DebridError, PROVIDER_IDS, PROVIDER_LABEL, normalizeHash,
   type ClientCopy, type DebridProvider, type FileHint, type ProviderId, type ProviderStatus, type ResolvedLink,
 } from './debrid/types';
+import { fileMatchesEpisode } from './debrid/files';
 import { forgetSharedLink, getSharedLink, publishSharedLink, sourceKeyFor } from './sharedLinks';
 
 export { PROVIDER_LABEL, DebridError };
@@ -368,7 +369,7 @@ export class DebridManager {
    */
   async recoverShared(copies: readonly ClientCopy[], episode: { season?: number; episode?: number } = {}, signal?: AbortSignal): Promise<ClientResolved> {
     await Promise.all(copies.slice(0, MAX_COPIES_TRIED).map((c) => {
-      const key = sourceKeyFor(c);
+      const key = sourceKeyFor(c, episode);
       return key ? forgetSharedLink(key) : undefined;
     }));
     return this.resolve(copies, episode, signal, { skipShared: true });
@@ -395,7 +396,7 @@ export class DebridManager {
     if (!options.skipShared && memo && this.now() - memo.at < RESOLVE_TTL_MS && memo.value.provider !== undefined && this.available().includes(memo.value.provider)) return memo.value;
 
     // Lien déjà débloqué par un autre appareil du compte : aucun débrideur n'est appelé ici.
-    const shared = options.skipShared ? null : await sharedFor(list);
+    const shared = options.skipShared ? null : await sharedFor(list, episode);
     if (shared) return shared;
 
     const verdicts = await this.cachedVerdicts(list.map((c) => c.infoHash));
@@ -412,8 +413,9 @@ export class DebridManager {
           const hint: FileHint = { fileIdx: copy.fileIdx, filename: copy.filename, size: copy.size, season: episode.season, episode: episode.episode };
           const link = await this.provider(id).resolve(copy.infoHash, hint, signal);
           // Partage avec les autres appareils du compte : publication sans attente, un échec n'a aucune conséquence.
-          const sharedKey = sourceKeyFor(copy);
-          if (sharedKey && !options.skipPublish) void publishSharedLink(sharedKey, link.url);
+          // Un fichier qui n'est pas l'épisode demandé (pack sans repère clair) n'est jamais partagé.
+          const sharedKey = sourceKeyFor(copy, episode);
+          if (sharedKey && !options.skipPublish && fileMatchesEpisode(link.filename, episode)) void publishSharedLink(sharedKey, link.url);
           // Un fournisseur qui a servi un lien : sa disponibilité est confirmée, et le hash est « en cache » chez lui.
           if (this.health[id]) { delete this.health[id]; this.saveHealth(); }
           const value: ClientResolved = { ...link, provider: id, ...(skipped ? { switchedFrom: skipped } : {}) };
@@ -449,9 +451,9 @@ export class DebridManager {
  * Lien partagé pour la première copie qui en a un (ordre des copies, 3 copies au plus). Sans clé de partage (pas d'index de
  * fichier), rien n'est demandé. Le nom et la taille viennent des indications de la copie : le partage ne les garde pas. Ne lève pas.
  */
-async function sharedFor(list: readonly ClientCopy[]): Promise<ClientResolved | null> {
+async function sharedFor(list: readonly ClientCopy[], episode: { season?: number; episode?: number }): Promise<ClientResolved | null> {
   const keyed = list.slice(0, MAX_COPIES_TRIED).flatMap((copy) => {
-    const key = sourceKeyFor(copy);
+    const key = sourceKeyFor(copy, episode);
     return key ? [{ copy, key }] : [];
   });
   if (keyed.length === 0) return null;

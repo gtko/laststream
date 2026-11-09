@@ -54,6 +54,13 @@ describe('clé de partage', () => {
     expect(key).toMatch(KEY_RE);
   });
 
+  it('épisode ajouté à la clé : s<saison>e<épisode>, conforme au motif ; film : inchangé', () => {
+    expect(sourceKeyFor({ infoHash: H1, fileIdx: 3 }, { season: 1, episode: 2 })).toBe(`${H1}:3:s1e2`);
+    expect(sourceKeyFor({ infoHash: H1, fileIdx: 3 }, { season: 0, episode: 1 })).toBe(`${H1}:3:s0e1`);
+    expect(sourceKeyFor({ infoHash: H1, fileIdx: 3 }, {})).toBe(`${H1}:3`);
+    expect(KEY_RE.test(sourceKeyFor({ infoHash: H1, fileIdx: 3 }, { season: 12, episode: 104 })!)).toBe(true);
+  });
+
   it('absente sans index de fichier fiable ou hash valide (pas de partage d’un épisode à l’autre)', () => {
     expect(sourceKeyFor({ infoHash: H1 })).toBeNull();
     expect(sourceKeyFor({ infoHash: H1, fileIdx: -1 })).toBeNull();
@@ -250,5 +257,41 @@ describe('résolution sur l’appareil et partage', () => {
     await vi.waitFor(() => expect(sent.filter((s) => s.method === 'PUT')).toHaveLength(1));
     for (const s of spies) expect(s).not.toHaveBeenCalled();
     spies.forEach((s) => s.mockRestore());
+  });
+
+  // Régression : un pack dont l'addon donne le même fileIdx pour plusieurs épisodes (ou un fileIdx faux). Le lien de
+  // l'épisode 2 publié sous `hash:0` était servi plus tard pour l'épisode 1 : mauvais épisode à l'écran.
+  it('épisode dans la clé : le lien partagé d’un épisode n’est jamais demandé ni publié pour un autre', async () => {
+    const store = new Map<string, string>();
+    const sent = stubApi((s) => {
+      const key = s.method === 'GET' ? new URL(s.url).searchParams.get('sourceKey') ?? '' : (s.body as { sourceKey: string }).sourceKey;
+      if (s.method === 'PUT') { store.set(key, (s.body as { url: string }).url); return { status: 200, body: { expiresAt: EXP } }; }
+      const url = store.get(key);
+      return url ? { status: 200, body: { url } } : { status: 404 };
+    });
+    const ad = fake();
+    ad.resolve = (_hash, hint) => {
+      ad.resolveCalls += 1;
+      const name = `Show.S01E0${hint.episode}.mkv`;
+      return Promise.resolve({ url: `https://dl.alldebrid.test/${name}`, filename: name, size: 1 });
+    };
+    const m = manager(ad);
+    const e2 = await m.resolve([{ infoHash: H1, fileIdx: 0 }], { season: 1, episode: 2 });
+    expect(e2.url).toContain('S01E02');
+    await vi.waitFor(() => expect(store.size).toBe(1));
+    expect([...store.keys()]).toEqual([`${H1}:0:s1e2`]);
+    const e1 = await m.resolve([{ infoHash: H1, fileIdx: 0 }], { season: 1, episode: 1 });
+    expect(e1.url).toContain('S01E01');
+    expect(ad.resolveCalls).toBe(2);
+    expect(sent.filter((s) => s.method === 'GET').map((s) => new URL(s.url).searchParams.get('sourceKey'))).toEqual([`${H1}:0:s1e2`, `${H1}:0:s1e1`]);
+  });
+
+  it('fichier débloqué qui n’est pas l’épisode demandé : jamais partagé', async () => {
+    const sent = stubApi((s) => (s.method === 'GET' ? { status: 404 } : { status: 200, body: { expiresAt: EXP } }));
+    const ad = fake();
+    ad.resolve = () => { ad.resolveCalls += 1; return Promise.resolve({ url: URL_DEV, filename: 'Show.S01E05.mkv', size: 1 }); };
+    await manager(ad).resolve([{ infoHash: H1, fileIdx: 3 }], { season: 1, episode: 1 });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sent.filter((s) => s.method === 'PUT')).toHaveLength(0);
   });
 });

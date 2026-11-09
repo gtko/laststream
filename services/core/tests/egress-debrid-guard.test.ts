@@ -65,11 +65,14 @@ describe('isDebridResolverUrl', () => {
       'https://streamfusion.example/playback/CONFIG/abc',
       'https://x.example/streaming_provider/abc',
       'https://real-debrid.example/f',
+      // Lumio : lien débridé à l'ouverture (`/play/<jeton>`), sondé depuis le serveur il se bloquait sur l'appareil.
+      'https://mylumio.tv/play/74VfC3vsyYDRAaJp7XnWxr3RPzAK2ydtahnzMAY95v5PMvcvnvcE8rqNuQUKnuZ7ejdlZ',
+      'https://addon.example/abc/play/token',
     ]) expect(isDebridResolverUrl(url)).toBe(true);
   });
 
   it('laisse passer un lien direct ordinaire', () => {
-    for (const url of ['https://cdn.example.com/media/film.mkv', 'https://example.org/a/b/c.mp4', 'pas une url']) expect(isDebridResolverUrl(url)).toBe(false);
+    for (const url of ['https://cdn.example.com/media/film.mkv', 'https://example.org/a/b/c.mp4', 'https://cdn.example.com/player/film.mp4', 'pas une url']) expect(isDebridResolverUrl(url)).toBe(false);
   });
 });
 

@@ -31,6 +31,15 @@ function matchesEpisode(name: string, season: number, episode: number): boolean 
   return patterns.some((pattern) => pattern.test(name));
 }
 
+/**
+ * Le fichier débloqué est-il celui de l'épisode demandé ? Vrai pour un film (pas d'épisode), sans nom connu, ou si le nom
+ * porte SxxEyy / NxNN de cet épisode.
+ */
+export function fileMatchesEpisode(name: string | undefined, ep: { season?: number; episode?: number }): boolean {
+  if (ep.season === undefined || ep.episode === undefined || !name) return true;
+  return matchesEpisode(name, ep.season, ep.episode);
+}
+
 const largest = (files: readonly FlatFile[]): FlatFile => files.reduce((best, f) => (f.size > best.size ? f : best));
 
 /**

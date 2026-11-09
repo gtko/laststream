@@ -23,10 +23,13 @@ function bareHost(host: string): string {
   return host.trim().replace(/^\[|\]$/g, '').replace(/\.+$/, '').toLowerCase();
 }
 
-/** Hôte d'un service de débridage ou d'un proxy de débridage (StremThru, ElfHosted…) : son lien déclenche un débridage côté tiers. */
-const RESOLVER_HOST = /debrid|stremthru|elfhosted|torbox|premiumize/i;
-/** Segment de chemin des liens de résolution de débrideur (`/resolve/alldebrid/<clé>/…`, `/playback/<config>/…`). */
-const RESOLVER_SEGMENT = /^(resolve|playback|streaming_provider|alldebrid|debrid|realdebrid|torbox|premiumize)$/i;
+/** Hôte d'un service de débridage ou d'un proxy de débridage (StremThru, ElfHosted, Lumio…) : son lien déclenche un débridage côté tiers. */
+const RESOLVER_HOST = /debrid|stremthru|elfhosted|torbox|premiumize|lumio/i;
+/**
+ * Segment de chemin des liens de résolution de débrideur (`/resolve/alldebrid/<clé>/…`, `/playback/<config>/…`,
+ * `/play/<jeton>` de Lumio).
+ */
+const RESOLVER_SEGMENT = /^(resolve|playback|play|streaming_provider|alldebrid|debrid|realdebrid|torbox|premiumize)$/i;
 
 /**
  * Lien de résolution d'un débrideur (hôte ou segment de chemin) : une requête du serveur, même une simple sonde, ferait
