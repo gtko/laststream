@@ -1,5 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
-import { canonFromFiche, canonSummary, seedCanon } from '../data/series';
+import { bonusLast, canonFromFiche, canonSummary, seedCanon } from '../data/series';
 import { canonical } from './seasons.js';
 import { fetchServerMeta, tmdb } from '../data/lt';
 import { getRegion, getVideoLang } from '../data/prefs';
@@ -68,9 +68,7 @@ export function buildModel(type, id, raw, en, canon) {
     cert: certLabel(certification(raw, type)),
     // Numérotation canonique de lastAddon quand elle existe ; sinon saisons TMDB.
     canon: canon || null,
-    seasons: sum
-      ? (sum.seasons.filter((s) => s.season_number > 0).length ? sum.seasons.filter((s) => s.season_number > 0) : sum.seasons)
-      : ((raw.seasons || []).filter((s) => s.season_number > 0).length ? (raw.seasons || []).filter((s) => s.season_number > 0) : (raw.seasons || [])),
+    seasons: bonusLast(sum ? sum.seasons : raw.seasons || []),
     nSeasons: sum ? sum.nSeasons : raw.number_of_seasons || 0,
     nEpisodes: sum ? sum.nEpisodes : raw.number_of_episodes || 0,
     status: STATUS_FR[raw.status] || raw.status || '',
