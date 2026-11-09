@@ -4,7 +4,8 @@ import { sendJson } from '../http/respond.js';
 import type { MetricsService } from '../metrics/core.js';
 import { buildProviderHealth, type ProviderHealth } from '../metrics/health.js';
 import { isProvider, PROVIDERS, type ProviderName } from '../metrics/providers.js';
-import { type RuntimeEnv, platform, runtimeEnv } from '../platform/index.js';
+import type { ServerServices } from '../config/server-services.js';
+import { platform } from '../platform/index.js';
 import { createRateLimiter } from '../rate-limit.js';
 import type { Session } from '../user/session.js';
 import { UserApiError } from '../user/validation.js';
@@ -59,9 +60,9 @@ const LABELS: Record<ProviderName, string> = {
   rows: 'Rangées d’accueil (R2)',
 };
 
-/** Clé du serveur (variable d'environnement non vide), ou undefined. */
-function serverKey(env: RuntimeEnv, name: string): string | undefined {
-  const value = env.get(name)?.trim();
+/** Clé du serveur (base de l'administration, sinon variable d'exécution ; non vide), ou undefined. */
+function serverKey(keys: ServerServices, name: keyof ServerServices): string | undefined {
+  const value = keys[name]?.trim();
   return value === undefined || value === '' ? undefined : value;
 }
 
@@ -75,20 +76,20 @@ const loginRequest = (payload: Record<string, string>): RequestInit => ({
  * Requête légère par fournisseur, avec la clé du serveur. undefined : non testable (aucune clé, ou aucun appel amont
  * pour R2). TheTVDB n'a pas de lecture sans jeton : la connexion (POST /login) valide la clé, v4 puis v3 si v4 refuse.
  */
-const PROBES: Record<ProviderName, (env: RuntimeEnv) => ProviderProbe | undefined> = {
-  tmdb: (env) => {
-    const token = serverKey(env, 'TMDB_TOKEN');
+const PROBES: Record<ProviderName, (keys: ServerServices) => ProviderProbe | undefined> = {
+  tmdb: (keys) => {
+    const token = serverKey(keys, 'tmdbToken');
     if (token !== undefined) {
       return (send) => send(`${TMDB_BASE}/configuration`, { headers: { ...JSON_HEADERS, authorization: `Bearer ${token}` } });
     }
-    const key = serverKey(env, 'TMDB_API_KEY');
+    const key = serverKey(keys, 'tmdbApiKey');
     if (key !== undefined) return (send) => send(`${TMDB_BASE}/configuration?api_key=${encodeURIComponent(key)}`, { headers: JSON_HEADERS });
     return undefined;
   },
-  tvdb: (env) => {
-    const apikey = serverKey(env, 'TVDB_API_KEY');
+  tvdb: (keys) => {
+    const apikey = serverKey(keys, 'tvdbApiKey');
     if (apikey === undefined) return undefined;
-    const pin = serverKey(env, 'TVDB_PIN');
+    const pin = serverKey(keys, 'tvdbPin');
     return async (send) => {
       const v4 = await send(`${TVDB_V4_BASE}/login`, loginRequest(pin === undefined ? { apikey } : { apikey, pin }));
       if (v4.status !== 401) return v4;
@@ -96,18 +97,18 @@ const PROBES: Record<ProviderName, (env: RuntimeEnv) => ProviderProbe | undefine
       return send(`${TVDB_V3_BASE}/login`, loginRequest({ apikey }));
     };
   },
-  openrouter: (env) => {
-    const key = serverKey(env, 'OPENROUTER_API_KEY');
+  openrouter: (keys) => {
+    const key = serverKey(keys, 'openrouterApiKey');
     if (key === undefined) return undefined;
     return (send) => send('https://openrouter.ai/api/v1/auth/key', { headers: { ...JSON_HEADERS, authorization: `Bearer ${key}` } });
   },
-  mdblist: (env) => {
-    const key = serverKey(env, 'MDBLIST_API_KEY');
+  mdblist: (keys) => {
+    const key = serverKey(keys, 'mdblistApiKey');
     if (key === undefined) return undefined;
     return (send) => send(`https://api.mdblist.com/imdb/movie/tt0133093?apikey=${encodeURIComponent(key)}`, { headers: JSON_HEADERS });
   },
-  fanart: (env) => {
-    const key = serverKey(env, 'FANART_API_KEY');
+  fanart: (keys) => {
+    const key = serverKey(keys, 'fanartApiKey');
     if (key === undefined) return undefined;
     return (send) => send(`https://webservice.fanart.tv/v3/movies/603?api_key=${encodeURIComponent(key)}`, { headers: JSON_HEADERS });
   },
@@ -152,7 +153,7 @@ async function runProviderTest(id: ProviderName, probe: ProviderProbe, fetchFn: 
  * Fournisseur de la liste : taux de succès, latence p95, sparkline, dernier échec et statut viennent de la santé mesurée
  * sur les appels sortants (metrics/health.ts). Sans donnée, les champs sont null et le statut unknown.
  */
-function providerEntry(id: ProviderName, env: RuntimeEnv, health: ProviderHealth) {
+function providerEntry(id: ProviderName, keys: ServerServices, health: ProviderHealth) {
   return {
     id,
     label: LABELS[id],
@@ -161,7 +162,7 @@ function providerEntry(id: ProviderName, env: RuntimeEnv, health: ProviderHealth
     spark: health.spark,
     lastFailureAt: health.lastFailureAt,
     status: health.status,
-    testable: PROBES[id](env) !== undefined,
+    testable: PROBES[id](keys) !== undefined,
   };
 }
 
@@ -169,8 +170,8 @@ function providerEntry(id: ProviderName, env: RuntimeEnv, health: ProviderHealth
  * Liste des fournisseurs (GET /admin/providers), partagée avec le centre de contrôle : une seule construction, à partir de
  * la santé mesurée (buildProviderHealth). Les mêmes entrées servent aux statuts et aux éléments de la boîte.
  */
-export function providerEntries(env: RuntimeEnv, health: Record<ProviderName, ProviderHealth>) {
-  return PROVIDERS.map((id) => providerEntry(id, env, health[id]));
+export function providerEntries(keys: ServerServices, health: Record<ProviderName, ProviderHealth>) {
+  return PROVIDERS.map((id) => providerEntry(id, keys, health[id]));
 }
 
 /** Statistiques de stockage : caches KV, buckets R2 (TV, META, AVATARS) et base SQLite du Durable Object. */
@@ -198,6 +199,8 @@ export interface OpsRouteContext {
   audit(session: Session, action: string, target: string | null, detail?: Record<string, unknown> | null): Promise<void>;
   metrics(): MetricsService | undefined;
   caches(): CacheAdmin | undefined;
+  /** Clés serveur effectives (base de l'administration, puis variables d'exécution). */
+  serverKeys(): Promise<ServerServices>;
 }
 
 /** Routes /admin/providers, /admin/storage et /admin/tasks, toutes réservées au propriétaire (gardes de api.ts). */
@@ -231,10 +234,9 @@ export function registerOpsRoutes(router: App, ctx: OpsRouteContext): void {
 
   router.get('/providers', async (c) => {
     await owner(c);
-    const env = runtimeEnv();
-    const rows = (await settle(() => ctx.metrics()?.providerHours?.())) ?? [];
-    const health = buildProviderHealth(rows, Date.now());
-    return sendJson(c, { providers: providerEntries(env, health) });
+    const [rows, keys] = await Promise.all([settle(() => ctx.metrics()?.providerHours?.()), ctx.serverKeys()]);
+    const health = buildProviderHealth(rows ?? [], Date.now());
+    return sendJson(c, { providers: providerEntries(keys, health) });
   });
 
   /** Requête légère vers le fournisseur (clé du serveur) : élévation, audité, 10 par minute et par IP, délai de 4 s. */
@@ -244,7 +246,7 @@ export function registerOpsRoutes(router: App, ctx: OpsRouteContext): void {
     const id = c.req.param('id');
     if (id === ALLDEBRID) throw new UserApiError(400, 'not_testable');
     if (!isProvider(id)) throw new UserApiError(404, 'provider_not_found');
-    const probe = PROBES[id](runtimeEnv());
+    const probe = PROBES[id](await ctx.serverKeys());
     if (probe === undefined) throw new UserApiError(400, 'not_testable');
     const verdict = testLimiter(c.get('ip') ?? 'inconnu');
     if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);

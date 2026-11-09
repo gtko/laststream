@@ -52,3 +52,8 @@
   .adm-row-act { justify-content: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) { .adm-spin { animation: none; } }
+
+/* ---------- Clés des services : champ, origine de la clé, effacement ---------- */
+.adm-svc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; width: 100%; }
+.adm-svc-row .set-input { flex: 1 1 260px; min-width: 0; }
+.adm-svc-row .adm-badge { flex: none; }

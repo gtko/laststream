@@ -4,7 +4,7 @@ import { queryParams, sendJson } from '../http/respond.js';
 import { type MetricsReport, type MetricsService, RANGES } from '../metrics/core.js';
 import { buildProviderHealth } from '../metrics/health.js';
 import type { PartyBackend } from '../party/backend.js';
-import { runtimeEnv } from '../platform/index.js';
+import type { ServerServices } from '../config/server-services.js';
 import type { AdminAccount, AuditEntry, OnlineAccount, PartyReportRecord, RegisteredRoom } from '../user/admin-store.js';
 import type { AdminRepo } from '../user/repo.js';
 import type { Session } from '../user/session.js';
@@ -426,12 +426,14 @@ export interface ControlRouteContext {
   metrics(): MetricsService | undefined;
   caches(): CacheAdmin | undefined;
   party: PartyBackend | undefined;
+  /** Clés serveur effectives (base de l'administration, puis variables d'exécution). */
+  serverKeys(): Promise<ServerServices>;
 }
 
 /** Fournisseurs avec leur santé mesurée sur les appels sortants : même construction que GET /admin/providers. */
-async function providersOf(metrics: () => MetricsService | undefined, now: number): Promise<ProviderState[]> {
-  const rows = await attempt(async () => metrics()?.providerHours?.());
-  return providerEntries(runtimeEnv(), buildProviderHealth(rows ?? [], now));
+async function providersOf(ctx: ControlRouteContext, now: number): Promise<ProviderState[]> {
+  const [rows, keys] = await Promise.all([attempt(async () => ctx.metrics()?.providerHours?.()), ctx.serverKeys()]);
+  return providerEntries(keys, buildProviderHealth(rows ?? [], now));
 }
 
 /** Lecture du cron TV, ou undefined si l'API TV est absente ou en échec. */
@@ -456,7 +458,7 @@ export function registerControlRoutes(router: App, ctx: ControlRouteContext): vo
       attempt(async () => metrics()?.report('1h')),
       accountsService(admin),
       cronReading(deps, now),
-      providersOf(metrics, now),
+      providersOf(ctx, now),
     ]);
     return sendJson(c, statusOf({ now, report, accounts, providers, cron }));
   });
@@ -472,7 +474,7 @@ export function registerControlRoutes(router: App, ctx: ControlRouteContext): vo
       cronReading(deps, now),
       attempt(async () => caches()?.purgeJobs()),
       attempt(() => admin().listDismissedKeys()),
-      providersOf(metrics, now),
+      providersOf(ctx, now),
     ]);
     return sendJson(
       c,

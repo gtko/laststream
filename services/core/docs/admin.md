@@ -48,6 +48,18 @@ Le propriétaire ne peut ni se suspendre ni se supprimer (`403 cannot_target_own
 - `invitesOpen: false` : les inscriptions par lien sont refusées (`403 invites_closed`, lien non consommé). Le premier compte n'est pas concerné.
 - `maintenance` : activer exige **[élév.]**. Tout répond alors `503` (`{ "error": "maintenance", "message" }`, ou page HTML pour un navigateur, `Retry-After: 300`) **sauf** `/admin/*`, `/health`, `GET /user/signup-info` et `POST /user/login` (un non-propriétaire reçoit 503 après vérification du mot de passe). L'état est mis en cache ~5 s par instance.
 
+## Clés des services
+
+Clés partagées par tous les comptes (TMDB, MDBList, TheTVDB, OpenRouter, Fanart.tv, IntroDB, SkipDB, Anime Skip). Elles sont chiffrées en base (AES-256-GCM, clé dérivée de `LASTADDON_SECRET`). Chaque clé est cherchée dans cet ordre : la base (administration), puis la variable d'exécution (`TMDB_TOKEN`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`…), puis la clé du compte de l'utilisateur. Aucune réponse ne contient une clé.
+
+| Route | Rôle |
+| --- | --- |
+| `GET /admin/services` | État masqué de chaque champ : `{ services: { <champ>: { set, last4?, value?, source: "db"\|"env"\|"none" } } }`. `value` n'existe que pour `openrouterModel`, qui n'est pas secret. |
+| `PUT /admin/services` **[élév.]** | Corps partiel `{ <champ>: "valeur" \| null }` : une valeur est enregistrée, `null` l'efface de la base (la variable d'exécution reprend le relais). Le journal d'audit (`services.update`) garde seulement les noms des champs. |
+| `POST /admin/services/import` **[élév.]** | Reprend les clés présentes dans la configuration du compte propriétaire : `{ services, imported: [<champs>] }`. `404 account_config_missing` si le compte n'a pas de configuration. Journal d'audit : `services.import`. |
+
+Les tests fournisseurs (`/admin/providers`) utilisent ces clés effectives. Les tâches planifiées (préchauffage des fiches, rangées d'accueil) lisent toujours les variables d'exécution : garde `TMDB_TOKEN` (et `MDBLIST_API_KEY`) en secret Worker pour elles.
+
 ## Métriques
 
 `GET /admin/metrics?range=1h|24h|7d` (défaut `1h`). Tranches de 5 minutes (pas d'1 h pour `7d`), rétention 7 jours, latences en ms (histogramme, p50/p95 interpolés).

@@ -3,6 +3,7 @@
 import { communitySections } from './community.js';
 import { pilotageSections } from './pilotage.js';
 import { platformSections } from './platform.js';
+import { servicesSections } from './services.js';
 import { systemSections } from './system.js';
 import { usersSections } from './users.js';
 
@@ -15,7 +16,7 @@ export const GROUPS = [
 ];
 
 /** Toutes les sections, dans l'ordre de la navigation. */
-export const SECTIONS = [...pilotageSections, ...usersSections, ...platformSections, ...communitySections, ...systemSections];
+export const SECTIONS = [...pilotageSections, ...usersSections, ...platformSections, ...servicesSections, ...communitySections, ...systemSections];
 
 export const findSection = (id) => SECTIONS.find((s) => s.id === id) || null;
 export const sectionsOf = (groupId) => SECTIONS.filter((s) => s.group === groupId);

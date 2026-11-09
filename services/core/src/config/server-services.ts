@@ -6,13 +6,13 @@ import { last4Label } from './secrets.js';
 
 /**
  * Clés de services au niveau du serveur, partagées par tous les comptes. Trois sources, dans l'ordre : la base des
- * données utilisateur (chiffrée, gérée par le propriétaire), puis les variables d'exécution (environnement Node,
- * secrets Worker), puis la clé saisie dans le compte. OpenRouter n'a pas de clé en base : compte, puis
- * OPENROUTER_API_KEY. Ces valeurs ne sont jamais renvoyées au client ni journalisées : seul l'état masqué sort de ce module.
+ * données utilisateur (chiffrée, gérée par le propriétaire dans l'administration), puis les variables d'exécution
+ * (environnement Node, secrets Worker), puis la clé saisie dans le compte. Ces valeurs ne sont jamais renvoyées au client
+ * ni journalisées : seul l'état masqué sort de ce module (le modèle OpenRouter, qui n'est pas secret, sort en clair).
  */
 
-/** Champs gérés par le propriétaire, stockés en base. OpenRouter n'y est jamais stocké. */
-const SERVER_SERVICE_FIELDS = [
+/** Champs gérés par le propriétaire, stockés en base (chiffrés). */
+export const SERVER_SERVICE_FIELDS = [
   'tmdbToken',
   'tmdbApiKey',
   'mdblistApiKey',
@@ -22,18 +22,24 @@ const SERVER_SERVICE_FIELDS = [
   'introdbApiKey',
   'skipdbApiKey',
   'animeskipClientId',
+  'openrouterApiKey',
+  'openrouterModel',
 ] as const;
 
 export type ServerServiceField = (typeof SERVER_SERVICE_FIELDS)[number];
 
-/** Variable d'exécution de chaque clé serveur (OpenRouter inclus, qui ne vient que de là côté serveur). */
-const SERVER_SERVICE_ENV: Record<ServerServiceField | 'openrouterApiKey', string> = {
+/** Champ non secret : sa valeur sort en clair dans l'état (nom de modèle, pas une clé). */
+const PUBLIC_FIELDS: ReadonlySet<ServerServiceField> = new Set(['openrouterModel']);
+
+/** Variable d'exécution de chaque clé serveur. */
+const SERVER_SERVICE_ENV: Record<ServerServiceField, string> = {
   tmdbToken: 'TMDB_TOKEN',
   tmdbApiKey: 'TMDB_API_KEY',
   mdblistApiKey: 'MDBLIST_API_KEY',
   tvdbApiKey: 'TVDB_API_KEY',
   tvdbPin: 'TVDB_PIN',
   openrouterApiKey: 'OPENROUTER_API_KEY',
+  openrouterModel: 'OPENROUTER_MODEL',
   fanartApiKey: 'FANART_API_KEY',
   introdbApiKey: 'INTRODB_API_KEY',
   skipdbApiKey: 'SKIPDB_API_KEY',
@@ -66,15 +72,19 @@ export interface ServerServicesEnv {
 }
 
 /** Clés serveur effectives (base, sinon variable d'exécution). Ne jamais journaliser ni renvoyer ces valeurs. */
-export type ServerServices = Partial<Record<ServerServiceField | 'openrouterApiKey', string>>;
+export type ServerServices = Partial<Record<ServerServiceField, string>>;
 
 /** Origine d'une clé serveur : la base, une variable d'exécution, ou aucune. */
 type ServerServiceSource ='db' | 'env' | 'none';
 
-/** État masqué d'une clé serveur : présence, quatre derniers caractères si la clé est assez longue, origine. */
+/**
+ * État masqué d'une clé serveur : présence, quatre derniers caractères si la clé est assez longue, origine. `value` :
+ * valeur en clair, seulement pour un champ non secret (modèle OpenRouter).
+ */
 interface ServerServiceState {
   set: boolean;
   last4?: string;
+  value?: string;
   source: ServerServiceSource;
 }
 
@@ -100,7 +110,7 @@ function isServerServiceField(name: string): name is ServerServiceField {
 }
 
 /** Valeur d'une variable d'exécution, sans espaces ; undefined si absente ou vide. */
-function runtimeValue(env: ServerServicesEnv, key: ServerServiceField | 'openrouterApiKey'): string | undefined {
+function runtimeValue(env: ServerServicesEnv, key: ServerServiceField): string | undefined {
   return env.runtime.get(SERVER_SERVICE_ENV[key])?.trim() || undefined;
 }
 
@@ -184,10 +194,7 @@ function tvdbPair(env: ServerServicesEnv, stored: Stored): TvdbPair | undefined 
   return { origin: 'env', key, pin: runtimeValue(env, 'tvdbPin') };
 }
 
-/**
- * Clés serveur effectives : la base d'abord, puis la variable d'exécution (TheTVDB en paire, voir tvdbPair).
- * OpenRouter ne vient que de la variable.
- */
+/** Clés serveur effectives : la base d'abord, puis la variable d'exécution (TheTVDB en paire, voir tvdbPair). */
 export async function getServerServices(env: ServerServicesEnv): Promise<ServerServices> {
   const stored = await storedKeys(env);
   const services: ServerServices = {};
@@ -201,8 +208,6 @@ export async function getServerServices(env: ServerServicesEnv): Promise<ServerS
     services.tvdbApiKey = pair.key;
     if (pair.pin !== undefined) services.tvdbPin = pair.pin;
   }
-  const openrouter = runtimeValue(env, 'openrouterApiKey');
-  if (openrouter !== undefined) services.openrouterApiKey = openrouter;
   return services;
 }
 
@@ -210,7 +215,7 @@ export async function getServerServices(env: ServerServicesEnv): Promise<ServerS
  * Configuration dont les clés sont complétées par celles du serveur. Pour les champs du propriétaire : base, puis
  * variable d'exécution, puis clé du compte. TheTVDB : clé et PIN forment une paire d'une seule source. Si le serveur
  * fournit la clé, la paire est celle du serveur (sans PIN si le serveur n'en a pas, sans reprendre celui du compte) ;
- * sinon la paire du compte est gardée telle quelle. OpenRouter : clé du compte, puis OPENROUTER_API_KEY.
+ * sinon la paire du compte est gardée telle quelle. OpenRouter (clé et modèle) suit la même règle : le serveur d'abord.
  */
 export async function withServerServices(config: Config, env: ServerServicesEnv): Promise<Config> {
   const server = await getServerServices(env);
@@ -228,16 +233,13 @@ export async function withServerServices(config: Config, env: ServerServicesEnv)
     if (server.tvdbPin !== undefined) services.tvdbPin = server.tvdbPin;
     else delete services.tvdbPin;
   }
-  if (config.services.openrouterApiKey === undefined && server.openrouterApiKey !== undefined) {
-    services ??= { ...config.services };
-    services.openrouterApiKey = server.openrouterApiKey;
-  }
   return services === undefined ? config : { ...config, services };
 }
 
 /** État d'une clé serveur : présence, quatre derniers caractères si la clé est assez longue, origine. */
-function stateOf(value: string | undefined, source: ServerServiceSource): ServerServiceState {
+function stateOf(value: string | undefined, source: ServerServiceSource, field?: ServerServiceField): ServerServiceState {
   if (value === undefined) return { set: false, source: 'none' };
+  if (field !== undefined && PUBLIC_FIELDS.has(field)) return { set: true, value, source };
   const last4 = last4Label(value);
   return last4 === undefined ? { set: true, source } : { set: true, last4, source };
 }
@@ -252,7 +254,7 @@ export async function serverServicesState(env: ServerServicesEnv): Promise<Serve
   for (const field of SERVER_SERVICE_FIELDS) {
     if (field === 'tvdbApiKey' || field === 'tvdbPin') continue;
     const fromDb = stored[field];
-    state[field] = stateOf(fromDb ?? runtimeValue(env, field), fromDb === undefined ? 'env' : 'db');
+    state[field] = stateOf(fromDb ?? runtimeValue(env, field), fromDb === undefined ? 'env' : 'db', field);
   }
   const pair = tvdbPair(env, stored);
   const source = pair?.origin ?? 'none';

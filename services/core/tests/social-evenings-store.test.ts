@@ -497,7 +497,7 @@ describe('soirées : détachement, purge et cascade', () => {
     const { store, db } = seeded();
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((row) => row.name);
     expect(tables).toEqual(expect.arrayContaining(['evening_series', 'evening_series_guests', 'evenings', 'evening_guests']));
-    expect((db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number }).v).toBe(34);
+    expect((db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number }).v).toBe(35);
 
     const evening = evOf(store.create(ALICE, { tz: 'Europe/Paris', title: 'Dîner', startsAt: NOW + 2 * HOUR, guests: [BOB, CAROL] }, NOW));
     db.prepare('DELETE FROM profiles WHERE pid = ?').run(CAROL);

@@ -581,9 +581,8 @@ describe('interface portée', () => {
     const page = document.querySelector('#detail .set-page')!;
     expect(page).not.toBeNull();
     expect(page.querySelector('input[name="base"]')).not.toBeNull();
-    const key = page.querySelector('input[name="svc.tmdbToken"]') as HTMLInputElement;
-    expect(key.placeholder).toContain('abcd');
-    expect(key.value).toBe('');
+    // Les clés des services se règlent dans l'administration : plus aucun champ de clé dans les réglages.
+    expect(page.querySelector('input[name^="svc."]')).toBeNull();
     expect(page.querySelector('[data-set-theme="teal"]')).not.toBeNull();
     expect((page.querySelector('select[data-set-pref="region"]') as HTMLSelectElement).value).toBe('FR');
   });

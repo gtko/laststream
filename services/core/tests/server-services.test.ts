@@ -205,33 +205,42 @@ describe('TVDB : clé et PIN forment une paire, résolue d\'une seule source', (
   });
 });
 
-describe('OpenRouter : compte, puis OPENROUTER_API_KEY, jamais la base', () => {
-  it('la clé du compte prime sur OPENROUTER_API_KEY', async () => {
+describe('OpenRouter : base, puis OPENROUTER_API_KEY, puis le compte (comme les autres clés)', () => {
+  it('OPENROUTER_API_KEY prime sur la clé du compte', async () => {
     const h = harness({ OPENROUTER_API_KEY: 'or-env-0123456789ab' });
+    const config = await withServerServices(account({ openrouterApiKey: 'or-compte-01234567' }), h.env);
+    expect(config.services.openrouterApiKey).toBe('or-env-0123456789ab');
+  });
+
+  it('sans clé serveur, la clé du compte est gardée', async () => {
+    const h = harness();
     const config = await withServerServices(account({ openrouterApiKey: 'or-compte-01234567' }), h.env);
     expect(config.services.openrouterApiKey).toBe('or-compte-01234567');
   });
 
-  it('OPENROUTER_API_KEY complète un compte sans clé', async () => {
+  it('sans compte ni serveur, aucune clé OpenRouter', async () => {
+    const h = harness();
+    const config = await withServerServices(account({}), h.env);
+    expect(config.services.openrouterApiKey).toBeUndefined();
+  });
+
+  it('clé et modèle enregistrés en base : prioritaires, chiffrés, le modèle sort en clair dans l’état', async () => {
+    const h = harness({ OPENROUTER_API_KEY: 'or-env-0123456789ab' });
+    const state = await setServerServices(h.env, { openrouterApiKey: 'or-base-0123456789', openrouterModel: 'anthropic/claude-test' });
+    const rows = h.store.listServerServiceRows();
+    expect(rows.map((r) => r.field)).toEqual(['openrouterApiKey', 'openrouterModel']);
+    expect(rows.every((r) => !r.sealed.includes('or-base') && !r.sealed.includes('anthropic'))).toBe(true);
+    expect(state.openrouterApiKey).toEqual({ set: true, last4: '…6789', source: 'db' });
+    expect(state.openrouterModel).toEqual({ set: true, value: 'anthropic/claude-test', source: 'db' });
+    const config = await withServerServices(account({ openrouterApiKey: 'or-compte-01234567', openrouterModel: 'test/model' }), h.env);
+    expect(config.services.openrouterApiKey).toBe('or-base-0123456789');
+    expect(config.services.openrouterModel).toBe('anthropic/claude-test');
+  });
+
+  it('sans modèle serveur, le modèle du compte est gardé', async () => {
     const h = harness({ OPENROUTER_API_KEY: 'or-env-0123456789ab' });
     const config = await withServerServices(account({ openrouterModel: 'test/model' }), h.env);
-    expect(config.services.openrouterApiKey).toBe('or-env-0123456789ab');
     expect(config.services.openrouterModel).toBe('test/model');
-  });
-
-  it('sans compte ni variable, aucune clé OpenRouter', async () => {
-    const h = harness();
-    const config = await withServerServices(account({}), h.env);
-    expect(config.services.openrouterApiKey).toBeUndefined();
-  });
-
-  it('une clé OpenRouter écrite en base est refusée : ni stockée, ni lue', async () => {
-    const h = harness();
-    const state = await setServerServices(h.env, { openrouterApiKey: 'or-base-0123456789' } as unknown as ServerServicesPatch);
-    expect(h.store.listServerServiceRows()).toEqual([]);
-    expect(Object.keys(state)).not.toContain('openrouterApiKey');
-    const config = await withServerServices(account({}), h.env);
-    expect(config.services.openrouterApiKey).toBeUndefined();
   });
 });
 

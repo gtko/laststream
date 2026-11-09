@@ -1,4 +1,4 @@
-// Coquille de la console d'administration : registre des sections (5 espaces, 14 entrées), navigation et compteurs,
+// Coquille de la console d'administration : registre des sections (5 espaces, 15 entrées), navigation et compteurs,
 // pastille d'état du serveur, puce d'élévation avec compte à rebours (minuteries factices).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -53,9 +53,9 @@ function stub(extra: Record<string, () => Response> = {}) {
 }
 
 describe('registre des sections', () => {
-  it('5 espaces, 14 entrées, identifiants uniques, chaque entrée rattachée à un espace connu', () => {
+  it('5 espaces, 15 entrées, identifiants uniques, chaque entrée rattachée à un espace connu', () => {
     expect(sections.GROUPS.map((g: any) => g.label)).toEqual(['Pilotage', 'Utilisateurs', 'Plateforme', 'Communauté', 'Système']);
-    expect(sections.SECTIONS).toHaveLength(14);
+    expect(sections.SECTIONS).toHaveLength(15);
     const ids = sections.SECTIONS.map((s: any) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const s of sections.SECTIONS) {
@@ -68,7 +68,7 @@ describe('registre des sections', () => {
     expect(sections.SECTIONS.map((s: any) => s.label)).toEqual([
       'Tableau de bord', 'À traiter',
       'Comptes', 'Invitations', 'En ligne',
-      'Sources et addons', 'Performance', 'Caches et stockage', 'Tâches planifiées',
+      'Sources et addons', 'Performance', 'Caches et stockage', 'Tâches planifiées', 'Clés des services',
       'Watch parties', 'Modération',
       'Réglages', 'Annonces', 'Journal d’audit',
     ]);
@@ -78,10 +78,10 @@ describe('registre des sections', () => {
 describe('navigation groupée', () => {
   const render = (S: any) => { const w = document.createElement('div'); w.innerHTML = shell.navHTML(S); return w; };
 
-  it('5 groupes, 14 entrées, une seule entrée courante (aria-current)', () => {
+  it('5 groupes, 15 entrées, une seule entrée courante (aria-current)', () => {
     const w = render({ sec: 'accounts', badges: { todo: null, online: null, reports: null } });
     expect(w.querySelectorAll('.adm-navg')).toHaveLength(5);
-    expect(w.querySelectorAll('[data-adm-sec]')).toHaveLength(14);
+    expect(w.querySelectorAll('[data-adm-sec]')).toHaveLength(15);
     const current = w.querySelectorAll('[aria-current="page"]');
     expect(current).toHaveLength(1);
     expect(current[0].getAttribute('data-adm-sec')).toBe('accounts');

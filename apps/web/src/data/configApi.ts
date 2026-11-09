@@ -2,11 +2,6 @@ import { LastAddonError } from './errors';
 import { requireBase } from './config';
 import { cachedRequest, requestJson } from './transport';
 
-/** Schéma JSON de la configuration (GET {base}/config/schema), mis en cache. */
-export function getSchema(base: string = requireBase()): Promise<any> {
-  return cachedRequest(`schema ${base}`, () => requestJson<any>(`${base}/config/schema`));
-}
-
 /**
  * Chiffre une configuration (POST {base}/config/encode). Avec `previous` (chaîne déjà enregistrée), le serveur garde
  * les secrets que `config` laisse vides ou masqués : les clés n'ont pas à être ressaisies.

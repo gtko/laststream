@@ -246,6 +246,17 @@ export const testProvider = (id: string) => adminAction<ProviderTestResult>('/pr
 export const getStorage = () => adminCall<StorageReport>('/storage');
 export const getTasks = () => adminCall<TasksReport>('/tasks');
 
+// ---- Clés des services (lecture libre, écritures sous élévation) ----
+export type ServiceKeySource = 'db' | 'env' | 'none';
+/** État masqué d'une clé serveur : jamais la valeur, sauf `value` pour le modèle OpenRouter (non secret). */
+export interface ServiceKeyState { set: boolean; last4?: string; value?: string; source: ServiceKeySource }
+export type ServiceKeys = Record<string, ServiceKeyState>;
+export const getServiceKeys = () => adminCall<{ services: ServiceKeys }>('/services');
+/** Valeur : enregistrée ; null : effacée de la base (la variable d'exécution reprend le relais). */
+export const putServiceKeys = (patch: Record<string, string | null>) => adminAction<{ services: ServiceKeys }>('/services', { method: 'PUT', body: patch });
+/** Reprend les clés de la configuration du compte propriétaire. */
+export const importServiceKeys = () => adminAction<{ services: ServiceKeys; imported: string[] }>('/services/import', { method: 'POST' });
+
 // ---- Annonces (écritures auditées, sans élévation) ----
 export const listAnnouncements = () => adminCall<{ announcements: Announcement[] }>('/announcements');
 export const createAnnouncement = (body: AnnouncementInput) => adminAction<Announcement>('/announcements', { method: 'POST', body });
