@@ -1809,14 +1809,17 @@ export class SocialV2Store {
   // Accueil : « ce que regardent tes amis » et progression des amis sur « Reprendre » (LAST-191)
 
   /**
-   * Garde-fou de visibilité de l'accueil, la seule règle de ces routes. `ok` seulement pour un ami accepté : le foyer, un profil
-   * enfant, un blocage (dans un sens ou l'autre), un non-ami et une demande en attente donnent `unknown`. Selon les options :
+   * Garde-fou de visibilité de l'accueil, la seule règle de ces routes. Le foyer (autre profil adulte du même compte) voit tout,
+   * comme sur sa fiche (presentView) : `ok` sans autre condition. Sinon `ok` seulement pour un ami accepté : un profil enfant,
+   * un blocage (dans un sens ou l'autre), un non-ami et une demande en attente donnent `unknown`. Selon les options :
    * `history` exige `historyVisible` chez la cible ; `activity` respecte `activityVisibility` chez la cible ; `feed` respecte
    * la sourdine et le masquage d'activité posés par le lecteur. Une cible en statut « invisible » donne `hidden` dès qu'une
    * option est demandée, sauf `volunteer` (coup de cœur : un ami invisible reste visible).
    */
   private friendGate(viewerPid: string, targetPid: string, need: GateNeed): FriendGate {
-    if (this.isBlockedEither(viewerPid, targetPid) || this.relationOf(viewerPid, targetPid) !== 'friend') return 'unknown';
+    const relation = this.relationOf(viewerPid, targetPid);
+    if (relation === 'household') return 'ok';
+    if (this.isBlockedEither(viewerPid, targetPid) || relation !== 'friend') return 'unknown';
     if (need.history === true || need.activity === true || (need.feed === true && need.volunteer !== true)) {
       const presence = this.db.prepare('SELECT status FROM profile_presence WHERE profile_pid = ?').get(targetPid) as { status: string } | undefined;
       if (presence?.status === 'invisible') return 'hidden';
@@ -1830,24 +1833,40 @@ export class SocialV2Store {
     return 'ok';
   }
 
-  /** Pids des amis acceptés d'un profil non enfant, dans l'ordre des noms, 200 au plus (MAX_FRIENDS). */
+  /**
+   * Pids des personnes de l'accueil d'un profil non enfant : les autres profils adultes du foyer, puis les amis acceptés, dans
+   * l'ordre des noms, sans doublon, 200 au plus (MAX_FRIENDS).
+   */
   private homeFriendPids(viewerPid: string): string[] {
     const rows = this.db
       .prepare(
-        `SELECT p.pid FROM profile_friendships f
-           JOIN profiles p ON p.pid = CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END
-          WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?) AND p.is_kid = 0
-          ORDER BY p.handle_name COLLATE NOCASE, p.handle_tag
-          LIMIT ?`,
+        `SELECT pid FROM (
+           SELECT p.pid, 0 AS rank, p.handle_name, p.handle_tag FROM profiles p
+            WHERE p.account_id = (SELECT account_id FROM profiles WHERE pid = ?) AND p.pid <> ? AND p.is_kid = 0 AND p.pid IS NOT NULL
+           UNION
+           SELECT p.pid, 1 AS rank, p.handle_name, p.handle_tag FROM profile_friendships f
+             JOIN profiles p ON p.pid = CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END
+            WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?) AND p.is_kid = 0
+         )
+         GROUP BY pid
+         ORDER BY MIN(rank), handle_name COLLATE NOCASE, handle_tag
+         LIMIT ?`,
       )
-      .all(viewerPid, viewerPid, viewerPid, MAX_FRIENDS) as unknown as { pid: string }[];
+      .all(viewerPid, viewerPid, viewerPid, viewerPid, viewerPid, MAX_FRIENDS) as unknown as { pid: string }[];
     return rows.map((row) => row.pid);
+  }
+
+  /** Vue d'une personne de l'accueil (ami ou foyer), comme sur la liste des amis. */
+  private homePersonView(viewerPid: string, targetPid: string, now: number): FriendView | undefined {
+    const row = this.viewRow(targetPid);
+    if (row === undefined) return undefined;
+    return this.presentView(viewerPid, row, this.relationOf(viewerPid, targetPid) === 'household', now);
   }
 
   /**
    * « Ce que regardent tes amis » : une entrée par ami qui passe le garde-fou (history, activity, feed), avec sa progression la
    * plus récente des 30 derniers jours. Du plus récent au plus ancien, `limit` au plus. `live` : le titre en cours de l'ami est
-   * visible pour le lecteur (même règle que la présence, voir presentView). Foyer et enfants exclus.
+   * visible pour le lecteur (même règle que la présence, voir presentView). Le foyer en fait partie ; les enfants jamais.
    */
   homeWatching(viewerPid: string, limit: number, now: number): HomeWatchingItem[] {
     const since = new Date(now - HOME_WINDOW_MS).toISOString();
@@ -1865,9 +1884,8 @@ export class SocialV2Store {
         )
         .get(friendPid, since) as unknown as HomeProgressRow | undefined;
       if (row === undefined || this.friendGate(viewerPid, friendPid, { history: true, activity: true, feed: true }) !== 'ok') continue;
-      const viewRow = this.viewRow(friendPid);
-      if (viewRow === undefined) continue;
-      const view = this.presentView(viewerPid, viewRow, false, now);
+      const view = this.homePersonView(viewerPid, friendPid, now);
+      if (view === undefined) continue;
       const item: HomeWatchingItem = {
         friend: homeFriendOf(view),
         media: homeMediaOf(row),
@@ -1910,9 +1928,9 @@ export class SocialV2Store {
         if (!best.has(key)) best.set(key, row);
       }
       if (best.size === 0 || this.friendGate(viewerPid, friendPid, { history: true, activity: true, feed: true }) !== 'ok') continue;
-      const viewRow = this.viewRow(friendPid);
-      if (viewRow === undefined) continue;
-      const friend = homeFriendOf(this.presentView(viewerPid, viewRow, false, now));
+      const view = this.homePersonView(viewerPid, friendPid, now);
+      if (view === undefined) continue;
+      const friend = homeFriendOf(view);
       for (const row of best.values()) {
         const item: HomeTitleProgress = {
           friend,
@@ -1959,8 +1977,8 @@ export class SocialV2Store {
 
   /**
    * Coups de cœur des amis (accueil), du plus récent au plus ancien, `limit` au plus, strictement plus anciens que `before`.
-   * Garde-fou `volunteer` : un ami invisible reste visible ; sourdine et masquage posés par le lecteur s'appliquent. Foyer,
-   * enfants, blocages et non-amis exclus ; 200 amis au plus examinés.
+   * Garde-fou `volunteer` : un ami invisible reste visible ; sourdine et masquage posés par le lecteur s'appliquent. Le foyer
+   * en fait partie ; enfants, blocages et non-amis exclus ; 200 personnes au plus examinées.
    */
   homeRecommendations(viewerPid: string, before: number | undefined, limit: number, now: number): HomeRecommendation[] {
     const visible = this.homeFriendPids(viewerPid).filter((friendPid) => this.friendGate(viewerPid, friendPid, RECOMMENDATION_NEED) === 'ok');
@@ -1978,9 +1996,9 @@ export class SocialV2Store {
     for (const row of rows) {
       let friend = friends.get(row.pid);
       if (friend === undefined) {
-        const viewRow = this.viewRow(row.pid);
-        if (viewRow === undefined) continue;
-        friend = homeFriendOf(this.presentView(viewerPid, viewRow, false, now));
+        const view = this.homePersonView(viewerPid, row.pid, now);
+        if (view === undefined) continue;
+        friend = homeFriendOf(view);
         friends.set(row.pid, friend);
       }
       items.push({ friend, media: recommendationMediaOf(row), word: row.word, createdAt: Number(row.created_at) });

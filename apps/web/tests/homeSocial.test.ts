@@ -1,7 +1,7 @@
 // Accueil social (LAST-193) : amis qui veulent voir un titre, soirée proposée, formats de la ligne du héros.
 import { afterEach, describe, expect, it } from 'vitest';
 import { initialSocialState, type SocialState } from '../src/data/socialStore';
-import { eveningDay, eveningFor, eveningTime, friendName, hasEveningJoin, joinEvening, setEveningJoin, setEveningSource, wantNames, wantVerb, wantersOf, WANT_WINDOW_MS } from '../src/data/homeSocial';
+import { circleOf, eveningDay, eveningFor, eveningTime, friendName, hasEveningJoin, joinEvening, setEveningJoin, setEveningSource, wantNames, wantVerb, wantersOf, WANT_WINDOW_MS } from '../src/data/homeSocial';
 
 const NOW = 1_800_000_000_000;
 const friend = (pid: string, name: string, extra: Record<string, unknown> = {}) => ({
@@ -19,6 +19,12 @@ afterEach(() => {
 
 describe('wantersOf', () => {
   const friends = [friend('p1', 'Tom'), friend('p2', 'Léa'), friend('p3', 'Sam', { muted: true })];
+
+  it('le foyer compte comme un ami : son envie apparaît aussi', () => {
+    const household = [friend('h1', 'Maman', { household: true })];
+    const s = stateOf({ friends, household, activity: [act('h1', 'listed', 438631), act('p1', 'listed', 438631)] });
+    expect(wantersOf(s, 'movie', 438631, NOW).map(friendName)).toEqual(['Maman', 'Tom']);
+  });
 
   it('rien sans activité ni liste : la ligne reste absente', () => {
     expect(wantersOf(stateOf({ friends }), 'movie', 438631, NOW)).toEqual([]);
@@ -109,5 +115,13 @@ describe('formats', () => {
     expect(eveningDay(new Date(2026, 9, 28, 20, 0).getTime(), now)).toBe('Demain');
     expect(eveningDay(new Date(2026, 9, 30, 20, 0).getTime(), now)).toBe('vendredi');
     expect(eveningDay(new Date(2026, 10, 10, 20, 0).getTime(), now)).toBe('10/11');
+  });
+});
+
+describe('circleOf', () => {
+  it('foyer puis amis, sans doublon', () => {
+    const s = stateOf({ friends: [friend('p1', 'Tom'), friend('h1', 'Maman')], household: [friend('h1', 'Maman', { household: true })] });
+    expect(circleOf(s).map((f) => f.pid)).toEqual(['h1', 'p1']);
+    expect(circleOf(s)[0].household).toBe(true);
   });
 });

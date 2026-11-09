@@ -4,7 +4,7 @@ import { purgeSocialData } from '../src/user/social-handles.js';
 import { SocialV2Store } from '../src/user/social-v2-store.js';
 
 /**
- * Règles de l'accueil au niveau du store (LAST-191) : foyer exclu, ami enfant exclu, progression terminée sans durée ignorée,
+ * Règles de l'accueil au niveau du store (LAST-191) : foyer inclus comme un ami (enfants du foyer exclus), ami enfant exclu, progression terminée sans durée ignorée,
  * purge des coups de cœur. Les profils et amitiés sont insérés en SQL : les routes HTTP ne passent pas par ces branches.
  */
 
@@ -44,19 +44,31 @@ function seeded() {
 
 const REFS = [{ type: 'movie' as const, tmdbId: 603 }];
 
-describe('accueil : foyer exclu (amitié acceptée entre deux profils du même compte)', () => {
-  it('le profil du foyer est absent des trois lectures ; le témoin Bob, ami d un autre compte, est présent', () => {
+describe('accueil : foyer inclus comme un ami', () => {
+  it('le profil adulte du foyer apparaît dans les trois lectures, sans amitié, une seule fois ; l enfant du foyer et moi jamais', () => {
     const s = seeded();
     s.profile('p-home', 'a1', HOME, 'maison', 0);
+    s.profile('p-kid', 'a1', KID, 'petit', 1);
     s.profile('p-bob', 'a2', BOB, 'bob', 0);
-    s.accept(HOME);
     s.accept(BOB);
-    for (const id of ['p-home', 'p-bob']) s.progress(id, 603, 0, 7200);
-    s.recommend(HOME);
-    s.recommend(BOB);
-    expect(s.store.homeWatching(ALICE, 50, NOW).map((i) => i.friend.pid)).toEqual([BOB]);
-    expect(s.store.friendsProgressFor(ALICE, REFS, NOW).map((i) => i.friend.pid)).toEqual([BOB]);
-    expect(s.store.homeRecommendations(ALICE, undefined, 50, NOW).map((i) => i.friend.pid)).toEqual([BOB]);
+    for (const id of ['p-home', 'p-kid', 'p-bob', 'p-alice']) s.progress(id, 603, 0, 7200);
+    for (const pid of [HOME, KID, BOB, ALICE]) s.recommend(pid);
+    const pids = (items: { friend: { pid: string } }[]) => items.map((i) => i.friend.pid).sort();
+    expect(pids(s.store.homeWatching(ALICE, 50, NOW))).toEqual([BOB, HOME].sort());
+    expect(pids(s.store.friendsProgressFor(ALICE, REFS, NOW))).toEqual([BOB, HOME].sort());
+    expect(pids(s.store.homeRecommendations(ALICE, undefined, 50, NOW))).toEqual([BOB, HOME].sort());
+    // Une amitié acceptée en plus entre profils du même compte ne crée pas de doublon.
+    s.accept(HOME);
+    expect(pids(s.store.homeWatching(ALICE, 50, NOW))).toEqual([BOB, HOME].sort());
+  });
+
+  it('le foyer n est pas soumis aux réglages d ami (historique masqué, activité « nobody ») : il voit tout, comme sur sa fiche', () => {
+    const s = seeded();
+    s.profile('p-home', 'a1', HOME, 'maison', 0);
+    s.progress('p-home', 603, 0, 7200);
+    s.store.updatePrefs(HOME, { historyVisible: false, activityVisibility: 'nobody' });
+    const watching = s.store.homeWatching(ALICE, 50, NOW);
+    expect(watching.map((i) => i.friend.pid)).toEqual([HOME]);
   });
 });
 

@@ -9,7 +9,7 @@ import { userStore } from '../data/userStore';
 import { connectHomeEvenings, loadHomeEvenings } from '../data/eveningsHome';
 import { subscribeEvenings } from '../data/eveningsStore';
 import { openEveningForm } from './eveningForm.js';
-import { friendName, eveningDay, eveningTime, hasEveningJoin, joinEvening, upcomingEvenings } from '../data/homeSocial';
+import { circleOf, friendName, eveningDay, eveningTime, hasEveningJoin, joinEvening, upcomingEvenings } from '../data/homeSocial';
 import { toast } from './dom.js';
 import { socialAvailable } from './socialButton.js';
 import { posterSrc } from './socialFmt.js';
@@ -41,7 +41,7 @@ function posterHTML(src, title) {
 const epCode = (m) => (m.type === 'series' && m.season != null && m.episode != null ? 'S' + m.season + '·E' + m.episode : '');
 
 // ---------- Ensemble, ce soir ----------
-/** Salons ouverts (non pleins) dont l'hôte est un ami : même rapprochement par nom que « Chez tes amis » de la page Ensemble. */
+/** Salons ouverts (non pleins) dont l'hôte est un ami ou un membre du foyer : même rapprochement par nom que « Chez tes amis » de la page Ensemble. */
 export function friendRooms(rooms, friends) {
   const names = new Set();
   friends.filter((f) => !f.muted).forEach((f) => { names.add(norm(f.handle.name)); names.add(norm(f.handle.full)); });
@@ -148,7 +148,7 @@ export function renderSlot(s = getState(), now = Date.now()) {
   const el = document.getElementById('social-slot');
   const top = document.getElementById('social-mobile');
   if (!el && !top) return;
-  const friends = s.friends || [];
+  const friends = circleOf(s);
   const rooms = friendRooms(model.rooms, friends);
   const on = socialAvailable();
   const html = on ? tonightHTML(rooms, upcomingEvenings(now), friends) + watchingHTML(model.watching) + recommendationsHTML(model.recos) : '';
