@@ -55,6 +55,27 @@ class OpenRequestTest {
         assertEquals(true, e.items[1].aired)
     }
 
+    @Test fun parsesDetailedSourceFields() {
+        val a = org.json.JSONArray(
+            """[{"id":"7","label":"1080p","detail":"","current":false,"group":"1080p","quality":"1080p","sourceType":"BluRay",
+            "codec":"HEVC","audio":"EAC3 5.1","hdr":["HDR10",""],"langs":[{"label":"VF","verified":true},{"label":"VO"},{"label":""}],
+            "size":"1,3 Go","bitrate":"7,4 Mb/s","release":"Show.S01E01.mkv","releaseGroup":"FTMVHD","status":"cached",
+            "statusLabel":"En cache ⚡","origins":["Lumio","C411"],"copies":3}]""",
+        )
+        val s = OpenRequest.parseSources(a).single()
+        assertEquals("BluRay", s.sourceType)
+        assertEquals(listOf("HDR10"), s.hdr)
+        assertEquals(listOf(SourceLang("VF", true), SourceLang("VO", false)), s.langs)
+        assertEquals("FTMVHD", s.releaseGroup)
+        assertEquals("cached", s.status)
+        assertEquals(listOf("Lumio", "C411"), s.origins)
+        assertEquals(3, s.copies)
+        // Forme historique : champs détaillés vides, la carte retombe sur libellé et détail.
+        val old = OpenRequest.parseSources(org.json.JSONArray("""[{"id":1,"label":"1080p · VF","detail":"2 Go"}]""")).single()
+        assertEquals("", old.quality)
+        assertEquals(emptyList<String>(), old.origins)
+    }
+
     @Test fun noEpisodesForMovies() {
         assertNull(OpenRequest.fromJson(JSONObject("""{"url":"u"}"""))!!.episodes)
         assertNull(OpenRequest.parseEpisodes(JSONObject("""{"seasons":[],"items":[]}""")))

@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
 import android.os.Build
@@ -587,7 +588,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(kit.dp(14), 0, 0, 0) }
         body.addView(kit.text("ÉPISODE SUIVANT", 11f, Tokens.ACCENT, 800, sora = true).apply { letterSpacing = 0.08f })
         body.addView(nextTitle)
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        // Boutons de la carte : à la ligne quand la carte est étroite (téléphone), sinon le texte sortait des pilules.
+        val actions = FlowRow(this, kit.dp(8), kit.dp(4))
         nextRing = RingView(this, 3f, 0x400C0B11, Tokens.BG).apply { spinning = false; showPlay = true; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         val go = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -599,7 +601,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             setPadding(kit.dp(6), 0, kit.dp(14), 0)
             background = android.graphics.drawable.InsetDrawable(kit.focusBackground(999f, Tokens.ACCENT, Tokens.ACCENT, true), 0, kit.dp(2), 0, kit.dp(2))
             addView(nextRing, LinearLayout.LayoutParams(kit.dp(30), kit.dp(30)).apply { marginEnd = kit.dp(8) })
-            addView(kit.text("Lire maintenant", 14f, Tokens.BG, 700, sora = true))
+            addView(kit.text("Lire maintenant", 14f, Tokens.BG, 700, sora = true).apply { maxLines = 1 })
             setOnClickListener { requestNextEpisode() }
         }
         actions.addView(go)
@@ -612,9 +614,9 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             setPadding(kit.dp(14), 0, kit.dp(14), 0)
             background = android.graphics.drawable.InsetDrawable(kit.focusBackground(999f), 0, kit.dp(2), 0, kit.dp(2))
             foreground = android.graphics.drawable.InsetDrawable(kit.round(Color.TRANSPARENT, 999f, Tokens.BORDER, 1), 0, kit.dp(2), 0, kit.dp(2))
-            addView(kit.text("Voir le générique", 14f, Tokens.SOFT, 600))
+            addView(kit.text("Voir le générique", 14f, Tokens.SOFT, 600).apply { maxLines = 1 })
             setOnClickListener { nextDismissed = true; hideEnd() }
-        }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = kit.dp(8) })
+        })
         body.addView(actions)
         nextCard = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -640,7 +642,10 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         creditsSkip.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
         val cardW = PlayerUiLogic.nextCardWidth(available, creditsSkip.measuredWidth + kit.dp(12), kit.dp(520), kit.dp(240))
         val compact = cardW < kit.dp(500)
+        // Très étroite : la vignette laisserait trop peu de place au titre et aux boutons, elle est masquée.
+        val tiny = cardW < kit.dp(360)
         ui.post {
+            nextStillBox.visibility = if (tiny) View.GONE else View.VISIBLE
             (nextStillBox.layoutParams as LinearLayout.LayoutParams).apply { width = kit.dp(if (compact) 120 else 176); height = kit.dp(if (compact) 68 else 99) }
             (nextCard.layoutParams as LinearLayout.LayoutParams).width = cardW
             nextCard.requestLayout()
@@ -1002,14 +1007,60 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
                     }
                 }
                 if (s.current) row.addView(kit.icon(R.drawable.ic_check, 18, Tokens.ACCENT)) else row.addView(kit.spacer(18, 18))
-                val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(kit.dp(10), 0, 0, 0) }
-                texts.addView(kit.text(s.label, 14f, if (s.current) Tokens.TEXT else Tokens.SOFT, if (s.current) 700 else 600))
-                if (s.detail.isNotEmpty()) texts.addView(kit.text(s.detail, 12f, Tokens.DIM, 600).apply { setPadding(0, kit.dp(3), 0, 0) })
+                val texts = if (PlayerLogic.richSource(s)) sourceCard(s) else LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(kit.text(s.label, 14f, if (s.current) Tokens.TEXT else Tokens.SOFT, if (s.current) 700 else 600))
+                    if (s.detail.isNotEmpty()) addView(kit.text(s.detail, 12f, Tokens.DIM, 600).apply { setPadding(0, kit.dp(3), 0, 0) })
+                }
+                texts.setPadding(kit.dp(10), 0, 0, 0)
                 row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
                 col.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = kit.dp(2) })
             }
         }
         panelBody.addView(scroll(col), LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    /**
+     * Carte détaillée d'une source, comme le sélecteur desktop (src/sources/picker.js) : qualité, taille, badges vidéo et
+     * statut ; audio et langues (vérifiées en vert) ; débit, copies, origines ; fichier de la release et son groupe.
+     */
+    private fun sourceCard(s: SourceItem): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        val gap = kit.dp(6)
+        val top = FlowRow(this@PlayerActivity, gap, gap)
+        val qFill = when (s.group) { "4K" -> 0xFFFFB54C.toInt(); "2K" -> 0xFF5CC4CD.toInt(); "1080p" -> Tokens.TEXT; "720p" -> Tokens.SECONDARY; else -> Tokens.DIM }
+        top.addView(kit.chip(s.quality, Tokens.BG, qFill, sizeSp = 14f, weight = 800).apply { typeface = kit.title(800) })
+        if (s.size.isNotBlank()) top.addView(kit.text(s.size, 14f, Tokens.TEXT, 800).apply { setPadding(0, kit.dp(3), 0, kit.dp(3)) })
+        PlayerLogic.videoBadges(s).forEach { top.addView(kit.chip(it)) }
+        if (s.statusLabel.isNotBlank()) {
+            val (fg, stroke) = when (s.status) {
+                "cached" -> Tokens.GREEN to 0x804ADE80.toInt()
+                "uncached" -> 0xFFFBBF24.toInt() to 0x80FBBF24.toInt()
+                else -> Tokens.SECONDARY to Tokens.BORDER
+            }
+            top.addView(kit.chip(s.statusLabel, fg, 0x0FFFFFFF, stroke))
+        }
+        addView(top, LinearLayout.LayoutParams(-1, -2))
+        if (s.audio.isNotBlank() || s.langs.isNotEmpty()) {
+            val mid = FlowRow(this@PlayerActivity, gap, gap)
+            if (s.audio.isNotBlank()) mid.addView(kit.chip(s.audio))
+            s.langs.forEach { l ->
+                mid.addView(if (l.verified) kit.chip(l.label + " ✓", Tokens.GREEN, 0x1F4ADE80) else kit.chip(l.label))
+            }
+            addView(mid, LinearLayout.LayoutParams(-1, -2).apply { topMargin = gap })
+        }
+        val meta = PlayerLogic.sourceMeta(s)
+        if (meta.isNotEmpty()) addView(kit.text(meta, 12f, Tokens.DIM, 600).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = gap })
+        if (s.release.isNotBlank() || s.releaseGroup.isNotBlank()) {
+            val rel = LinearLayout(this@PlayerActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            if (s.release.isNotBlank()) rel.addView(kit.text(s.release, 11f, Tokens.DIM, 500).apply {
+                typeface = Typeface.MONOSPACE
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.MIDDLE
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            if (s.releaseGroup.isNotBlank()) rel.addView(kit.chip(s.releaseGroup, Tokens.SECONDARY, 0, Tokens.BORDER, 11f), LinearLayout.LayoutParams(-2, -2).apply { marginStart = gap })
+            addView(rel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = gap })
+        }
     }
 
     private fun buildEpisodesPanel() {

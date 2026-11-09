@@ -161,6 +161,20 @@ class PlayerLogicTest {
         assertEquals(2, g[1].second.size)
     }
 
+    @Test fun detailedSourceHelpers() {
+        val plain = SourceItem("1", "1080p · VF", "2 Go", false, "1080p")
+        assertFalse(PlayerLogic.richSource(plain))
+        assertEquals("", PlayerLogic.sourceMeta(plain))
+        val rich = plain.copy(
+            quality = "1080p", sourceType = "WEB-DL", codec = "", hdr = listOf("DV", "HDR10"),
+            bitrate = "5 Mb/s", copies = 2, origins = listOf("A", "B", "C", "D"),
+        )
+        assertTrue(PlayerLogic.richSource(rich))
+        assertEquals(listOf("WEB-DL", "DV", "HDR10"), PlayerLogic.videoBadges(rich))
+        assertEquals("5 Mb/s · 2 copies · A, B +2", PlayerLogic.sourceMeta(rich))
+        assertEquals("A", PlayerLogic.sourceMeta(plain.copy(origins = listOf("A"), copies = 1)))
+    }
+
     @Test fun episodeHelpers() {
         val e = EpisodeItem(1, 5, "", null, 42, false, 0.0, false, true)
         assertEquals("É5 · Épisode 5", PlayerLogic.episodeTitle(e))
