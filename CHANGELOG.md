@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.43 – 2026-11-09
+
+- Accueil social : le foyer compte comme des amis (#18) — @gtko
+
 ## v1.0.42 – 2026-11-09
 
 - LAST-1632 : état du salon et réponse texte dans le lecteur natif Android (#15) — @gtko
