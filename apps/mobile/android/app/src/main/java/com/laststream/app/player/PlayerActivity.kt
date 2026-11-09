@@ -89,6 +89,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private val pillViews = LinkedHashMap<Pill, View>()
     private lateinit var lockedLayer: FrameLayout
     private lateinit var unlockPill: LinearLayout
+    private lateinit var lockButton: View
     private lateinit var brightnessGauge: LevelGauge
     private lateinit var volumeGauge: LevelGauge
     private lateinit var rippleBack: TextView
@@ -322,8 +323,9 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         buildTop()
         buildCenter()
         buildBottom()
+        lockButton = kit.iconButton(R.drawable.ic_lock, "Verrouiller l’écran", 44, 22, Tokens.GLASS) { lock() }
         controls.addView(
-            kit.iconButton(R.drawable.ic_lock, "Verrouiller l’écran", 44, 22, Tokens.GLASS) { lock() },
+            lockButton,
             FrameLayout.LayoutParams(kit.dp(44), kit.dp(44), Gravity.START or Gravity.CENTER_VERTICAL).apply { leftMargin = kit.dp(24) },
         )
 
@@ -600,7 +602,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             addView(body, LinearLayout.LayoutParams(0, -2, 1f))
         }
         // Place laissée au bouton « Passer le générique » (≈ 220 dp) : la carte se resserre sur les écrans étroits.
-        val cardW = minOf(kit.dp(520), resources.displayMetrics.widthPixels - kit.dp(48 + 232))
+        val cardW = minOf(kit.dp(520), resources.displayMetrics.widthPixels - kit.dp(48 + 232)).coerceAtLeast(kit.dp(240))
         if (cardW < kit.dp(500)) (still.layoutParams as LinearLayout.LayoutParams).apply { width = kit.dp(120); height = kit.dp(68) }
         endLayer.addView(nextCard, LinearLayout.LayoutParams(cardW, -2))
         ui.addView(endLayer, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply { bottomMargin = kit.dp(24) })
@@ -612,6 +614,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private fun updateCenter() {
         val covered = spinner.visibility == View.VISIBLE || endLayer.visibility == View.VISIBLE
         centerRow.visibility = if (covered) View.INVISIBLE else View.VISIBLE
+        // « Passer le générique » occupe la gauche en fin d'épisode : le verrou s'efface pour ne pas le chevaucher.
+        lockButton.visibility = if (endLayer.visibility == View.VISIBLE) View.INVISIBLE else View.VISIBLE
     }
 
     /** « Passer le générique » : scène post-générique s'il y en a une plus loin, sinon épisode suivant. */
