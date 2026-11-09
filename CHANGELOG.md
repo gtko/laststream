@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.44 – 2026-11-09
+
+- Lecture : liens Lumio jamais sondés par le serveur, liens partagés propres à l'épisode (#21) — @gtko
+
 ## v1.0.43 – 2026-11-09
 
 - Accueil social : le foyer compte comme des amis (#18) — @gtko
