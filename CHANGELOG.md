@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.54 – 2026-11-10
+
+- Site : script build pour Workers Builds (#31) — @gtko
+
 ## v1.0.53 – 2026-11-10
 
 - Lecteur Android : les évènements de l'ancien média sont écartés après un changement de source (#30) — @gtko
