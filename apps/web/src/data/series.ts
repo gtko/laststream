@@ -179,3 +179,13 @@ export function seedCanon(tmdbId: string | number, language: string, canon: Cano
   const key = tmdbId + '|' + language;
   if (!cache.has(key)) cache.set(key, Promise.resolve(canon));
 }
+
+/**
+ * Saisons de la fiche : les vraies saisons dans l'ordre, puis la saison 0 (« Bonus » : téléfilm pilote, spéciaux) en
+ * dernier, pour qu'un épisode spécial reste accessible même quand la série a des saisons numérotées.
+ */
+export function bonusLast<T extends { season_number: number; episode_count?: number }>(seasons: readonly T[]): T[] {
+  const real = seasons.filter((s) => s.season_number > 0).sort((a, b) => a.season_number - b.season_number);
+  const bonus = seasons.filter((s) => s.season_number === 0 && (s.episode_count ?? 1) > 0);
+  return [...real, ...bonus];
+}
