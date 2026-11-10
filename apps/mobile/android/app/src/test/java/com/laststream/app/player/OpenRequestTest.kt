@@ -24,6 +24,15 @@ class OpenRequestTest {
         assertEquals("S1:É3", r.nextEpisode?.title)
     }
 
+    @Test fun loadIdIsKeptAndDefaultsToZero() {
+        assertEquals(0, OpenRequest.fromJson(JSONObject("""{"url":"http://x/a.mkv"}"""))!!.loadId)
+        val r = OpenRequest.fromJson(JSONObject("""{"url":"http://x/a.mkv","loadId":42}"""))!!
+        assertEquals(42, r.loadId)
+        // Une mise à jour partielle (titre, segments) garde le numéro du chargement.
+        assertEquals(42, r.withUpdate(JSONObject("""{"title":"T"}""")).loadId)
+        assertEquals(0, OpenRequest.fromJson(JSONObject("""{"url":"http://x/a.mkv","loadId":-3}"""))!!.loadId)
+    }
+
     @Test fun rejectsMissingUrl() {
         assertNull(OpenRequest.fromJson(JSONObject("""{"title":"x"}""")))
     }
