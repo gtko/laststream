@@ -44,6 +44,9 @@ let replaying = false;
 /** Au prochain rendu, défiler tout en bas (après un envoi ou à l'ouverture du chat). */
 let stickBottom = false;
 let renderQueued = false;
+/** Composition de texte en cours dans le champ du chat, et rendu repoussé à sa fin. */
+let composing = false;
+let renderDeferred = false;
 /** Pastille des participants (barre d'icônes du haut à droite du lecteur) et bandeau d'événement (haut centre) ; événements lisibles du salon pour le chat. */
 let band = null;
 let eventEl = null;
@@ -298,6 +301,11 @@ function render() {
   if (!open) return;
   const c = partyBridge.client;
   const typing = panel.contains(document.activeElement) && document.activeElement.name === 'text';
+  // Saisie en cours de composition (clavier prédictif Android, IME) : remplacer le champ couperait le mot en cours. Le rendu
+  // attend la fin de la composition.
+  if (typing && composing) { renderDeferred = true; return; }
+  renderDeferred = false;
+  const caret = typing ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
   if (typing) chatDraft = document.activeElement.value;
   const chatBox = panel.querySelector('[data-wp-chat]');
   const keepScroll = stickBottom || (chatBox ? chatBox.scrollHeight - chatBox.scrollTop - chatBox.clientHeight < 40 : true);
@@ -309,7 +317,8 @@ function render() {
   if (box && keepScroll) box.scrollTop = box.scrollHeight;
   if (typing) {
     const input = panel.querySelector('input[name="text"]');
-    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    // Le curseur reste où il était (il sautait en fin de champ à chaque message reçu).
+    if (input) { input.focus(); try { input.setSelectionRange(caret[0] ?? input.value.length, caret[1] ?? input.value.length); } catch { /* champ sans sélection */ } }
   }
 }
 
@@ -596,6 +605,10 @@ export function mountPartyPanel(root, opts) {
   panel.addEventListener('submit', onSubmit, { signal });
   panel.addEventListener('input', onInput, { signal });
   panel.addEventListener('keydown', onKeyDown, { signal });
+  composing = false;
+  renderDeferred = false;
+  panel.addEventListener('compositionstart', () => { composing = true; }, { signal });
+  panel.addEventListener('compositionend', () => { composing = false; if (renderDeferred) renderSoon(); }, { signal });
   band.addEventListener('click', onBandClick, { signal });
   // Survol à la souris seulement : au tactile, le survol émulé resterait collé et un second tap ne refermerait plus le détail.
   band.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') onBandHover(true); }, { signal });

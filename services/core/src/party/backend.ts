@@ -14,6 +14,11 @@ export interface PartyRoomStub {
   check(key: string, username?: string): Promise<JoinCheck | 'closed'>;
   /** Mode d'identification des participants (`profile` : par profil ; `account` : salon ancien) ; null : salon inexistant. */
   keyMode(): Promise<'profile' | 'account' | null>;
+  /**
+   * Ce compte est-il encore l'hôte du salon (par l'un de ses profils) ? null : salon inexistant. Facultatif : un salon qui ne
+   * le fournit pas est compté comme tenu par son créateur.
+   */
+  hostedBy?(accountId: string): Promise<boolean | null>;
   /** Droit d'émettre une invitation (hôte connecté, moins de quatre invités, débit du salon) ; compté si `ok`. */
   invite(requesterId: string): Promise<InviteVerdict>;
   /** Vrai si ce compte, par l'un quelconque de ses profils (et non un invité), est connecté au salon : seul un membre peut inviter un ami à le rejoindre. */

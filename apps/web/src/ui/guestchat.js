@@ -243,6 +243,8 @@ export function createGuestChat(controls, { onOpen } = {}) {
     ];
     for (const l of p.chat ?? []) append(l, false);
     setEnabled(true);
+    // Téléphone tenu droit : le chat a sa place sous la vidéo (voir partyjoin.css), il s'ouvre de lui-même au lieu de la laisser vide.
+    if (!open && doc.defaultView?.matchMedia?.('(orientation: portrait) and (max-width: 599px)').matches) openDrawer();
   }
 
   /** Délie du salon et vide le tiroir (la séance est finie ou quittée). */

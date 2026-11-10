@@ -143,6 +143,8 @@ class LaststreamPlayerPlugin : Plugin() {
             main.post { PlayerHub.core?.let { c -> c.release(); if (PlayerHub.core === c) PlayerHub.core = null; PlayerHub.machine.close() }; call.resolve() }
             return
         }
+        // Avant de rendre la main au fil principal : un `setSocial` de la lecture suivante, traité sur ce fil-ci, passe après.
+        if (PlayerHub.mini == null) PlayerHub.activity?.resetSocialOnClose()
         main.post { a.closeSilently(); call.resolve() }
     }
 

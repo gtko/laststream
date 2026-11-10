@@ -129,6 +129,11 @@ export class PartyRoom extends DurableObject {
     return this.core?.keyMode() ?? null;
   }
 
+  /** Ce compte est-il encore l'hôte du salon (voir RoomCore.isHostAccount) ? null : salon inexistant. */
+  hostedBy(accountId: string): boolean | null {
+    return this.core === undefined ? null : this.core.isHostAccount(accountId);
+  }
+
   /** Droit d'émettre une invitation (voir RoomCore.inviteVerdict) ; compté dans le débit du salon si `ok`. */
   invite(requesterId: string): InviteVerdict {
     return this.core === undefined ? 'not_found' : this.core.inviteVerdict(requesterId);

@@ -401,6 +401,29 @@
   .gp .lp-vslider { display: none; }
   .gp .lp-time { font-size: 12px; padding: 0; margin-left: 2px; }
 }
+/* Téléphone tenu droit : le cadre 16:9 ne fait qu'environ 200 px de haut, le tiroir du chat n'y tenait pas (réactions et champ
+ * de message débordaient sur la barre de lecture ou étaient coupés). Le cadre monte sous l'en-tête et le chat occupe toute la
+ * place restante en dessous. En plein écran, le tiroir reste dans le cadre, comme sur ordinateur. */
+@media (orientation: portrait) and (max-width: 599px) {
+  .pj.is-joined .pj-player { justify-content: flex-start; }
+  .pj.is-joined .pj-stage:not(:fullscreen):not(:-webkit-full-screen) .gc {
+    position: fixed;
+    top: calc(var(--pj-head-h) + 56.25vw);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    padding: 12px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+    border-radius: 0;
+    background: var(--bg);
+    box-shadow: none;
+  }
+  .gp .gc .gc-close { width: 44px; height: 44px; }
+  .gp .gc-emoji { width: 44px; height: 44px; font-size: 22px; }
+  .gp .gc-react { flex-wrap: nowrap; justify-content: space-between; }
+  .gp .gc-form .gc-input, .gp .gc-form .btn { min-height: 44px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .gp::after, .gp .gp-ui, .gp .gp-subs { transition: none; }
   .pj.is-joined .pj-msg { transition: none; }

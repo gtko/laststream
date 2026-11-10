@@ -402,6 +402,19 @@ describe('cycle de vie du salon', () => {
     expect(eventsOf(effects)).toEqual([]);
   });
 
+  it('un compte entre avec le pseudo d’un invité présent : l’invité sort (pseudo pris), le compte ne voit pas ce départ', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host');
+    fx.core.join({ ...fx.member('guest:g1', 'Bob'), guest: true });
+    const effects = fx.core.join(fx.member('a-bob', 'bob'));
+    expect(effects).toContainEqual({ kind: 'close', to: 'guest:g1', code: CLOSE.nameTaken, reason: 'name_taken' });
+    expect(effects).toContainEqual({ kind: 'broadcast', msg: { t: 'leave', user: 'Bob' }, except: 'a-bob' });
+    expect(fx.core.members.has('guest:g1')).toBe(false);
+    const welcome = sent(effects, 'a-bob').find((m) => m.t === 'welcome');
+    if (welcome?.t !== 'welcome') throw new Error('welcome attendu');
+    expect(welcome.participants.map((p) => p.username).sort()).toEqual(['bob', 'host']);
+  });
+
   it('si l’hôte revient à temps il garde son rôle', () => {
     const fx = makeRoom();
     const host = fx.member('a-host');

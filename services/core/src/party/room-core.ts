@@ -352,6 +352,10 @@ export class RoomCore {
       this.data.hostAbsentSince = this.clock();
     }
     this.dirty.add('room');
+    // Un compte porte le pseudo d'un invité déjà présent : le salon désigne chacun par son pseudo (liste, exclusion, silence),
+    // deux participants ne peuvent pas le partager. Le compte garde le sien ; l'invité est sorti avec le motif « pseudo pris »
+    // et peut revenir par son lien sous un autre pseudo.
+    const displaced = member.guest === true ? [] : this.displaceNamesakes(member);
     // Invité (re)connecté : en tampon jusqu'à son premier `ready`. Calculé avant le bienvenue : celui-ci porte l'état après une pause éventuelle.
     const waitEffects = member.guest === true ? this.setBuffering(member.accountId, true, member.username) : [];
     const now = this.clock();
@@ -373,6 +377,7 @@ export class RoomCore {
         ...(turn === null ? {} : { turn }),
       },
     });
+    effects.push(...displaced);
     // Un participant qui entre pendant une attente la reçoit, sauf si l'entrée vient de modifier l'attente (diffusée à tous).
     if (waitEffects.length === 0 && this.waitingIds().length > 0) effects.push({ kind: 'send', to: member.accountId, msg: this.waitMsg() });
     effects.push(...waitEffects);
@@ -381,6 +386,24 @@ export class RoomCore {
     effects.push({ kind: 'broadcast', msg: { t: 'join', participant: this.participant(member) }, except: member.accountId });
     if (previous === undefined) {
       effects.push({ kind: 'broadcast', msg: { t: 'event', kind: 'join', by: member.username, pos: this.positionNow(now) }, except: member.accountId });
+    }
+    return effects;
+  }
+
+  /** Sort les invités qui portent le pseudo (forme canonique) du compte `member` qui entre. Le compte lui-même ne reçoit pas leur départ. */
+  private displaceNamesakes(member: Member): Effect[] {
+    const wanted = canonicalName(member.username);
+    const effects: Effect[] = [];
+    for (const guest of [...this.members.values()]) {
+      if (guest.guest !== true || canonicalName(guest.username) !== wanted) continue;
+      this.members.delete(guest.accountId);
+      this.forgetTimedOut(guest.accountId);
+      effects.push(
+        { kind: 'close', to: guest.accountId, code: CLOSE.nameTaken, reason: 'name_taken' },
+        { kind: 'broadcast', msg: { t: 'leave', user: guest.username }, except: member.accountId },
+        ...this.forgetParticipant(guest.accountId),
+        ...this.setBuffering(guest.accountId, false, guest.username),
+      );
     }
     return effects;
   }

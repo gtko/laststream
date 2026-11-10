@@ -93,7 +93,8 @@ body.has-party-lobby { overflow: hidden; }
 .pl-wait { margin: 0; color: var(--muted); }
 
 /* Compte à rebours plein écran */
-.pl-count { position: absolute; inset: 0; z-index: 5; display: grid; place-content: center; justify-items: center; gap: 8px; background: rgba(12, 11, 17, 0.82); backdrop-filter: blur(6px); pointer-events: none; }
+/* Fixe sur la colonne principale : en `absolute`, il défilait avec la page (hors de vue pour l'hôte descendu jusqu'à « Lancer »). */
+.pl-count { position: fixed; inset: 0 var(--pl-side) 0 0; z-index: 5; display: grid; place-content: center; justify-items: center; gap: 8px; background: rgba(12, 11, 17, 0.82); backdrop-filter: blur(6px); pointer-events: none; }
 .pl-count-n { font-family: var(--ff-title); font-weight: 800; font-size: clamp(96px, 20vw, 220px); line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; animation: pl-pop 1s ease-out infinite; }
 .pl-count-t { font-size: 18px; color: var(--soft); }
 @keyframes pl-pop { from { transform: scale(1.12); opacity: 0.6; } to { transform: scale(1); opacity: 1; } }
@@ -296,8 +297,21 @@ body.has-party-lobby { overflow: hidden; }
   .lp-party .wp-send .btn { width: 48px; height: 48px; border-radius: 24px; padding: 0; font-size: 0; }
   .lp-party .wp-send .btn::before { content: '→'; font-size: 20px; font-weight: 800; }
   .lp-party .wp-chars { display: none; }
-  .lp-party .wp-head, .lp-party .wp-subrow, .lp-party .wp-menu, .lp-party .wp-actions, .lp-party .wp-wait, .lp-party .wp-sub, .lp-party .wp-users, .lp-party .wp-invite, .lp-party .wp-more-box, .lp-party .wp-note, .lp-party .wp-status { display: none; }
-  .lp.is-ui .ps-event, .ps-event { top: calc(56.25vw + 8px); max-width: calc(100% - 24px); z-index: 8; height: 32px; font-size: 12px; background: transparent; padding: 0; }
+  /* En-tête compact du salon (titre, bouton « … ») : sans lui, ni participants, ni lien d'invitation, ni « Quitter » n'étaient
+     accessibles téléphone tenu droit. Le menu ouvert prend la place de la discussion ; « … » y ramène. */
+  .lp-party .wp-head { order: 0; flex: none; flex-direction: row; flex-wrap: nowrap; align-items: center; justify-content: flex-start; gap: 10px; padding: 8px 8px 8px 14px; border-bottom: 1px solid #24212e; }
+  .lp-party .wp-head-t { flex: 1 1 auto; min-width: 0; text-align: left; }
+  .lp-party .wp-head .wp-title, .lp-party .wp-head .wp-film { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lp-party .wp-head-btn { width: 44px; height: 44px; }
+  .lp-party .wp-subrow { display: none; }
+  .lp-party .wp-status, .lp-party .wp-wait, .lp-party .wp-msg { order: 0; flex: none; }
+  .lp-party .wp-menu { order: 0; flex: 1 1 auto; min-height: 0; max-height: none; padding: 14px; border-bottom: 0; overscroll-behavior: contain; }
+  .lp-party .wp-menu:not([hidden]) ~ .wp-chatsec { display: none; }
+  .lp-party .wp-menu .wp-mini { min-height: 36px; padding: 0 12px; }
+  .lp-party .wp-menu .wp-btn { min-height: 44px; }
+  /* Évènement du salon (« Léa a rejoint ») : sur la vidéo, sous la barre du haut, et non par-dessus l'en-tête du salon. */
+  .lp.is-ui .ps-event, .ps-event { max-width: calc(100% - 24px); height: 32px; font-size: 12px; }
+  .ps-event { top: 12px; }
   .lp-party-floats { bottom: auto; top: 56.25vw; height: 0; }
 }
 @media (pointer: coarse) and (min-width: 768px), (max-width: 767px) and (orientation: landscape) {
@@ -434,3 +448,12 @@ body.has-party-lobby { overflow: hidden; }
 
 /* Lien d'invitation à copier à la main (presse-papiers indisponible) */
 .pl-link-manual { width: 100%; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; font-size: 12px; user-select: text; -webkit-user-select: text; }
+
+/* Écran bas (téléphone en paysage) : le menu ouvert prend la place de la discussion, sinon le champ de message sortait de l'écran. */
+@media (min-width: 768px) and (max-height: 480px) {
+  .lp-party .wp-menu { flex: 1 1 auto; min-height: 0; max-height: none; }
+  .lp-party .wp-menu:not([hidden]) ~ .wp-chatsec { display: none; }
+}
+
+/* Téléphone : le salon d'attente est en une colonne, le compte à rebours couvre tout l'écran. */
+@media (max-width: 767px) { .pl-count { right: 0; } }

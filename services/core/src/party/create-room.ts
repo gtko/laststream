@@ -53,8 +53,11 @@ export async function createPartyRoom(
   const { account, profile } = host;
   let open = 0;
   for (const record of await backend.social().partyRoomsOf(account.id)) {
-    if ((await party.room(record.id).info()) === null) await backend.social().deletePartyRoom(record.id);
-    else open += 1;
+    const stub = party.room(record.id);
+    if ((await stub.info()) === null) await backend.social().deletePartyRoom(record.id);
+    // Un salon cédé à un autre hôte (transfert, ou relève après une absence) ne compte plus pour son créateur : il ne peut plus
+    // le fermer, et son quota resterait pris jusqu'à 12 h.
+    else if (stub.hostedBy === undefined || (await stub.hostedBy(account.id)) !== false) open += 1;
   }
   if (open >= MAX_ROOMS_PER_HOST) throw new UserApiError(429, 'too_many_rooms');
   const series = input.media.type === 'series';
