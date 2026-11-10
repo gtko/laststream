@@ -81,17 +81,43 @@ describe('NativeEngine', () => {
     const ready = vi.fn();
     e.on('ready', ready);
     await e.load({ url: 'http://x/a.mkv', startAt: 42, open: { title: 'T' } });
-    expect(plugin.open).toHaveBeenCalledWith({ title: 'T', url: 'http://x/a.mkv', startPosition: 42 });
+    expect(plugin.open).toHaveBeenCalledWith({ title: 'T', url: 'http://x/a.mkv', startPosition: 42, loadId: e.loadId });
     fire('state', { position: 43, duration: 3000, paused: false, buffering: false, rate: 1 });
     expect(ready).toHaveBeenCalledTimes(1);
     expect(e.state()).toMatchObject({ time: 43, duration: 3000, paused: false, rate: 1 });
+  });
+
+  it('changement de média : les évènements de l’ancien chargement sont écartés, ceux sans numéro (APK ancien) acceptés', async () => {
+    const { plugin, fire } = fakePlugin();
+    const e = new NativeEngine(plugin, () => 0);
+    await e.load({ url: 'http://x/a.mkv', startAt: 0, open: {} });
+    const first = e.loadId;
+    fire('state', { position: 2400, duration: 3000, paused: false, buffering: false, loadId: first });
+    expect(e.state().time).toBe(2400);
+    // Épisode suivant : l'ancien média émet encore le temps que le natif bascule.
+    const ready = vi.fn();
+    const ended = vi.fn();
+    e.on('ready', ready);
+    e.on('ended', ended);
+    await e.load({ url: 'http://x/b.mkv', startAt: 0, open: {} });
+    expect(e.loadId).toBe(first + 1);
+    fire('state', { position: 2401, duration: 3000, paused: false, buffering: false, loadId: first });
+    fire('ended', { position: 3000, duration: 3000, loadId: first });
+    expect(ready).not.toHaveBeenCalled();
+    expect(ended).not.toHaveBeenCalled();
+    expect(e.state().time).toBe(0);
+    fire('state', { position: 1, duration: 2800, paused: false, buffering: false, loadId: e.loadId });
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(e.state()).toMatchObject({ time: 1, duration: 2800 });
+    fire('state', { position: 5, duration: 2800, paused: false, buffering: false });
+    expect(e.state().time).toBe(5);
   });
 
   it('la durée de repli de la sonde part à l’ouverture du plugin', async () => {
     const { plugin } = fakePlugin();
     const e = new NativeEngine(plugin);
     await e.load({ url: 'http://x/a.mkv', startAt: 0, open: { durationSec: 5400 } });
-    expect(plugin.open).toHaveBeenCalledWith({ durationSec: 5400, url: 'http://x/a.mkv', startPosition: 0 });
+    expect(plugin.open).toHaveBeenCalledWith({ durationSec: 5400, url: 'http://x/a.mkv', startPosition: 0, loadId: e.loadId });
   });
 
   it('vignette flottante : relaie miniChanged, minimize() et expand()', async () => {

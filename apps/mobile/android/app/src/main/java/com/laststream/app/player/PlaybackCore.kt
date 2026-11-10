@@ -187,7 +187,7 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
             }
             MediaPlayer.Event.Paused -> { ui?.playing(false); ui?.paused(); emitState(true); emitProgress(true) }
             MediaPlayer.Event.EndReached -> {
-                if (!endedSent) { endedSent = true; emit("ended", JSObject().put("position", lastPos).put("duration", lastDur)) }
+                if (!endedSent) { endedSent = true; emit("ended", JSObject().put("position", lastPos).put("duration", lastDur).also(::tagLoad)) }
                 ui?.busy(true)
             }
             MediaPlayer.Event.EncounteredError -> fail("decode")
@@ -213,7 +213,7 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
         if (errored) return
         errored = true
         ui?.busy(true, "Lecture impossible, recherche d’une autre source…")
-        emit("error", JSObject().put("code", code).put("position", lastPos))
+        emit("error", JSObject().put("code", code).put("position", lastPos).also(::tagLoad))
     }
 
     // ---------- Pistes et sous-titres ----------
@@ -290,7 +290,7 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
         val sig = audioTracks.joinToString { "${it.id}${it.selected}" } + "|" + subTracks.joinToString { "${it.id}${it.selected}" }
         if (sig != lastTrackSig) {
             lastTrackSig = sig
-            emit("tracks", JSObject().put("audio", tracksJson(audioTracks)).put("subs", tracksJson(subTracks)))
+            emit("tracks", JSObject().put("audio", tracksJson(audioTracks)).put("subs", tracksJson(subTracks)).also(::tagLoad))
             ui?.tracksChanged()
         }
     }
@@ -386,7 +386,13 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
 
     fun stateJson(): JSObject = JSObject()
         .put("position", lastPos).put("duration", lastDur).put("paused", !player.isPlaying).put("buffering", buffering)
-        .put("rate", rate).put("ended", endedSent).put("suspended", systemSuspended || focusLost)
+        .put("rate", rate).put("ended", endedSent).put("suspended", systemSuspended || focusLost).also(::tagLoad)
+
+    /** Pose le numéro du chargement en cours sur un évènement du média (voir OpenRequest.loadId) ; rien sans numéro. */
+    private fun tagLoad(o: JSObject) {
+        val id = req?.loadId ?: 0
+        if (id > 0) o.put("loadId", id)
+    }
 
     fun emitState(force: Boolean) {
         val now = System.currentTimeMillis()
@@ -400,7 +406,7 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
         if (!force && (!player.isPlaying || !PlayerLogic.shouldEmit(now, lastProgress, 5000))) return
         if (lastDur <= 0) return
         lastProgress = now
-        emit("progress", JSObject().put("position", lastPos).put("duration", lastDur))
+        emit("progress", JSObject().put("position", lastPos).put("duration", lastDur).also(::tagLoad))
     }
 
     fun emit(name: String, data: JSObject) = PlayerHub.emit(name, data)

@@ -11,6 +11,8 @@ export interface NativeOpenOptions {
   title?: string;
   subtitle?: string;
   startPosition?: number;
+  /** Numéro du chargement, renvoyé par le natif dans les évènements du média (un APK ancien l'ignore). */
+  loadId?: number;
   preferredAudioLang?: string;
   preferredSubLang?: string;
   /** `auto` : sous-titres si l'audio n'est pas dans la langue préférée ; `always` ; `off`. */

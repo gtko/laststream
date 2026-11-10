@@ -467,12 +467,18 @@ export class NativeEngine extends Emitter {
     this.closeTimer = null;
     /** Commande locale récente { paused, until } : le natif ne la contredit pas avant sa confirmation ou son délai. */
     this.intent = null;
+    /** Numéro du chargement en cours, envoyé à `open` et renvoyé par le natif dans les évènements du média. */
+    this.loadId = Math.floor(Math.random() * 1e6);
     const on = (ev, fn) => { plugin.addListener(ev, (d) => { if (this.live) fn(d || {}); }).catch(() => {}); };
-    on('state', (d) => { this.setState(d); this.emit('state'); });
-    on('progress', (d) => { this.setState(d); this.emit('state'); });
-    on('tracks', (d) => { this.audio = d.audio || []; this.subs = d.subs || []; this.emit('tracks'); });
-    on('ended', (d) => { this.setState(d); this.emit('ended'); });
-    on('error', (d) => this.emit('error', new Error('native:' + (d.code || 'inconnue'))));
+    // Évènements du média : celui d'un chargement précédent (ancienne source ou ancien épisode, encore en lecture le temps que le
+    // natif bascule) est écarté. Il passait pour la première mesure du nouveau média, et une watch party y voyait un saut.
+    // Un APK ancien n'envoie pas de numéro : tout est accepté, comme avant.
+    const media = (ev, fn) => on(ev, (d) => { if (typeof d.loadId !== 'number' || d.loadId === this.loadId) fn(d); });
+    media('state', (d) => { this.setState(d); this.emit('state'); });
+    media('progress', (d) => { this.setState(d); this.emit('state'); });
+    media('tracks', (d) => { this.audio = d.audio || []; this.subs = d.subs || []; this.emit('tracks'); });
+    media('ended', (d) => { this.setState(d); this.emit('ended'); });
+    media('error', (d) => this.emit('error', new Error('native:' + (d.code || 'inconnue'))));
     // La fermeture par l'utilisateur est toujours transmise, même si la session prépare déjà une autre source.
     // Activité fermée : la position reçue est la dernière ; elle ne doit plus avancer avec l'horloge.
     plugin.addListener('closed', (d) => { this.intent = null; this.setState({ ...(d || {}), paused: true }); this.emit('closed', d); }).catch(() => {});
@@ -536,7 +542,8 @@ export class NativeEngine extends Emitter {
     this.p = { time: startAt || 0, at: this.clock(), duration: 0, paused: false, buffering: true, rate: 1 };
     this.audio = [];
     this.subs = [];
-    await this.plugin.open({ ...open, url, startPosition: startAt || 0 });
+    this.loadId += 1;
+    await this.plugin.open({ ...open, url, startPosition: startAt || 0, loadId: this.loadId });
   }
 
   /** Fermeture différée : un `load` immédiat (épisode suivant, autre source) réutilise l'activité sans la fermer. */

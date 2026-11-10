@@ -22,6 +22,11 @@ data class OpenRequest(
     val episodes: EpisodesData? = null,
     /** Mise en tampon réseau de libVLC, en ms (réglage « Mémoire tampon » : standard 3000, grand 8000, maximum 30000). */
     val networkCachingMs: Int = 3000,
+    /**
+     * Numéro du chargement, donné par le JS et renvoyé dans les évènements du média (état, progression, pistes, fin, erreur) :
+     * le JS écarte ainsi ceux de l'ancien média arrivés après qu'il en a demandé un autre. 0 : application web sans numéro.
+     */
+    val loadId: Int = 0,
 ) {
     /** Mise à jour partielle (`update`) : seules les clés présentes dans la requête changent. */
     fun withUpdate(d: JSONObject): OpenRequest = copy(
@@ -54,6 +59,7 @@ data class OpenRequest(
                 sources = parseSources(o.optJSONArray("sources")),
                 episodes = parseEpisodes(o.optJSONObject("episodes")),
                 networkCachingMs = o.optInt("networkCachingMs", 3000).coerceIn(1000, 60000),
+                loadId = o.optInt("loadId", 0).coerceAtLeast(0),
                 headers = o.optJSONObject("headers")?.let { h -> h.keys().asSequence().associateWith { k -> h.optString(k) } } ?: emptyMap(),
             )
         }
