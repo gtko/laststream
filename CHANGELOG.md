@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.52 – 2026-11-10
+
+- Watch party : commandes du salon en portrait, chat invité sous la vidéo, pseudo partagé, quota (#29) — @gtko
+
 ## v1.0.51 – 2026-11-10
 
 - Centrer la croix des boutons Fermer (#27) — @gtko
