@@ -5,6 +5,7 @@
  */
 import { avatarCredits, LICENSE_LABEL, LICENSE_URL } from '../data/avatars';
 import { esc } from './util.js';
+import { ICON } from './icons.js';
 
 const EXT = 'target="_blank" rel="noopener noreferrer"';
 const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
@@ -33,7 +34,7 @@ function openCredits(opener) {
   el.className = 'cr-layer';
   el.innerHTML = '<div class="cr-scrim" data-cr-close></div>' +
     '<section class="cr-sheet" role="dialog" aria-modal="true" aria-labelledby="cr-title" tabindex="-1">' +
-    '<header class="cr-head"><h2 id="cr-title">Crédits</h2><button type="button" class="cr-x" data-cr-close aria-label="Fermer">&times;</button></header>' +
+    '<header class="cr-head"><h2 id="cr-title">Crédits</h2><button type="button" class="cr-x" data-cr-close aria-label="Fermer">' + ICON.close + '</button></header>' +
     '<div class="cr-body"><p class="cr-lead">Les avatars illustrés sont l’œuvre de leurs auteurs, utilisés selon leurs licences.</p>' + METADATA_CREDITS + creditsHTML() + '</div></section>';
   document.body.appendChild(el);
   const addedModal = !document.body.classList.contains('modal-open');

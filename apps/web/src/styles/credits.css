@@ -9,7 +9,8 @@
 .cr-sheet { position: relative; display: flex; flex-direction: column; width: min(560px, 100%); max-height: min(80vh, 640px); background: var(--surface); color: var(--text); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); outline: none; }
 .cr-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .cr-head h2 { margin: 0; font-family: var(--ff-title); font-size: 18px; font-weight: 600; }
-.cr-x { width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
+.cr-x { width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); padding: 0; display: grid; place-items: center; cursor: pointer; }
+.cr-x svg { display: block; width: 18px; height: 18px; }
 .cr-x:hover, .cr-x:focus-visible { color: var(--text); }
 .cr-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 20px 20px; }
 .cr-lead { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
