@@ -155,5 +155,53 @@ class UiKit(private val ctx: Context) {
         layoutParams = LinearLayout.LayoutParams(-2, dp(44)).apply { marginStart = dp(6) }
     }
 
+    /** Pastille de texte (badge) : padding interne, coins arrondis, une seule ligne. */
+    fun chip(label: String, fg: Int = Tokens.SOFT, fill: Int = 0x1AFFFFFF, stroke: Int = 0, sizeSp: Float = 12f, weight: Int = 700): TextView =
+        text(label, sizeSp, fg, weight).apply {
+            maxLines = 1
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+            background = round(fill, 6f, stroke, if (stroke != 0) 1 else 0)
+        }
+
     fun spacer(wDp: Int = 0, hDp: Int = 0): View = View(ctx).apply { layoutParams = LinearLayout.LayoutParams(dp(wDp), dp(hDp)) }
+}
+
+/** Rangée qui passe à la ligne quand la place manque (badges d'une carte de source). Espacements en pixels. */
+class FlowRow(ctx: Context, private val hGap: Int, private val vGap: Int) : android.view.ViewGroup(ctx) {
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val maxW = MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight
+        val unbounded = MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.UNSPECIFIED
+        var x = 0
+        var y = 0
+        var lineH = 0
+        var widest = 0
+        for (i in 0 until childCount) {
+            val c = getChildAt(i)
+            if (c.visibility == View.GONE) continue
+            c.measure(MeasureSpec.makeMeasureSpec(if (unbounded) 0 else maxW, if (unbounded) MeasureSpec.UNSPECIFIED else MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            if (x > 0 && !unbounded && x + c.measuredWidth > maxW) { x = 0; y += lineH + vGap; lineH = 0 }
+            x += c.measuredWidth + hGap
+            widest = maxOf(widest, x - hGap)
+            lineH = maxOf(lineH, c.measuredHeight)
+        }
+        val w = if (unbounded) widest + paddingLeft + paddingRight else MeasureSpec.getSize(widthMeasureSpec)
+        setMeasuredDimension(w, y + lineH + paddingTop + paddingBottom)
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        val maxW = r - l - paddingLeft - paddingRight
+        var x = 0
+        var y = 0
+        var lineH = 0
+        for (i in 0 until childCount) {
+            val c = getChildAt(i)
+            if (c.visibility == View.GONE) continue
+            if (x > 0 && x + c.measuredWidth > maxW) { x = 0; y += lineH + vGap; lineH = 0 }
+            // Centrage vertical dans la ligne : badges de hauteurs différentes (qualité plus grande).
+            c.layout(paddingLeft + x, paddingTop + y, paddingLeft + x + c.measuredWidth, paddingTop + y + c.measuredHeight)
+            x += c.measuredWidth + hGap
+            lineH = maxOf(lineH, c.measuredHeight)
+        }
+    }
 }

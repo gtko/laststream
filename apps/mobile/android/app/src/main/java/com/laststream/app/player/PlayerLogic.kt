@@ -18,7 +18,20 @@ data class NextEpisodeInfo(val title: String, val still: String?)
 data class TrackInfo(val id: Int, val name: String, val lang: String, val selected: Boolean = false)
 
 /** Source de lecture proposée dans le panneau « Sources » (libellé et détail composés côté JS). */
-data class SourceItem(val id: String, val label: String, val detail: String, val current: Boolean, val group: String = "")
+/** Langue d'une source : `verified` si la sonde l'a confirmée dans le fichier (sinon annoncée par le nom de la release). */
+data class SourceLang(val label: String, val verified: Boolean)
+
+/**
+ * Source du panneau. `label` / `detail` : forme historique (une ligne et son détail). Les champs suivants, envoyés par la
+ * session web (toNativeSources), donnent la carte détaillée comme sur desktop ; vides si l'app web est plus ancienne.
+ */
+data class SourceItem(
+    val id: String, val label: String, val detail: String, val current: Boolean, val group: String = "",
+    val quality: String = "", val sourceType: String = "", val codec: String = "", val audio: String = "",
+    val hdr: List<String> = emptyList(), val langs: List<SourceLang> = emptyList(),
+    val size: String = "", val bitrate: String = "", val release: String = "", val releaseGroup: String = "",
+    val status: String = "", val statusLabel: String = "", val origins: List<String> = emptyList(), val copies: Int = 0,
+)
 
 data class SeasonInfo(val number: Int, val name: String)
 
@@ -163,6 +176,21 @@ object PlayerLogic {
         }
         return out
     }
+
+    /** Carte détaillée possible : la session a envoyé la qualité (sinon libellé et détail historiques). */
+    fun richSource(s: SourceItem): Boolean = s.quality.isNotBlank()
+
+    /** Ligne de méta d'une carte : débit, copies, deux origines au plus (+N). Vide si rien. */
+    fun sourceMeta(s: SourceItem): String {
+        val parts = ArrayList<String>()
+        if (s.bitrate.isNotBlank()) parts.add(s.bitrate)
+        if (s.copies > 1) parts.add("${s.copies} copies")
+        if (s.origins.isNotEmpty()) parts.add(s.origins.take(2).joinToString(", ") + if (s.origins.size > 2) " +${s.origins.size - 2}" else "")
+        return parts.joinToString(" · ")
+    }
+
+    /** Badges vidéo d'une carte, dans l'ordre du desktop : type de source, codec, HDR. */
+    fun videoBadges(s: SourceItem): List<String> = (listOf(s.sourceType, s.codec) + s.hdr).filter { it.isNotBlank() }
 
     fun episodesOf(d: EpisodesData?, season: Int): List<EpisodeItem> = d?.items?.filter { it.season == season }?.sortedBy { it.episode } ?: emptyList()
 

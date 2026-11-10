@@ -96,7 +96,36 @@ data class OpenRequest(
                 val id = s.opt("id")?.toString().orEmpty()
                 val label = s.optString("label", "")
                 if (id.isEmpty() || label.isEmpty()) continue
-                out.add(SourceItem(id, label, s.optString("detail", ""), s.optBoolean("current", false), s.optString("group", "")))
+                out.add(
+                    SourceItem(
+                        id, label, s.optString("detail", ""), s.optBoolean("current", false), s.optString("group", ""),
+                        quality = s.optString("quality", ""), sourceType = s.optString("sourceType", ""),
+                        codec = s.optString("codec", ""), audio = s.optString("audio", ""),
+                        hdr = strings(s.optJSONArray("hdr")), langs = langs(s.optJSONArray("langs")),
+                        size = s.optString("size", ""), bitrate = s.optString("bitrate", ""),
+                        release = s.optString("release", ""), releaseGroup = s.optString("releaseGroup", ""),
+                        status = s.optString("status", ""), statusLabel = s.optString("statusLabel", ""),
+                        origins = strings(s.optJSONArray("origins")), copies = s.optInt("copies", 0),
+                    ),
+                )
+            }
+            return out
+        }
+
+        private fun strings(a: JSONArray?): List<String> {
+            if (a == null) return emptyList()
+            val out = ArrayList<String>()
+            for (i in 0 until a.length()) a.optString(i, "").takeIf { it.isNotBlank() }?.let { out.add(it) }
+            return out
+        }
+
+        private fun langs(a: JSONArray?): List<SourceLang> {
+            if (a == null) return emptyList()
+            val out = ArrayList<SourceLang>()
+            for (i in 0 until a.length()) {
+                val l = a.optJSONObject(i) ?: continue
+                val label = l.optString("label", "")
+                if (label.isNotBlank()) out.add(SourceLang(label, l.optBoolean("verified", false)))
             }
             return out
         }

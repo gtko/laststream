@@ -125,7 +125,7 @@ class SocialOverlay(
         isFocusable = true
         isClickable = true
         contentDescription = label
-        includeFontPadding = false
+        includeFontPadding = true // glyphe d'emoji entier (voir floatEmoji)
         background = kit.focusBackground(22f, 0x0FFFFFFF)
         layoutParams = LinearLayout.LayoutParams(kit.dp(44), kit.dp(44)).apply { marginStart = kit.dp(3); marginEnd = kit.dp(3) }
         setOnClickListener { onClick() }
@@ -270,7 +270,10 @@ class SocialOverlay(
             addView(TextView(ctx).apply {
                 text = emoji
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, if (slot == 0) 64f else 48f)
-                includeFontPadding = false
+                // Les emojis couleur dépassent les métriques de la police : sans la marge de police (et un peu d'air),
+                // le haut ou le bas du glyphe est rogné et l'emoji paraît coupé en deux.
+                includeFontPadding = true
+                setPadding(kit.dp(6), kit.dp(6), kit.dp(6), kit.dp(6))
             })
             addView(kit.text(who, 12f, Tokens.TEXT, 700, sora = true).apply {
                 maxLines = 1
