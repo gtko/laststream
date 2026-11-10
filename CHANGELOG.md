@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.51 – 2026-11-10
+
+- Centrer la croix des boutons Fermer (#27) — @gtko
+
 ## v1.0.50 – 2026-11-10
 
 - Watch party : corrections de synchronisation, du salon, de l'interface et des lecteurs natifs (#28) — @gtko
