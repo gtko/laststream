@@ -55,3 +55,23 @@ export const names = (type, code) => {
   }
 };
 export const getSeen = () => userStore.getSeen();
+
+/**
+ * Copie un texte dans le presse-papiers. Repli par champ de texte temporaire quand l'API n'existe pas ou refuse (Safari hors
+ * geste de l'utilisateur, WebView Android, page non sécurisée).
+ * @param {string} text
+ * @returns {Promise<boolean>} vrai si la copie a réussi
+ */
+export async function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* repli ci-dessous */ }
+  }
+  const field = document.createElement('textarea');
+  field.value = text;
+  field.setAttribute('readonly', '');
+  field.style.position = 'fixed';
+  field.style.opacity = '0';
+  document.body.appendChild(field);
+  field.select();
+  try { return !!document.execCommand('copy'); } catch { return false; } finally { field.remove(); }
+}

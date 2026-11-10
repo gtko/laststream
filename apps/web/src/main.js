@@ -55,7 +55,7 @@ import { startAndroidBack } from './ui/androidBack.js';
 import { ensureSocial, setSocialLoader, setSocialNotifier } from './ui/socialHooks.js';
 import { shareCodeFrom } from './ui/shareModel.js';
 import { isPlayerOpen } from './player/sessionLoader.js';
-import { parseJoinHash } from './party/join';
+import { joinRouteOf } from './party/join';
 import { parseFoyerToken } from './data/foyerLink';
 import './ui/events.js';
 import './ui/scrollbars.js';
@@ -117,7 +117,7 @@ const sharePage = !demoMode && shareCodeFrom(location.hash || '', '') !== '';
 // Invitation au foyer (#/foyer/<jeton>) : page sans compte, comme l'invitation d'un salon.
 const foyerTok = demoMode ? null : parseFoyerToken(location.hash || '');
 // Invitation d'un salon (#/party/join/<id>?t=<jeton>), lien public ou invitation au foyer : page sans compte, ni /user/me ni écran de connexion.
-const joinPage = !demoMode && (parseJoinHash(location.hash || '') !== null || sharePage || foyerTok !== null);
+const joinPage = !demoMode && (joinRouteOf(location.hash || '') !== null || sharePage || foyerTok !== null);
 if (!demoMode) await initAuth({ anonymous: joinPage });
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });

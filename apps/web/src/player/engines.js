@@ -366,6 +366,12 @@ export class MpvEngine extends Emitter {
   async load({ url, startAt, backend = 'mpv' }) {
     this.live = true;
     this.loaded = false;
+    // Position et durée du fichier précédent oubliées : jusqu'aux premières mesures du nouveau fichier, elles seraient prises
+    // pour les siennes (une watch party y voyait un saut et l'envoyait à tout le salon).
+    this.p['time-pos'] = startAt || 0;
+    this.p.duration = 0;
+    this.p.seeking = false;
+    this.p['paused-for-cache'] = false;
     this.ipc.send('mpv-command', ['stop']);
     // Pas de transparence ici : elle arrive avec la première image (showVideo).
     // La syntaxe de loadfile dépend de la version de mpv, annoncée juste après l'observation de `mpv-version`.
@@ -493,6 +499,8 @@ export class NativeEngine extends Emitter {
     if (typeof d.paused === 'boolean') this.applyPaused(d.paused, now);
     if (typeof d.buffering === 'boolean') p.buffering = d.buffering;
     if (typeof d.rate === 'number') p.rate = d.rate;
+    // Pause posée par le système (activité arrêtée, perte du focus audio) : voir PlayerLike.suspended. Absent d'un APK ancien.
+    if (typeof d.suspended === 'boolean') p.suspended = d.suspended;
     if (!this.loaded && p.duration > 0 && p.time > 0) { this.loaded = true; this.emit('ready'); }
   }
 
@@ -572,7 +580,7 @@ export class NativeEngine extends Emitter {
 
   state() {
     const p = this.p;
-    return { time: this.positionAt(this.clock()), duration: p.duration, paused: p.paused, ended: false, seeking: false, buffering: p.buffering, buffered: [], cacheTime: null, volume: 1, muted: false, rate: p.rate, pip: false };
+    return { time: this.positionAt(this.clock()), duration: p.duration, paused: p.paused, ended: false, seeking: false, buffering: p.buffering, buffered: [], cacheTime: null, volume: 1, muted: false, rate: p.rate, pip: false, suspended: !!p.suspended };
   }
 
   audioTracks() { return nativeAudioTracks(this.audio); }

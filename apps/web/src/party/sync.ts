@@ -7,16 +7,25 @@ import { DRIFT_IGNORE_SEC, DRIFT_SEEK_SEC, estimateOffset } from '@laststream/pr
 export type { PlaybackState } from '@laststream/protocol/party';
 export { estimateOffset, expectedPosition } from '@laststream/protocol/sync';
 
-/** Garde l'échantillon au plus petit aller-retour (le plus fiable). */
+/** Âge au-delà duquel le meilleur échantillon est remplacé : l'horloge de l'appareil dérive ou est remise à l'heure en cours de séance. */
+const CLOCK_SAMPLE_MAX_AGE_MS = 120_000;
+
+/**
+ * Garde l'échantillon au plus petit aller-retour (le plus fiable), tant qu'il est récent : passé CLOCK_SAMPLE_MAX_AGE_MS (ou si
+ * l'horloge locale a reculé), le suivant le remplace, pour qu'un décalage périmé ne reste pas figé toute la séance.
+ */
 export class ClockEstimator {
   offset = 0;
   rtt = Infinity;
   samples = 0;
+  private at = 0;
   add(t0: number, t1: number, serverTime: number): void {
     const rtt = Math.max(0, t1 - t0);
     this.samples += 1;
-    if (rtt <= this.rtt) {
+    const stale = t1 - this.at > CLOCK_SAMPLE_MAX_AGE_MS || t1 < this.at;
+    if (rtt <= this.rtt || stale) {
       this.rtt = rtt;
+      this.at = t1;
       this.offset = estimateOffset(t0, t1, serverTime);
     }
   }

@@ -24,6 +24,18 @@ export function parseJoinHash(hash: string): JoinRoute | null {
   return token.length >= TOKEN_MIN && token.length <= TOKEN_MAX ? { roomId: m[1], token } : null;
 }
 
+/**
+ * Route de la page invitée : le lien complet, ou l'adresse sans jeton (`#/party/join/<id>`, celle qui reste une fois le
+ * salon rejoint) tant que la séance de l'invité est mémorisée dans l'onglet. Sans cela, recharger la page en cours de
+ * séance menait à l'écran de connexion. Le jeton vide n'est jamais échangé : la séance mémorisée sert à sa place.
+ */
+export function joinRouteOf(hash: string, hasSession: (roomId: string) => boolean = (id) => loadGuestSession(id) !== null): JoinRoute | null {
+  const full = parseJoinHash(hash);
+  if (full) return full;
+  const m = /^#\/party\/join\/([A-Za-z0-9_-]{1,64})$/.exec(hash);
+  return m && hasSession(m[1]) ? { roomId: m[1], token: '' } : null;
+}
+
 /** Adresse sans le jeton : `#/party/join/<id>?t=<jeton>` -> `#/party/join/<id>` ; toute autre adresse est rendue telle quelle. */
 export function hashWithoutToken(hash: string): string {
   return hash.replace(/\?t=[^&#\s]*/, '');

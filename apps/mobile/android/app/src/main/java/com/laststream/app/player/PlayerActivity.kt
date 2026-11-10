@@ -196,7 +196,9 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
 
     override fun onStart() {
         super.onStart()
+        if (::core.isInitialized) core.setSystemSuspended(false)
         if (resumeOnStart && ::core.isInitialized) { resumeOnStart = false; setPlaying(true) }
+        if (::core.isInitialized) core.emitState(true)
         if (stalledPending) handler.post(stalledRunnable) // retour d'arrière-plan avec un « suivant » resté sans réponse
     }
 
@@ -204,6 +206,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         super.onStop()
         if (!isInPictureInPictureMode && !handedOff && ::core.isInitialized) {
             resumeOnStart = player.isPlaying
+            core.setSystemSuspended(true) // avant la pause : elle n'est pas une action de l'utilisateur (watch party)
             if (player.isPlaying) player.pause()
             if (!isFinishing) rememberPosition() // fermée (épisode suivant) : `pending` appartient déjà au prochain média
             emitState(true)
@@ -233,8 +236,11 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             // `pending` n'est effacé que s'il est encore le nôtre : après un épisode suivant, il appartient au prochain média.
             if (isFinishing) { if (PlayerLogic.shouldClearPending(PlayerHub.pending, ownPending)) PlayerHub.pending = null } else rememberPosition()
             if (core.ui === this) core.ui = null
+            // Un lecteur ouvert entre-temps (épisode suivant rapide) a déjà rouvert la machine d'état : elle n'est fermée que si
+            // elle est encore la nôtre, sinon sa vignette ne pourrait plus être agrandie.
+            val ownsMachine = PlayerHub.core === core || PlayerHub.core == null
             if (PlayerHub.core === core) PlayerHub.core = null
-            PlayerHub.machine.close()
+            if (ownsMachine) PlayerHub.machine.close()
             // Plus d'évènements ni de surface ; seule la libération (bloquante) passe en arrière-plan.
             core.release()
         }

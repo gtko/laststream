@@ -2,7 +2,7 @@
 import { showCalendar } from './calendar.js';
 import { ensureSocial } from './socialHooks.js';
 import { listIdFrom, shareCodeFrom } from './shareModel.js';
-import { parseJoinHash } from '../party/join';
+import { joinRouteOf } from '../party/join';
 import { canAdmin, isKidProfile, kidSection } from '../data/auth';
 import { browseAllowed, showBrowse } from './registry.js';
 import { app, detailEl, toast } from './dom.js';
@@ -187,7 +187,7 @@ function parseRouteRaw() {
   r = /^#\/party\/([A-Za-z0-9_-]{1,64})$/.exec(h);
   if (r) return { kind: 'party', id: r[1] };
   // Invitation d'un invité (sans compte) : #/party/join/<id>?t=<jeton>.
-  const join = parseJoinHash(h);
+  const join = joinRouteOf(h);
   if (join) return { kind: 'partyjoin', id: join.roomId, token: join.token };
   if (h === '#/settings') return { kind: 'settings' };
   if (h === '#/downloads') return { kind: 'downloads' };

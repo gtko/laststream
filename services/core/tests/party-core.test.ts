@@ -361,6 +361,47 @@ describe('cycle de vie du salon', () => {
     expect(fx.core.hostId).toBe('a-bob');
   });
 
+  it('seuls des invités restent : aucune échéance d’hôte absent dans le passé (pas d’alarme en boucle)', () => {
+    const fx = makeRoom();
+    const host = fx.member('a-host');
+    fx.core.join(host);
+    fx.core.join({ ...fx.member('guest:g1', 'Lina'), guest: true });
+    fx.core.leave('a-host', host.connId);
+    fx.clock.now += HOST_GRACE_MS * 3;
+    fx.core.tick(); // referme au passage l'attente de tampon de l'invité
+    expect(fx.core.hostId).toBe('a-host');
+    expect(fx.core.nextWake()).toBeGreaterThan(fx.clock.now);
+  });
+
+  it('premier compte entré dans un salon que l’hôte n’a pas encore rejoint : la grâce part de son entrée', () => {
+    const fx = makeRoom();
+    fx.data.hostAbsentSince = T0;
+    fx.clock.now += HOST_GRACE_MS * 5;
+    const entered = fx.clock.now;
+    joined(fx, 'a-bob');
+    expect(fx.core.nextWake()).toBe(entered + HOST_GRACE_MS);
+    expect(fx.core.tick().effects).toEqual([]);
+    // L'hôte arrive dans la minute : il garde son rôle.
+    fx.clock.now += 5000;
+    joined(fx, 'a-host');
+    fx.clock.now += HOST_GRACE_MS * 2;
+    expect(fx.core.tick().effects).toEqual([]);
+    expect(fx.core.hostId).toBe('a-host');
+  });
+
+  it('reconnexion par-dessus une connexion encore inscrite : les autres reçoivent le nouvel identifiant de pair, sans « a rejoint »', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    const again = fx.member('a-bob');
+    const effects = fx.core.join(again);
+    expect(effects).toContainEqual({
+      kind: 'broadcast',
+      msg: { t: 'join', participant: expect.objectContaining({ username: 'bob', peerId: again.connId }) },
+      except: 'a-bob',
+    });
+    expect(eventsOf(effects)).toEqual([]);
+  });
+
   it('si l’hôte revient à temps il garde son rôle', () => {
     const fx = makeRoom();
     const host = fx.member('a-host');

@@ -346,6 +346,11 @@ export class RoomCore {
     if (member.guest === true) this.rememberGuest(member);
     this.data.emptySince = null;
     if (member.accountId === this.hostId) this.data.hostAbsentSince = null;
+    // Le délai de grâce de l'hôte court à partir du moment où un successeur possible l'attend : sans cela, le premier
+    // compte entré dans un salon créé (ou déserté) depuis plus d'une minute deviendrait hôte à l'instant.
+    else if (previous === undefined && member.guest !== true && !this.members.has(this.hostId) && !this.hasSuccessor(member.accountId)) {
+      this.data.hostAbsentSince = this.clock();
+    }
     this.dirty.add('room');
     // Invité (re)connecté : en tampon jusqu'à son premier `ready`. Calculé avant le bienvenue : celui-ci porte l'état après une pause éventuelle.
     const waitEffects = member.guest === true ? this.setBuffering(member.accountId, true, member.username) : [];
@@ -371,11 +376,19 @@ export class RoomCore {
     // Un participant qui entre pendant une attente la reçoit, sauf si l'entrée vient de modifier l'attente (diffusée à tous).
     if (waitEffects.length === 0 && this.waitingIds().length > 0) effects.push({ kind: 'send', to: member.accountId, msg: this.waitMsg() });
     effects.push(...waitEffects);
+    // Une reconnexion par-dessus une connexion encore inscrite change l'identifiant de pair : les autres le reçoivent
+    // (sinon leur signalisation WebRTC vise un pair disparu), sans événement lisible « a rejoint ».
+    effects.push({ kind: 'broadcast', msg: { t: 'join', participant: this.participant(member) }, except: member.accountId });
     if (previous === undefined) {
-      effects.push({ kind: 'broadcast', msg: { t: 'join', participant: this.participant(member) }, except: member.accountId });
       effects.push({ kind: 'broadcast', msg: { t: 'event', kind: 'join', by: member.username, pos: this.positionNow(now) }, except: member.accountId });
     }
     return effects;
+  }
+
+  /** Vrai si un compte (pas un invité) autre que `except` est connecté : lui seul peut succéder à l'hôte. */
+  private hasSuccessor(except?: string): boolean {
+    for (const member of this.members.values()) if (member.guest !== true && member.accountId !== except) return true;
+    return false;
   }
 
   /** Position attendue (s) à l'instant `now` (ms serveur), pour les événements lisibles. */
@@ -1052,7 +1065,9 @@ export class RoomCore {
     const { data } = this;
     const wakes = [data.meta.createdAt + ROOM_MAX_AGE_MS];
     if (this.members.size === 0) wakes.push((data.emptySince ?? this.clock()) + EMPTY_ROOM_TTL_MS);
-    else if (!this.members.has(this.hostId)) wakes.push((data.hostAbsentSince ?? this.clock()) + HOST_GRACE_MS);
+    // Sans successeur possible (seuls des invités), l'échéance de l'hôte absent n'a aucun effet : la programmer une fois
+    // dépassée relancerait l'alarme en boucle.
+    else if (!this.members.has(this.hostId) && this.hasSuccessor()) wakes.push((data.hostAbsentSince ?? this.clock()) + HOST_GRACE_MS);
     const deadline = this.waitDeadline();
     if (deadline !== null) wakes.push(deadline);
     if (typeof data.countdownAt === 'number') wakes.push(data.countdownAt);

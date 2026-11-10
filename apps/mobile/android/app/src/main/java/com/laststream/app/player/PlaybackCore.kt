@@ -340,8 +340,22 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
 
     // ---------- Lecture ----------
 
+    /**
+     * Pause posée par le système et non par l'utilisateur : lecteur en arrière-plan (activité arrêtée) ou focus audio perdu
+     * (appel, autre application). Transmis au JS dans l'état : une watch party ne diffuse pas cette pause au salon et ne relance
+     * pas la lecture d'un téléphone verrouillé.
+     */
+    private var systemSuspended = false
+    private var focusLost = false
+
+    /** Lecteur mis en arrière-plan (vrai) ou revenu au premier plan (faux, la perte de focus est alors oubliée aussi). */
+    fun setSystemSuspended(on: Boolean) {
+        systemSuspended = on
+        if (!on) focusLost = false
+    }
+
     fun setPlaying(play: Boolean) {
-        if (play) { requestAudioFocus(); player.play() } else player.pause()
+        if (play) { focusLost = false; requestAudioFocus(); player.play() } else player.pause()
     }
 
     fun seekTo(sec: Double) {
@@ -372,7 +386,7 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
 
     fun stateJson(): JSObject = JSObject()
         .put("position", lastPos).put("duration", lastDur).put("paused", !player.isPlaying).put("buffering", buffering)
-        .put("rate", rate).put("ended", endedSent)
+        .put("rate", rate).put("ended", endedSent).put("suspended", systemSuspended || focusLost)
 
     fun emitState(force: Boolean) {
         val now = System.currentTimeMillis()
@@ -403,7 +417,12 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         // Perte définitive : le système a repris le focus, la prochaine lecture doit le redemander.
         if (change == AudioManager.AUDIOFOCUS_LOSS) audioFocusHeld = false
-        if ((change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) && !released && player.isPlaying) player.pause()
+        if ((change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) && !released && player.isPlaying) {
+            focusLost = true // posé avant la pause : l'état émis à l'évènement Paused le porte déjà
+            player.pause()
+        }
+        // Focus rendu (fin d'appel) : la pause n'est plus celle du système ; le JS décide de la reprise (watch party).
+        if (change == AudioManager.AUDIOFOCUS_GAIN && focusLost && !released) { focusLost = false; emitState(true) }
     }
 
     @Suppress("DEPRECATION")
