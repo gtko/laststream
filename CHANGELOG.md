@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.53 – 2026-11-10
+
+- Lecteur Android : les évènements de l'ancien média sont écartés après un changement de source (#30) — @gtko
+
 ## v1.0.52 – 2026-11-10
 
 - Watch party : commandes du salon en portrait, chat invité sous la vidéo, pseudo partagé, quota (#29) — @gtko
