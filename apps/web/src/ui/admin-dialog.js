@@ -2,6 +2,7 @@
  * Piège le focus, se ferme avec Échap ou le fond, rend le focus à l'élément d'origine. Plusieurs calques peuvent s'empiler
  * (confirmation par-dessus le panneau). Hors de #detail : les événements du contenu sont gérés par l'appelant. */
 import { esc } from './util.js';
+import { ICON } from './icons.js';
 
 const stack = [];
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -14,7 +15,7 @@ export function openLayer({ title, html, variant = 'modal', onClose }) {
   el.innerHTML = '<div class="adm-scrim" data-adm-close></div>' +
     '<section class="adm-sheet" role="dialog" aria-modal="true" aria-labelledby="' + id + '-t" tabindex="-1">' +
     '<header class="adm-sheet-h"><h2 id="' + id + '-t">' + esc(title) + '</h2>' +
-    '<button type="button" class="set-icon-btn" data-adm-close aria-label="Fermer">×</button></header>' +
+    '<button type="button" class="set-icon-btn" data-adm-close aria-label="Fermer">' + ICON.close + '</button></header>' +
     '<div class="adm-sheet-b">' + html + '</div></section>';
   const opener = document.activeElement;
   document.body.appendChild(el);
