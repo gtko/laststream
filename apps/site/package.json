@@ -1,1 +1,1 @@
-{ "name": "laststream-site", "version": "1.0.1", "private": true, "type": "module", "scripts": { "deploy": "wrangler deploy", "test": "node --test" } }
+{ "name": "laststream-site", "version": "1.0.1", "private": true, "type": "module", "scripts": { "build": "node --test", "deploy": "wrangler deploy", "test": "node --test" } }
