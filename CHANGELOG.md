@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.47 – 2026-11-10
+
+- Release : APK Android servi depuis la release GitHub (plus de R2) (#24) — @gtko
+- Fiche série : la saison Bonus (S0) reste accessible (#22) — @gtko
+
 ## v1.0.46 – 2026-11-09
 
 - Release : APK et flux Android publiés sur app.laststream.app (#23) — @gtko
