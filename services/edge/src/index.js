@@ -184,11 +184,6 @@ function appFile(pathname) {
   if (/^\/app\/windows\/Laststream-Setup-\d+\.\d+\.\d+\.exe$/.test(pathname)) {
     return { key: 'windows/' + name, type: 'application/vnd.microsoft.portable-executable', attachment: true, name };
   }
-  // Flux de version Android (publié par le workflow Release) : réécrit à chaque release, donc cache court. Absent de R2 :
-  // la requête suit le relais habituel (ancien latest.json servi avec l'application web).
-  if (pathname === '/app/android/latest.json') {
-    return { key: 'android/latest.json', type: 'application/json', cache: 'public, max-age=300', fallback: true };
-  }
   // Flux de version Windows (voir laststream-shell-ng/upload.ps1) : réécrit à chaque release, donc cache court.
   if (pathname === '/app/windows/latest.json') {
     return { key: 'windows/latest.json', type: 'application/json', cache: 'public, max-age=300' };
@@ -200,6 +195,39 @@ function appFile(pathname) {
   return null;
 }
 
+/** Flux de version Android joint à chaque release GitHub (workflow Release) ; `latest` suit toujours la dernière release. */
+const ANDROID_FEED_URL = 'https://github.com/gtko/laststream/releases/latest/download/android-latest.json';
+/** Seuls les APK des releases de ce dépôt sont annoncés. */
+const ANDROID_APK_PREFIX = 'https://github.com/gtko/laststream/releases/download/';
+
+/** Flux Android valide : versionCode entier positif, APK d'une release du dépôt, SHA-256 hexadécimal. */
+function isAndroidFeed(j) {
+  return !!j && Number.isInteger(j.versionCode) && j.versionCode > 0
+    && typeof j.url === 'string' && j.url.startsWith(ANDROID_APK_PREFIX) && j.url.endsWith('.apk') && !j.url.includes('..')
+    && typeof j.sha256 === 'string' && /^[0-9a-f]{64}$/.test(j.sha256);
+}
+
+/**
+ * /app/android/latest.json : relu depuis la dernière release GitHub (côté serveur : pas de CORS pour l'app ni le site),
+ * cache de 5 minutes. Flux absent, illisible ou invalide : la requête suit le relais habituel (ancien flux servi avec l'app).
+ */
+async function androidFeed(request, env) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
+  try {
+    const r = await fetch(env.ANDROID_FEED_URL || ANDROID_FEED_URL, { redirect: 'follow', cf: { cacheTtl: 300, cacheEverything: true } });
+    if (r.ok) {
+      const feed = await r.json();
+      if (isAndroidFeed(feed)) {
+        const headers = { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' };
+        return new Response(request.method === 'HEAD' ? null : JSON.stringify(feed), { status: 200, headers });
+      }
+    }
+  } catch {
+    // GitHub injoignable ou réponse illisible : repli ci-dessous.
+  }
+  return relay(request, env);
+}
+
 /** Exception non gérée : journal et envoi Sentry (si SENTRY_DSN), puis 500 JSON sans détail. */
 function internalError(error, request, env, ctx) {
   reportUnhandledError(error, env, ctx, requestIdOf(request));
@@ -209,11 +237,12 @@ function internalError(error, request, env, ctx) {
 async function route(request, env) {
   const { pathname } = new URL(request.url);
   // Fichiers d'application (trop gros pour les Workers Assets) : servis depuis R2, nom strict, en lecture seule.
+  if (pathname === '/app/android/latest.json') return androidFeed(request, env);
   const file = env.APP_FILES && appFile(pathname);
   if (file) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
     const obj = await env.APP_FILES.get(file.key, { range: request.headers });
-    if (!obj) return file.fallback ? relay(request, env) : json(404, { error: 'not_found' });
+    if (!obj) return json(404, { error: 'not_found' });
     const headers = new Headers();
     obj.writeHttpMetadata(headers);
     headers.set('content-type', file.type);

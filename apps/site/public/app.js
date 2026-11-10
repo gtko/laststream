@@ -2,6 +2,7 @@
   'use strict';
   // Versions et liens : lus dans latest.json (/api/windows, /api/android) ; le HTML garde des valeurs de secours
   var APP = 'https://app.laststream.app/app/';
+  var GITHUB = 'https://github.com/gtko/laststream/releases/download/';
 
   // Textes dynamiques selon la langue de la page (<html lang>), fr par défaut
   var I18N = {
@@ -72,7 +73,9 @@
     fetch('/api/' + platform, { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
       .then(function (j) {
-        if (!j || typeof j.url !== 'string' || j.url.indexOf(APP + platform + '/') !== 0) return;
+        if (!j || typeof j.url !== 'string') return;
+        var ok = j.url.indexOf(APP + platform + '/') === 0 || (platform === 'android' && j.url.indexOf(GITHUB) === 0);
+        if (!ok) return;
         var a = document.getElementById(linkId);
         var m = document.getElementById(metaId);
         if (a) a.href = j.url;

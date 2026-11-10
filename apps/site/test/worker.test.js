@@ -98,3 +98,17 @@ test('laststream.app/api/autre : non relayé, servi par ASSETS', async () => {
   assert.deepEqual(env.seen.assets, ['https://laststream.app/api/autre']);
   assert.deepEqual(env.seen.app, []);
 });
+
+test('laststream.app/api/android : APK d\'une release GitHub du dépôt accepté, autre hôte refusé', async () => {
+  const gh = 'https://github.com/gtko/laststream/releases/download/v1.0.45/Laststream-1.0.45.apk';
+  const envWith = (url) => ({ ASSETS: { fetch: async () => new Response('asset') }, APP: { fetch: async () => Response.json({ ...LATEST, url }) } });
+  const ok = await get('https://laststream.app/api/android', envWith(gh));
+  assert.equal(ok.status, 200);
+  assert.equal((await ok.json()).url, gh);
+  for (const bad of ['https://evil.example/x.apk', 'https://github.com/autre/depot/releases/download/v1/x.apk']) {
+    assert.equal((await get('https://laststream.app/api/android', envWith(bad))).status, 502, bad);
+  }
+  // Windows : seulement app.laststream.app.
+  const win = await get('https://laststream.app/api/windows', envWith(gh.replace('.apk', '.exe')));
+  assert.equal(win.status, 502);
+});

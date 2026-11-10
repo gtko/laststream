@@ -56,10 +56,9 @@ Réglages requis sur le dépôt :
 
 - Secrets : `ANDROID_DEBUG_KEYSTORE_B64` (keystore de signature de l'APK, en base64) et `LASTSTREAM_UPDATE_SIGNING_KEY` (clé ed25519
   de signature de `latest.json`).
-- Secrets `CLOUDFLARE_API_TOKEN` (jeton avec « Workers R2 Storage : Edit ») et `CLOUDFLARE_ACCOUNT_ID` : le job `android-site`
-  envoie l'APK et `android/latest.json` dans le bucket R2 `laststream-app-files`. Le Worker `laststream-edge` les sert sur
-  `https://app.laststream.app/app/android/` (bouton « Télécharger l'APK » du site, mise à jour en un tap de l'app). Sans ces
-  secrets, l'envoi est sauté avec un avertissement et la release GitHub reste publiée.
+- APK Android : chaque release joint `android-latest.json` (versionCode, URL de l'APK de la release, SHA-256). Le Worker
+  `laststream-edge` le relit sur `releases/latest/download/` et le sert sur `https://app.laststream.app/app/android/latest.json`
+  (bouton « Télécharger l'APK » du site, mise à jour en un tap de l'app). Aucun secret supplémentaire.
 - Settings → Actions → General → Workflow permissions : « Read and write permissions ».
 - Si `main` est protégée, autoriser GitHub Actions à contourner la protection (bypass) : le workflow pousse le commit de release
   et le tag directement.

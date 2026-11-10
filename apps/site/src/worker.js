@@ -3,6 +3,15 @@
 const ROOT = 'https://laststream.app';
 const BASE = 'https://app.laststream.app/app/';
 const PLATFORMS = { '/api/android': 'android', '/api/windows': 'windows' };
+// APK Android : publié sur chaque release GitHub du dépôt (workflow Release), plus sur app.laststream.app.
+const GITHUB_RELEASES = 'https://github.com/gtko/laststream/releases/download/';
+
+/** Adresse de téléchargement admise pour la plateforme : app.laststream.app, ou release GitHub pour l'APK Android. */
+export function allowedUrl(platform, url) {
+  if (typeof url !== 'string' || url.includes('..')) return false;
+  if (url.startsWith(BASE + platform + '/')) return true;
+  return platform === 'android' && url.startsWith(GITHUB_RELEASES) && url.endsWith('.apk');
+}
 
 export default {
   async fetch(request, env) {
@@ -18,7 +27,7 @@ export default {
         if (!r.ok) throw new Error(String(r.status));
         const j = await r.json();
         const out = { versionName: j.versionName, size: j.size, url: j.url, sha256: j.sha256, notes: j.notes };
-        if (typeof out.url !== 'string' || !out.url.startsWith(BASE + platform + '/')) throw new Error('url');
+        if (!allowedUrl(platform, out.url)) throw new Error('url');
         return Response.json(out, { headers: { 'cache-control': 'public, max-age=300' } });
       } catch {
         return Response.json({ error: 'unavailable' }, { status: 502, headers: { 'cache-control': 'no-store' } });
