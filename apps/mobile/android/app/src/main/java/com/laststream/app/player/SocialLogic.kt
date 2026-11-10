@@ -36,6 +36,8 @@ data class SocialState(
 object SocialLogic {
     const val MARKER_GROUP_FRACTION = 0.015
     const val REACT_COOLDOWN_MS = 600L
+    /** En salon (watch party), le salon n'accepte qu'une réaction par seconde : au-delà, elle s'afficherait ici sans partir. */
+    const val ROOM_REACT_COOLDOWN_MS = 1000L
     const val BUBBLE_TTL_MS = 6000L
     const val BUBBLE_MAX = 3
     const val AVATAR_MAX = 4
@@ -170,7 +172,8 @@ object SocialLogic {
         viewers.take(AVATAR_MAX) to (viewers.size - AVATAR_MAX).coerceAtLeast(0)
 
     /** Anti-spam : une réaction toutes les `REACT_COOLDOWN_MS`. */
-    fun allowReaction(nowMs: Long, lastMs: Long?): Boolean = lastMs == null || nowMs - lastMs >= REACT_COOLDOWN_MS
+    fun allowReaction(nowMs: Long, lastMs: Long?, inRoom: Boolean = false): Boolean =
+        lastMs == null || nowMs - lastMs >= (if (inRoom) ROOM_REACT_COOLDOWN_MS else REACT_COOLDOWN_MS)
 
     val REPLY_EMOJIS = listOf("😂", "❤️")
 

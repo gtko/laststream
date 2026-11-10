@@ -53,6 +53,9 @@ class SocialLogicTest {
         assertTrue(SocialLogic.allowReaction(1000, null))
         assertFalse(SocialLogic.allowReaction(1599, 1000))
         assertTrue(SocialLogic.allowReaction(1600, 1000))
+        // En salon : une réaction par seconde, comme le salon lui-même.
+        assertFalse(SocialLogic.allowReaction(1600, 1000, inRoom = true))
+        assertTrue(SocialLogic.allowReaction(2000, 1000, inRoom = true))
     }
 
     @Test fun bubbleQueueKeepsThreeNewest() {

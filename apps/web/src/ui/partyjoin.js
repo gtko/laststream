@@ -176,6 +176,8 @@ function refresh(root) {
     stopSession();
     controls.setState({ playing: false, ready: false });
     controls.setWait(null);
+    // Cadre en plein écran : le message de fin et le formulaire sont hors du cadre, il faut en sortir pour les voir.
+    if (document.fullscreenElement && root.contains(document.fullscreenElement)) document.exitFullscreen?.().catch(() => {});
     player.hidden = true;
     form.hidden = false;
     submit.textContent = v.phase === 'left' ? 'Rejoindre à nouveau' : 'Rejoindre';

@@ -114,6 +114,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     /** Dernière requête écrite dans `PlayerHub.pending` par cette activité : seule celle-là lui appartient. */
     private var ownPending: OpenRequest? = null
     private var resumeOnStart = false
+    @Volatile private var socialResetDone = false
     /** La lecture a été confiée à la vignette flottante : l'activité se ferme sans la toucher. */
     private var handedOff = false
     private var panelSeason = 0
@@ -227,7 +228,7 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) { }
         if (PlayerHub.activity === this) PlayerHub.activity = null
         // Fermeture définitive : l'état social (désactivé par défaut) ne doit pas fuiter vers le prochain lecteur ; la réduction en vignette le garde.
-        if (SocialLogic.shouldResetOnDestroy(isFinishing, handedOff, PlayerHub.socialOverlay === social)) PlayerHub.social = SocialState()
+        if (!socialResetDone && SocialLogic.shouldResetOnDestroy(isFinishing, handedOff, PlayerHub.socialOverlay === social)) PlayerHub.social = SocialState()
         if (PlayerHub.socialOverlay === social) PlayerHub.socialOverlay = null
         social?.destroy()
         images.shutdown()
@@ -1294,8 +1295,20 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     override fun stateJson(): JSObject = core.stateJson()
 
     /** Fermeture à l'initiative de l'utilisateur : `closed` part vers le JS, qui enregistre la progression. */
+    /**
+     * Remise à zéro de l'état social dès que la fermeture est décidée (appui de l'utilisateur, ou demande du JS sur le fil du
+     * plugin), et non plus seulement à `onDestroy` : celui-ci arrive plus tard, et effaçait parfois l'état déjà envoyé pour la
+     * lecture suivante (réactions et pastille du salon absentes jusqu'au prochain changement).
+     */
+    fun resetSocialOnClose() {
+        if (socialResetDone || handedOff) return
+        socialResetDone = true
+        if (PlayerHub.socialOverlay === social) PlayerHub.social = SocialState()
+    }
+
     private fun finishWithClosed() {
         if (!closedSent) emitClosed()
+        resetSocialOnClose()
         PlayerHub.activity = null
         finish()
     }

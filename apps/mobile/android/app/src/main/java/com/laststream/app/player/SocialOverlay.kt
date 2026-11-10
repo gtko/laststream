@@ -250,7 +250,7 @@ class SocialOverlay(
     private fun react(emoji: String) {
         interact()
         val now = SystemClock.elapsedRealtime()
-        if (!SocialLogic.allowReaction(now, lastReactAt)) return
+        if (!SocialLogic.allowReaction(now, lastReactAt, PlayerHub.social.room != null)) return
         lastReactAt = now
         PlayerHub.emit("react", JSObject().put("emoji", emoji).put("pos", position()))
         floatEmoji(emoji, "Vous")

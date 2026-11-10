@@ -462,6 +462,19 @@ describe('watch party sur Workers', () => {
     expect(await h.peer.whenClosed()).toMatchObject({ code: 4000 });
   });
 
+  it('salon cédé à un autre hôte : il ne compte plus dans le plafond de son créateur', async () => {
+    const host = await account('host');
+    const guest = await account('guest');
+    const first = (await createRoom(host)).body.room;
+    const h = await join(host, first.id);
+    const g = await join(guest, first.id);
+    h.peer.send({ t: 'transfer', user: guest.name });
+    expect(await g.peer.type('host')).toEqual({ t: 'host', user: guest.name });
+    // Trois salons de plus : le salon cédé n'est plus compté, le quatrième à son nom est refusé.
+    for (let i = 0; i < 3; i += 1) expect((await createRoom(host)).status).toBe(201);
+    expect((await createRoom(host)).status).toBe(429);
+  });
+
   it('plafond de salons ouverts par hôte, entrées invalides refusées', async () => {
     const host = await account('host');
     for (let i = 0; i < 3; i += 1) expect((await createRoom(host)).status).toBe(201);
