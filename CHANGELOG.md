@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.49 – 2026-11-10
+
+- Web : initShellComm défini pour les anciennes coques Windows (LASTSTREAM-WEB-1) (#26) — @gtko
+
 ## v1.0.48 – 2026-11-10
 
 - Lecteur Android : carte de source détaillée, boutons de fin d'épisode, réactions entières (#25) — @gtko
