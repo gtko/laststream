@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.50 – 2026-11-10
+
+- Watch party : corrections de synchronisation, du salon, de l'interface et des lecteurs natifs (#28) — @gtko
+
 ## v1.0.49 – 2026-11-10
 
 - Web : initShellComm défini pour les anciennes coques Windows (LASTSTREAM-WEB-1) (#26) — @gtko
