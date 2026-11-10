@@ -59,7 +59,7 @@ export type SwitchResult = { status: 'switched'; audioUnverified: boolean } | { 
 
 interface EngineLike {
   kind: string;
-  state(): { time: number; duration: number; paused: boolean; buffering?: boolean; rate?: number };
+  state(): { time: number; duration: number; paused: boolean; buffering?: boolean; rate?: number; suspended?: boolean };
   play(): void;
   pause(): void;
   seek(t: number): void;
@@ -131,8 +131,12 @@ export function playerOf(a: SessionAdapter | null): PlayerLike | null {
   const e = a?.engine;
   if (!a || !e) return null;
   return {
-    // Lecteur natif : prêt seulement après sa première image (avant, sa position n'est pas mesurable).
-    ready: () => a.ready && (e.kind !== 'native' || !!(e as EngineLike & { loaded?: boolean }).loaded),
+    // Lecteur natif ou mpv : prêt seulement après les premières mesures du fichier chargé (avant, la position n'est pas
+    // mesurable, ou reste celle du fichier précédent).
+    ready: () => a.ready && (e.kind === 'html' || !!(e as EngineLike & { loaded?: boolean }).loaded),
+    // Pause posée par le système : lecteur natif suspendu (activité arrêtée, perte du focus audio), ou page en arrière-plan
+    // (les navigateurs mobiles y mettent la vidéo en pause d'eux-mêmes).
+    suspended: () => (e.kind === 'native' ? !!e.state().suspended : e.kind === 'html' && typeof document !== 'undefined' && document.hidden),
     time: () => e.state().time || 0,
     duration: () => e.state().duration || 0,
     paused: () => !!e.state().paused,
@@ -247,7 +251,8 @@ class PartyBridge {
    */
   roomPosition(media?: { id: string | number; season?: number | null; episode?: number | null }): number | null {
     const c = this.client;
-    if (!c?.room || !c.state) return null;
+    // Salon terminé ou connexion perdue : l'état connu n'avance plus avec le salon, sa position extrapolée serait fausse.
+    if (!c?.room || !c.state || c.status !== 'open') return null;
     if (media) {
       const m = c.room.media;
       if (String(m.tmdbId) !== String(media.id) || (m.season ?? null) !== (media.season ?? null) || (m.episode ?? null) !== (media.episode ?? null)) return null;
@@ -318,10 +323,14 @@ class PartyBridge {
   /** Rejoint un salon existant (le lecteur est lancé par l'appelant si besoin, voir `joinAndPlay`). */
   async connect(roomId: string, profileId: string, lobby = false): Promise<void> {
     this.leave(); // remet `lobby` à false : le drapeau se pose après, pour ne pas être perdu
+    const gen = this.connectGen; // `leave` vient de l'avancer : une sortie ou une autre connexion pendant l'attente annule celle-ci
     this.lobby = lobby;
     this.endReason = '';
     this.profileId = profileId;
     const first = await joinParty(roomId, profileId);
+    // Connexion dépassée (lecteur fermé, autre salon rejoint entre-temps) : pas de second client, qui se ferait remplacer
+    // par le serveur et marquerait le salon courant « repris depuis un autre appareil ».
+    if (gen !== this.connectGen) return;
     this.room = first.room;
     let ticket: JoinTicket | null = first;
     const client = new PartyClient({
@@ -334,20 +343,41 @@ class PartyBridge {
     });
     this.client = client;
     this.controller = new PartyController(client);
-    client.on('status', () => this.emit());
+    // Un client remplacé (sortie, autre salon) ne touche plus à l'état du pont.
+    const mine = <T>(fn: (v: T) => void) => (v: T) => { if (this.client === client) fn(v); };
+    client.on('status', mine(() => this.emit()));
     client.on('participants', () => this.onParticipants(client));
-    client.on('welcome', (w) => { this.room = w.room; this.readyDeclared = false; this.sentSource = null; this.controller?.reset(); this.emit(); });
+    client.on('welcome', mine((w) => {
+      this.room = w.room;
+      this.readyDeclared = false;
+      this.sentSource = null;
+      this.controller?.reset();
+      // Reconnexion pendant une lecture : le salon a oublié la préparation de ce participant, et un changement d'épisode de
+      // l'hôte fait hors ligne n'est pas parti. Les deux sont redits.
+      // Seulement si ce lecteur lit bien le titre du salon (un autre titre encore ouvert pendant l'entrée ne compte pas).
+      const a = this.lastAdapter;
+      const m = w.room.media;
+      const sameTitle = !!a && a.req.id === String(m.tmdbId);
+      const sameEpisode = !!a && (a.cur.season ?? null) === (m.season ?? null) && (a.cur.episode ?? null) === (m.episode ?? null);
+      if (a?.ready && !this.lobby && sameTitle && (client.isHost || sameEpisode)) {
+        this.declareReady(client, a);
+        if (client.isHost) this.announceEpisode(client, a);
+      }
+      this.emit();
+    }));
     // Source de l'hôte : le salon et sa langue suivent, sans lancement ni rechargement de la lecture.
-    client.on('source', (s) => { if (this.room) this.room = { ...this.room, fingerprint: s.fingerprint, language: s.language }; this.emit(); });
-    client.on('host', () => { this.controller?.reset(); this.emit(); });
-    client.on('media', (m) => this.onMedia(m));
-    client.on('end', (reason) => { this.endReason = reason; this.emit(); });
-    client.on('error', (code) => { const text = partyErrorText(code); if (!text) return; this.lastError = text; this.emit(); });
+    client.on('source', mine((s) => { if (this.room) this.room = { ...this.room, fingerprint: s.fingerprint, language: s.language }; this.emit(); }));
+    client.on('host', mine(() => { this.controller?.reset(); this.emit(); }));
+    client.on('media', mine((m) => this.onMedia(m)));
+    client.on('end', mine((reason) => { this.endReason = reason; this.controller?.release(playerOf(this.adapter?.() ?? null)); this.emit(); }));
+    client.on('error', mine((code) => { const text = partyErrorText(code); if (!text) return; this.lastError = text; this.emit(); }));
     client.start();
     this.emit();
   }
 
   lastError = '';
+  /** Avance à chaque sortie (donc à chaque connexion) : une connexion en attente du serveur se sait dépassée. */
+  private connectGen = 0;
   /** Le salon d'attente est ouvert : un changement de titre (vote) n'y lance pas la lecture, elle démarre au départ. */
   lobby = false;
   /** Préparation déjà déclarée (prêt) pour la connexion en cours : posée au lancement d'une lecture hors salon d'attente. */
@@ -383,7 +413,10 @@ class PartyBridge {
   }
 
   leave(): void {
+    this.connectGen += 1;
     const c = this.client;
+    // Le lecteur ne garde pas la vitesse corrective du salon quitté.
+    this.controller?.release(playerOf(this.adapter?.() ?? null));
     this.client = null;
     this.controller = null;
     this.room = null;
@@ -680,20 +713,25 @@ class PartyBridge {
       this.syncSource(c, a);
       // Le lecteur de l'hôte qui démarre ne réaligne pas le salon : un départ de salon d'attente le cale sur son état, comme les
       // autres participants. L'alignement sur le lecteur de l'hôte se fait à la création du salon et au changement d'épisode.
-      const m = c.room.media;
-      const s = a.cur.season ?? null;
-      const e = a.cur.episode ?? null;
-      const differs = a.req.type === 'tv' && (s !== (m.season ?? null) || e !== (m.episode ?? null));
-      const tag = a.req.key + ':' + s + ':' + e;
-      if (differs && s !== null && e !== null && this.announced !== tag) {
-        this.announced = tag;
-        // Épisode suivant décidé par l'hôte : son lecteur fait foi pour le salon à la prochaine mesure (sauf bascule).
-        if (!a.switching) this.controller?.arm();
-        c.changeEpisode(s, e, shareableFingerprintOf(a.view) ?? undefined);
-      }
+      this.announceEpisode(c, a);
     } else {
       c.requestSync();
     }
+  }
+
+  /** Hôte : annonce au salon l'épisode que lit son lecteur s'il diffère de celui du salon. Hors ligne, l'annonce est refaite à la reconnexion. */
+  private announceEpisode(c: PartyClient, a: SessionAdapter): void {
+    if (!c.room) return;
+    const m = c.room.media;
+    const s = a.cur.season ?? null;
+    const e = a.cur.episode ?? null;
+    const differs = a.req.type === 'tv' && (s !== (m.season ?? null) || e !== (m.episode ?? null));
+    const tag = a.req.key + ':' + s + ':' + e;
+    if (!differs || s === null || e === null || this.announced === tag) return;
+    if (!c.changeEpisode(s, e, shareableFingerprintOf(a.view) ?? undefined)) return;
+    this.announced = tag;
+    // Épisode suivant décidé par l'hôte : son lecteur fait foi pour le salon à la prochaine mesure (sauf bascule).
+    if (!a.switching) this.controller?.arm();
   }
 
   /**

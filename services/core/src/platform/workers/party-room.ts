@@ -27,6 +27,9 @@ import type { UserStoreDO } from './user-store-do.js';
 /** Constructeur de paires WebSocket de l'exécution Workers (non déclaré par les types retenus ici). */
 declare const WebSocketPair: new () => { 0: CfWebSocket; 1: CfWebSocket };
 
+/** `readyState` d'une socket ouverte. */
+const WS_OPEN = 1;
+
 /** Données attachées à chaque socket (survivent à l'hibernation du Durable Object). */
 interface Attachment extends Identity {
   connId: string;
@@ -82,9 +85,14 @@ export class PartyRoom extends DurableObject {
     const reports = (await this.ctx.storage.get<ReportEntry[]>('reports')) ?? [];
     const core = new RoomCore(data, chat, reports, () => Date.now());
     // Après une hibernation, les participants sont ceux dont la socket est encore ouverte.
+    // Une socket déjà fermée par le serveur (exclusion, remplacement) n'est plus un participant ; pour une même clé, la
+    // connexion la plus récente l'emporte.
     for (const ws of this.ctx.getWebSockets() as unknown as CfWebSocket[]) {
+      if (ws.readyState !== WS_OPEN) continue;
       const attachment = ws.deserializeAttachment() as Attachment | null;
-      if (attachment !== null) core.members.set(attachment.accountId, { ...attachment });
+      if (attachment === null) continue;
+      const known = core.members.get(attachment.accountId);
+      if (known === undefined || known.joinedAt <= attachment.joinedAt) core.members.set(attachment.accountId, { ...attachment });
     }
     this.core = core;
   }
@@ -181,17 +189,23 @@ export class PartyRoom extends DurableObject {
     if (identity?.guest === true) {
       // Invité sans compte : un refus est une fermeture WebSocket 4xxx propre au motif (lue par l'application).
       if (core === undefined) return refusedSocket(CLOSE.ended, 'ended');
-      const refusal = guestRefusal(core.canJoinGuest(identity));
-      if (refusal !== undefined) return refusedSocket(refusal.code, refusal.reason);
-      return this.accept(core, identity);
+      return this.refusal(core, identity) ?? this.accept(core, identity);
     }
     if (core === undefined) return json(404, { error: 'room_not_found' });
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json(426, { error: 'upgrade_required' });
     if (identity === undefined) return json(400, { error: 'identity_required' });
+    return this.refusal(core, identity) ?? this.accept(core, identity);
+  }
+
+  /** Réponse de refus d'entrée (exclu, salon plein, pseudo pris…), ou undefined si l'entrée est permise à cet instant. */
+  private refusal(core: RoomCore, identity: Identity): Response | undefined {
+    if (identity.guest === true) {
+      const refusal = guestRefusal(core.canJoinGuest(identity));
+      return refusal === undefined ? undefined : refusedSocket(refusal.code, refusal.reason);
+    }
     const check = core.canJoin(identity.accountId, identity.username); // pseudo contrôlé seulement en mode profil (voir canJoin)
     if (check === 'banned') return json(403, { error: 'banned' });
-    if (check !== 'ok') return json(409, { error: check });
-    return this.accept(core, identity);
+    return check === 'ok' ? undefined : json(409, { error: check });
   }
 
   /** Mise à niveau acceptée : entre dans le salon, en remplaçant l'éventuelle connexion précédente de la même clé (même profil sur un autre appareil, pas les autres profils du compte). */
@@ -200,6 +214,9 @@ export class PartyRoom extends DurableObject {
     const turn = await fetchTurnIce(this.env as TurnEnv);
     // Le salon a pu prendre fin pendant cet appel : pas de connexion vers un état effacé.
     if (this.core === undefined) return refusedSocket(CLOSE.ended, 'ended');
+    // D'autres entrées, une exclusion ou un salon devenu plein ont pu passer pendant l'appel : l'entrée est revérifiée.
+    const refused = this.refusal(core, identity);
+    if (refused !== undefined) return refused;
     // Une nouvelle connexion remplace l'ancienne de la même clé de participant.
     for (const old of this.socketsOf(identity.accountId)) old.close(CLOSE.replaced, 'replaced');
 

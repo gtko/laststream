@@ -65,7 +65,7 @@ describe('partage de lecture : quel lien ouvre le relais', () => {
     relay.close.mockClear();
     // Lecture de la source : requête pendante (aucun réseau, aucun refus) sauf dans les tests qui le demandent.
     vi.stubGlobal('fetch', () => new Promise(() => undefined));
-    bridge.controller = { tick: () => undefined, reset: () => undefined, arm: () => undefined };
+    bridge.controller = { tick: () => undefined, reset: () => undefined, arm: () => undefined, release: () => undefined };
   });
 
   afterEach(() => {
@@ -181,7 +181,7 @@ describe('partage : l’invité qui arrive est admis tout de suite', () => {
     await flush();
     const ws = sockets[0];
     ws.recv({ t: 'welcome', you: { username: 'alice', host: true, muted: false }, room: { id: 'r1', title: 'Nosferatu', media: { type: 'movie', tmdbId: 653 } }, state: { playing: false, pos: 0, at: 0, rev: 1 }, serverTime: 0, participants: [{ username: 'alice', host: true, peerId: 'h1' }], chat: [] });
-    bridge.controller = { tick: () => undefined, reset: () => undefined, arm: () => undefined };
+    bridge.controller = { tick: () => undefined, reset: () => undefined, arm: () => undefined, release: () => undefined };
     // Le lecteur de l'hôte tourne, sans invité : rien n'est ouvert.
     bridge.tick(adapter(DIRECT));
     expect(relay.ctor).not.toHaveBeenCalled();

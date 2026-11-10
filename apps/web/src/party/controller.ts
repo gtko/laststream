@@ -22,6 +22,11 @@ export interface PlayerLike {
   setRate(rate: number): void;
   /** La vitesse de lecture est réglable (lecteur natif : non, la correction passe par des sauts). */
   canRate: boolean;
+  /**
+   * Le système a suspendu ce lecteur (onglet ou application en arrière-plan, écran éteint, appel) : sa pause n'est pas une
+   * action de l'utilisateur. Absent : jamais suspendu.
+   */
+  suspended?(): boolean;
 }
 
 export const HOST_SYNC_EVERY_MS = 5000;
@@ -36,6 +41,8 @@ const SEEK_DONE_SEC = 0.5;
 /** Intervalle minimal entre deux sauts envoyés : une touche maintenue ne doit pas saturer le débit du salon (au-delà, il ferme). */
 const SEEK_SEND_EVERY_MS = 500;
 const FOLLOW_EVERY_MS = 500;
+/** Marge de fin de fichier : un lecteur arrivé là s'arrête de lui-même, ce n'est ni une pause ni un retard à corriger. */
+const END_MARGIN_SEC = 1.5;
 
 interface Measure {
   paused: boolean;
@@ -70,6 +77,10 @@ export class PartyController {
   private lastSeekSent = 0;
   /** L'hôte vient de lancer son lecteur (ou de créer le salon) : à la première mesure, le salon s'aligne sur lui. */
   private alignOnStart = false;
+  /** Révision du dernier état du salon pris en compte par le suivi : l'hôte n'envoie pas de rapport tant qu'un état plus récent attend. */
+  private followedRev: number | null = null;
+  /** Pause posée par le système (voir `PlayerLike.suspended`) et non diffusée : la reprise qui suit ne l'est pas non plus. */
+  private systemPaused = false;
   /** Dernier écart mesuré entre ce lecteur et le salon (secondes, signé), pour « Synchronisés · écart » ; null avant la première mesure. */
   drift: number | null = null;
   /** Dernières commandes appliquées au lecteur local (inspection par les tests). */
@@ -83,8 +94,16 @@ export class PartyController {
     this.settling = null;
     this.pending = null;
     this.seekDue = null;
-    this.correcting = false;
+    // `correcting` est gardé : la vitesse corrective en cours est rendue à 1 par le suivi (un invité promu hôte ne la garde pas).
     this.drift = null;
+    this.followedRev = null;
+    this.systemPaused = false;
+  }
+
+  /** Sortie du salon (départ, fin, exclusion) : le lecteur ne garde pas la vitesse corrective. */
+  release(player: PlayerLike | null): void {
+    if (this.correcting && player) this.restoreRate(player);
+    this.correcting = false;
   }
 
   /** Lecteur de l'hôte démarré (ou salon créé) : l'état de son lecteur devient celui du salon à la prochaine mesure. */
@@ -94,6 +113,12 @@ export class PartyController {
 
   tick(player: PlayerLike | null): void {
     if (!player || !this.client.state || this.client.status === 'closed') return;
+    if (this.client.status !== 'open') {
+      // Hors ligne (reconnexion) : rien ne peut être envoyé et l'état connu vieillit. Le lecteur reste libre ; la bienvenue de la
+      // reconnexion remet le suivi à zéro et l'état du salon refait foi.
+      this.last = null;
+      return;
+    }
     if (!player.ready()) {
       // Lecteur absent ou en rechargement (bascule de source) : la mesure d'avant ne vaut plus, et rien n'est envoyé au salon.
       this.last = null;
@@ -149,6 +174,14 @@ export class PartyController {
     }
     if (p.buffering() && !cur.paused) return; // la position n'est pas fiable pendant le chargement
     if (cur.paused !== prev.paused) {
+      const dur = p.duration();
+      // Fin du fichier (les versions n'ont pas toutes la même durée) : l'arrêt du lecteur n'est pas une pause du salon.
+      if (cur.paused && cur.time >= dur - END_MARGIN_SEC) return;
+      // Pause du système (arrière-plan, écran éteint, appel) : elle ne met pas le salon en pause, et la reprise au retour ne le
+      // relance pas depuis la position de cet appareil : le suivi le recale sur le salon.
+      if (cur.paused && p.suspended?.()) { this.systemPaused = true; return; }
+      if (!cur.paused && this.systemPaused) { this.systemPaused = false; return; }
+      this.systemPaused = false;
       this.send(cur.paused ? 'pause' : 'play', cur.time);
       return;
     }
@@ -159,7 +192,10 @@ export class PartyController {
     }
     // Rapport de position de l'hôte, seulement pendant une lecture que le salon partage aussi (sinon il écraserait un état
     // plus récent, comme une pause qu'un invité vient de diffuser).
-    if (this.client.isHost && !cur.paused && this.client.state!.playing && cur.at - this.lastSyncSent >= HOST_SYNC_EVERY_MS) this.send('sync', cur.time);
+    // Pas de rapport non plus tant qu'un état plus récent (saut d'un invité) n'a pas été appliqué ici : la position mesurée
+    // est encore celle d'avant, et la renvoyer annulerait ce saut pour tout le salon.
+    const st = this.client.state!;
+    if (this.client.isHost && !cur.paused && st.playing && (st.rev ?? 0) === this.followedRev && cur.at - this.lastSyncSent >= HOST_SYNC_EVERY_MS) this.send('sync', cur.time);
   }
 
   private send(action: Action, pos: number): void {
@@ -179,12 +215,15 @@ export class PartyController {
       if ((st.rev ?? 0) <= this.pending.rev && now < this.pending.until) return;
       this.pending = null;
     }
+    this.followedRev = st.rev ?? 0;
     const expected = expectedPosition(st, this.client.serverNow());
     const dur = p.duration();
     // Sans vitesse réglable (natif), la cible s'arrête à 1 s de la fin, et non 0,5 s.
     const target = dur > 0 ? Math.min(expected, Math.max(0, dur - (p.canRate ? 0.5 : 1))) : expected;
     // Sans vitesse réglable, local et cible dans la dernière seconde et demie : aucune correction (sinon re-seek en boucle).
-    const atEnd = !p.canRate && dur > 0 && p.time() >= dur - 1.5 && target >= dur - 1.5;
+    // Lecteur arrivé à la fin de son fichier alors que le salon continue (version plus courte) : ni relance ni saut, sinon il
+    // repartirait du début pour retomber sur la fin, en boucle.
+    const atEnd = dur > 0 && p.time() >= dur - END_MARGIN_SEC && target >= dur - END_MARGIN_SEC && (!p.canRate || p.paused());
     this.drift = p.buffering() ? this.drift : p.time() - target;
     if (!st.playing) {
       const seekTo = !atEnd && Math.abs(p.time() - target) >= 0.5 ? target : null;
@@ -199,6 +238,12 @@ export class PartyController {
       return;
     }
     let touched: { paused: boolean; to: number | null } | null = null;
+    // Lecteur suspendu par le système ou arrivé en fin de fichier : pas de relance (elle jouerait le son d'un appareil verrouillé,
+    // ou repartirait du début). Le suivi reprend au retour.
+    if (p.paused() && (atEnd || p.suspended?.())) return;
+    // Dans un salon la lecture est à vitesse normale : une vitesse choisie à la main ferait reculer ce lecteur en boucle (hôte,
+    // lecteur natif) ou entraînerait tout le salon.
+    if (!this.correcting && Math.abs(p.rate() - 1) > 0.001) this.run(p, 'rate:1', () => p.setRate(1));
     if (p.paused()) {
       this.run(p, 'play', () => p.play());
       touched = { paused: false, to: null };

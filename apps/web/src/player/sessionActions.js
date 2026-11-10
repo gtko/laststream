@@ -432,7 +432,12 @@ export function onKey(e) {
   if (e.target instanceof Element && (e.target.closest('.lp-react') || e.target.closest('.lp-notemenu') || e.target.closest('.lp-bubble') || e.target.closest('.lp-mk') || e.target.closest('.lp-mk-h'))) return;
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
+  // Salon d'attente ouvert par-dessus le lecteur : aucun raccourci de lecture.
+  if (document.body.classList.contains('has-party-lobby')) return;
   const t = e.target instanceof Element ? e.target : null;
+  // Panneau et bandeau du salon : Échap y replie d'abord leur menu (ou rend le focus), et leurs cases et boutons radio gardent
+  // Espace et les flèches. Sans cela, Échap quittait le lecteur, donc le salon.
+  if (t && t.closest('.lp-party, .ps-band') && (e.key === 'Escape' || t.closest('input:not([type="text"]), select'))) return;
   // Recherche d'épisode : Échap referme le champ (et vide le filtre) sans fermer le panneau (ODY-202).
   if (e.key === 'Escape' && t && t.closest('.lp-search')) { e.preventDefault(); e.stopImmediatePropagation(); onAction('ep-search'); return; }
   // Mini-lecteur : aucun raccourci global, sauf « I » pour agrandir (jamais pendant une saisie).

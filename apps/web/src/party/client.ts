@@ -25,6 +25,16 @@ export interface SocketLike {
 }
 
 export type ClientStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
+/** Motif de fin pour un refus définitif de `connect` (erreur portant le code du serveur), ou null si l'échec est passager. */
+function refusalReason(err: unknown): EndReason | null {
+  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  if (code === 'room_not_found') return 'ended';
+  if (code === 'banned') return 'banned';
+  if (code === 'room_full') return 'full';
+  if (code === 'name_taken') return 'name_taken';
+  return null;
+}
+
 export type EndReason = 'ended' | 'expired' | 'kicked' | 'banned' | 'replaced' | 'full' | 'name_taken' | 'name_changed' | 'closed' | 'failed';
 
 export interface ClientDeps {
@@ -181,7 +191,13 @@ export class PartyClient {
     this.deps.connect().then((socket) => {
       if (this.closedByUs) { try { socket.close(1000); } catch { /* ignoré */ } return; }
       this.bind(socket);
-    }, () => this.scheduleReconnect());
+    }, (err: unknown) => {
+      // Refus définitif du serveur à la reconnexion (salon terminé pendant la coupure, exclusion, salon plein) : réessayer
+      // sans fin laisserait le lecteur accroché à un salon qui n'existe plus.
+      const final = refusalReason(err);
+      if (final !== null && !this.closedByUs) this.finish(final);
+      else this.scheduleReconnect();
+    });
   }
 
   private bind(socket: SocketLike): void {

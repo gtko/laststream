@@ -30,7 +30,8 @@ import { toast } from './dom.js';
 import { shareBase } from './invites.js';
 import { registerSocialHook } from './socialHooks.js';
 import { togglePartyPanel } from './partypanel.js';
-import { esc } from './util.js';
+import { pushLayer } from './backStack.js';
+import { copyToClipboard, esc } from './util.js';
 
 const MAX_PARTICIPANTS_FALLBACK = 20;
 const GUEST_SLOTS = 4;
@@ -76,6 +77,12 @@ let src = freshSources();
 let picker = null;
 let socialOff = null;
 let opener = null;
+/** Retire le salon d'attente de la pile du bouton retour (voir backStack.js). */
+let releaseBack = null;
+/** Ouverture en cours : une seconde ouverture pendant l'attente du serveur rend la première sans effet. */
+let openSeq = 0;
+/** Lien d'invitation que la copie automatique n'a pas pu poser dans le presse-papiers : affiché dans un champ à copier à la main. */
+let manualLink = '';
 
 const isHost = () => !!(client && client.isHost);
 const myName = () => (client && client.you ? client.you.username : '');
@@ -115,7 +122,8 @@ function linkBoxHTML() {
   try { shown = new URL(shareBase()).host + '/…'; } catch { /* base relative : libellé générique */ }
   return '<div class="pl-link">' + ICON.link + '<span class="pl-link-t">' + esc(shown) + '</span>' +
     '<span class="pl-link-note">sans compte : ' + slots + ' place' + (slots > 1 ? 's' : '') + ', 12 h</span>' +
-    '<button type="button" class="pl-btn is-sec is-sm" data-pl-copy>' + (linkCopied ? 'Copié' : 'Copier') + '</button></div>';
+    '<button type="button" class="pl-btn is-sec is-sm" data-pl-copy>' + (linkCopied ? 'Copié' : 'Copier') + '</button></div>' +
+    (manualLink ? '<input type="text" class="pl-link-manual" data-pl-manual readonly value="' + esc(manualLink) + '" aria-label="Lien d’invitation à copier">' : '');
 }
 
 function footerHTML(sum) {
@@ -266,7 +274,8 @@ function paintSide() {
   if (!body) return;
   const stick = body.scrollHeight - body.scrollTop - body.clientHeight < 60;
   body.innerHTML = sideBodyHTML();
-  if (stick || tab === 'chat') body.scrollTop = body.scrollHeight;
+  // Seulement si le fil était déjà en bas : remonter dans la discussion ne doit pas être annulé à chaque rafraîchissement.
+  if (stick) body.scrollTop = body.scrollHeight;
   root.querySelectorAll('[data-pl-tab]').forEach((b) => {
     const on = b.dataset.plTab === tab;
     b.setAttribute('aria-selected', on ? 'true' : 'false');
@@ -506,7 +515,11 @@ function bind(c) {
     renderSoon();
   });
   on('host', () => renderSoon());
-  on('status', () => renderSoon());
+  on('status', () => {
+    // Connexion fermée ailleurs (lecteur fermé, autre salon rejoint) : le salon d'attente ne reste pas ouvert sur un salon quitté.
+    if (c.status === 'closed' && partyBridge.client !== c) { closeLobby(true); return; }
+    renderSoon();
+  });
   on('error', (code) => { const t = partyErrorText(code); if (t) toast(t); });
   on('end', (reason) => {
     toast(endReasonText(reason));
@@ -540,8 +553,11 @@ function mount() {
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-labelledby', 'pl-title');
+  // Visible aussi par-dessus le lecteur ouvert en grand (invitation acceptée pendant une lecture).
+  root.setAttribute('data-over-player', '');
   root.innerHTML = shellHTML();
   document.body.appendChild(root);
+  releaseBack = pushLayer(onBack);
   document.body.classList.add('has-party-lobby');
   root.addEventListener('click', onClick);
   root.addEventListener('submit', onSubmit);
@@ -549,7 +565,19 @@ function mount() {
   socialOff = socialSubscribe(() => { if (tab === 'friends') paintSide(); });
 }
 
+/** Bouton retour (Android, navigateur) : quitte le salon d'attente, comme « Quitter », au lieu de changer la page du dessous. */
+function onBack() {
+  releaseBack = null;
+  if (!root) return;
+  if (isHost() && !window.confirm('Fermer le salon d’attente pour tout le monde ?')) { releaseBack = pushLayer(onBack); return; }
+  const host = isHost();
+  closeLobby(false);
+  toast(host ? 'Salon fermé' : 'Tu as quitté le salon');
+}
+
 function closeLobby(keepClient) {
+  if (releaseBack) { releaseBack(); releaseBack = null; }
+  manualLink = '';
   clearTimeout(declareTimer);
   declareTimer = 0;
   clearInterval(countTimer);
@@ -567,9 +595,16 @@ function closeLobby(keepClient) {
   opener = null;
 }
 
+/** Une lecture d'un autre titre restée ouverte sous le salon d'attente est mise en pause (son son couvrirait le salon). */
+function pauseOtherPlayback() {
+  const a = partyBridge.adapter ? partyBridge.adapter() : null;
+  try { if (a && a.ready && a.engine && !a.engine.state().paused) a.engine.pause(); } catch { /* moteur pas prêt */ }
+}
+
 /** Ouvre le salon d'attente d'une watch party (connexion au salon si besoin). Rien pour un profil enfant ou hors compte. */
 export async function openLobby(partyId, from) {
   if (isKidProfile() || !isServerMode()) return;
+  const seq = ++openSeq;
   if (root) closeLobby(true);
   launched = false;
   countdownDue = null;
@@ -584,19 +619,26 @@ export async function openLobby(partyId, from) {
   src = freshSources();
   opener = from instanceof HTMLElement ? from : (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const current = partyBridge.client;
+  let other = false;
   if (current && current.room && current.room.id === partyId && current.status !== 'closed') partyBridge.lobby = true;
   else {
+    other = true;
     try {
       await partyBridge.connect(partyId, userStore.currentProfile().id, true);
     } catch (err) {
+      if (seq !== openSeq) return;
       partyBridge.lobby = false;
       toast(err instanceof UserApiError && err.code === 'room_full' ? 'Le salon est complet.' : 'Impossible de rejoindre le salon.');
       return;
     }
   }
+  // Une autre ouverture a pris la suite pendant l'attente (double activation) : elle seule monte le salon d'attente.
+  if (seq !== openSeq) return;
   client = partyBridge.client;
   if (!client) { partyBridge.lobby = false; return; }
   mount();
+  // Lecture d'un autre titre restée ouverte dessous (elle n'appartient plus à aucun salon) : en pause.
+  if (other) pauseOtherPlayback();
   bind(client);
   // Une connexion déjà ouverte a reçu sa bienvenue : le salon d'attente démarre sans la réécouter.
   if (client.you) {
@@ -634,9 +676,13 @@ export async function inviteMany(roomId, pids) {
 }
 
 // ---------- Invitation d'un ami ----------
+/** Création de salon lancée par `inviteToParty`, tant qu'elle n'a pas abouti. */
+let creating = null;
 /** Point d'entrée partagé : invite `pid` dans ma watch party active, ou en crée une sur le titre en cours de lecture. */
 export async function inviteToParty(pid) {
   if (isKidProfile() || !isServerMode()) return;
+  // Une création de salon est en cours (plusieurs amis choisis, double clic) : on l'attend au lieu d'en créer un second.
+  if (creating) await creating.catch(() => undefined);
   let c = partyBridge.client;
   if (!(c && c.room && partyBridge.isActive())) {
     const a = partyBridge.adapter ? partyBridge.adapter() : null;
@@ -648,13 +694,21 @@ export async function inviteToParty(pid) {
       openPartyCreate(pid, createLobbyFor);
       return;
     }
-    try {
+    const run = (async () => {
       await partyBridge.create(a, 'private');
+      return partyBridge.waitForHost();
+    })();
+    creating = run;
+    let ready;
+    try {
+      ready = await run;
     } catch (err) {
       void handlePartyCreateError(err, { retry: () => { void inviteToParty(pid); } });
       return;
+    } finally {
+      if (creating === run) creating = null;
     }
-    if (!(await partyBridge.waitForHost())) { toast('Salon créé, mais la connexion a échoué.'); return; }
+    if (!ready) { toast('Salon créé, mais la connexion a échoué.'); return; }
     c = partyBridge.client;
   }
   if (!c || !c.room) return;
@@ -734,14 +788,16 @@ async function copyInvite() {
   try {
     const inv = await partyBridge.createInvite(false);
     const url = joinLinkOf(shareBase(), inv.roomId, inv.token);
-    try {
-      await navigator.clipboard.writeText(url);
+    if (await copyToClipboard(url)) {
+      manualLink = '';
       linkCopied = true;
       clearTimeout(copiedTimer);
       copiedTimer = setTimeout(() => { linkCopied = false; renderSoon(); }, 2000);
       toast('Lien d’invitation copié');
-    } catch {
-      toast('Copie impossible : ' + url, { ms: 6000 });
+    } else {
+      // Le lien reste affiché dans un champ sélectionnable : un toast ne se copie pas.
+      manualLink = url;
+      toast('Copie automatique impossible : le lien est affiché, copie-le à la main.', { ms: 6000 });
     }
   } catch {
     toast('Invitation impossible pour le moment.');
@@ -820,7 +876,9 @@ function onSubmit(e) {
 
 /** Flèches dans un groupe de boutons radio (réglages) ou d'onglets ; Échap ferme le sélecteur de titre. */
 function onKey(e) {
-  if (e.key === 'Escape' && picker) { e.stopPropagation(); closePicker(); return; }
+  // Les raccourcis de la page et du lecteur restés dessous (retour, navigation aux flèches, lecture) ne s'appliquent pas ici.
+  e.stopPropagation();
+  if (e.key === 'Escape' && picker) { closePicker(); return; }
   const vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
   if (!vertical && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   const t = e.target instanceof Element ? e.target : null;

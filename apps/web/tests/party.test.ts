@@ -319,6 +319,115 @@ function broadcast(r: { sockets: FakeSocket[]; getNow: () => number }, state: { 
   r.sockets[0].recv({ t: 'state', state: { ...state, at: r.getNow() }, serverTime: r.getNow(), by });
 }
 
+describe('client : refus définitif à la reconnexion, horloge', () => {
+  it('salon terminé pendant la coupure : la reconnexion refusée (room_not_found) clôt le client au lieu de réessayer sans fin', async () => {
+    const timers = fakeTimers();
+    const sockets: FakeSocket[] = [];
+    let gone = false;
+    let connects = 0;
+    const client = new PartyClient({
+      connect: async () => {
+        connects += 1;
+        if (gone) throw Object.assign(new Error('room_not_found'), { status: 404, code: 'room_not_found' });
+        const s = new FakeSocket(); sockets.push(s); return s;
+      },
+      now: timers.now, setTimer: timers.set, clearTimer: timers.clear,
+    });
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+    const ends: string[] = [];
+    client.on('end', (reason) => ends.push(reason));
+    client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
+    gone = true;
+    sockets[0].drop(1006);
+    timers.advance(1000); await flush();
+    expect(client.status).toBe('closed');
+    expect(ends).toEqual(['ended']);
+    timers.advance(120_000); await flush();
+    expect(connects).toBe(2);
+  });
+
+  it('horloge : un échantillon trop ancien est remplacé même par un aller-retour plus long', () => {
+    const c = new ClockEstimator();
+    c.add(1000, 1010, 6005); // aller-retour 10 ms, décalage 5000
+    c.add(2000, 2100, 9050); // plus lent et récent : ignoré
+    expect(c.offset).toBe(5000);
+    c.add(200_000, 200_100, 206_050); // l'ancien a plus de 2 min : remplacé (l'horloge locale a dérivé de 1 s)
+    expect(c.offset).toBe(6000);
+  });
+});
+
+describe('contrôleur : cas limites corrigés', () => {
+  it('hôte : pas de rapport de position tant que le saut d’un invité n’est pas appliqué (il l’annulerait)', async () => {
+    const r = await room(true, { playing: true, pos: 600, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 600;
+    r.ctl.tick(p);
+    // 5 s plus tard, un invité saute à 900 : l'état arrive juste avant le pas où le rapport de l'hôte serait parti.
+    r.setNow(100_000 + HOST_SYNC_EVERY_MS + 100); p.t = 605.1;
+    broadcast(r, { playing: true, pos: 900, rev: 1 }, 'bob');
+    r.ctl.tick(p);
+    expect(r.sent()).toEqual([]);
+    expect(p.calls).toContain('seek:900.0');
+  });
+
+  it('hors ligne (reconnexion) : le lecteur n’est plus asservi à un état qui vieillit', async () => {
+    const r = await room(false, { playing: true, pos: 10, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 10;
+    r.ctl.tick(p);
+    r.sockets[0].drop(1006);
+    expect(r.client.status).toBe('reconnecting');
+    p.paused_ = true; p.calls.length = 0;
+    r.setNow(101_000); r.ctl.tick(p);
+    r.setNow(102_000); r.ctl.tick(p);
+    expect(p.calls).toEqual([]);
+  });
+
+  it('pause du système (arrière-plan) : ni pause ni reprise diffusées, pas de relance tant que suspendu', async () => {
+    const r = await room(false, { playing: true, pos: 10, at: 100_000 });
+    const p = new FakePlayer() as FakePlayer & { suspended: () => boolean };
+    let hidden = false;
+    p.suspended = () => hidden;
+    p.paused_ = false; p.t = 10;
+    r.ctl.tick(p);
+    hidden = true; p.paused_ = true; p.calls.length = 0;
+    r.setNow(100_600); r.ctl.tick(p);
+    r.setNow(101_200); r.ctl.tick(p);
+    expect(r.sent()).toEqual([]);
+    expect(p.calls).toEqual([]);
+    // Retour : le système relance la lecture ; rien n'est diffusé, le suivi recale sur le salon.
+    hidden = false; p.paused_ = false; p.t = 10.6;
+    r.setNow(105_000); r.ctl.tick(p);
+    expect(r.sent()).toEqual([]);
+    expect(p.calls).toContain('seek:15.0');
+  });
+
+  it('fin de fichier d’une version plus courte : ni pause du salon, ni relance en boucle', async () => {
+    const r = await room(false, { playing: true, pos: 99, at: 100_000 });
+    const p = new FakePlayer();
+    p.dur = 100; p.paused_ = false; p.t = 99;
+    r.ctl.tick(p);
+    p.t = 100; p.paused_ = true; p.calls.length = 0;
+    r.setNow(101_000); r.ctl.tick(p);
+    r.setNow(102_000); r.ctl.tick(p);
+    expect(r.sent()).toEqual([]);
+    expect(p.calls).toEqual([]);
+  });
+
+  it('vitesse choisie à la main : remise à 1 dans un salon ; vitesse corrective rendue à la sortie', async () => {
+    const r = await room(false, { playing: true, pos: 10, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 10; p.rate_ = 1.5;
+    r.ctl.tick(p);
+    expect(p.rate_).toBe(1);
+    // Retard de 1 s : vitesse corrective, puis sortie du salon.
+    p.t = 10; r.setNow(101_000); r.ctl.tick(p);
+    expect(p.rate_).toBe(1.05);
+    r.ctl.release(p);
+    expect(p.rate_).toBe(1);
+  });
+});
+
 describe('contrôleur : l’hôte envoie aussi le rapport de position', () => {
   it('envoie play, pause, seek puis des rapports de position toutes les ~5 s', async () => {
     const r = await room(true);
@@ -329,6 +438,7 @@ describe('contrôleur : l’hôte envoie aussi le rapport de position', () => {
     p.paused_ = false; p.t = 3; r.setNow(100_100); r.ctl.tick(p);
     expect(r.sent().at(-1)).toMatchObject({ action: 'play', pos: 3 });
     broadcast(r, { playing: true, pos: 3, rev: 1 }); // écho du salon
+    p.t = 3.6; r.setNow(100_700); r.ctl.tick(p); // le suivi prend l'écho en compte : les rapports peuvent partir
     p.t = 8; r.setNow(100_100 + HOST_SYNC_EVERY_MS + 100); r.ctl.tick(p);
     expect(r.sent().at(-1)).toMatchObject({ action: 'sync' });
     p.t = 600; r.setNow(r.getNow() + 100); r.ctl.tick(p); // grand saut vers l'avant
@@ -739,7 +849,7 @@ function laggingMpv(clock: () => number, lagMs = 300) {
   };
   const command = (value: boolean, name: string) => { calls.push(name); pending = { value, at: clock() + lagMs }; };
   return {
-    kind: 'mpv',
+    kind: 'mpv', loaded: true,
     calls,
     state: () => ({ time: 100, duration: 3600, paused: observed(), buffering: false, rate: 1 }),
     play: () => command(false, 'play'),

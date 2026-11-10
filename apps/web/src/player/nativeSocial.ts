@@ -23,20 +23,25 @@ function viewerOf(id: string, name: string): NativeViewer {
 }
 
 /** Note du store au format du natif. `meId` (profil connecté) marque les notes qui sont à moi. */
-function toNativeNote(n: Note, meId: string | null | undefined): NativeNote {
+function toNativeNote(n: Note, meId: string | null | undefined, quiet: boolean): NativeNote {
   return {
     id: n.id,
     pos: n.pos,
     kind: n.kind,
     body: n.body,
     by: viewerOf(n.author.pid, n.author.handle.name),
-    mine: !!meId && n.author.pid === meId,
+    // Le natif ne fait flotter que les réactions qui ne sont pas « à moi » : une réaction déjà montrée par l'écho du salon
+    // (`quiet`) est marquée de même, pour ne pas apparaître deux fois. Elle reste un marqueur.
+    mine: quiet || (!!meId && n.author.pid === meId),
   };
 }
 
-/** Liste complète des marqueurs au format du natif (le regroupement des voisins se fait côté natif). */
-export function toNativeNotes(list: readonly Note[], meId: string | null | undefined): NativeNote[] {
-  return list.map((n) => toNativeNote(n, meId));
+/**
+ * Liste complète des marqueurs au format du natif (le regroupement des voisins se fait côté natif). `quiet` : notes dont la
+ * réaction a déjà été affichée par le salon (watch party).
+ */
+export function toNativeNotes(list: readonly Note[], meId: string | null | undefined, quiet?: ReadonlySet<string>): NativeNote[] {
+  return list.map((n) => toNativeNote(n, meId, !!quiet && quiet.has(n.id)));
 }
 
 /** Spectateurs du titre : amis et foyer qui le regardent (même règle que la puce « Un ami regarde aussi »). */

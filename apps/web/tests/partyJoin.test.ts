@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { PartyClient, type SocketLike } from '../src/party/client';
 import {
-  cleanPseudo, clearGuestSession, endReasonText, entryErrorText, guestWsPath, joinLinkOf, loadGuestSession, parseJoinHash, refusedText, relayErrorText, saveGuestSession,
+  cleanPseudo, clearGuestSession, endReasonText, entryErrorText, guestWsPath, joinLinkOf, joinRouteOf, loadGuestSession, parseJoinHash, refusedText, relayErrorText, saveGuestSession,
 } from '../src/party/join';
 import { parseRtcFrame } from '../src/party/protocol';
 
@@ -24,6 +24,13 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 describe('lien d’invitation', () => {
   it('lit l’identifiant du salon et le jeton de la route', () => {
     expect(parseJoinHash('#/party/join/ROOM_1-x?t=abcdefgh12')).toEqual({ roomId: 'ROOM_1-x', token: 'abcdefgh12' });
+  });
+
+  it('adresse sans jeton (après l’entrée) : reste la page invitée tant que la séance est mémorisée', () => {
+    expect(joinRouteOf('#/party/join/R1?t=abcdefgh12', () => false)).toEqual({ roomId: 'R1', token: 'abcdefgh12' });
+    expect(joinRouteOf('#/party/join/R1', (id) => id === 'R1')).toEqual({ roomId: 'R1', token: '' });
+    expect(joinRouteOf('#/party/join/R1', () => false)).toBeNull();
+    expect(joinRouteOf('#/party/R1', () => true)).toBeNull();
   });
 
   it('décode les caractères réservés du jeton', () => {

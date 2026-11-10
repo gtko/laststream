@@ -11,7 +11,7 @@ import { toast } from './dom.js';
 import { LI } from '../player/icons.js';
 import { requestWake } from '../player/idle';
 import { shareBase } from './invites.js';
-import { esc } from './util.js';
+import { copyToClipboard, esc } from './util.js';
 import { avatarAttrs } from './avatar-art.js';
 import { friendPickerHTML, friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
 import { safeTmdbImage } from './safeImg.js';
@@ -28,6 +28,8 @@ let chatDraft = '';
 let lastInviteUrl = '';
 /** Salon créé depuis ce panneau : son créateur est l'hôte, même avant la bienvenue du serveur. */
 let createdHere = false;
+/** Création de salon en cours depuis le formulaire du panneau (verrou contre le double envoi). */
+let creating = false;
 /** Dernier bloc de compatibilité affiché (évite de le reconstruire à chaque seconde). */
 let compatShown = '';
 /** « Copié » affiché sur le bouton d’invitation pendant un instant : l’état vit ici, le panneau est reconstruit à chaque rendu. */
@@ -245,7 +247,7 @@ function createHTML() {
     (friends ? '<div class="wp-sec"><div class="wp-lb">Inviter des amis</div>' + friends + '</div>' : '') +
     '</div><div class="wp-cfoot">' +
     '<p class="wp-msg" data-wp-msg role="status">' + (ready ? '' : 'Attends que la lecture démarre pour créer le salon.') + '</p>' +
-    '<button type="submit" class="wp-btn is-pri is-lg"' + (ready ? '' : ' disabled') + '>Créer le salon</button>' +
+    '<button type="submit" class="wp-btn is-pri is-lg"' + (ready && !creating ? '' : ' disabled') + '>Créer le salon</button>' +
     '<p class="wp-fine">Un lien d’invitation est copié à la création. Chacun lit avec sa propre source : aucun flux vidéo n’est partagé.</p></div></form>';
 }
 
@@ -346,10 +348,19 @@ function setMenu(on, refocus, focusSel) {
 
 /** Échap replie le menu « … » (et rend le focus à son bouton) sans fermer le lecteur. */
 function onKeyDown(e) {
-  if (e.key !== 'Escape' || !menuOpen) return;
-  e.stopPropagation();
-  e.preventDefault();
-  setMenu(false, true);
+  if (e.key !== 'Escape') return;
+  if (menuOpen) {
+    e.stopPropagation();
+    e.preventDefault();
+    setMenu(false, true);
+    return;
+  }
+  // Dans un champ (discussion) : Échap rend le focus sans quitter le lecteur ; une seconde pression le quitte.
+  if (e.target instanceof HTMLElement && e.target.matches('input, textarea')) {
+    e.stopPropagation();
+    e.preventDefault();
+    e.target.blur();
+  }
 }
 
 function toggleChat() {
@@ -652,14 +663,23 @@ async function onSubmit(e) {
     if (!a || !a.ready) return;
     const vis = (f.querySelector('input[name="vis"]:checked') || {}).value === 'public' ? 'public' : 'private';
     const pids = isKidProfile() ? [] : [...f.querySelectorAll('input[name="friend"]:checked')].map((i) => i.value);
+    // Le formulaire est redessiné pendant la création (le pont émet) : le verrou vit hors du DOM, sinon un second appui
+    // créait un second salon.
+    if (creating) return;
+    creating = true;
     f.querySelector('[type=submit]').disabled = true;
     try {
       const room = await partyBridge.create(a, vis);
+      creating = false;
       await inviteAfterCreate();
       if (pids.length && room) void inviteChosen(room.id, pids);
     } catch (err) {
-      f.querySelector('[type=submit]').disabled = false;
-      void handlePartyCreateError(err, { retry: () => { const cur = document.querySelector('[data-wp-create]'); if (cur instanceof HTMLFormElement) cur.requestSubmit(); }, say: (t) => { if (msg) msg.textContent = t; } });
+      creating = false;
+      // Le formulaire d'origine a pu être remplacé : le message va dans celui qui est affiché.
+      const cur = () => document.querySelector('[data-wp-create]');
+      const btn = cur()?.querySelector('[type=submit]');
+      if (btn) btn.disabled = false;
+      void handlePartyCreateError(err, { retry: () => { const form = cur(); if (form instanceof HTMLFormElement) form.requestSubmit(); }, say: (t) => { const m = cur()?.querySelector('[data-wp-msg]') || msg; if (m) m.textContent = t; } });
     }
   }
 }
@@ -677,14 +697,12 @@ async function inviteChosen(roomId, pids) {
 }
 
 async function copyText(url, okText) {
-  try {
-    await navigator.clipboard.writeText(url);
+  if (await copyToClipboard(url)) {
     toast(okText);
     return true;
-  } catch {
-    toast('Copie impossible : ' + url, { ms: 6000 });
-    return false;
   }
+  toast('Copie impossible : ' + url, { ms: 6000 });
+  return false;
 }
 
 export function copyLink(id) {

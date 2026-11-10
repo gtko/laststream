@@ -110,14 +110,14 @@ export function startNotes(p) {
   p.partyEcho = () => { unsubParty(); unbindPartyReact(); p.partyEcho = null; };
   // En salon, « Réagir » reste visible sans notes : la réaction de salon marche sans note (seul le salon actif la garde).
   if (!media) { S.ui.setNotesAvailable(partyBridge.isActive()); return; }
-  const nt = { media, key: mediaKey(media), list: [], fired: new Set(), last: null, version: 0, renderKey: '', unsub: null };
+  const nt = { media, key: mediaKey(media), list: [], fired: new Set(), quiet: new Set(), last: null, version: 0, renderKey: '', unsub: null };
   p.notes = nt;
   S.ui.setNotesAvailable(true);
   nt.unsub = onNote((m, note) => {
     if (p.notes !== nt || mediaKey(m) !== nt.key) return;
     // En salon, l'emoji d'un participant du salon n'est pas affiché : l'écho du salon le montre déjà. Il reste un marqueur ; celui d'un
     // ami hors salon, sur le même titre, s'affiche comme d'habitude (LAST-1615).
-    if (partyBridge.isActive() && note.kind === 'emoji' && fromRoom(note)) { nt.fired.add(note.id); putNotes(nt, [note]); return; }
+    if (partyBridge.isActive() && note.kind === 'emoji' && fromRoom(note)) { nt.fired.add(note.id); nt.quiet.add(note.id); putNotes(nt, [note]); return; }
     // Réaction d'un ami arrivée en direct près de notre position : affichée tout de suite (sinon seulement au franchissement).
     const me = getSocialState().me;
     const due = liveFlashDue(note, p.engine ? p.engine.state().time : NaN, { now: Date.now(), mePid: me ? me.pid : null, known: nt.list });
@@ -274,6 +274,9 @@ function onPartyReact(d) {
   if (!eng || socialHidden().has('bubbles')) return;
   const c = partyBridge.client;
   if (c && c.settings && c.settings.reactions === 'off') return;
+  // Ma propre réaction : le natif l'a déjà fait flotter (« Vous ») à l'appui, son écho ne s'affiche pas une seconde fois.
+  const mine = roomMeName();
+  if (mine !== null && d && (d.by === mine || d.user === mine)) return;
   const m = partyReactMessageOf(d, 'party-react-' + ++partyReactSeq);
   if (m) eng.pushMessage(m);
 }
@@ -347,7 +350,7 @@ function syncNativeNotes(nt) {
   const eng = p && p.notes === nt ? nativeEngineOf(p) : null;
   if (!eng || (nativeNotesSent.nt === nt && nativeNotesSent.version === nt.version)) return;
   nativeNotesSent = { nt, version: nt.version };
-  eng.setNotes(toNativeNotes(nt.list, nativeMeId()));
+  eng.setNotes(toNativeNotes(nt.list, nativeMeId(), nt.quiet));
 }
 
 /**

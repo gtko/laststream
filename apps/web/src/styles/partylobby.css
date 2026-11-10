@@ -431,3 +431,6 @@ body.has-party-lobby { overflow: hidden; }
   .pl-src-badge { margin-left: 28px; }
   .pl-src-banner .pl-link-btn { min-height: 44px; display: inline-flex; align-items: center; }
 }
+
+/* Lien d'invitation à copier à la main (presse-papiers indisponible) */
+.pl-link-manual { width: 100%; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; font-size: 12px; user-select: text; -webkit-user-select: text; }

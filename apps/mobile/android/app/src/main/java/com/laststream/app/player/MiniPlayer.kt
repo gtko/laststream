@@ -94,6 +94,7 @@ class MiniPlayer private constructor(private val host: Activity, val core: Playb
         /** Application passée en arrière-plan avec la vignette encore affichée : pause (reprise au retour). */
         @JvmStatic fun onHostStopped() {
             val m = PlayerHub.mini ?: return
+            m.core.setSystemSuspended(true) // pause du système, pas de l'utilisateur (watch party)
             if (m.core.player.isPlaying) { m.pausedByHost = true; m.core.setPlaying(false) }
             m.core.emitState(true)
             m.core.emitProgress(true)
@@ -101,7 +102,9 @@ class MiniPlayer private constructor(private val host: Activity, val core: Playb
 
         @JvmStatic fun onHostStarted() {
             val m = PlayerHub.mini ?: return
+            m.core.setSystemSuspended(false)
             if (m.pausedByHost) { m.pausedByHost = false; m.core.setPlaying(true) }
+            m.core.emitState(true)
         }
 
         /** L'activité hôte disparaît (processus conservé) : la vignette n'a plus de support, la lecture s'arrête. */

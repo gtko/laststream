@@ -400,6 +400,8 @@ export function onNavKey(e) {
 }
 
 document.addEventListener('keydown', (e) => {
+  // Salon d'attente d'une watch party (plein écran, modal) : la page du dessous ne réagit pas au clavier.
+  if (document.body.classList.contains('has-party-lobby')) return;
   if (playerKey(e)) { e.preventDefault(); return; }
   if (!playerEl.hidden) return;
   if (e.key === 'Escape' && state.ctxMenu) { e.preventDefault(); closeCtx(true); return; }
