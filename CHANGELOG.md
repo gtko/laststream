@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.48 – 2026-11-10
+
+- Lecteur Android : carte de source détaillée, boutons de fin d'épisode, réactions entières (#25) — @gtko
+
 ## v1.0.47 – 2026-11-10
 
 - Release : APK Android servi depuis la release GitHub (plus de R2) (#24) — @gtko
