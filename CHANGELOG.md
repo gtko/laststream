@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.57 – 2026-11-11
+
+- Android : même clé de signature à chaque release (mise à jour « Application non installée ») (#34) — @gtko
+
 ## v1.0.56 – 2026-11-11
 
 - Android : padding des boutons, réactions, plein écran paysage, page vide derrière la vignette (#33) — @gtko
