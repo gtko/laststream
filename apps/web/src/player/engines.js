@@ -488,6 +488,8 @@ export class NativeEngine extends Emitter {
     on('nextEpisode', () => this.emit('next'));
     on('trackChanged', (d) => this.emit('trackChanged', d));
     on('miniChanged', (d) => this.emit('mini', !!d.mini));
+    on('openParty', () => this.emit('openParty'));
+    on('openFriends', () => this.emit('openFriends'));
     // Couche sociale (LAST-1612) : réaction et réponse posées dans le natif, erreur à afficher.
     on('react', (d) => this.emit('react', d));
     on('reply', (d) => this.emit('reply', d));
