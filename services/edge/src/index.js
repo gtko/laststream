@@ -184,13 +184,13 @@ function appFile(pathname) {
   if (/^\/app\/windows\/Laststream-Setup-\d+\.\d+\.\d+\.exe$/.test(pathname)) {
     return { key: 'windows/' + name, type: 'application/vnd.microsoft.portable-executable', attachment: true, name };
   }
-  // Flux de version Windows (voir laststream-shell-ng/upload.ps1) : réécrit à chaque release, donc cache court.
+  // Flux de version Windows : dernière release GitHub (windowsFeed), R2 (upload.ps1) en repli ; cache court.
   if (pathname === '/app/windows/latest.json') {
-    return { key: 'windows/latest.json', type: 'application/json', cache: 'public, max-age=300' };
+    return { key: 'windows/latest.json', type: 'application/json', cache: 'public, max-age=300', feed: 'json' };
   }
   // Signature ed25519 du flux : l'updater natif la télécharge à côté de latest.json et refuse la mise à jour sans elle.
   if (pathname === '/app/windows/latest.json.sig') {
-    return { key: 'windows/latest.json.sig', type: 'text/plain; charset=utf-8', cache: 'public, max-age=300' };
+    return { key: 'windows/latest.json.sig', type: 'text/plain; charset=utf-8', cache: 'public, max-age=300', feed: 'sig' };
   }
   return null;
 }
@@ -228,6 +228,82 @@ async function androidFeed(request, env) {
   return relay(request, env);
 }
 
+/** Flux de version Windows signé, joint à chaque release GitHub (workflow Release) ; `latest` suit la dernière release. */
+const WINDOWS_FEED_URL = 'https://github.com/gtko/laststream/releases/latest/download/latest.json';
+/** Fichiers d'une release du dépôt (signature du flux, installeur), par tag. */
+const RELEASE_DOWNLOAD = 'https://github.com/gtko/laststream/releases/download/';
+/** Adresse publique de l'installeur annoncée par le flux : celle que ce Worker sert. */
+const WINDOWS_PUBLIC = 'https://app.laststream.app/app/windows/';
+const FEED_MAX_CHARS = 16384;
+
+/** Version X.Y.Z d'un flux Windows valide (installeur à l'adresse publique attendue, SHA-256 hexadécimal), sinon null. */
+function windowsFeedVersion(text) {
+  let j;
+  try { j = JSON.parse(text); } catch { return null; }
+  if (!j || typeof j.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(j.version)) return null;
+  if (j.url !== `${WINDOWS_PUBLIC}Laststream-Setup-${j.version}.exe`) return null;
+  return typeof j.sha256 === 'string' && /^[0-9a-f]{64}$/.test(j.sha256) ? j.version : null;
+}
+
+/**
+ * /app/windows/latest.json et latest.json.sig : relus depuis la dernière release GitHub, comme le flux Android. Le flux est
+ * rendu octet pour octet (sa signature ed25519 porte sur ces octets) et la signature est celle du tag qu'il annonce.
+ * Null si GitHub est injoignable ou le flux invalide : l'appelant sert alors la copie de R2 (téléversement manuel).
+ */
+async function windowsFeed(request, env, sig) {
+  try {
+    const r = await fetch(env.WINDOWS_FEED_URL || WINDOWS_FEED_URL, { redirect: 'follow', cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!r.ok) return null;
+    const text = await r.text();
+    const version = text.length <= FEED_MAX_CHARS ? windowsFeedVersion(text) : null;
+    if (version === null) return null;
+    const head = request.method === 'HEAD';
+    if (!sig) return new Response(head ? null : text, { status: 200, headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' } });
+    const s = await fetch(`${RELEASE_DOWNLOAD}v${version}/latest.json.sig`, { redirect: 'follow', cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!s.ok) return null;
+    const signature = await s.text();
+    if (signature.length > FEED_MAX_CHARS) return null;
+    return new Response(head ? null : signature, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=300' } });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Installeur Windows absent de R2 : relayé en flux depuis la release GitHub du même numéro (plages comprises). Pas de
+ * redirection : l'updater natif refuse tout hôte hors de sa liste, et le lien du site reste sur ce domaine.
+ */
+async function githubInstaller(request, file) {
+  const version = /^Laststream-Setup-(\d+\.\d+\.\d+)\.exe$/.exec(file.name)?.[1];
+  if (!version) return json(404, { error: 'not_found' });
+  const range = request.headers.get('range');
+  let r;
+  try {
+    r = await fetch(`${RELEASE_DOWNLOAD}v${version}/${file.name}`, { redirect: 'follow', headers: range ? { range } : {} });
+  } catch {
+    return json(502, { error: 'upstream_unreachable' });
+  }
+  if (r.status !== 200 && r.status !== 206) {
+    await r.body?.cancel();
+    return json(404, { error: 'not_found' });
+  }
+  const headers = new Headers({
+    'content-type': file.type,
+    'content-disposition': `attachment; filename="${file.name}"`,
+    'accept-ranges': 'bytes',
+    'cache-control': 'public, max-age=86400, immutable',
+  });
+  for (const name of ['content-length', 'content-range', 'etag']) {
+    const value = r.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  if (request.method === 'HEAD') {
+    await r.body?.cancel();
+    return new Response(null, { status: r.status, headers });
+  }
+  return new Response(r.body, { status: r.status, headers });
+}
+
 /** Exception non gérée : journal et envoi Sentry (si SENTRY_DSN), puis 500 JSON sans détail. */
 function internalError(error, request, env, ctx) {
   reportUnhandledError(error, env, ctx, requestIdOf(request));
@@ -241,8 +317,13 @@ async function route(request, env) {
   const file = env.APP_FILES && appFile(pathname);
   if (file) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
+    // Flux Windows : la dernière release GitHub d'abord ; R2 (téléversement manuel) seulement en repli.
+    if (file.feed) {
+      const fresh = await windowsFeed(request, env, file.feed === 'sig');
+      if (fresh) return fresh;
+    }
     const obj = await env.APP_FILES.get(file.key, { range: request.headers });
-    if (!obj) return json(404, { error: 'not_found' });
+    if (!obj) return file.attachment ? githubInstaller(request, file) : json(404, { error: 'not_found' });
     const headers = new Headers();
     obj.writeHttpMetadata(headers);
     headers.set('content-type', file.type);
