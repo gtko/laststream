@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.58 – 2026-11-11
+
+- Release : vérification de la signature APK sans apksigner (#35) — @gtko
+
 ## v1.0.57 – 2026-11-11
 
 - Android : même clé de signature à chaque release (mise à jour « Application non installée ») (#34) — @gtko
