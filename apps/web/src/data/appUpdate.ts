@@ -122,7 +122,7 @@ export async function checkForUpdate(opts: { force?: boolean; now?: number } = {
   }
 }
 
-export type InstallResult = 'started' | 'permission' | 'hash' | 'network' | 'invalid';
+export type InstallResult = 'started' | 'permission' | 'hash' | 'signature' | 'network' | 'invalid';
 
 /** Télécharge, vérifie l'empreinte puis ouvre l'installeur. `permission` : l'écran « sources inconnues » vient de s'ouvrir. */
 export async function installUpdate(m: UpdateManifest, onProgress: (percent: number) => void = () => {}): Promise<InstallResult> {
@@ -135,7 +135,7 @@ export async function installUpdate(m: UpdateManifest, onProgress: (percent: num
     return 'started';
   } catch (e) {
     const code = (e as { code?: string } | null)?.code;
-    return code === 'permission' || code === 'hash' || code === 'network' ? code : code === 'bad_request' ? 'invalid' : 'network';
+    return code === 'permission' || code === 'hash' || code === 'signature' || code === 'network' ? code : code === 'bad_request' ? 'invalid' : 'network';
   } finally {
     try { await handle?.remove(); } catch { /* ignoré */ }
   }
@@ -144,6 +144,7 @@ export async function installUpdate(m: UpdateManifest, onProgress: (percent: num
 export const INSTALL_MESSAGES: Record<Exclude<InstallResult, 'started'>, string> = {
   permission: 'Autorise l’installation depuis Laststream dans les réglages qui viennent de s’ouvrir, puis reviens et appuie de nouveau sur Installer.',
   hash: 'Le fichier téléchargé est corrompu : mise à jour annulée.',
+  signature: 'Cette version est signée avec une autre clé que l’app installée : Android refuse de la mettre à jour. Désinstalle Laststream, puis installe la dernière version depuis laststream.app (une seule fois).',
   network: 'Téléchargement impossible pour le moment. Réessaie plus tard.',
   invalid: 'Mise à jour invalide.',
 };

@@ -51,10 +51,24 @@ android {
     kotlinOptions { jvmTarget = '21' }
     packagingOptions { jniLibs { useLegacyPackaging = true } }
     testOptions { unitTests.returnDefaultValues = true }
+    // Clé de signature explicite (-PlsKeystore=chemin, release CI) : sans elle, Gradle prenait la clé de debug par défaut, qu'il
+    // régénère quand il ne la trouve pas. Chaque release sortait signée d'une clé différente et Android refusait la mise à jour
+    // (« Application non installée »). Le keystore est un debug.keystore (mots de passe et alias standard).
+    signingConfigs {
+        publish {
+            def ks = project.findProperty('lsKeystore')
+            if (ks) {
+                storeFile file(ks)
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+    }
     buildTypes {
         release {
-            // APK de test installable : signé avec la clé de debug tant qu'aucune clé de publication n'existe.
-            signingConfig signingConfigs.debug
+            // Release CI : clé stable (lsKeystore). Build local sans propriété : clé de debug de la machine.
+            signingConfig project.findProperty('lsKeystore') ? signingConfigs.publish : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

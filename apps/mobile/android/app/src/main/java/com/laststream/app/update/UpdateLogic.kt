@@ -33,4 +33,8 @@ object UpdateLogic {
 
     /** Progression en pourcentage (0-100) ; -1 si la taille est inconnue. */
     fun percent(done: Long, total: Long): Int = if (total <= 0) -1 else ((done * 100) / total).toInt().coerceIn(0, 100)
+
+    /** Signataires connus des deux côtés et sans aucun en commun : l'APK vient d'une autre clé. Ensemble vide : inconnu, pas de blocage. */
+    fun otherSigner(installed: Set<String>, apk: Set<String>): Boolean =
+        installed.isNotEmpty() && apk.isNotEmpty() && installed.intersect(apk).isEmpty()
 }

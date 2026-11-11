@@ -1,6 +1,7 @@
 package com.laststream.app.update
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -72,6 +73,12 @@ class AppUpdatePlugin : Plugin() {
                     call.reject("Empreinte du fichier incorrecte", "hash")
                     return@thread
                 }
+                // Clé différente de celle de l'app installée : Android refuserait (« Application non installée »). On le dit clairement.
+                if (signedByOtherKey(file)) {
+                    file.delete()
+                    call.reject("Signature différente de l’application installée", "signature")
+                    return@thread
+                }
                 launchInstaller(file)
                 call.resolve(JSObject().put("started", true))
             } catch (e: Exception) {
@@ -114,6 +121,27 @@ class AppUpdatePlugin : Plugin() {
             c.disconnect()
         }
         return out
+    }
+
+    /** Vrai seulement si les deux certificats sont lisibles et différents ; dans le doute, l'installeur système tranche. */
+    private fun signedByOtherKey(apk: File): Boolean = try {
+        val pm = context.packageManager
+        val installed: Set<String>
+        val archive: Set<String>
+        if (Build.VERSION.SDK_INT >= 28) {
+            val flag = PackageManager.GET_SIGNING_CERTIFICATES
+            installed = pm.getPackageInfo(context.packageName, flag).signingInfo?.apkContentsSigners?.map { it.toCharsString() }?.toSet() ?: emptySet()
+            archive = pm.getPackageArchiveInfo(apk.path, flag)?.signingInfo?.apkContentsSigners?.map { it.toCharsString() }?.toSet() ?: emptySet()
+        } else {
+            @Suppress("DEPRECATION") val flag = PackageManager.GET_SIGNATURES
+            @Suppress("DEPRECATION")
+            installed = pm.getPackageInfo(context.packageName, flag).signatures?.map { it.toCharsString() }?.toSet() ?: emptySet()
+            @Suppress("DEPRECATION")
+            archive = pm.getPackageArchiveInfo(apk.path, flag)?.signatures?.map { it.toCharsString() }?.toSet() ?: emptySet()
+        }
+        UpdateLogic.otherSigner(installed, archive)
+    } catch (_: Exception) {
+        false
     }
 
     private fun launchInstaller(file: File) {

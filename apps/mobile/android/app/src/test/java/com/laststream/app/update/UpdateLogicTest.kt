@@ -47,4 +47,13 @@ class UpdateLogicTest {
     @Test fun fileName() {
         assertEquals("laststream-2026101801.apk", UpdateLogic.fileName(2026101801L))
     }
+
+    @Test
+    fun otherSignerOnlyWhenBothKnownAndDisjoint() {
+        assertTrue(UpdateLogic.otherSigner(setOf("a"), setOf("b")))
+        assertFalse(UpdateLogic.otherSigner(setOf("a"), setOf("a")))
+        assertFalse(UpdateLogic.otherSigner(setOf("a", "b"), setOf("b")))
+        assertFalse(UpdateLogic.otherSigner(emptySet(), setOf("b")))
+        assertFalse(UpdateLogic.otherSigner(setOf("a"), emptySet()))
+    }
 }
