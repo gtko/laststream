@@ -264,6 +264,11 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         // La luminosité choisie au glisser ne s'applique qu'au plein écran : en PiP, celle du système reprend.
         if (brightness >= 0f) applyWindowBrightness(if (isInPictureInPictureMode) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else PlayerUiLogic.windowBrightness(brightness))
         if (!isInPictureInPictureMode) enterImmersive()
+        // La page web suit comme pour la vignette : en image dans l'image, son propre lecteur se masque (sinon il restait affiché
+        // en plein écran derrière la fenêtre PiP). Fenêtre PiP fermée (activité seulement « créée ») : rien à rétablir,
+        // l'évènement `closed` suit.
+        if (isInPictureInPictureMode) PlayerHub.emit("miniChanged", JSObject().put("mini", true))
+        else if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) PlayerHub.emit("miniChanged", JSObject().put("mini", false))
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
