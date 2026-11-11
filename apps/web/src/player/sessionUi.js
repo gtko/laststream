@@ -162,8 +162,10 @@ function applyMini(on) {
   if (!S.ui) return;
   S.nativeMini = on && !!S.P && !!S.P.engine && S.P.engine.kind === 'native';
   S.ui.root.classList.toggle('is-native-mini', S.nativeMini);
-  S.ui.setMini(on);
+  // L'état d'abord : il démasque la page (body.lp-covered, backdrop.ts). Si la vignette web échouait, la page restait
+  // masquée derrière la vignette native (écran vide).
   playerState.set({ mini: on });
+  try { S.ui.setMini(on); } catch (err) { console.warn('[player] mini', err); }
   document.body.classList.toggle('modal-open', !on && !!S.P);
   if (on) {
     const a = document.activeElement;
