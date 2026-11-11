@@ -264,6 +264,11 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         // La luminosité choisie au glisser ne s'applique qu'au plein écran : en PiP, celle du système reprend.
         if (brightness >= 0f) applyWindowBrightness(if (isInPictureInPictureMode) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else PlayerUiLogic.windowBrightness(brightness))
         if (!isInPictureInPictureMode) enterImmersive()
+        // La page web suit comme pour la vignette : en image dans l'image, son propre lecteur se masque (sinon il restait affiché
+        // en plein écran derrière la fenêtre PiP). Fenêtre PiP fermée (activité seulement « créée ») : rien à rétablir,
+        // l'évènement `closed` suit.
+        if (isInPictureInPictureMode) PlayerHub.emit("miniChanged", JSObject().put("mini", true))
+        else if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) PlayerHub.emit("miniChanged", JSObject().put("mini", false))
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -422,7 +427,12 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
         heading.addView(titleView)
         heading.addView(subtitleView)
         bar.addView(heading, LinearLayout.LayoutParams(0, -2, 1f))
-        if (MiniPlayer.supported(this)) bar.addView(kit.iconButton(R.drawable.ic_minimize, "Réduire en vignette", 44, 22) { minimize() })
+        if (MiniPlayer.supported(this)) {
+            // Watch party et amis : panneaux de la page web. Le lecteur passe en vignette (la vidéo continue) puis la page ouvre le panneau.
+            bar.addView(kit.iconButton(R.drawable.ic_party, "Watch party", 44, 22) { openWebPanel("openParty") })
+            bar.addView(kit.iconButton(R.drawable.ic_friends, "Amis", 44, 22) { openWebPanel("openFriends") })
+            bar.addView(kit.iconButton(R.drawable.ic_minimize, "Réduire en vignette", 44, 22) { minimize() })
+        }
         pipButton = kit.iconButton(R.drawable.ic_pip, "Image dans l’image", 44, 22) { enterPip() }
         pipButton.visibility = if (pipSupported()) View.VISIBLE else View.GONE
         bar.addView(pipButton)
@@ -1276,6 +1286,11 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private fun emitState(force: Boolean) = core.emitState(force)
     private fun emitProgress(force: Boolean) = core.emitProgress(force)
     private fun emitEvent(name: String, data: JSObject) = core.emit(name, data)
+
+    /** Réduit en vignette puis demande à la page d'ouvrir un panneau (`openParty`, `openFriends`) ; rien si la vignette est impossible. */
+    private fun openWebPanel(event: String) {
+        if (minimize()) PlayerHub.emit(event)
+    }
     private fun refreshTracks() = core.refreshTracks()
     private fun setAspect(a: AspectMode) = core.setAspect(a)
 

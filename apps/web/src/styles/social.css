@@ -130,6 +130,13 @@ a.soc-name:hover { color: var(--accent); }
 .lp-party { position: absolute; top: 0; right: 0; bottom: 0; z-index: 7; width: min(360px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 18px 16px 14px; overflow-y: auto; background: rgba(12, 11, 17, 0.94); border-left: 1px solid var(--line-2); color: var(--text); backdrop-filter: blur(10px); }
 .lp-party[hidden] { display: none; }
 .lp.is-mini .lp-party, .lp.is-mini .lp-party-floats { display: none; }
+/* Panneau sorti sur la page (lecteur natif Android en vignette, partypanel.setPartyPanelDocked) : colonne à droite, feuille en portrait. */
+.lp-party.lp-party.is-docked { position: fixed; top: 0; right: 0; bottom: 0; left: auto; width: min(360px, 100%); height: auto; z-index: 640; border-top: 0; border-left: 1px solid var(--line-2); }
+.lp-party.lp-party.is-docked[hidden] { display: none; }
+.lp-party.is-docked .wp-close { display: inline-flex; }
+@media (orientation: portrait) {
+  .lp-party.lp-party.is-docked { top: auto; left: 0; width: 100%; height: 70%; border-left: 0; border-top: 1px solid var(--line-2); }
+}
 .wp-close { flex: none; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--soft); padding: 0; display: grid; place-items: center; cursor: pointer; }
 .wp-close svg { width: 20px; height: 20px; display: block; }
 .wp-close:hover { background: var(--line-2); }

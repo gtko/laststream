@@ -658,6 +658,17 @@ export function togglePartyPanel(force) {
 
 export const isPartyPanelOpen = () => open;
 
+/**
+ * Lecteur natif Android réduit en vignette : le lecteur web (et le panneau qu'il contient) est masqué. Le panneau passe alors
+ * sur la page (`is-docked`, fixe), puis revient dans le lecteur quand celui-ci réapparaît. Écouteurs portés par le panneau : intacts.
+ */
+export function setPartyPanelDocked(on) {
+  if (!panel || !rootEl) return;
+  panel.classList.toggle('is-docked', on);
+  const host = on ? document.body : rootEl;
+  if (panel.parentNode !== host) host.appendChild(panel);
+}
+
 async function onSubmit(e) {
   const f = e.target;
   if (!(f instanceof HTMLFormElement)) return;
