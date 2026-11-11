@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.56 – 2026-11-11
+
+- Android : padding des boutons, réactions, plein écran paysage, page vide derrière la vignette (#33) — @gtko
+
 ## v1.0.55 – 2026-11-11
 
 - Edge : le flux et l'installeur Windows suivent la dernière release GitHub (#32) — @gtko
