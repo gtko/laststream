@@ -16,8 +16,16 @@ const fakeR2 = (seen) => ({
     };
   },
 });
-const get = (path, init = {}, seen = []) =>
-  worker.fetch(new Request(`https://laststream.example${path}`, init), { APP_FILES: fakeR2(seen), CORE: { fetch: async () => new Response('core', { status: 404 }) } });
+/** Requête au Worker avec R2 simulé ; `github` simule GitHub (absent : 404, donc tout vient de R2). `calls` reçoit les adresses appelées. */
+const get = async (path, init = {}, seen = [], github = () => new Response('Not Found', { status: 404 }), calls = []) => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, o) => { calls.push(String(url)); return github(String(url), o); };
+  try {
+    return await worker.fetch(new Request(`https://laststream.example${path}`, init), { APP_FILES: fakeR2(seen), CORE: { fetch: async () => new Response('core', { status: 404 }) } });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+};
 
 describe('installateur Windows depuis R2', () => {
   const P = '/app/windows/Laststream-Setup-1.0.0.exe';
@@ -141,5 +149,78 @@ describe('flux de version Android depuis la release GitHub', () => {
     const { r, calls } = await run(() => Response.json(FEED), { method: 'POST' });
     assert.equal(r.status, 405);
     assert.deepEqual(calls, []);
+  });
+});
+
+describe('Windows depuis la dernière release GitHub', () => {
+  const FEED = JSON.stringify({
+    version: '1.0.54', versionName: '1.0.54', versionCode: 1000054,
+    url: 'https://app.laststream.app/app/windows/Laststream-Setup-1.0.54.exe', sha256: 'e'.repeat(64), size: 123,
+  }, null, 2);
+  const LATEST = 'https://github.com/gtko/laststream/releases/latest/download/latest.json';
+  const SIG = 'https://github.com/gtko/laststream/releases/download/v1.0.54/latest.json.sig';
+  const EXE = 'https://github.com/gtko/laststream/releases/download/v1.0.54/Laststream-Setup-1.0.54.exe';
+  const github = (url, o) => {
+    if (url === LATEST) return new Response(FEED);
+    if (url === SIG) return new Response('c2ln');
+    if (url === EXE) {
+      const range = o?.headers?.range;
+      return range
+        ? new Response('bcd', { status: 206, headers: { 'content-range': 'bytes 1-3/6', 'content-length': '3' } })
+        : new Response('abcdef', { headers: { 'content-length': '6', etag: '"g"' } });
+    }
+    return new Response('Not Found', { status: 404 });
+  };
+
+  it('flux : celui de la release, octet pour octet (il est signé), sans lire R2', async () => {
+    const seen = [];
+    const r = await get('/app/windows/latest.json', {}, seen, github);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), 'application/json');
+    assert.equal(r.headers.get('cache-control'), 'public, max-age=300');
+    assert.equal(await r.text(), FEED);
+    assert.deepEqual(seen, []);
+  });
+  it('signature : celle du tag annoncé par le flux', async () => {
+    const calls = [];
+    const r = await get('/app/windows/latest.json.sig', {}, [], github, calls);
+    assert.equal(await r.text(), 'c2ln');
+    assert.deepEqual(calls, [LATEST, SIG]);
+  });
+  it('flux GitHub absent, invalide ou pointant ailleurs : repli sur R2', async () => {
+    for (const bad of [
+      () => new Response('Not Found', { status: 404 }),
+      () => new Response('pas du json'),
+      () => new Response(FEED.replace('app.laststream.app', 'evil.example')),
+      () => new Response(FEED.replace('Setup-1.0.54', 'Setup-9.9.9')),
+      () => { throw new Error('réseau'); },
+    ]) {
+      const seen = [];
+      const r = await get('/app/windows/latest.json', {}, seen, bad);
+      assert.equal(r.status, 200);
+      assert.deepEqual(seen, ['windows/latest.json']);
+    }
+  });
+  it('installeur absent de R2 : relayé depuis la release du même numéro, plages comprises, sans redirection', async () => {
+    const r = await get('/app/windows/Laststream-Setup-1.0.54.exe', {}, [], github);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), 'application/vnd.microsoft.portable-executable');
+    assert.match(r.headers.get('content-disposition'), /^attachment; filename="Laststream-Setup-1\.0\.54\.exe"$/);
+    assert.equal(r.headers.get('content-length'), '6');
+    assert.equal(await r.text(), 'abcdef');
+    const part = await get('/app/windows/Laststream-Setup-1.0.54.exe', { headers: { range: 'bytes=1-3' } }, [], github);
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get('content-range'), 'bytes 1-3/6');
+    assert.equal(await part.text(), 'bcd');
+    const head = await get('/app/windows/Laststream-Setup-1.0.54.exe', { method: 'HEAD' }, [], github);
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), '');
+  });
+  it('installeur présent dans R2 : servi depuis R2, GitHub n’est pas appelé ; inconnu partout : 404', async () => {
+    const calls = [];
+    const r = await get('/app/windows/Laststream-Setup-1.0.0.exe', {}, [], github, calls);
+    assert.equal(r.headers.get('content-length'), '100');
+    assert.deepEqual(calls, []);
+    assert.equal((await get('/app/windows/Laststream-Setup-9.9.9.exe', {}, [], github)).status, 404);
   });
 });

@@ -3,7 +3,8 @@ name: Release
 # Release automatique a chaque merge de PR sur main : bump de version (labels release:minor / release:major, sinon patch),
 # CHANGELOG.md, commit "release: vX.Y.Z" + tag annote vX.Y.Z, installeur Windows + APK Android, puis release GitHub publiee
 # (banniere, changelog, assets, dont android-latest.json : flux de l'APK lu par le site et l'app via laststream-edge).
-# Pas de macOS. Pour Windows, le televersement R2 et l'auto-update restent manuels (upload.ps1).
+# Pas de macOS. Windows : laststream-edge relit le flux signe (latest.json, latest.json.sig) et l'installeur sur la release
+# publiee, comme pour Android ; le televersement R2 (upload.ps1) n'est plus qu'un repli.
 # Label release:skip sur la PR : aucune release.
 # workflow_dispatch(tag) : relance les builds et la publication d'un tag vX.Y.Z existant, sans nouveau bump.
 # Prerequis du depot : voir README.md, section "Releases automatiques" (secrets, permissions d'ecriture, protection de main).

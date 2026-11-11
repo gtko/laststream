@@ -63,4 +63,4 @@ Réglages requis sur le dépôt :
 - Si `main` est protégée, autoriser GitHub Actions à contourner la protection (bypass) : le workflow pousse le commit de release
   et le tag directement.
 
-Pour Windows, le téléversement R2 et l'activation de l'auto-update restent manuels (`apps/desktop/upload.ps1`).
+Pour Windows comme pour Android, le Worker `laststream-edge` relit le flux de version et l'installeur sur la dernière release publiée : le site et la mise à jour automatique suivent chaque release, une fois le Worker déployé. Le téléversement R2 (`apps/desktop/upload.ps1`) ne sert plus que de repli si GitHub est injoignable.
