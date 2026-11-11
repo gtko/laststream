@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.55 – 2026-11-11
+
+- Edge : le flux et l'installeur Windows suivent la dernière release GitHub (#32) — @gtko
+
 ## v1.0.54 – 2026-11-10
 
 - Site : script build pour Workers Builds (#31) — @gtko
