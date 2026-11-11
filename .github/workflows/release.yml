@@ -245,7 +245,7 @@ jobs:
       uses: android-actions/setup-android@v3
       with:
         packages: 'platform-tools platforms;android-35'
-    # La release est signee par signingConfigs.debug (apps/mobile/android/app/build.gradle) : meme cle que les APK deja installes.
+    # Cle de signature stable (signingConfigs.publish, -PlsKeystore) : la meme a chaque release, sinon Android refuse la mise a jour.
     - name: Restore the signing keystore
       env:
         ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
@@ -255,9 +255,9 @@ jobs:
           echo "::error::Secret ANDROID_DEBUG_KEYSTORE_B64 absent : impossible de signer l'APK avec la cle des versions precedentes."
           exit 1
         fi
-        mkdir -p "$HOME/.android"
-        printf '%s' "$ANDROID_DEBUG_KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
-        test -s "$HOME/.android/debug.keystore"
+        printf '%s' "$ANDROID_DEBUG_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/ls-signing.keystore"
+        test -s "$RUNNER_TEMP/ls-signing.keystore"
+        keytool -list -keystore "$RUNNER_TEMP/ls-signing.keystore" -storepass android -alias androiddebugkey >/dev/null
     - name: Build the web app (apps/web/dist, webDir of Capacitor)
       working-directory: apps/web
       run: |
@@ -271,7 +271,18 @@ jobs:
     - name: Assemble the signed release APK
       working-directory: apps/mobile/android
       # gradlew est enregistre sans bit executable dans git (mode 100644) : on l'appelle via bash.
-      run: bash ./gradlew assembleRelease "-PlsVersionCode=${VERSION_CODE}" "-PlsVersionName=${VERSION}"
+      run: bash ./gradlew assembleRelease "-PlsVersionCode=${VERSION_CODE}" "-PlsVersionName=${VERSION}" "-PlsKeystore=${RUNNER_TEMP}/ls-signing.keystore"
+    # Garde-fou : l'APK doit porter le certificat du keystore, sinon les téléphones refusent la mise à jour.
+    - name: Check the APK signing certificate
+      run: |
+        set -euo pipefail
+        apk="$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' | head -n 1)"
+        signer="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner"
+        got="$("$signer" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr 'A-F' 'a-f')"
+        want="$(keytool -list -v -keystore "$RUNNER_TEMP/ls-signing.keystore" -storepass android -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')"
+        echo "APK : $got"
+        echo "Clé : $want"
+        if [ -z "$got" ] || [ "$got" != "$want" ]; then echo "::error::APK signé avec une autre clé que le keystore de publication"; exit 1; fi
     - name: Rename the APK
       run: |
         set -euo pipefail
