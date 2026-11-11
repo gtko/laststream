@@ -277,8 +277,8 @@ jobs:
       run: |
         set -euo pipefail
         apk="$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' | head -n 1)"
-        signer="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner"
-        got="$("$signer" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr 'A-F' 'a-f')"
+        # Lecture du bloc de signature v3/v2 (scripts/apk-cert-sha256.py) : la sortie d'apksigner variait selon les build-tools.
+        got="$(python3 scripts/apk-cert-sha256.py "$apk")"
         want="$(keytool -list -v -keystore "$RUNNER_TEMP/ls-signing.keystore" -storepass android -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')"
         echo "APK : $got"
         echo "Clé : $want"
