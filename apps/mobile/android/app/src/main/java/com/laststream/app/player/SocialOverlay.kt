@@ -16,6 +16,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.getcapacitor.JSObject
@@ -120,7 +121,7 @@ class SocialOverlay(
 
     private fun emojiButton(e: String, label: String = e, sizeSp: Float = 22f, onClick: () -> Unit) = TextView(ctx).apply {
         text = e
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+        setTextSize(TypedValue.COMPLEX_UNIT_DIP, sizeSp) // dp : la taille de police système ne fait pas déborder le bouton de 44 dp
         gravity = Gravity.CENTER
         isFocusable = true
         isClickable = true
@@ -267,13 +268,11 @@ class SocialOverlay(
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            addView(TextView(ctx).apply {
-                text = emoji
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, if (slot == 0) 64f else 48f)
-                // Les emojis couleur dépassent les métriques de la police : sans la marge de police (et un peu d'air),
-                // le haut ou le bas du glyphe est rogné et l'emoji paraît coupé en deux.
-                includeFontPadding = true
-                setPadding(kit.dp(6), kit.dp(6), kit.dp(6), kit.dp(6))
+            // Image plutôt que texte : un grand emoji couleur dessiné en texte par le rendu matériel peut être rogné
+            // (coupé en deux) ; dessiné une fois dans une image, il reste entier quelle que soit la taille.
+            addView(ImageView(ctx).apply {
+                setImageBitmap(UiKit.emojiBitmap(emoji, kit.dp(if (slot == 0) 72 else 56)))
+                scaleType = ImageView.ScaleType.FIT_CENTER
             })
             addView(kit.text(who, 12f, Tokens.TEXT, 700, sora = true).apply {
                 maxLines = 1
