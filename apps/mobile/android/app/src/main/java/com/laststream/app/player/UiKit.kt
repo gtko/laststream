@@ -135,7 +135,6 @@ class UiKit(private val ctx: Context) {
         isClickable = true
         contentDescription = desc
         minimumHeight = dp(44)
-        setPadding(dp(14), 0, dp(14), 0)
         val fill = if (accent) Tokens.ACCENT else Tokens.GLASS
         val stroke = if (accent) Tokens.ACCENT else 0x24FFFFFF
         fun shape(f: Int, s: Int, w: Int) = android.graphics.drawable.InsetDrawable(GradientDrawable().apply {
@@ -148,6 +147,8 @@ class UiKit(private val ctx: Context) {
             addState(intArrayOf(android.R.attr.state_pressed), shape(if (accent) 0xFFFF7A5C.toInt() else 0x33FFFFFF, stroke, 1))
             addState(intArrayOf(), shape(fill, stroke, 1))
         }
+        // Après le fond : un InsetDrawable impose son propre padding (0 à gauche et à droite) et effaçait celui-ci.
+        setPadding(dp(14), 0, dp(14), 0)
         val fg = if (accent) Tokens.BG else Tokens.TEXT
         if (res != null) addView(icon(res, 18, fg).apply { (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(8) })
         addView(text(label, 13f, fg, if (accent) 700 else 600))
@@ -163,6 +164,23 @@ class UiKit(private val ctx: Context) {
             setPadding(dp(8), dp(3), dp(8), dp(3))
             background = round(fill, 6f, stroke, if (stroke != 0) 1 else 0)
         }
+
+    companion object {
+        /** Emoji dessiné dans une image carrée de `sizePx` (rendu logiciel, glyphe entier et centré). */
+        fun emojiBitmap(emoji: String, sizePx: Int): android.graphics.Bitmap {
+            val size = sizePx.coerceAtLeast(8)
+            val paint = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = size * 0.78f }
+            val w = paint.measureText(emoji)
+            // Réduit si une séquence (drapeau, famille) est plus large que le carré.
+            if (w > size * 0.92f) paint.textSize = paint.textSize * size * 0.92f / w
+            val fm = paint.fontMetrics
+            val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+            val x = (size - paint.measureText(emoji)) / 2f
+            val y = size / 2f - (fm.ascent + fm.descent) / 2f
+            android.graphics.Canvas(bmp).drawText(emoji, x, y, paint)
+            return bmp
+        }
+    }
 
     fun spacer(wDp: Int = 0, hDp: Int = 0): View = View(ctx).apply { layoutParams = LinearLayout.LayoutParams(dp(wDp), dp(hDp)) }
 }

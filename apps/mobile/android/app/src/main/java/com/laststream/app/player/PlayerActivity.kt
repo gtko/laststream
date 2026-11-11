@@ -605,8 +605,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             isClickable = true
             contentDescription = "Lire maintenant l’épisode suivant"
             minimumHeight = kit.dp(44)
-            setPadding(kit.dp(6), 0, kit.dp(14), 0)
             background = android.graphics.drawable.InsetDrawable(kit.focusBackground(999f, Tokens.ACCENT, Tokens.ACCENT, true), 0, kit.dp(2), 0, kit.dp(2))
+            setPadding(kit.dp(6), 0, kit.dp(14), 0) // après le fond : un InsetDrawable remplace le padding de la vue
             addView(nextRing, LinearLayout.LayoutParams(kit.dp(30), kit.dp(30)).apply { marginEnd = kit.dp(8) })
             addView(kit.text("Lire maintenant", 14f, Tokens.BG, 700, sora = true).apply { maxLines = 1 })
             setOnClickListener { requestNextEpisode() }
@@ -618,8 +618,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
             isFocusable = true
             isClickable = true
             minimumHeight = kit.dp(44)
-            setPadding(kit.dp(14), 0, kit.dp(14), 0)
             background = android.graphics.drawable.InsetDrawable(kit.focusBackground(999f), 0, kit.dp(2), 0, kit.dp(2))
+            setPadding(kit.dp(14), 0, kit.dp(14), 0) // après le fond (voir « Lire maintenant »)
             foreground = android.graphics.drawable.InsetDrawable(kit.round(Color.TRANSPARENT, 999f, Tokens.BORDER, 1), 0, kit.dp(2), 0, kit.dp(2))
             addView(kit.text("Voir le générique", 14f, Tokens.SOFT, 600).apply { maxLines = 1 })
             setOnClickListener { nextDismissed = true; hideEnd() }
@@ -1081,8 +1081,8 @@ class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
                 isFocusable = true
                 isClickable = true
                 minHeight = kit.dp(44)
-                setPadding(kit.dp(14), 0, kit.dp(14), 0)
                 background = android.graphics.drawable.InsetDrawable(kit.focusBackground(999f, if (on) Tokens.TEXT else 0x0FFFFFFF), 0, kit.dp(4), 0, kit.dp(4))
+                setPadding(kit.dp(14), 0, kit.dp(14), 0) // après le fond (voir « Lire maintenant »)
                 contentDescription = s.name + if (on) ", saison affichée" else ""
                 setOnClickListener {
                     panelSeason = s.number
