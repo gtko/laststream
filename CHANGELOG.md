@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.59 – 2026-11-12
+
+- Lecteur Android : « Suivant » ferme le lecteur plein écran pour montrer la recherche de source (#37) — @gtko
+
 ## v1.0.58 – 2026-11-11
 
 - Release : vérification de la signature APK sans apksigner (#35) — @gtko
