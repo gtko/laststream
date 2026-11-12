@@ -487,7 +487,9 @@ export class NativeEngine extends Emitter {
     on('loadSeason', (d) => this.emit('loadSeason', d));
     on('nextEpisode', () => this.emit('next'));
     on('trackChanged', (d) => this.emit('trackChanged', d));
-    on('miniChanged', (d) => this.emit('mini', !!d.mini));
+    // Toujours transmis, comme `closed` : perdu pendant une recherche de source (moteur détaché), la page croyait la vignette encore
+    // affichée et, à l'épisode suivant, mettait le lecteur plein écran en pause au lieu de le fermer (il cachait la recherche).
+    plugin.addListener('miniChanged', (d) => this.emit('mini', !!(d && d.mini))).catch(() => {});
     // Couche sociale (LAST-1612) : réaction et réponse posées dans le natif, erreur à afficher.
     on('react', (d) => this.emit('react', d));
     on('reply', (d) => this.emit('reply', d));
@@ -564,6 +566,9 @@ export class NativeEngine extends Emitter {
     clearTimeout(this.closeTimer);
     this.plugin.close().catch(() => {});
   }
+
+  /** État réel de la vignette native (vrai : affichée). Faux si le natif ne répond pas. */
+  isMini() { return this.plugin.getState().then((st) => !!(st && st.mini), () => false); }
 
   /** Vignette flottante native : renvoie vrai si elle est affichée. */
   minimize() { return this.plugin.minimize().then((r) => !!(r && r.mini), () => false); }
