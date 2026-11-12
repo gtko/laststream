@@ -131,6 +131,22 @@ function resumeNative(p) {
 }
 
 /** Épisode d'une série : même ouverture immédiate que « Lecture », sans reprise proposée. */
+/**
+ * Épisode suivant avec le lecteur natif : la vignette reste (en pause), le plein écran se ferme pour découvrir la recherche.
+ * `S.nativeMini` peut être périmé (évènement manqué) : l'état réel du natif tranche quand la page croit la vignette affichée.
+ */
+function leaveNativeForNext(engine) {
+  if (!S.nativeMini) { engine.closeNow(); return; }
+  engine.pause();
+  const loadId = engine.loadId;
+  engine.isMini().then((mini) => {
+    // Un épisode déjà relancé entre-temps (nouveau chargement) ne doit pas être fermé.
+    if (mini || engine !== S.nativeEng || engine.loadId !== loadId) return;
+    S.nativeMini = false;
+    engine.closeNow();
+  });
+}
+
 export function playEpisode(season, episode) {
   const p = S.P;
   if (!p) return Promise.resolve();
@@ -139,7 +155,7 @@ export function playEpisode(season, episode) {
   S.ui.closeMark(false); // le segment en cours de marquage appartient à l'épisode qu'on quitte
   // Lecteur natif Android : son activité couvre la page. Laissée ouverte, l'épisode quitté continuerait par-dessus la recherche
   // du suivant ; la vignette flottante, elle, ne cache rien et reste en place (en pause) pour être réutilisée.
-  if (p.engine && p.engine.kind === 'native') { if (S.nativeMini) p.engine.pause(); else p.engine.closeNow(); }
+  if (p.engine && p.engine.kind === 'native') leaveNativeForNext(p.engine);
   if (p.addon) {
     // Titre d'addon : l'identifiant de flux de l'épisode est celui de la fiche de l'addon (`videos[].id`), sans TMDB.
     const video = addonVideoOf(p.addon.videos, season, episode);
