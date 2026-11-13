@@ -232,6 +232,8 @@ async function androidFeed(request, env) {
 const WINDOWS_FEED_URL = 'https://github.com/gtko/laststream/releases/latest/download/latest.json';
 /** Fichiers d'une release du dépôt (signature du flux, installeur), par tag. */
 const RELEASE_DOWNLOAD = 'https://github.com/gtko/laststream/releases/download/';
+/** Fichiers de la dernière release du dépôt. */
+const RELEASE_LATEST = 'https://github.com/gtko/laststream/releases/latest/download/';
 /** Adresse publique de l'installeur annoncée par le flux : celle que ce Worker sert. */
 const WINDOWS_PUBLIC = 'https://app.laststream.app/app/windows/';
 const FEED_MAX_CHARS = 16384;
@@ -274,7 +276,7 @@ async function windowsFeed(request, env, sig) {
  * redirection : l'updater natif refuse tout hôte hors de sa liste, et le lien du site reste sur ce domaine.
  */
 async function githubInstaller(request, file) {
-  const version = /^Laststream-Setup-(\d+\.\d+\.\d+)\.exe$/.exec(file.name)?.[1];
+  const version = file.version ?? /^Laststream-Setup-(\d+\.\d+\.\d+)\.exe$/.exec(file.name)?.[1];
   if (!version) return json(404, { error: 'not_found' });
   const range = request.headers.get('range');
   let r;
@@ -304,6 +306,66 @@ async function githubInstaller(request, file) {
   return new Response(r.body, { status: r.status, headers });
 }
 
+/**
+ * App desktop Tauri (macOS, Windows) : flux de mise à jour signé et fichiers, relus depuis les releases GitHub (aucune
+ * copie dans R2). Une plateforme = système et architecture ; les fichiers d'une version portent son numéro :
+ *  - /app/tauri/<plateforme>/latest.json (+ .sig) : `tauri-<plateforme>-latest.json` de la dernière release, rendu
+ *    octet pour octet (signé ed25519), la signature étant celle du tag annoncé ;
+ *  - /app/tauri/<plateforme>/Laststream-<X.Y.Z>-<plateforme>.<ext> : relayé depuis la release vX.Y.Z (plages comprises),
+ *    sans redirection (l'updater n'accepte que app.laststream.app).
+ */
+const TAURI_PLATFORMS = { 'macos-aarch64': ['app.tar.gz', 'dmg'], 'macos-x86_64': ['app.tar.gz', 'dmg'], 'windows-x86_64': ['setup.exe'] };
+const TAURI_PUBLIC = 'https://app.laststream.app/app/tauri/';
+const TAURI_TYPES = { 'app.tar.gz': 'application/gzip', dmg: 'application/x-apple-diskimage', 'setup.exe': 'application/vnd.microsoft.portable-executable' };
+
+function tauriRequest(pathname) {
+  const m = /^\/app\/tauri\/([a-z0-9_-]+)\/(.+)$/.exec(pathname);
+  if (!m || !Object.hasOwn(TAURI_PLATFORMS, m[1])) return null;
+  const [, platform, name] = m;
+  if (name === 'latest.json') return { platform, feed: 'json' };
+  if (name === 'latest.json.sig') return { platform, feed: 'sig' };
+  const escaped = platform.replace(/[-_]/g, '\\$&');
+  for (const ext of TAURI_PLATFORMS[platform]) {
+    const f = new RegExp(`^Laststream-(\\d+\\.\\d+\\.\\d+)-${escaped}\\.${ext.replace(/\./g, '\\.')}$`).exec(name);
+    if (f) return { platform, file: name, version: f[1], type: TAURI_TYPES[ext] };
+  }
+  return null;
+}
+
+/** Version d'un flux Tauri valide pour `platform` (fichier à l'adresse publique attendue, SHA-256 hexadécimal), sinon null. */
+export function tauriFeedVersion(text, platform) {
+  let j;
+  try { j = JSON.parse(text); } catch { return null; }
+  if (!j || typeof j.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(j.version)) return null;
+  const ext = platform.startsWith('macos') ? 'app.tar.gz' : 'setup.exe';
+  if (j.url !== `${TAURI_PUBLIC}${platform}/Laststream-${j.version}-${platform}.${ext}`) return null;
+  return typeof j.sha256 === 'string' && /^[0-9a-f]{64}$/.test(j.sha256) ? j.version : null;
+}
+
+async function tauriRoute(request, env, req) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
+  const head = request.method === 'HEAD';
+  const cached = { redirect: 'follow', cf: { cacheTtl: 300, cacheEverything: true } };
+  try {
+    if (req.feed) {
+      const r = await fetch(`${RELEASE_LATEST}tauri-${req.platform}-latest.json`, cached);
+      if (!r.ok) return json(404, { error: 'not_found' });
+      const text = await r.text();
+      const version = text.length <= FEED_MAX_CHARS ? tauriFeedVersion(text, req.platform) : null;
+      if (version === null) return json(404, { error: 'not_found' });
+      if (req.feed === 'json') return new Response(head ? null : text, { status: 200, headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' } });
+      const s = await fetch(`${RELEASE_DOWNLOAD}v${version}/tauri-${req.platform}-latest.json.sig`, cached);
+      if (!s.ok) return json(404, { error: 'not_found' });
+      const signature = await s.text();
+      if (signature.length > FEED_MAX_CHARS) return json(404, { error: 'not_found' });
+      return new Response(head ? null : signature, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=300' } });
+    }
+  } catch {
+    return json(502, { error: 'upstream_unreachable' });
+  }
+  return githubInstaller(request, { name: req.file, type: req.type, version: req.version });
+}
+
 /** Exception non gérée : journal et envoi Sentry (si SENTRY_DSN), puis 500 JSON sans détail. */
 function internalError(error, request, env, ctx) {
   reportUnhandledError(error, env, ctx, requestIdOf(request));
@@ -314,6 +376,8 @@ async function route(request, env) {
   const { pathname } = new URL(request.url);
   // Fichiers d'application (trop gros pour les Workers Assets) : servis depuis R2, nom strict, en lecture seule.
   if (pathname === '/app/android/latest.json') return androidFeed(request, env);
+  const tauri = tauriRequest(pathname);
+  if (tauri) return tauriRoute(request, env, tauri);
   const file = env.APP_FILES && appFile(pathname);
   if (file) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
