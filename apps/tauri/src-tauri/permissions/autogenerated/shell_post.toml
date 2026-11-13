@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-shell-post"
+description = "Enables the shell_post command without any pre-configured scope."
+commands.allow = ["shell_post"]
+
+[[permission]]
+identifier = "deny-shell-post"
+description = "Denies the shell_post command without any pre-configured scope."
+commands.deny = ["shell_post"]

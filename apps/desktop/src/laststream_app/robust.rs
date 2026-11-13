@@ -59,6 +59,8 @@ fn log_path() -> Option<PathBuf> {
     Some(
         std::env::var_os("APPDATA")
             .map(PathBuf::from)
+            // Coque Tauri (macOS) : dossier de configuration du système (~/Library/Application Support).
+            .or_else(dirs::config_dir)
             .unwrap_or_else(std::env::temp_dir)
             .join("Laststream")
             .join(LOG_FILE),
@@ -816,7 +818,9 @@ mod tests {
         });
         let journal = fs::read_to_string(&file).unwrap();
         assert!(journal.contains("panic"), "{}", journal);
-        assert!(journal.contains("/[masqué]"), "{}", journal);
+        // La ligne est bornée à MAX_REPORT_CHARS : avec un chemin de fichier long (coque Tauri, module inclus par
+        // `#[path]`), l'URL peut être coupée avant sa partie masquée. Le secret, lui, ne doit jamais apparaître.
+        assert!(journal.contains("/[masqué]") || journal.contains('…'), "{}", journal);
         assert!(!journal.contains("SECRET789"), "{}", journal);
     }
 }

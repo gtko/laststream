@@ -23,6 +23,7 @@ use std::{
     path::{Path, PathBuf},
     sync::OnceLock,
 };
+#[cfg(windows)]
 use winapi::{shared::ntdef::ULARGE_INTEGER, um::fileapi::GetDiskFreeSpaceExW};
 
 use crate::laststream_app::{
@@ -375,6 +376,7 @@ pub fn usage(dir: &Path) -> Result<Value, DlError> {
 }
 
 /// Espace libre du volume qui contient `dir`, en octets.
+#[cfg(windows)]
 fn available_space(dir: &Path) -> Result<u64, DlError> {
     use std::os::windows::ffi::OsStrExt;
     let wide: Vec<u16> = dir
@@ -399,6 +401,22 @@ fn available_space(dir: &Path) -> Result<u64, DlError> {
     }
     // SAFETY: GetDiskFreeSpaceExW vient d'écrire la variante `QuadPart`.
     Ok(unsafe { *available.QuadPart() })
+}
+
+/// Espace libre du volume qui contient `dir`, en octets (coque Tauri macOS/Linux : `statvfs`, blocs disponibles
+/// pour un utilisateur non privilégié, comme GetDiskFreeSpaceExW sous Windows).
+#[cfg(unix)]
+fn available_space(dir: &Path) -> Result<u64, DlError> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).map_err(|_| map_io(io::Error::from(io::ErrorKind::InvalidInput)))?;
+    // SAFETY: statvfs est une structure C simple ; tout motif binaire à zéro est valide.
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: `path` est une chaîne C terminée par zéro, vivante pendant l'appel ; `stat` est un emplacement valide.
+    if unsafe { libc::statvfs(path.as_ptr(), &mut stat) } != 0 {
+        return Err(map_io(io::Error::last_os_error()));
+    }
+    #[allow(clippy::unnecessary_cast)]
+    Ok((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
 }
 
 /// Charge `{ok, ...}` ou `{ok: false, code, message}`.
