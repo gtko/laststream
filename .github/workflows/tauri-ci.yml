@@ -65,10 +65,9 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         workspaces: apps/tauri/src-tauri
+    # Tests liés à la libmpv de Homebrew (chemin absolu) : la copie préparée (@rpath) ne se trouve que dans le paquet.
     - name: Tests
       run: cargo test --locked
-      env:
-        LASTSTREAM_MPV_LIB_DIR: ${{ github.workspace }}/apps/tauri/src-tauri/target/mpv-stage
     - name: Build the app (.app, .dmg)
       working-directory: apps/tauri
       env:
