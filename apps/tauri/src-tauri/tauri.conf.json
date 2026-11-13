@@ -15,7 +15,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "app", "nsis"],
+    "targets": [
+      "dmg",
+      "app",
+      "nsis"
+    ],
     "category": "Entertainment",
     "shortDescription": "Laststream - Freedom to Stream",
     "copyright": "Laststream",
@@ -27,12 +31,16 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
     },
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["French", "English"]
+        "languages": [
+          "French",
+          "English"
+        ]
       }
     }
   }

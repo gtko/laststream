@@ -7,16 +7,28 @@ fn main() {
             .file("mac/mpv_layer.m")
             .flag("-fobjc-arc")
             .flag("-Wno-deprecated-declarations");
+        // Empaquetage : libmpv et ses dépendances préparées (install name @rpath) dans LASTSTREAM_MPV_LIB_DIR,
+        // prioritaire sur Homebrew ; l'app les trouve dans Contents/Frameworks.
+        println!("cargo:rerun-if-env-changed=LASTSTREAM_MPV_LIB_DIR");
+        if let Ok(dir) = std::env::var("LASTSTREAM_MPV_LIB_DIR") {
+            println!("cargo:rustc-link-search=native={dir}");
+        }
+        println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
         match pkg_config::Config::new().cargo_metadata(false).probe("mpv") {
             Ok(lib) => {
                 for path in lib.include_paths {
                     build.include(path);
+                }
+                for path in lib.link_paths {
+                    println!("cargo:rustc-link-search=native={}", path.display());
                 }
             }
             Err(_) => {
                 build
                     .include("/opt/homebrew/include")
                     .include("/usr/local/include");
+                println!("cargo:rustc-link-search=native=/opt/homebrew/lib");
+                println!("cargo:rustc-link-search=native=/usr/local/lib");
             }
         }
         build.compile("ls_mpv_layer");
