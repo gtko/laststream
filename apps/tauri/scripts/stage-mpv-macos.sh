@@ -17,6 +17,13 @@ chmod u+w "$out/libmpv.2.dylib"
 install_name_tool -id @rpath/libmpv.2.dylib "$out/libmpv.2.dylib"
 # Copie les dépendances (hors système) dans le même dossier et réécrit toutes les références en @rpath/.
 dylibbundler -of -b -cd -x "$out/libmpv.2.dylib" -d "$out" -p @rpath/ >/dev/null
+# dylibbundler ajoute des LC_RPATH « @rpath/ » (en double parfois, ce que ld de Xcode 16 refuse) : inutiles, le rpath de
+# l'exécutable (@executable_path/../Frameworks) résout toutes les références @rpath/ de la chaîne. Tous retirés.
+for lib in "$out"/*.dylib; do
+  while read -r rpath; do
+    [ -n "$rpath" ] && install_name_tool -delete_rpath "$rpath" "$lib" 2>/dev/null || true
+  done < <(otool -l "$lib" | awk '/cmd LC_RPATH/{getline; getline; print $2}')
+done
 # Liaison par -lmpv au build.
 ln -sf libmpv.2.dylib "$out/libmpv.dylib"
 for lib in "$out"/*.dylib; do
