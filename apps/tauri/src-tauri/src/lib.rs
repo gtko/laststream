@@ -6,6 +6,7 @@ pub mod laststream_app;
 mod commands;
 mod dialogs;
 mod external;
+mod local;
 mod media;
 mod player;
 mod services;

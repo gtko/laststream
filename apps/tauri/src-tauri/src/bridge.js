@@ -74,6 +74,23 @@
     }
   }, true);
 
+  // Signaux que WebView2 / la fenêtre Windows produisaient eux-mêmes, recréés dans la page (cadre principal) :
+  //  - plein écran HTML de la page → `win-set-visibility {fullscreen}` (la coque ne redimensionne rien elle-même) ;
+  //  - touches multimédia (fenêtre au premier plan) → `media-key` "play-pause" / "next-track" / "previous-track".
+  function localSignal(name, payload) {
+    window.__lsShell.deliver(JSON.stringify({ id: 1, object: 'transport', type: 1, args: [name, payload] }));
+  }
+  if (top) {
+    document.addEventListener('fullscreenchange', function () {
+      localSignal('win-set-visibility', { fullscreen: !!document.fullscreenElement });
+    });
+    var MEDIA_KEYS = { MediaPlayPause: 'play-pause', MediaPlay: 'play-pause', MediaPause: 'play-pause', MediaTrackNext: 'next-track', MediaTrackPrevious: 'previous-track' };
+    window.addEventListener('keydown', function (ev) {
+      var action = MEDIA_KEYS[ev.key];
+      if (action) { ev.preventDefault(); localSignal('media-key', action); }
+    }, true);
+  }
+
   // Boîtes de dialogue du navigateur désactivées (la coque Windows les coupe aussi).
   window.alert = function () {};
   window.confirm = function () { return false; };

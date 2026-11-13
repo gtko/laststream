@@ -31,22 +31,25 @@ pub fn pick_folder<R: Runtime>(
     }
 }
 
-/// Boîte « Réessayer / Annuler » ; vrai si l'utilisateur réessaie.
+/// Boîte « Réessayer / Quitter » ; vrai si l'utilisateur réessaie. Selon la plateforme, le bouton personnalisé
+/// revient en `Ok` ou en `Custom(libellé)` : les deux sont acceptés ; fermer la boîte vaut « Quitter ».
 pub fn retry<R: Runtime>(app: &AppHandle<R>, title: &str, message: &str) -> bool {
+    const RETRY: &str = "Réessayer";
     let answer = app
         .dialog()
         .message(message)
         .title(title)
         .kind(MessageDialogKind::Error)
         .buttons(MessageDialogButtons::OkCancelCustom(
-            "Réessayer".into(),
+            RETRY.into(),
             "Quitter".into(),
         ))
         .blocking_show_with_result();
-    matches!(
-        answer,
-        MessageDialogResult::Ok | MessageDialogResult::Custom(_)
-    ) && !matches!(answer, MessageDialogResult::Custom(ref b) if b == "Quitter")
+    match answer {
+        MessageDialogResult::Ok | MessageDialogResult::Yes => true,
+        MessageDialogResult::Custom(label) => label == RETRY,
+        _ => false,
+    }
 }
 
 pub fn error<R: Runtime>(app: &AppHandle<R>, title: &str, message: &str) {
