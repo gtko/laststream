@@ -8,6 +8,7 @@ mod dialogs;
 mod external;
 mod local;
 mod media;
+mod migrate;
 mod player;
 mod services;
 mod shell;
@@ -216,6 +217,11 @@ fn create_main_window<R: Runtime>(
         });
     #[cfg(target_os = "macos")]
     let builder = builder.title_bar_style(tauri::TitleBarStyle::Visible);
+    // Windows : profil WebView2 fixe, repris de la coque historique au premier lancement (connexion, réglages).
+    let builder = match migrate::webview_data_dir() {
+        Some(dir) => builder.data_directory(dir),
+        None => builder,
+    };
     let window = builder.build()?;
     if !window_state::restore(&window) {
         // 70 % du plus petit côté de l'écran, en 16:9, au moins 1000×600.
