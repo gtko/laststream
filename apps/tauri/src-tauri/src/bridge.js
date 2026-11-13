@@ -42,13 +42,38 @@
     }),
   });
 
+  // Windows : WebView2 fournit déjà un `chrome.webview` natif, par lequel passe aussi l'IPC interne de Tauri
+  // (`window.ipc.postMessage` de wry appelle `window.chrome.webview.postMessage`). Ces messages-là ({cmd, callback, …})
+  // repartent vers le `chrome.webview` natif ; tous les autres sont ceux de la page, pour la coque.
+  var nativeWebview = window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function' ? window.chrome.webview : null;
+  var nativePost = nativeWebview ? nativeWebview.postMessage.bind(nativeWebview) : null;
+  function isTauriIpc(text) {
+    if (text.indexOf('"cmd"') < 0 || text.indexOf('"callback"') < 0) return false;
+    try { var o = JSON.parse(text); return !!o && typeof o === 'object' && typeof o.cmd === 'string' && 'callback' in o; } catch (e) { return false; }
+  }
+
   var webview = {
-    postMessage: function (message) { post(typeof message === 'string' ? message : JSON.stringify(message)); },
+    postMessage: function (message) {
+      var text = typeof message === 'string' ? message : JSON.stringify(message);
+      if (nativePost && isTauriIpc(text)) { nativePost(message); return; }
+      post(text);
+    },
     addEventListener: function (type, fn) { if (type === 'message' && typeof fn === 'function' && listeners.indexOf(fn) < 0) listeners.push(fn); },
     removeEventListener: function (type, fn) { var i = listeners.indexOf(fn); if (type === 'message' && i >= 0) listeners.splice(i, 1); },
   };
+  // Installation : affectation simple, sinon redéfinition, sinon `window.chrome` remplacé par une copie (le `webview`
+  // natif de WebView2 n'est pas modifiable : sans cela la page parlait à WebView2 et ne trouvait jamais la coque).
   if (!window.chrome) window.chrome = {};
-  try { window.chrome.webview = webview; } catch (e) { /* objet figé : rien à faire */ }
+  try { window.chrome.webview = webview; } catch (e) { /* lecture seule */ }
+  if (window.chrome.webview !== webview) {
+    try { Object.defineProperty(window.chrome, 'webview', { value: webview, configurable: true, writable: true, enumerable: true }); } catch (e) { /* non configurable */ }
+  }
+  if (window.chrome.webview !== webview) {
+    var copy = {};
+    for (var key in window.chrome) { if (key !== 'webview') { try { copy[key] = window.chrome[key]; } catch (e) { /* propriété illisible */ } } }
+    copy.webview = webview;
+    try { Object.defineProperty(window, 'chrome', { value: copy, configurable: true, writable: true }); } catch (e) { try { window.chrome = copy; } catch (e2) { /* rien de plus à tenter */ } }
+  }
 
   if (top) {
     window.qt = { webChannelTransport: { send: webview.postMessage } };

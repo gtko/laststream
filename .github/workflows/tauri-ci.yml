@@ -46,6 +46,9 @@ jobs:
       run: cargo clippy --locked -- -D warnings -A clippy::new-without-default
     - name: Tests
       run: cargo test --locked
+    - name: Script tests (bridge.js in a simulated WebView2, update feed)
+      working-directory: apps/tauri
+      run: node --test scripts/*.test.mjs
 
   # macOS (Apple Silicon) : libmpv de Homebrew préparée pour Contents/Frameworks, .app + .dmg en artefact (non signé).
   macos:
