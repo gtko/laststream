@@ -14,7 +14,10 @@ pub struct OpenMedia {
 
 impl OpenMedia {
     pub fn new(tx: flume::Sender<String>) -> Self {
-        OpenMedia { tx, state: Mutex::new((false, Vec::new())) }
+        OpenMedia {
+            tx,
+            state: Mutex::new((false, Vec::new())),
+        }
     }
 
     /// Entrée brute (chemin ou URL), normalisée comme la coque Windows avant d'être traitée.
@@ -50,7 +53,10 @@ impl OpenMedia {
         let tx = self.tx.clone();
         // Lecture d'un .torrent (jusqu'à 16 Mio) hors du fil appelant.
         thread::spawn(move || {
-            tx.send(RPCResponse::response_message(Some(open_media::message(&input)))).ok();
+            tx.send(RPCResponse::response_message(Some(open_media::message(
+                &input,
+            ))))
+            .ok();
         });
     }
 }

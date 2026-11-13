@@ -1,7 +1,6 @@
 //! Coque Tauri de Laststream (macOS et Windows) : même protocole que la coque Windows historique (`apps/desktop`),
 //! l'interface web n'a rien à changer. Voir README.md pour l'architecture et la correspondance avec l'ancienne coque.
 
-
 pub mod laststream_app;
 
 mod commands;
@@ -22,11 +21,16 @@ use std::sync::Arc;
 use std::thread;
 
 use clap::Parser;
-use tauri::{AppHandle, LogicalSize, Manager, Runtime, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{
+    AppHandle, LogicalSize, Manager, Runtime, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 use url::Url;
 
 use crate::laststream_app::{
-    constants::{DEV_ENDPOINT, LASTSTREAM_SERVER_DEV_MODE, SERVER_IPC_KEY, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH},
+    constants::{
+        DEV_ENDPOINT, LASTSTREAM_SERVER_DEV_MODE, SERVER_IPC_KEY, WINDOW_MIN_HEIGHT,
+        WINDOW_MIN_WIDTH,
+    },
     robust, sentry_report,
 };
 use crate::shell::Shell;
@@ -38,23 +42,40 @@ use crate::web::MAIN;
 pub struct Opt {
     /// Fichier ou lien à ouvrir (aimant, .torrent).
     pub command: Option<String>,
-    #[clap(long, help = "Start the app only in system tray and keep the window hidden")]
+    #[clap(
+        long,
+        help = "Start the app only in system tray and keep the window hidden"
+    )]
     pub start_hidden: bool,
     #[clap(long, help = "Do not show the splash image")]
     pub no_splash: bool,
-    #[clap(long, alias = "dev-tools", help = "Enable the web developer tools in a release build")]
+    #[clap(
+        long,
+        alias = "dev-tools",
+        help = "Enable the web developer tools in a release build"
+    )]
     pub devtools: bool,
     #[clap(long, help = "Disable the server and load the WebUI from localhost")]
     pub development: bool,
     #[clap(long, help = "Override the WebUI URL")]
     pub webui_url: Option<String>,
-    #[clap(long, help = "Check this endpoint for updates instead of the default Laststream feed")]
+    #[clap(
+        long,
+        help = "Check this endpoint for updates instead of the default Laststream feed"
+    )]
     pub autoupdater_endpoint: Option<Url>,
-    #[clap(long, help = "Disable the autoupdater: no update check and no network call for it")]
+    #[clap(
+        long,
+        help = "Disable the autoupdater: no update check and no network call for it"
+    )]
     pub no_autoupdater: bool,
     #[clap(long, help = "Forces reinstalling current version")]
     pub force_update: bool,
-    #[clap(long, default_value = "", help = "Secret key for communication with the server (random by default)")]
+    #[clap(
+        long,
+        default_value = "",
+        help = "Secret key for communication with the server (random by default)"
+    )]
     pub server_ipc_key: String,
 }
 
@@ -70,6 +91,7 @@ pub fn quit<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN) {
         window_state::save(&window);
     }
+    with_shell(app, |shell| shell.player.shutdown());
     services::stop_all();
     app.exit(0);
 }
@@ -93,9 +115,16 @@ pub fn run() {
     let opt = Opt::parse();
 
     // Clé partagée avec les services enfants (comme la coque Windows) : celle donnée, sinon une UUID v4.
-    let ipc_key = if opt.server_ipc_key.is_empty() { uuid::Uuid::new_v4().to_string() } else { opt.server_ipc_key.clone() };
+    let ipc_key = if opt.server_ipc_key.is_empty() {
+        uuid::Uuid::new_v4().to_string()
+    } else {
+        opt.server_ipc_key.clone()
+    };
     std::env::set_var(SERVER_IPC_KEY, &ipc_key);
-    std::env::set_var(LASTSTREAM_SERVER_DEV_MODE, if opt.development { "true" } else { "false" });
+    std::env::set_var(
+        LASTSTREAM_SERVER_DEV_MODE,
+        if opt.development { "true" } else { "false" },
+    );
 
     let startup_opt = opt.clone();
     tauri::Builder::default()
@@ -113,17 +142,20 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
             let web_tx = web::start(handle.clone());
-            let player = player::start(handle.clone(), web_tx.clone());
+            create_main_window(&handle, &startup_opt, &ipc_key)?;
+            // La surface vidéo se place sous la WebView de la fenêtre principale : mpv démarre après elle.
+            let player = player::start(&handle, web_tx.clone());
             let shell = Shell::new(handle.clone(), web_tx, player);
             app.manage(Arc::clone(&shell));
-            create_main_window(&handle, &startup_opt, &ipc_key)?;
             tray::build(&handle)?;
             if let Some(command) = startup_opt.command.clone() {
                 shell.media.push(command);
             }
             update::start(&shell, &startup_opt);
             let opt = startup_opt.clone();
-            thread::Builder::new().name("startup".into()).spawn(move || start_ui(shell, opt))?;
+            thread::Builder::new()
+                .name("startup".into())
+                .spawn(move || start_ui(shell, opt))?;
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -138,7 +170,11 @@ pub fn run() {
         });
 }
 
-fn create_main_window<R: Runtime>(app: &AppHandle<R>, opt: &Opt, ipc_key: &str) -> tauri::Result<()> {
+fn create_main_window<R: Runtime>(
+    app: &AppHandle<R>,
+    opt: &Opt,
+    ipc_key: &str,
+) -> tauri::Result<()> {
     let nav_app = app.clone();
     let new_window_app = app.clone();
     let devtools = cfg!(debug_assertions) || opt.devtools || opt.development;
@@ -155,7 +191,8 @@ fn create_main_window<R: Runtime>(app: &AppHandle<R>, opt: &Opt, ipc_key: &str) 
         .initialization_script(ipc_key_script(ipc_key))
         // Navigation hors de l'origine de l'interface : annulée, et ouverte dans le navigateur si c'est du http(s).
         .on_navigation(move |url| {
-            let local = matches!(url.scheme(), "tauri" | "asset") || url.host_str() == Some("tauri.localhost");
+            let local = matches!(url.scheme(), "tauri" | "asset")
+                || url.host_str() == Some("tauri.localhost");
             let mut allowed = local;
             with_shell(&nav_app, |shell| allowed = allowed || shell.is_trusted(url));
             if !allowed && matches!(url.scheme(), "http" | "https") {
@@ -168,8 +205,12 @@ fn create_main_window<R: Runtime>(app: &AppHandle<R>, opt: &Opt, ipc_key: &str) 
             if matches!(url.scheme(), "http" | "https") {
                 open::that_detached(url.as_str()).ok();
             }
-            let decoded = urlencoding::decode(url.as_str()).map(|s| s.into_owned()).unwrap_or_else(|_| url.to_string());
-            with_shell(&new_window_app, |shell| shell.signal("dragdrop", serde_json::json!([decoded])));
+            let decoded = urlencoding::decode(url.as_str())
+                .map(|s| s.into_owned())
+                .unwrap_or_else(|_| url.to_string());
+            with_shell(&new_window_app, |shell| {
+                shell.signal("dragdrop", serde_json::json!([decoded]))
+            });
             tauri::webview::NewWindowResponse::Deny
         });
     #[cfg(target_os = "macos")]
@@ -180,8 +221,14 @@ fn create_main_window<R: Runtime>(app: &AppHandle<R>, opt: &Opt, ipc_key: &str) 
         if let Ok(Some(monitor)) = window.current_monitor() {
             let scale = monitor.scale_factor();
             let size = monitor.size().to_logical::<f64>(scale);
-            let width = (size.width.min(size.height * 16.0 / 9.0) * 0.7).max(WINDOW_MIN_WIDTH as f64);
-            window.set_size(LogicalSize::new(width, (width * 9.0 / 16.0).max(WINDOW_MIN_HEIGHT as f64))).ok();
+            let width =
+                (size.width.min(size.height * 16.0 / 9.0) * 0.7).max(WINDOW_MIN_WIDTH as f64);
+            window
+                .set_size(LogicalSize::new(
+                    width,
+                    (width * 9.0 / 16.0).max(WINDOW_MIN_HEIGHT as f64),
+                ))
+                .ok();
             window.center().ok();
         }
     }
@@ -192,7 +239,18 @@ fn create_main_window<R: Runtime>(app: &AppHandle<R>, opt: &Opt, ipc_key: &str) 
             api.prevent_close();
             with_shell(&events_app, |shell| window_ops::hide_to_tray(shell));
         }
-        WindowEvent::Focused(_) | WindowEvent::Resized(_) => {
+        WindowEvent::Resized(size) => {
+            if let Some(surface) = events_app.try_state::<player::SurfaceHandle>() {
+                surface.0.resized(size.width, size.height);
+            }
+            with_shell(&events_app, |shell| window_ops::announce_state(shell));
+        }
+        WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+            if let Some(surface) = events_app.try_state::<player::SurfaceHandle>() {
+                surface.0.scale_changed(*scale_factor);
+            }
+        }
+        WindowEvent::Focused(_) => {
             with_shell(&events_app, |shell| window_ops::announce_state(shell));
         }
         _ => {}
@@ -202,7 +260,10 @@ fn create_main_window<R: Runtime>(app: &AppHandle<R>, opt: &Opt, ipc_key: &str) 
 
 /// Choisit et charge l'interface : public (par défaut), URL personnalisée, mode local, `--webui-url`, `--development`.
 fn start_ui<R: Runtime>(shell: Arc<Shell<R>>, opt: Opt) {
-    let explicit = opt.webui_url.clone().or_else(|| opt.development.then(|| DEV_ENDPOINT.to_owned()));
+    let explicit = opt
+        .webui_url
+        .clone()
+        .or_else(|| opt.development.then(|| DEV_ENDPOINT.to_owned()));
     services::start(shell, opt, explicit);
 }
 
@@ -210,7 +271,9 @@ fn start_ui<R: Runtime>(shell: Arc<Shell<R>>, opt: Opt) {
 /// fragment puis rechargement, comme la coque Windows.
 pub fn navigate<R: Runtime>(shell: &Shell<R>, url: &str) {
     let Ok(target) = Url::parse(url) else { return };
-    let Some(window) = shell.app.get_webview_window(MAIN) else { return };
+    let Some(window) = shell.app.get_webview_window(MAIN) else {
+        return;
+    };
     shell.set_trusted(&target);
     shell.media.reset();
     let same_page = window.url().ok().is_some_and(|current| {
@@ -221,9 +284,18 @@ pub fn navigate<R: Runtime>(shell: &Shell<R>, url: &str) {
         a == b
     });
     if same_page {
-        let fragment = serde_json::to_string(target.fragment().unwrap_or("")).unwrap_or_else(|_| "\"\"".into());
-        window.eval(format!("window.location.hash = {fragment}; window.location.reload();")).ok();
+        let fragment = serde_json::to_string(target.fragment().unwrap_or(""))
+            .unwrap_or_else(|_| "\"\"".into());
+        window
+            .eval(format!(
+                "window.location.hash = {fragment}; window.location.reload();"
+            ))
+            .ok();
     } else if window.navigate(target).is_err() {
-        dialogs::error(&shell.app, "Laststream", "Impossible de charger l'interface Laststream.");
+        dialogs::error(
+            &shell.app,
+            "Laststream",
+            "Impossible de charger l'interface Laststream.",
+        );
     }
 }

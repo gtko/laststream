@@ -1,7 +1,8 @@
 //! `play-external` : lecture dans un lecteur externe.
-//!  - `vlc://<url http(s)>` : lance VLC sur l'URL ;
-//!  - `data:application/octet-stream;charset=utf-8;base64,<m3u>` : liste `#EXTM3U` / `#EXTINF:…` / URL, écrite dans
-//!    `<Téléchargements>/Laststream/playlist.m3u` puis ouverte par le lecteur par défaut du système.
+//! - `vlc://<url http(s)>` : lance VLC sur l'URL ;
+//! - `data:application/octet-stream;charset=utf-8;base64,<m3u>` : liste `#EXTM3U` / `#EXTINF:…` / URL, écrite dans
+//!   `<Téléchargements>/Laststream/playlist.m3u` puis ouverte par le lecteur par défaut du système.
+//!
 //! La page envoie `#EXTINF:-1,<titre>` (apps/web/src/player/external.ts) : accepté ici, alors que la coque Windows
 //! historique n'acceptait que `#EXTINF:0` (le bouton « lecteur du système » n'y faisait rien).
 
@@ -27,7 +28,11 @@ pub fn play<R: Runtime>(app: &AppHandle<R>, input: &str) -> Result<(), &'static 
             if spawn_vlc(&url) {
                 Ok(())
             } else {
-                crate::dialogs::error(app, "Laststream", "VLC est introuvable sur cet ordinateur. Installez-le puis réessayez.");
+                crate::dialogs::error(
+                    app,
+                    "Laststream",
+                    "VLC est introuvable sur cet ordinateur. Installez-le puis réessayez.",
+                );
                 Err("VLC not found")
             }
         }
@@ -39,7 +44,9 @@ fn parse(input: &str) -> Result<Request, &'static str> {
     if let Some(encoded) = input.strip_prefix(M3U_DATA_URI_PREFIX) {
         return parse_playlist(encoded);
     }
-    let (scheme, rest) = input.split_once("://").ok_or("unsupported external player")?;
+    let (scheme, rest) = input
+        .split_once("://")
+        .ok_or("unsupported external player")?;
     match scheme.to_ascii_lowercase().as_str() {
         "vlc" => stream_url(rest).map(Request::Vlc),
         _ => Err("unsupported external player"),
@@ -65,13 +72,20 @@ fn parse_playlist(encoded: &str) -> Result<Request, &'static str> {
         return Err("invalid playlist");
     }
     // Le titre est réécrit dans le fichier : aucun saut de ligne ni caractère de contrôle.
-    let title: String = title.chars().filter(|c| !c.is_control()).take(200).collect();
+    let title: String = title
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(200)
+        .collect();
     Ok(Request::Playlist(url, title))
 }
 
 fn stream_url(input: &str) -> Result<Url, &'static str> {
     const ERROR: &str = "stream URL must be absolute HTTP(S)";
-    if input.chars().any(|c| c.is_ascii_whitespace() || c.is_control()) {
+    if input
+        .chars()
+        .any(|c| c.is_ascii_whitespace() || c.is_control())
+    {
         return Err(ERROR);
     }
     let url = Url::parse(input).map_err(|_| ERROR)?;
@@ -82,7 +96,10 @@ fn stream_url(input: &str) -> Result<Url, &'static str> {
 }
 
 fn open_playlist(url: &Url, title: &str) -> Result<(), &'static str> {
-    let dir = dirs::download_dir().or_else(|| dirs::home_dir().map(|h| h.join("Downloads"))).ok_or("no downloads folder")?.join("Laststream");
+    let dir = dirs::download_dir()
+        .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
+        .ok_or("no downloads folder")?
+        .join("Laststream");
     fs::create_dir_all(&dir).map_err(|_| "cannot create playlist folder")?;
     let path = dir.join("playlist.m3u");
     let body = format!("#EXTM3U\n#EXTINF:-1,{title}\n{url}\n");
@@ -94,7 +111,12 @@ fn open_playlist(url: &Url, title: &str) -> Result<(), &'static str> {
 fn spawn_vlc(url: &Url) -> bool {
     for program in candidates() {
         let mut command = Command::new(&program);
-        command.arg("--").arg(url.as_str()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        command
+            .arg("--")
+            .arg(url.as_str())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         detach(&mut command);
         if command.spawn().is_ok() {
             return true;
@@ -102,7 +124,12 @@ fn spawn_vlc(url: &Url) -> bool {
     }
     // macOS : Launch Services trouve VLC où qu'il soit installé ; le code de `open` dit s'il existe.
     #[cfg(target_os = "macos")]
-    return Command::new("open").args(["-a", "VLC", "--args", url.as_str()]).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success());
+    return Command::new("open")
+        .args(["-a", "VLC", "--args", url.as_str()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
     #[cfg(not(target_os = "macos"))]
     false
 }
@@ -123,15 +150,23 @@ fn candidates() -> Vec<PathBuf> {
     use winreg::RegKey;
     let mut list = Vec::new();
     for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
-        if let Ok(key) = RegKey::predef(root).open_subkey(r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\vlc.exe") {
+        if let Ok(key) = RegKey::predef(root)
+            .open_subkey(r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\vlc.exe")
+        {
             if let Ok(path) = key.get_value::<String, _>("") {
                 list.push(PathBuf::from(path.trim_matches('"')));
             }
         }
     }
-    if let Ok(key) = RegKey::predef(HKEY_CLASSES_ROOT).open_subkey(r"Applications\vlc.exe\shell\open\command") {
+    if let Ok(key) =
+        RegKey::predef(HKEY_CLASSES_ROOT).open_subkey(r"Applications\vlc.exe\shell\open\command")
+    {
         if let Ok(command) = key.get_value::<String, _>("") {
-            if let Some(exe) = command.trim().strip_prefix('"').and_then(|c| c.split('"').next()) {
+            if let Some(exe) = command
+                .trim()
+                .strip_prefix('"')
+                .and_then(|c| c.split('"').next())
+            {
                 list.push(PathBuf::from(exe));
             }
         }
@@ -174,11 +209,23 @@ mod tests {
 
     #[test]
     fn accepts_vlc_and_both_playlist_forms() {
-        assert_eq!(parse("vlc://https://x.y/a.mkv"), Ok(Request::Vlc(Url::parse("https://x.y/a.mkv").unwrap())));
-        assert_eq!(parse(&m3u("#EXTM3U\n#EXTINF:0\nhttps://x.y/a")), Ok(Request::Playlist(Url::parse("https://x.y/a").unwrap(), String::new())));
+        assert_eq!(
+            parse("vlc://https://x.y/a.mkv"),
+            Ok(Request::Vlc(Url::parse("https://x.y/a.mkv").unwrap()))
+        );
+        assert_eq!(
+            parse(&m3u("#EXTM3U\n#EXTINF:0\nhttps://x.y/a")),
+            Ok(Request::Playlist(
+                Url::parse("https://x.y/a").unwrap(),
+                String::new()
+            ))
+        );
         assert_eq!(
             parse(&m3u("#EXTM3U\n#EXTINF:-1,Dune\nhttps://x.y/a\n")),
-            Ok(Request::Playlist(Url::parse("https://x.y/a").unwrap(), "Dune".into()))
+            Ok(Request::Playlist(
+                Url::parse("https://x.y/a").unwrap(),
+                "Dune".into()
+            ))
         );
     }
 

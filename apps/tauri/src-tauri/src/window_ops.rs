@@ -4,7 +4,9 @@
 
 use std::sync::Mutex;
 
-use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Runtime, Size, WebviewWindow};
+use tauri::{
+    AppHandle, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Runtime, Size, WebviewWindow,
+};
 
 use crate::laststream_app::{
     constants::{WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH},
@@ -41,17 +43,25 @@ pub fn is_pip() -> bool {
 
 /// Signaux d'état envoyés à la page après un changement.
 pub fn announce<R: Runtime>(shell: &Shell<R>) {
-    let Some(window) = main_window(&shell.app) else { return };
+    let Some(window) = main_window(&shell.app) else {
+        return;
+    };
     let fullscreen = window.is_fullscreen().unwrap_or(false);
     let visible = window.is_visible().unwrap_or(true);
     shell.send(RPCResponse::pip_change(is_pip()));
-    shell.send(RPCResponse::visibility_change(visible, fullscreen as u32, fullscreen));
+    shell.send(RPCResponse::visibility_change(
+        visible,
+        fullscreen as u32,
+        fullscreen,
+    ));
     announce_state(shell);
 }
 
 /// `win-state-changed {state}` (drapeaux compatibles Qt).
 pub fn announce_state<R: Runtime>(shell: &Shell<R>) {
-    let Some(window) = main_window(&shell.app) else { return };
+    let Some(window) = main_window(&shell.app) else {
+        return;
+    };
     let mut state = 0u32;
     if window.is_minimized().unwrap_or(false) {
         state |= 1;
@@ -106,17 +116,23 @@ fn enter_pip<R: Runtime>(window: &WebviewWindow<R>) {
         window.unmaximize().ok();
     }
     *saved = Some(Saved {
-        position: window.outer_position().unwrap_or(PhysicalPosition::new(0, 0)),
+        position: window
+            .outer_position()
+            .unwrap_or(PhysicalPosition::new(0, 0)),
         size: window.inner_size().unwrap_or(PhysicalSize::new(1280, 720)),
         always_on_top: *robust::lock(&ALWAYS_ON_TOP, "premier plan"),
         maximized,
     });
     drop(saved);
     window.set_decorations(false).ok();
-    window.set_min_size(Some(Size::Logical(LogicalSize::new(PIP_MIN.0, PIP_MIN.1)))).ok();
+    window
+        .set_min_size(Some(Size::Logical(LogicalSize::new(PIP_MIN.0, PIP_MIN.1))))
+        .ok();
     window.set_always_on_top(true).ok();
     let scale = window.scale_factor().unwrap_or(1.0);
-    window.set_size(Size::Logical(LogicalSize::new(PIP_SIZE.0, PIP_SIZE.1))).ok();
+    window
+        .set_size(Size::Logical(LogicalSize::new(PIP_SIZE.0, PIP_SIZE.1)))
+        .ok();
     if let Ok(Some(monitor)) = window.current_monitor() {
         let area = monitor.work_area();
         let w = (PIP_SIZE.0 * scale) as i32;
@@ -129,10 +145,17 @@ fn enter_pip<R: Runtime>(window: &WebviewWindow<R>) {
 }
 
 fn leave_pip<R: Runtime>(window: &WebviewWindow<R>) {
-    let Some(saved) = robust::lock(&PIP, "état PiP").take() else { return };
+    let Some(saved) = robust::lock(&PIP, "état PiP").take() else {
+        return;
+    };
     window.set_decorations(true).ok();
     window.set_always_on_top(saved.always_on_top).ok();
-    window.set_min_size(Some(Size::Logical(LogicalSize::new(WINDOW_MIN_WIDTH as f64, WINDOW_MIN_HEIGHT as f64)))).ok();
+    window
+        .set_min_size(Some(Size::Logical(LogicalSize::new(
+            WINDOW_MIN_WIDTH as f64,
+            WINDOW_MIN_HEIGHT as f64,
+        ))))
+        .ok();
     window.set_size(Size::Physical(saved.size)).ok();
     window.set_position(saved.position).ok();
     if saved.maximized {

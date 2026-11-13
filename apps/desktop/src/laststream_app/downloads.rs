@@ -408,7 +408,8 @@ fn available_space(dir: &Path) -> Result<u64, DlError> {
 #[cfg(unix)]
 fn available_space(dir: &Path) -> Result<u64, DlError> {
     use std::os::unix::ffi::OsStrExt;
-    let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).map_err(|_| map_io(io::Error::from(io::ErrorKind::InvalidInput)))?;
+    let path = std::ffi::CString::new(dir.as_os_str().as_bytes())
+        .map_err(|_| map_io(io::Error::from(io::ErrorKind::InvalidInput)))?;
     // SAFETY: statvfs est une structure C simple ; tout motif binaire à zéro est valide.
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     // SAFETY: `path` est une chaîne C terminée par zéro, vivante pendant l'appel ; `stat` est un emplacement valide.

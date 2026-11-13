@@ -820,7 +820,11 @@ mod tests {
         assert!(journal.contains("panic"), "{}", journal);
         // La ligne est bornée à MAX_REPORT_CHARS : avec un chemin de fichier long (coque Tauri, module inclus par
         // `#[path]`), l'URL peut être coupée avant sa partie masquée. Le secret, lui, ne doit jamais apparaître.
-        assert!(journal.contains("/[masqué]") || journal.contains('…'), "{}", journal);
+        assert!(
+            journal.contains("/[masqué]") || journal.contains('…'),
+            "{}",
+            journal
+        );
         assert!(!journal.contains("SECRET789"), "{}", journal);
     }
 }

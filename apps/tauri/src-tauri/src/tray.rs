@@ -20,9 +20,19 @@ pub struct TrayItems<R: Runtime> {
 
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let show = CheckMenuItem::with_id(app, SHOW, "Afficher la fenêtre", true, true, None::<&str>)?;
-    let on_top = CheckMenuItem::with_id(app, ON_TOP, "Toujours au premier plan", true, false, None::<&str>)?;
+    let on_top = CheckMenuItem::with_id(
+        app,
+        ON_TOP,
+        "Toujours au premier plan",
+        true,
+        false,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, QUIT, "Quitter", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &on_top, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show, &on_top, &PredefinedMenuItem::separator(app)?, &quit],
+    )?;
     app.manage(TrayItems { show, on_top });
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip("Laststream")
@@ -53,7 +63,12 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
                 let app = tray.app_handle();
                 window_ops::show(app);
                 crate::with_shell(app, |shell| window_ops::announce(shell));
@@ -69,10 +84,20 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
 /// Recoche les cases selon l'état réel de la fenêtre.
 pub fn refresh<R: Runtime>(app: &AppHandle<R>) {
-    let Some(items) = app.try_state::<TrayItems<R>>() else { return };
-    let Some(window) = app.get_webview_window(MAIN) else { return };
-    items.show.set_checked(window.is_visible().unwrap_or(false)).ok();
+    let Some(items) = app.try_state::<TrayItems<R>>() else {
+        return;
+    };
+    let Some(window) = app.get_webview_window(MAIN) else {
+        return;
+    };
+    items
+        .show
+        .set_checked(window.is_visible().unwrap_or(false))
+        .ok();
     let blocked = window.is_fullscreen().unwrap_or(false) || window_ops::is_pip();
     items.on_top.set_enabled(!blocked).ok();
-    items.on_top.set_checked(*robust::lock(&window_ops::ALWAYS_ON_TOP, "premier plan")).ok();
+    items
+        .on_top
+        .set_checked(*robust::lock(&window_ops::ALWAYS_ON_TOP, "premier plan"))
+        .ok();
 }

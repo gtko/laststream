@@ -19,7 +19,7 @@ use crate::laststream_app::{
     shell_config,
 };
 use crate::player::Player;
-use crate::{external, media, window_ops, web::MAIN};
+use crate::{external, media, web::MAIN, window_ops};
 
 /// Ce que la coque sait de la page et des services, partagé entre fils.
 pub struct Shell<R: Runtime> {
@@ -39,7 +39,11 @@ pub struct Shell<R: Runtime> {
 }
 
 impl<R: Runtime> Shell<R> {
-    pub fn new(app: AppHandle<R>, web_tx: flume::Sender<String>, player: Arc<dyn Player>) -> Arc<Self> {
+    pub fn new(
+        app: AppHandle<R>,
+        web_tx: flume::Sender<String>,
+        player: Arc<dyn Player>,
+    ) -> Arc<Self> {
         let (dispatch_tx, dispatch_rx) = flume::unbounded::<RPCRequest>();
         let shell = Arc::new(Shell {
             media: media::OpenMedia::new(web_tx.clone()),
@@ -58,8 +62,15 @@ impl<R: Runtime> Shell<R> {
             .name("ipc-dispatch".into())
             .spawn(move || {
                 for request in dispatch_rx.iter() {
-                    if let Err(payload) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker.dispatch(request))) {
-                        report_error("commande IPC arrêtée par une panique", &robust::panic_message(payload.as_ref()));
+                    if let Err(payload) =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            worker.dispatch(request)
+                        }))
+                    {
+                        report_error(
+                            "commande IPC arrêtée par une panique",
+                            &robust::panic_message(payload.as_ref()),
+                        );
                     }
                 }
             })
@@ -78,18 +89,22 @@ impl<R: Runtime> Shell<R> {
     /// Message brut de la page (`chrome.webview.postMessage`), déjà filtré par origine.
     pub fn receive(&self, raw: &str) {
         // Message illisible : ignoré, comme la coque Windows.
-        let Ok(request) = serde_json::from_str::<RPCRequest>(raw) else { return };
+        let Ok(request) = serde_json::from_str::<RPCRequest>(raw) else {
+            return;
+        };
         self.dispatch_tx.send(request).ok();
     }
 
     /// `url` est-elle de l'origine de l'interface chargée ?
     pub fn is_trusted(&self, url: &url::Url) -> bool {
         let origin = url.origin().ascii_serialization();
-        robust::lock(&self.trusted_origin, "origine de confiance").as_deref() == Some(origin.as_str())
+        robust::lock(&self.trusted_origin, "origine de confiance").as_deref()
+            == Some(origin.as_str())
     }
 
     pub fn set_trusted(&self, url: &url::Url) {
-        *robust::lock(&self.trusted_origin, "origine de confiance") = Some(url.origin().ascii_serialization());
+        *robust::lock(&self.trusted_origin, "origine de confiance") =
+            Some(url.origin().ascii_serialization());
     }
 
     fn dispatch(self: &Arc<Self>, msg: RPCRequest) {
@@ -103,61 +118,92 @@ impl<R: Runtime> Shell<R> {
         let params = msg.get_params().cloned();
         match msg.get_method() {
             None if msg.is_handshake() => {
-                self.send(RPCResponse::get_handshake(local_server_url.as_deref(), &self.player.backends_json()));
+                self.send(RPCResponse::get_handshake(
+                    local_server_url.as_deref(),
+                    &self.player.backends_json(),
+                ));
             }
             Some("download-folder-pick") => self.pick_download_folder(),
             Some(method) if downloads::is_worker_method(method) => {
                 downloads::submit(method, params.unwrap_or(Value::Null), self.web_tx.clone());
             }
             Some("pick-cache-directory") => {
-                if let Some(request) = params.and_then(|p| serde_json::from_value::<CacheDirectoryRequest>(p).ok()) {
+                if let Some(request) =
+                    params.and_then(|p| serde_json::from_value::<CacheDirectoryRequest>(p).ok())
+                {
                     self.pick_cache_directory(request, local_server_url);
                 }
             }
             Some("native-http") => {
-                if let Some(request) = params.and_then(|p| serde_json::from_value::<native_http::NativeHttpRequest>(p).ok()) {
+                if let Some(request) = params
+                    .and_then(|p| serde_json::from_value::<native_http::NativeHttpRequest>(p).ok())
+                {
                     let tx = self.web_tx.clone();
                     thread::spawn(move || {
-                        tx.send(RPCResponse::native_http_response(native_http::run(&request))).ok();
+                        tx.send(RPCResponse::native_http_response(native_http::run(
+                            &request,
+                        )))
+                        .ok();
                     });
                 }
             }
             Some("native-addon-http") => {
-                if let Some(request) = params.and_then(|p| serde_json::from_value::<addon_http::AddonHttpRequest>(p).ok()) {
+                if let Some(request) = params
+                    .and_then(|p| serde_json::from_value::<addon_http::AddonHttpRequest>(p).ok())
+                {
                     let tx = self.web_tx.clone();
                     thread::spawn(move || {
-                        tx.send(RPCResponse::native_http_response(addon_http::run(&request))).ok();
+                        tx.send(RPCResponse::native_http_response(addon_http::run(&request)))
+                            .ok();
                     });
                 }
             }
             Some("native-box-playlist") => {
-                if let Some(request) = params.and_then(|p| serde_json::from_value::<box_playlist::BoxPlaylistRequest>(p).ok()) {
+                if let Some(request) = params.and_then(|p| {
+                    serde_json::from_value::<box_playlist::BoxPlaylistRequest>(p).ok()
+                }) {
                     let tx = self.web_tx.clone();
                     thread::spawn(move || {
-                        tx.send(RPCResponse::native_http_response(box_playlist::run(&request))).ok();
+                        tx.send(RPCResponse::native_http_response(box_playlist::run(
+                            &request,
+                        )))
+                        .ok();
                     });
                 }
             }
-            Some("native-range") => match params.as_ref().and_then(|p| serde_json::from_value::<native_range::NativeRangeRequest>(p.clone()).ok()) {
+            Some("native-range") => match params.as_ref().and_then(|p| {
+                serde_json::from_value::<native_range::NativeRangeRequest>(p.clone()).ok()
+            }) {
                 Some(request) => native_range::start(request, self.web_tx.clone()),
                 // Requête illisible : réponse finale quand même (jamais de silence).
-                None => self.send(RPCResponse::native_range_response(native_range::bad_request(params.as_ref()))),
+                None => self.send(RPCResponse::native_range_response(
+                    native_range::bad_request(params.as_ref()),
+                )),
             },
             Some("native-range-cancel") => {
-                if let Some(cancel) = params.and_then(|p| serde_json::from_value::<native_range::NativeRangeCancel>(p).ok()) {
+                if let Some(cancel) = params
+                    .and_then(|p| serde_json::from_value::<native_range::NativeRangeCancel>(p).ok())
+                {
                     native_range::cancel(cancel.id);
                 }
             }
-            Some("native-range-caps") => self.send(RPCResponse::native_range_caps(native_range::caps())),
+            Some("native-range-caps") => {
+                self.send(RPCResponse::native_range_caps(native_range::caps()))
+            }
             Some("win-set-interface-scale") => {
-                if let Some(scale) = params.and_then(|p| p.get("scale").and_then(Value::as_u64)).filter(|s| (75..=175).contains(s)) {
+                if let Some(scale) = params
+                    .and_then(|p| p.get("scale").and_then(Value::as_u64))
+                    .filter(|s| (75..=175).contains(s))
+                {
                     if let Some(webview) = self.app.get_webview_window(MAIN) {
                         webview.set_zoom(scale as f64 / 100.0).ok();
                     }
                 }
             }
             Some("win-set-visibility") => {
-                if let Some(fullscreen) = params.and_then(|p| p.get("fullscreen").and_then(Value::as_bool)) {
+                if let Some(fullscreen) =
+                    params.and_then(|p| p.get("fullscreen").and_then(Value::as_bool))
+                {
                     window_ops::set_fullscreen(self, fullscreen);
                 }
             }
@@ -203,11 +249,13 @@ impl<R: Runtime> Shell<R> {
                 }
             }
             Some("autoupdater-notif-clicked") => crate::update::install_and_quit(&self.app),
-            Some(method) if method.starts_with("mpv-") => match msg.args.as_ref().map(serde_json::to_string) {
-                Some(Ok(json)) => self.player.send(json),
-                Some(Err(error)) => report_error("commande lecteur illisible", &error),
-                None => report_error("commande lecteur", &"arguments absents"),
-            },
+            Some(method) if method.starts_with("mpv-") => {
+                match msg.args.as_ref().map(serde_json::to_string) {
+                    Some(Ok(json)) => self.player.send(json),
+                    Some(Err(error)) => report_error("commande lecteur illisible", &error),
+                    None => report_error("commande lecteur", &"arguments absents"),
+                }
+            }
             Some(unknown) => eprintln!("Unsupported command {unknown}"),
             None => {}
         }
@@ -226,14 +274,25 @@ impl<R: Runtime> Shell<R> {
         let shell = Arc::clone(self);
         thread::spawn(move || {
             let start = shell_config::downloads_dir().map(std::path::PathBuf::from);
-            let selected = crate::dialogs::pick_folder(&shell.app, "Choisir le dossier de téléchargement", start);
+            let selected = crate::dialogs::pick_folder(
+                &shell.app,
+                "Choisir le dossier de téléchargement",
+                start,
+            );
             shell.download_picker_open.store(false, Ordering::SeqCst);
-            shell.send(RPCResponse::download_reply("download-folder-pick", downloads::finish_pick(selected)));
+            shell.send(RPCResponse::download_reply(
+                "download-folder-pick",
+                downloads::finish_pick(selected),
+            ));
         });
     }
 
     /// `pick-cache-directory` (protocole Stremio, réservé au serveur de streaming local de la coque).
-    fn pick_cache_directory(self: &Arc<Self>, request: CacheDirectoryRequest, local_server_url: Option<String>) {
+    fn pick_cache_directory(
+        self: &Arc<Self>,
+        request: CacheDirectoryRequest,
+        local_server_url: Option<String>,
+    ) {
         let refused = if local_server_url.as_deref() != Some(request.server_url.as_str()) {
             Some("The folder picker is only available for the shell's local server")
         } else if self.cache_picker_open.swap(true, Ordering::SeqCst) {
@@ -242,15 +301,22 @@ impl<R: Runtime> Shell<R> {
             None
         };
         if let Some(error) = refused {
-            self.send(RPCResponse::cache_directory_selected(request.request_id, Err(error.to_owned())));
+            self.send(RPCResponse::cache_directory_selected(
+                request.request_id,
+                Err(error.to_owned()),
+            ));
             return;
         }
         let shell = Arc::clone(self);
         thread::spawn(move || {
             let start = request.directory.map(std::path::PathBuf::from);
-            let selected = crate::dialogs::pick_folder(&shell.app, "Choisir le dossier du cache", start);
+            let selected =
+                crate::dialogs::pick_folder(&shell.app, "Choisir le dossier du cache", start);
             shell.cache_picker_open.store(false, Ordering::SeqCst);
-            shell.send(RPCResponse::cache_directory_selected(request.request_id, selected));
+            shell.send(RPCResponse::cache_directory_selected(
+                request.request_id,
+                selected,
+            ));
         });
     }
 }

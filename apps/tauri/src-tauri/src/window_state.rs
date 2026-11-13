@@ -36,12 +36,19 @@ struct State {
 }
 
 fn path() -> Option<PathBuf> {
-    Some(dirs::config_dir()?.join("Laststream").join("window-state.json"))
+    Some(
+        dirs::config_dir()?
+            .join("Laststream")
+            .join("window-state.json"),
+    )
 }
 
 /// Applique l'état enregistré ; faux s'il n'y en a pas (la fenêtre garde sa taille par défaut, centrée).
 pub fn restore<R: Runtime>(window: &WebviewWindow<R>) -> bool {
-    let Some(state) = path().and_then(|p| fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<State>(&t).ok()) else {
+    let Some(state) = path()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str::<State>(&t).ok())
+    else {
         return false;
     };
     let r = &state.normal_position;
@@ -50,13 +57,22 @@ pub fn restore<R: Runtime>(window: &WebviewWindow<R>) -> bool {
         return false;
     }
     // Fenêtre visible sur un des écrans actuels, sinon on laisse la position par défaut.
-    let on_screen = window.available_monitors().unwrap_or_default().iter().any(|m| {
-        let (p, s) = (m.position(), m.size());
-        r.left < p.x + s.width as i32 && r.right > p.x && r.top < p.y + s.height as i32 && r.bottom > p.y
-    });
+    let on_screen = window
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .any(|m| {
+            let (p, s) = (m.position(), m.size());
+            r.left < p.x + s.width as i32
+                && r.right > p.x
+                && r.top < p.y + s.height as i32
+                && r.bottom > p.y
+        });
     window.set_size(PhysicalSize::new(w as u32, h as u32)).ok();
     if on_screen {
-        window.set_position(PhysicalPosition::new(r.left, r.top)).ok();
+        window
+            .set_position(PhysicalPosition::new(r.left, r.top))
+            .ok();
     }
     if state.show_cmd == 3 {
         window.maximize().ok();
@@ -65,7 +81,10 @@ pub fn restore<R: Runtime>(window: &WebviewWindow<R>) -> bool {
 }
 
 pub fn save<R: Runtime>(window: &WebviewWindow<R>) {
-    if window.is_fullscreen().unwrap_or(false) || window_ops::is_pip() || window.is_minimized().unwrap_or(false) {
+    if window.is_fullscreen().unwrap_or(false)
+        || window_ops::is_pip()
+        || window.is_minimized().unwrap_or(false)
+    {
         return;
     }
     let maximized = window.is_maximized().unwrap_or(false);
@@ -77,7 +96,12 @@ pub fn save<R: Runtime>(window: &WebviewWindow<R>) {
     state.show_cmd = if maximized { 3 } else { 1 };
     if !maximized {
         if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
-            state.normal_position = Rect { left: pos.x, top: pos.y, right: pos.x + size.width as i32, bottom: pos.y + size.height as i32 };
+            state.normal_position = Rect {
+                left: pos.x,
+                top: pos.y,
+                right: pos.x + size.width as i32,
+                bottom: pos.y + size.height as i32,
+            };
         }
     }
     let Some(path) = path() else { return };
