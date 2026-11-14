@@ -541,8 +541,9 @@ mod tests {
             "latest.json"
         };
         let files = format!(
-            r#""files":[{{"name":"Laststream.exe","url":"{installer_base}/Laststream.exe","checksum":"{}","os":"windows"}}]"#,
-            setup.checksum
+            r#""files":[{{"name":"Laststream.exe","url":"{installer_base}/Laststream.exe","checksum":"{}","os":"{}"}}]"#,
+            setup.checksum,
+            std::env::consts::OS
         );
         let feed = format!(
             r#"{{"version":"{}","versionDesc":"{base}/{desc_path}",{files}}}"#,

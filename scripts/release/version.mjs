@@ -1,8 +1,9 @@
 // Version de release Laststream : calcul du prochain X.Y.Z selon les labels de PR, et réécriture synchronisée de
-// apps/desktop/Cargo.toml, Cargo.lock et setup/Laststream.iss (contrôlée par apps/desktop/scripts/windows-manifest.mjs).
+// apps/desktop/Cargo.toml, Cargo.lock et setup/Laststream.iss (contrôlée par apps/desktop/scripts/windows-manifest.mjs),
+// ainsi que apps/tauri/src-tauri/Cargo.toml et Cargo.lock (coque Tauri : son updater compare cette version).
 //   node scripts/release/version.mjs --labels "release:minor,Feature" [--last-tag v1.0.32] [--write]
 // Affiche la nouvelle version sur stdout ; --write réécrit les trois fichiers. Aucune dépendance npm.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,6 +11,9 @@ const PACKAGE = 'laststream-shell-ng';
 const CARGO_TOML = join('apps', 'desktop', 'Cargo.toml');
 const CARGO_LOCK = join('apps', 'desktop', 'Cargo.lock');
 const ISS = join('apps', 'desktop', 'setup', 'Laststream.iss');
+const TAURI_PACKAGE = 'laststream-tauri';
+const TAURI_TOML = join('apps', 'tauri', 'src-tauri', 'Cargo.toml');
+const TAURI_LOCK = join('apps', 'tauri', 'src-tauri', 'Cargo.lock');
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** Lit en latin1 : octet pour octet, donc les fins de ligne CRLF et tout autre contenu sont conservés. */
@@ -69,13 +73,14 @@ function setCargoVersion(toml, version) {
   return toml.slice(0, start) + section.replace(PACKAGE_VERSION_RE, `$1${version}$3`) + toml.slice(end);
 }
 
-const LOCK_ENTRY_RE = new RegExp(`(\\[\\[package\\]\\]\\r?\\nname = "${PACKAGE}"\\r?\\nversion = ")[^"\\r\\n]*(")`, 'g');
+const lockEntryRe = (name) => new RegExp(`(\\[\\[package\\]\\]\\r?\\nname = "${name}"\\r?\\nversion = ")[^"\\r\\n]*(")`, 'g');
 
-function setLockVersion(lock, version) {
-  if ([...lock.matchAll(LOCK_ENTRY_RE)].length !== 1) {
-    throw new Error(`Entrée ${PACKAGE} introuvable (ou en double) dans Cargo.lock`);
+function setLockVersion(lock, version, name = PACKAGE) {
+  const re = lockEntryRe(name);
+  if ([...lock.matchAll(re)].length !== 1) {
+    throw new Error(`Entrée ${name} introuvable (ou en double) dans Cargo.lock`);
   }
-  return lock.replace(LOCK_ENTRY_RE, `$1${version}$2`);
+  return lock.replace(re, `$1${version}$2`);
 }
 
 const ISS_VERSION_RE = /^(#define[ \t]+MyAppVersion[ \t]+")[^"\r\n]*(")/gm;
@@ -89,7 +94,7 @@ function setIssVersion(iss, version) {
 
 /**
  * Réécrit la version dans Cargo.toml ([package] seulement), Cargo.lock (ligne version du paquet seulement) et
- * setup/Laststream.iss (#define MyAppVersion). Tout est calculé avant la première écriture : en cas d'erreur, rien n'est modifié.
+ * setup/Laststream.iss (#define MyAppVersion), puis dans le Cargo.toml / Cargo.lock de la coque Tauri s'ils existent. Tout est calculé avant la première écriture : en cas d'erreur, rien n'est modifié.
  */
 export function writeVersion(repoRoot, version) {
   const [, minor, patch] = parseSemver(version, 'Nouvelle version');
@@ -103,6 +108,15 @@ export function writeVersion(repoRoot, version) {
     lock: setLockVersion(before.lock, version),
     iss: setIssVersion(before.iss, version),
   };
+  // Coque Tauri, si présente : même version.
+  if (existsSync(join(repoRoot, TAURI_TOML))) {
+    files.tauriToml = join(repoRoot, TAURI_TOML);
+    files.tauriLock = join(repoRoot, TAURI_LOCK);
+    before.tauriToml = readText(files.tauriToml);
+    before.tauriLock = readText(files.tauriLock);
+    after.tauriToml = setCargoVersion(before.tauriToml, version);
+    after.tauriLock = setLockVersion(before.tauriLock, version, TAURI_PACKAGE);
+  }
   for (const key of Object.keys(files)) {
     if (after[key] !== before[key]) writeFileSync(files[key], after[key], 'latin1');
   }

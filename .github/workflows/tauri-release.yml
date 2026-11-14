@@ -1,0 +1,197 @@
+name: Tauri release
+
+# Coque Tauri (apps/tauri) : construit, pour un tag vX.Y.Z déjà poussé, les fichiers d'une release et leurs flux signés.
+# Appelé par release.yml (releases automatiques) ; n'expose que des artefacts, release.yml publie.
+#  - macos-aarch64 et macos-x86_64 : Laststream-X.Y.Z-<plateforme>.dmg (installation) et .app.tar.gz (mise à jour), app
+#    signée ad hoc ;
+#  - windows-x86_64 : Laststream-X.Y.Z-windows-x86_64.setup.exe (NSIS, installation et mise à jour), non signé ;
+#  - linux-x86_64 : Laststream-X.Y.Z-linux-x86_64.AppImage (installation et mise à jour) et .deb ;
+#  - pour chaque plateforme : tauri-<plateforme>-latest.json et sa signature ed25519 (.sig), même clé que la coque Windows.
+# Le Worker laststream-edge sert flux et fichiers sous https://app.laststream.app/app/tauri/<plateforme>/.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Tag déjà poussé, format vX.Y.Z'
+        required: true
+        type: string
+    secrets:
+      LASTSTREAM_UPDATE_SIGNING_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+        - { runner: macos-15, platform: macos-aarch64 }
+        - { runner: macos-15-intel, platform: macos-x86_64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+    - name: Check the tag
+      run: |
+        [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Tag inattendu : $TAG"; exit 1; }
+        echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        ref: refs/tags/${{ inputs.tag }}
+        fetch-depth: 1
+        persist-credentials: false
+    - name: Version of the app matches the tag
+      run: grep -q "^version = \"$VERSION\"$" apps/tauri/src-tauri/Cargo.toml || { echo "::error::apps/tauri/src-tauri/Cargo.toml n'est pas en $VERSION"; exit 1; }
+    # Cache restauré avant la préparation de libmpv : la restauration remplace target/.
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
+    - name: mpv (Homebrew) staged for the bundle
+      run: |
+        brew install mpv dylibbundler pkg-config
+        bash apps/tauri/scripts/stage-mpv-macos.sh
+    - name: Build the app
+      working-directory: apps/tauri
+      env:
+        LASTSTREAM_MPV_LIB_DIR: ${{ github.workspace }}/apps/tauri/src-tauri/target/mpv-stage
+      run: |
+        npm ci
+        npx tauri build --bundles app,dmg --config src-tauri/target/mpv-stage/frameworks.json
+    - name: Name the files, build and sign the feed
+      env:
+        LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
+      run: |
+        set -euo pipefail
+        bundle=apps/tauri/src-tauri/target/release/bundle
+        mkdir -p dist
+        dmgs=("$bundle"/dmg/*.dmg)
+        [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::Un .dmg attendu"; exit 1; }
+        cp "${dmgs[0]}" "dist/Laststream-$VERSION-$PLATFORM.dmg"
+        tar -czf "dist/Laststream-$VERSION-$PLATFORM.app.tar.gz" -C "$bundle/macos" Laststream.app
+        node apps/tauri/scripts/tauri-feed.mjs --platform "$PLATFORM" --version "$VERSION" \
+          --file "dist/Laststream-$VERSION-$PLATFORM.app.tar.gz" --out "dist/tauri-$PLATFORM-latest.json"
+        node apps/desktop/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
+        ls -la dist
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: tauri-${{ matrix.platform }}
+        path: dist/*
+        if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag }}
+      PLATFORM: windows-x86_64
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: disable git eol translation
+      run: git config --global core.autocrlf false
+    - name: Check the tag
+      run: |
+        [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Tag inattendu : $TAG"; exit 1; }
+        echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        ref: refs/tags/${{ inputs.tag }}
+        fetch-depth: 1
+        persist-credentials: false
+    - name: Version of the app matches the tag
+      run: grep -q "^version = \"$VERSION\"" apps/tauri/src-tauri/Cargo.toml || { echo "::error::apps/tauri/src-tauri/Cargo.toml n'est pas en $VERSION"; exit 1; }
+    # Cache restauré avant la préparation de libmpv : la restauration remplace target/.
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
+    - name: libmpv (Git LFS)
+      env:
+        LFS_TOKEN: ${{ github.token }}
+      run: |
+        auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
+        echo "::add-mask::$auth"
+        GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+          git lfs pull --include="apps/desktop/libmpv-2_x64.zip"
+        mkdir -p apps/tauri/src-tauri/target/mpv-win
+        unzip -o -j apps/desktop/libmpv-2_x64.zip "*libmpv-2.dll" -d apps/tauri/src-tauri/target/mpv-win
+        test -s apps/tauri/src-tauri/target/mpv-win/libmpv-2.dll
+    - name: Build the installer
+      working-directory: apps/tauri
+      run: |
+        npm ci
+        npx tauri build --bundles nsis --config '{"bundle":{"resources":{"target/mpv-win/libmpv-2.dll":"libmpv-2.dll"}}}'
+    - name: Name the installer, build and sign the feed
+      env:
+        LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
+      run: |
+        set -euo pipefail
+        mkdir -p dist
+        installers=(apps/tauri/src-tauri/target/release/bundle/nsis/*.exe)
+        [ "${#installers[@]}" -eq 1 ] || { echo "::error::Un installeur NSIS attendu"; exit 1; }
+        cp "${installers[0]}" "dist/Laststream-$VERSION-$PLATFORM.setup.exe"
+        node apps/tauri/scripts/tauri-feed.mjs --platform "$PLATFORM" --version "$VERSION" \
+          --file "dist/Laststream-$VERSION-$PLATFORM.setup.exe" --out "dist/tauri-$PLATFORM-latest.json"
+        node apps/desktop/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
+        ls -la dist
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: tauri-windows-x86_64
+        path: dist/*
+        if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag }}
+      PLATFORM: linux-x86_64
+    steps:
+    - name: Check the tag
+      run: |
+        [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Tag inattendu : $TAG"; exit 1; }
+        echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        ref: refs/tags/${{ inputs.tag }}
+        fetch-depth: 1
+        persist-credentials: false
+    - name: Version of the app matches the tag
+      run: grep -q "^version = \"$VERSION\"$" apps/tauri/src-tauri/Cargo.toml || { echo "::error::apps/tauri/src-tauri/Cargo.toml n'est pas en $VERSION"; exit 1; }
+    - name: System libraries (WebKitGTK, mpv)
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libmpv-dev pkg-config
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
+    - name: Build the packages
+      working-directory: apps/tauri
+      env:
+        APPIMAGE_EXTRACT_AND_RUN: '1'
+      run: |
+        npm ci
+        npx tauri build --bundles appimage,deb
+    - name: Name the files, build and sign the feed
+      env:
+        LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
+      run: |
+        set -euo pipefail
+        bundle=apps/tauri/src-tauri/target/release/bundle
+        mkdir -p dist
+        cp "$bundle"/appimage/*.AppImage "dist/Laststream-$VERSION-$PLATFORM.AppImage"
+        cp "$bundle"/deb/*.deb "dist/Laststream-$VERSION-$PLATFORM.deb"
+        node apps/tauri/scripts/tauri-feed.mjs --platform "$PLATFORM" --version "$VERSION" \
+          --file "dist/Laststream-$VERSION-$PLATFORM.AppImage" --out "dist/tauri-$PLATFORM-latest.json"
+        node apps/desktop/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
+        ls -la dist
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: tauri-linux-x86_64
+        path: dist/*
+        if-no-files-found: error

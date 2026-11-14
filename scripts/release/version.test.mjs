@@ -171,3 +171,22 @@ test('CLI --write : réécrit les trois fichiers du dépôt copié', () => {
     assert.equal(readCurrentVersion(root), expected);
   });
 });
+
+test('writeVersion suit la coque Tauri : Cargo.toml et Cargo.lock réels, une seule ligne changée chacun', () => {
+  withRepo(realCopy, (root) => {
+    const tauri = join(root, 'apps', 'tauri', 'src-tauri');
+    mkdirSync(tauri, { recursive: true });
+    const realTauri = resolve(HERE, '..', '..', 'apps', 'tauri', 'src-tauri');
+    for (const f of ['Cargo.toml', 'Cargo.lock']) cpSync(join(realTauri, f), join(tauri, f));
+    const before = { toml: readFileSync(join(tauri, 'Cargo.toml'), 'latin1'), lock: readFileSync(join(tauri, 'Cargo.lock'), 'latin1') };
+    writeVersion(root, '9.8.7');
+    for (const [f, text] of [['Cargo.toml', before.toml], ['Cargo.lock', before.lock]]) {
+      const a = text.split('\n');
+      const b = readFileSync(join(tauri, f), 'latin1').split('\n');
+      const changed = a.map((_, i) => i).filter((i) => a[i] !== b[i]);
+      assert.equal(changed.length, 1, `${f} : une seule ligne doit changer`);
+      assert.equal(b[changed[0]], 'version = "9.8.7"', f);
+      assert.match(a[changed[0] - 1], /^name = "laststream-tauri"/, f);
+    }
+  });
+});

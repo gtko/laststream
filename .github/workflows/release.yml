@@ -128,7 +128,7 @@ jobs:
         set -euo pipefail
         git config user.name 'github-actions[bot]'
         git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-        git add CHANGELOG.md apps/desktop/Cargo.toml apps/desktop/Cargo.lock apps/desktop/setup/Laststream.iss
+        git add CHANGELOG.md apps/desktop/Cargo.toml apps/desktop/Cargo.lock apps/desktop/setup/Laststream.iss apps/tauri/src-tauri/Cargo.toml apps/tauri/src-tauri/Cargo.lock
         git commit -m "release: v${VERSION}"
         pushed=false
         for attempt in 1 2 3; do
@@ -211,6 +211,16 @@ jobs:
       deps: artifact
       publish: false
     # Secret explicite (pas de heritage) : seul le secret de signature de latest.json est passe au workflow reutilisable.
+    secrets:
+      LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
+
+  # App desktop Tauri (macOS, Windows) : fichiers et flux signés en artefacts. Facultative : un échec ne bloque pas la release.
+  tauri:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.skip != 'true' }}
+    uses: ./.github/workflows/tauri-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
     secrets:
       LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
 
@@ -316,8 +326,9 @@ jobs:
         if-no-files-found: error
 
   publish:
-    needs: [prepare, desktop, android]
-    if: ${{ needs.prepare.outputs.skip != 'true' }}
+    needs: [prepare, desktop, android, tauri]
+    # La coque Tauri est facultative : la release part dès que Windows et Android sont prêts.
+    if: ${{ always() && needs.prepare.outputs.skip != 'true' && needs.desktop.result == 'success' && needs.android.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -337,6 +348,23 @@ jobs:
       with:
         name: android-apk
         path: dl/android
+    - name: Download the Tauri app (macOS, Windows, Linux)
+      if: ${{ needs.tauri.result == 'success' }}
+      uses: actions/download-artifact@v4
+      with:
+        pattern: tauri-*
+        merge-multiple: true
+        path: dl/tauri
+    - name: Upload the Tauri app files and feeds
+      if: ${{ needs.tauri.result == 'success' }}
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        # macOS (aarch64, x86_64) : .dmg, .app.tar.gz, flux, signature ; Windows : installeur, flux, signature ;
+        # Linux : AppImage, .deb, flux, signature.
+        files=(dl/tauri/Laststream-*-macos-*.dmg dl/tauri/Laststream-*-macos-*.app.tar.gz dl/tauri/Laststream-*-windows-x86_64.setup.exe dl/tauri/Laststream-*-linux-x86_64.AppImage dl/tauri/Laststream-*-linux-x86_64.deb dl/tauri/tauri-*-latest.json dl/tauri/tauri-*-latest.json.sig)
+        [ "${#files[@]}" -eq 15 ] || { echo "::error::15 fichiers Tauri attendus, ${#files[@]} trouvés"; exit 1; }
+        gh release upload "$TAG" "${files[@]}" --clobber
     - name: Upload the assets and publish the release
       run: |
         set -euo pipefail
