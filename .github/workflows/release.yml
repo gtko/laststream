@@ -214,15 +214,17 @@ jobs:
     secrets:
       LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
 
-  # App desktop Tauri (macOS, Windows) : fichiers et flux signés en artefacts. Facultative : un échec ne bloque pas la release.
+  # App Tauri (macOS, Windows, Linux, Android) : fichiers et flux signés en artefacts. Facultative : un échec ne bloque pas la release.
   tauri:
     needs: prepare
     if: ${{ needs.prepare.outputs.skip != 'true' }}
     uses: ./.github/workflows/tauri-release.yml
     with:
       tag: ${{ needs.prepare.outputs.tag }}
+      version_code: ${{ needs.prepare.outputs.version_code }}
     secrets:
       LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
+      ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
 
   android:
     needs: prepare
@@ -348,7 +350,7 @@ jobs:
       with:
         name: android-apk
         path: dl/android
-    - name: Download the Tauri app (macOS, Windows, Linux)
+    - name: Download the Tauri app (macOS, Windows, Linux, Android)
       if: ${{ needs.tauri.result == 'success' }}
       uses: actions/download-artifact@v4
       with:
@@ -361,9 +363,9 @@ jobs:
         set -euo pipefail
         shopt -s nullglob
         # macOS (aarch64, x86_64) : .dmg, .app.tar.gz, flux, signature ; Windows : installeur, flux, signature ;
-        # Linux : AppImage, .deb, flux, signature.
-        files=(dl/tauri/Laststream-*-macos-*.dmg dl/tauri/Laststream-*-macos-*.app.tar.gz dl/tauri/Laststream-*-windows-x86_64.setup.exe dl/tauri/Laststream-*-linux-x86_64.AppImage dl/tauri/Laststream-*-linux-x86_64.deb dl/tauri/tauri-*-latest.json dl/tauri/tauri-*-latest.json.sig)
-        [ "${#files[@]}" -eq 15 ] || { echo "::error::15 fichiers Tauri attendus, ${#files[@]} trouvés"; exit 1; }
+        # Linux : AppImage, .deb, flux, signature ; Android : APK (à côté de l'APK Capacitor, hors du flux android-latest.json).
+        files=(dl/tauri/Laststream-*-macos-*.dmg dl/tauri/Laststream-*-macos-*.app.tar.gz dl/tauri/Laststream-*-windows-x86_64.setup.exe dl/tauri/Laststream-*-linux-x86_64.AppImage dl/tauri/Laststream-*-linux-x86_64.deb dl/tauri/Laststream-*-android-tauri.apk dl/tauri/tauri-*-latest.json dl/tauri/tauri-*-latest.json.sig)
+        [ "${#files[@]}" -eq 16 ] || { echo "::error::16 fichiers Tauri attendus, ${#files[@]} trouvés"; exit 1; }
         gh release upload "$TAG" "${files[@]}" --clobber
     - name: Upload the assets and publish the release
       run: |
