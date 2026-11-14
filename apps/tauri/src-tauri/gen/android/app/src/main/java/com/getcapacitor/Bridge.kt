@@ -111,9 +111,12 @@ class Bridge(val activity: AppCompatActivity, private val events: Events) {
         val callback = plugin.javaClass.methods.firstOrNull {
             it.name == callbackName && it.isAnnotationPresent(PermissionCallback::class.java)
         } ?: plugin.javaClass.declaredMethods.firstOrNull { it.name == callbackName }
-        val done = {
-            if (callback == null) call.reject("Permission callback $callbackName introuvable")
-            else handler.post { invoke(plugin, callback, call) }
+        val done: () -> Unit = {
+            if (callback == null) {
+                call.reject("Permission callback $callbackName introuvable")
+            } else {
+                handler.post { invoke(plugin, callback, call) }
+            }
         }
         if (strings.isEmpty()) {
             done()
