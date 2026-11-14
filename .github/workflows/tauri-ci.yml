@@ -50,9 +50,15 @@ jobs:
       working-directory: apps/tauri
       run: node --test scripts/*.test.mjs
 
-  # macOS (Apple Silicon) : libmpv de Homebrew préparée pour Contents/Frameworks, .app + .dmg en artefact (non signé).
+  # macOS (Apple Silicon et Intel) : libmpv de Homebrew préparée pour Contents/Frameworks, .app + .dmg en artefact (non signé).
   macos:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - { runner: macos-15, artifact: laststream-macos-arm64 }
+        - { runner: macos-15-intel, artifact: laststream-macos-x64 }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
     - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -90,7 +96,7 @@ jobs:
         ls -la dmg
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
-        name: laststream-macos-arm64
+        name: ${{ matrix.artifact }}
         path: apps/tauri/src-tauri/target/release/bundle/dmg/*.dmg
         retention-days: 14
 

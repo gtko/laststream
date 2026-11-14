@@ -60,8 +60,8 @@ Linux (développement seulement) : WebKitGTK et `libmpv-dev` ; mpv ouvre sa prop
 
 | Fichier de la release | Rôle |
 |---|---|
-| `Laststream-X.Y.Z-macos-aarch64.dmg` | installation macOS (Apple Silicon) |
-| `Laststream-X.Y.Z-macos-aarch64.app.tar.gz` | mise à jour macOS |
+| `Laststream-X.Y.Z-macos-aarch64.dmg`, `…-macos-x86_64.dmg` | installation macOS (Apple Silicon, Intel) |
+| `Laststream-X.Y.Z-macos-aarch64.app.tar.gz`, `…-macos-x86_64.app.tar.gz` | mise à jour macOS |
 | `Laststream-X.Y.Z-windows-x86_64.setup.exe` | installation et mise à jour Windows (NSIS) |
 | `tauri-<plateforme>-latest.json` (+ `.sig`) | flux signé ed25519 (clé `LASTSTREAM_UPDATE_SIGNING_KEY`, celle de la coque Windows) |
 
@@ -70,8 +70,6 @@ accepté par l'updater). Un échec de la construction Tauri ne bloque pas la rel
 
 ## Reste à faire
 
-- Mac Intel (`macos-x86_64`) : prévu par le flux et le Worker, pas encore construit (libmpv de Homebrew est par
-  architecture).
 - Mode local sous macOS : Node, `lastaddon.cjs`, l'interface et ffmpeg ne sont pas encore embarqués dans le paquet
   (le mode public, par défaut, n'en a pas besoin).
 - Touches multimédia hors focus (Centre de contrôle macOS) : seules celles reçues par la fenêtre active sont relayées.

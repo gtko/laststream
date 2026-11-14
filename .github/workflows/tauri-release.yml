@@ -2,7 +2,8 @@ name: Tauri release
 
 # Coque Tauri (apps/tauri) : construit, pour un tag vX.Y.Z déjà poussé, les fichiers d'une release et leurs flux signés.
 # Appelé par release.yml (releases automatiques) ; n'expose que des artefacts, release.yml publie.
-#  - macos-aarch64 : Laststream-X.Y.Z-macos-aarch64.dmg (installation) et .app.tar.gz (mise à jour), app signée ad hoc ;
+#  - macos-aarch64 et macos-x86_64 : Laststream-X.Y.Z-<plateforme>.dmg (installation) et .app.tar.gz (mise à jour), app
+#    signée ad hoc ;
 #  - windows-x86_64 : Laststream-X.Y.Z-windows-x86_64.setup.exe (NSIS, installation et mise à jour), non signé ;
 #  - pour chaque plateforme : tauri-<plateforme>-latest.json et sa signature ed25519 (.sig), même clé que la coque Windows.
 # Le Worker laststream-edge sert flux et fichiers sous https://app.laststream.app/app/tauri/<plateforme>/.
@@ -22,11 +23,17 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-15
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+        - { runner: macos-15, platform: macos-aarch64 }
+        - { runner: macos-15-intel, platform: macos-x86_64 }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     env:
       TAG: ${{ inputs.tag }}
-      PLATFORM: macos-aarch64
+      PLATFORM: ${{ matrix.platform }}
     steps:
     - name: Check the tag
       run: |
@@ -70,7 +77,7 @@ jobs:
         ls -la dist
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
-        name: tauri-macos-aarch64
+        name: tauri-${{ matrix.platform }}
         path: dist/*
         if-no-files-found: error
 

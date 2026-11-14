@@ -348,25 +348,21 @@ jobs:
       with:
         name: android-apk
         path: dl/android
-    - name: Download the Tauri app (macOS)
+    - name: Download the Tauri app (macOS, Windows)
       if: ${{ needs.tauri.result == 'success' }}
       uses: actions/download-artifact@v4
       with:
-        name: tauri-macos-aarch64
-        path: dl/tauri
-    - name: Download the Tauri app (Windows)
-      if: ${{ needs.tauri.result == 'success' }}
-      uses: actions/download-artifact@v4
-      with:
-        name: tauri-windows-x86_64
+        pattern: tauri-*
+        merge-multiple: true
         path: dl/tauri
     - name: Upload the Tauri app files and feeds
       if: ${{ needs.tauri.result == 'success' }}
       run: |
         set -euo pipefail
         shopt -s nullglob
-        files=(dl/tauri/Laststream-*-macos-aarch64.dmg dl/tauri/Laststream-*-macos-aarch64.app.tar.gz dl/tauri/Laststream-*-windows-x86_64.setup.exe dl/tauri/tauri-*-latest.json dl/tauri/tauri-*-latest.json.sig)
-        [ "${#files[@]}" -eq 7 ] || { echo "::error::7 fichiers Tauri attendus, ${#files[@]} trouvés"; exit 1; }
+        # Par plateforme macOS (aarch64, x86_64) : .dmg, .app.tar.gz, flux, signature ; Windows : installeur, flux, signature.
+        files=(dl/tauri/Laststream-*-macos-*.dmg dl/tauri/Laststream-*-macos-*.app.tar.gz dl/tauri/Laststream-*-windows-x86_64.setup.exe dl/tauri/tauri-*-latest.json dl/tauri/tauri-*-latest.json.sig)
+        [ "${#files[@]}" -eq 11 ] || { echo "::error::11 fichiers Tauri attendus, ${#files[@]} trouvés"; exit 1; }
         gh release upload "$TAG" "${files[@]}" --clobber
     - name: Upload the assets and publish the release
       run: |
