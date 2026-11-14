@@ -311,12 +311,15 @@ async function githubInstaller(request, file) {
  * copie dans R2). Une plateforme = système et architecture ; les fichiers d'une version portent son numéro :
  *  - /app/tauri/<plateforme>/latest.json (+ .sig) : `tauri-<plateforme>-latest.json` de la dernière release, rendu
  *    octet pour octet (signé ed25519), la signature étant celle du tag annoncé ;
- *  - /app/tauri/<plateforme>/Laststream-<X.Y.Z>-<plateforme>.<ext> : relayé depuis la release vX.Y.Z (plages comprises),
+ *  - /app/tauri/<plateforme>/Laststream-<X.Y.Z>-<plateforme>.<ext> (app.tar.gz, dmg, setup.exe, AppImage, deb) : relayé
+ *    depuis la release vX.Y.Z (plages comprises),
  *    sans redirection (l'updater n'accepte que app.laststream.app).
  */
-const TAURI_PLATFORMS = { 'macos-aarch64': ['app.tar.gz', 'dmg'], 'macos-x86_64': ['app.tar.gz', 'dmg'], 'windows-x86_64': ['setup.exe'] };
+const TAURI_PLATFORMS = { 'macos-aarch64': ['app.tar.gz', 'dmg'], 'macos-x86_64': ['app.tar.gz', 'dmg'], 'windows-x86_64': ['setup.exe'], 'linux-x86_64': ['AppImage', 'deb'] };
+/** Fichier de mise à jour annoncé par le flux de chaque système. */
+const TAURI_UPDATE_EXT = { macos: 'app.tar.gz', windows: 'setup.exe', linux: 'AppImage' };
 const TAURI_PUBLIC = 'https://app.laststream.app/app/tauri/';
-const TAURI_TYPES = { 'app.tar.gz': 'application/gzip', dmg: 'application/x-apple-diskimage', 'setup.exe': 'application/vnd.microsoft.portable-executable' };
+const TAURI_TYPES = { 'app.tar.gz': 'application/gzip', dmg: 'application/x-apple-diskimage', 'setup.exe': 'application/vnd.microsoft.portable-executable', AppImage: 'application/vnd.appimage', deb: 'application/vnd.debian.binary-package' };
 
 function tauriRequest(pathname) {
   const m = /^\/app\/tauri\/([a-z0-9_-]+)\/(.+)$/.exec(pathname);
@@ -337,7 +340,7 @@ export function tauriFeedVersion(text, platform) {
   let j;
   try { j = JSON.parse(text); } catch { return null; }
   if (!j || typeof j.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(j.version)) return null;
-  const ext = platform.startsWith('macos') ? 'app.tar.gz' : 'setup.exe';
+  const ext = TAURI_UPDATE_EXT[platform.split('-')[0]];
   if (j.url !== `${TAURI_PUBLIC}${platform}/Laststream-${j.version}-${platform}.${ext}`) return null;
   return typeof j.sha256 === 'string' && /^[0-9a-f]{64}$/.test(j.sha256) ? j.version : null;
 }

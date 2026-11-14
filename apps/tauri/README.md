@@ -8,9 +8,9 @@ reste celle qui est publiée sous Windows tant que celle-ci n'a pas été valid�
 
 | Élément | Coque Windows historique | Coque Tauri |
 |---|---|---|
-| WebView | WebView2 | WKWebView (macOS), WebView2 (Windows) |
+| WebView | WebView2 | WKWebView (macOS), WebView2 (Windows), WebKitGTK (Linux) |
 | Pont page ↔ coque | `window.chrome.webview` natif | `src/bridge.js` recrée `window.chrome.webview` et le relais `qt.webChannelTransport` avant les scripts de la page ; une seule commande Tauri, `shell_post` |
-| Vidéo | mpv dans la fenêtre (`wid`), sous la WebView2 transparente | Windows : idem (fenêtre enfant au fond, D3D11) ; macOS : API de rendu libmpv (OpenGL) dans un `CAOpenGLLayer` sous la WKWebView (`mac/mpv_layer.m`) |
+| Vidéo | mpv dans la fenêtre (`wid`), sous la WebView2 transparente | Windows : idem (fenêtre enfant au fond, D3D11) ; macOS : API de rendu libmpv (OpenGL) dans un `CAOpenGLLayer` sous la WKWebView (`mac/mpv_layer.m`) ; Linux : API de rendu libmpv dans un `GtkGLArea` sous la WebKitGTK transparente (`GtkOverlay`) |
 | Code partagé | — | compilé directement depuis `apps/desktop/src/laststream_app/` par `#[path]` (`src/laststream_app/mod.rs`) : IPC et liste blanche, ponts `native-http` / `native-range` / `native-addon-http` / `native-box-playlist`, téléchargements, ouverture de médias, `shell.json`, mise à jour signée, diagnostics, protocole du lecteur |
 
 Une correction dans un module partagé vaut pour les deux coques ; `tauri-ci.yml` compile et teste ces modules sous
@@ -52,7 +52,8 @@ L'app n'est pas notarisée (pas de compte Apple Developer) : au premier lancemen
 Windows : `libmpv-2.dll` (archive LFS `apps/desktop/libmpv-2_x64.zip`) est installée à côté de l'exécutable ; la liaison
 utilise `apps/desktop/mpv-x64/mpv.lib`. Voir `.github/workflows/tauri-ci.yml`.
 
-Linux (développement seulement) : WebKitGTK et `libmpv-dev` ; mpv ouvre sa propre fenêtre.
+Linux (x86_64) : WebKitGTK et `libmpv-dev` pour compiler. AppImage (libmpv incluse, mise à jour automatique : le fichier
+`$APPIMAGE` est remplacé) et `.deb` (dépend de `libmpv2`, mis à jour par le gestionnaire de paquets).
 
 ## Release et mise à jour
 

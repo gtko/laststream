@@ -1,16 +1,16 @@
 //! Mise à jour de l'app : flux signé ed25519 vérifié par `updater.rs` (partagé avec la coque Windows : hôte autorisé
 //! `app.laststream.app`, https, signature vérifiée avant toute lecture, SHA-256 du fichier, `.part` supprimé en cas
 //! d'échec). Flux propre à cette coque et à l'architecture : `https://app.laststream.app/app/tauri/<os>-<arch>/latest.json`
-//! (`macos-aarch64`, `macos-x86_64`, `windows-x86_64`).
+//! (`macos-aarch64`, `macos-x86_64`, `windows-x86_64`, `linux-x86_64`).
 //!
 //! Premier contrôle après `app-ready`, puis toutes les 12 h. Une version prête : signal `autoupdater-show-notif` (comme
 //! la coque Windows) et boîte « Redémarrer maintenant / Plus tard » (la page n'envoie jamais `autoupdater-notif-clicked`,
 //! la coque Windows téléchargeait donc sans jamais installer).
 //! - macOS : archive `.app.tar.gz` extraite, l'app remplacée puis relancée (après la fermeture de la coque) ;
-//! - Windows : installeur NSIS lancé en silencieux, puis l'app relancée.
+//! - Windows : installeur NSIS lancé en silencieux, puis l'app relancée ;
+//! - Linux : l'AppImage remplacée puis relancée (le .deb suit le gestionnaire de paquets).
 
 use std::path::Path;
-#[cfg(any(windows, target_os = "macos"))]
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -187,12 +187,31 @@ fn launch_installer(installer: &Path) -> Result<(), String> {
     detached(&mut command)
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+/// Linux : seule l'AppImage se met à jour elle-même (variable APPIMAGE : son chemin) ; le paquet .deb suit le
+/// gestionnaire de paquets. La nouvelle AppImage remplace l'ancienne après la fermeture de la coque, puis se lance.
+#[cfg(target_os = "linux")]
+fn launch_installer(appimage: &Path) -> Result<(), String> {
+    let current =
+        std::env::var_os("APPIMAGE").ok_or("mise à jour automatique réservée à l'AppImage")?;
+    let script = r#"while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
+if cp "$3" "$2.new" && chmod +x "$2.new" && mv -f "$2.new" "$2"; then rm -f "$3"; else rm -f "$2.new"; fi
+exec "$2""#;
+    detached(
+        Command::new("/bin/sh")
+            .arg("-c")
+            .arg(script)
+            .arg("laststream-update")
+            .arg(std::process::id().to_string())
+            .arg(current)
+            .arg(appimage),
+    )
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 fn launch_installer(_installer: &Path) -> Result<(), String> {
     Err("mise à jour automatique non prise en charge sur cette plateforme".into())
 }
 
-#[cfg(any(windows, target_os = "macos"))]
 fn detached(command: &mut Command) -> Result<(), String> {
     command
         .stdin(Stdio::null())

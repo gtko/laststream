@@ -18,7 +18,9 @@
     "targets": [
       "dmg",
       "app",
-      "nsis"
+      "nsis",
+      "appimage",
+      "deb"
     ],
     "category": "Entertainment",
     "shortDescription": "Laststream - Freedom to Stream",
@@ -40,6 +42,13 @@
         "languages": [
           "French",
           "English"
+        ]
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libmpv2"
         ]
       }
     }

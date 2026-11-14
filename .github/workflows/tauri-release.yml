@@ -5,6 +5,7 @@ name: Tauri release
 #  - macos-aarch64 et macos-x86_64 : Laststream-X.Y.Z-<plateforme>.dmg (installation) et .app.tar.gz (mise à jour), app
 #    signée ad hoc ;
 #  - windows-x86_64 : Laststream-X.Y.Z-windows-x86_64.setup.exe (NSIS, installation et mise à jour), non signé ;
+#  - linux-x86_64 : Laststream-X.Y.Z-linux-x86_64.AppImage (installation et mise à jour) et .deb ;
 #  - pour chaque plateforme : tauri-<plateforme>-latest.json et sa signature ed25519 (.sig), même clé que la coque Windows.
 # Le Worker laststream-edge sert flux et fichiers sous https://app.laststream.app/app/tauri/<plateforme>/.
 on:
@@ -139,5 +140,56 @@ jobs:
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: tauri-windows-x86_64
+        path: dist/*
+        if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag }}
+      PLATFORM: linux-x86_64
+    steps:
+    - name: Check the tag
+      run: |
+        [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Tag inattendu : $TAG"; exit 1; }
+        echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        ref: refs/tags/${{ inputs.tag }}
+        fetch-depth: 1
+        persist-credentials: false
+    - name: Version of the app matches the tag
+      run: grep -q "^version = \"$VERSION\"$" apps/tauri/src-tauri/Cargo.toml || { echo "::error::apps/tauri/src-tauri/Cargo.toml n'est pas en $VERSION"; exit 1; }
+    - name: System libraries (WebKitGTK, mpv)
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libmpv-dev pkg-config
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
+    - name: Build the packages
+      working-directory: apps/tauri
+      env:
+        APPIMAGE_EXTRACT_AND_RUN: '1'
+      run: |
+        npm ci
+        npx tauri build --bundles appimage,deb
+    - name: Name the files, build and sign the feed
+      env:
+        LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
+      run: |
+        set -euo pipefail
+        bundle=apps/tauri/src-tauri/target/release/bundle
+        mkdir -p dist
+        cp "$bundle"/appimage/*.AppImage "dist/Laststream-$VERSION-$PLATFORM.AppImage"
+        cp "$bundle"/deb/*.deb "dist/Laststream-$VERSION-$PLATFORM.deb"
+        node apps/tauri/scripts/tauri-feed.mjs --platform "$PLATFORM" --version "$VERSION" \
+          --file "dist/Laststream-$VERSION-$PLATFORM.AppImage" --out "dist/tauri-$PLATFORM-latest.json"
+        node apps/desktop/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
+        ls -la dist
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: tauri-linux-x86_64
         path: dist/*
         if-no-files-found: error

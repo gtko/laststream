@@ -6,7 +6,7 @@ import { tauriFeedVersion } from '../../../services/edge/src/index.js';
 const base = { version: '1.2.3', bytes: Buffer.from('abc'), size: 3, publishedAt: '2026-01-01T00:00:00Z' };
 
 test('flux macOS et Windows : acceptés par le Worker edge, os lu par updater.rs', () => {
-  for (const [platform, ext, os] of [['macos-aarch64', 'app.tar.gz', 'macos'], ['windows-x86_64', 'setup.exe', 'windows']]) {
+  for (const [platform, ext, os] of [['macos-aarch64', 'app.tar.gz', 'macos'], ['windows-x86_64', 'setup.exe', 'windows'], ['linux-x86_64', 'AppImage', 'linux']]) {
     const feed = buildFeed({ ...base, platform, file: `/tmp/Laststream-1.2.3-${platform}.${ext}` });
     assert.equal(tauriFeedVersion(JSON.stringify(feed), platform), '1.2.3');
     assert.equal(feed.versionDesc, `https://app.laststream.app/app/tauri/${platform}/latest.json`);

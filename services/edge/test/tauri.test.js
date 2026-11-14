@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import worker, { tauriFeedVersion } from '../src/index.js';
 
 const SHA = 'a'.repeat(64);
-const feed = (platform, version = '1.2.3', ext = platform.startsWith('macos') ? 'app.tar.gz' : 'setup.exe') =>
+const feed = (platform, version = '1.2.3', ext = { macos: 'app.tar.gz', windows: 'setup.exe', linux: 'AppImage' }[platform.split('-')[0]]) =>
   JSON.stringify({ version, versionDesc: `https://app.laststream.app/app/tauri/${platform}/latest.json`, url: `https://app.laststream.app/app/tauri/${platform}/Laststream-${version}-${platform}.${ext}`, sha256: SHA });
 
 const get = async (path, github, init = {}, calls = []) => {
@@ -21,6 +21,7 @@ describe('flux Tauri', () => {
   it('valide : version de la plateforme et fichier à l\'adresse publique attendue', () => {
     assert.equal(tauriFeedVersion(feed('macos-aarch64'), 'macos-aarch64'), '1.2.3');
     assert.equal(tauriFeedVersion(feed('windows-x86_64'), 'windows-x86_64'), '1.2.3');
+    assert.equal(tauriFeedVersion(feed('linux-x86_64'), 'linux-x86_64'), '1.2.3');
     assert.equal(tauriFeedVersion(feed('macos-aarch64'), 'macos-x86_64'), null, 'autre plateforme');
     assert.equal(tauriFeedVersion(feed('macos-aarch64', '1.2.3', 'dmg'), 'macos-aarch64'), null, 'dmg : pas une archive de mise à jour');
     assert.equal(tauriFeedVersion('{', 'macos-aarch64'), null);
@@ -46,7 +47,7 @@ describe('flux Tauri', () => {
     const r = await get('/app/tauri/macos-aarch64/latest.json', () => new Response(feed('windows-x86_64')));
     assert.equal(r.status, 404);
     const calls = [];
-    const other = await get('/app/tauri/linux-x86_64/latest.json', () => new Response('x'), {}, calls);
+    const other = await get('/app/tauri/freebsd-x86_64/latest.json', () => new Response('x'), {}, calls);
     assert.equal(other.status, 404);
     assert.ok(!calls.some((u) => u.includes('github.com')), 'aucun appel à GitHub');
   });

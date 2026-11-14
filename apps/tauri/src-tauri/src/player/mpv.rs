@@ -393,14 +393,24 @@ fn create_mpv(surface: &dyn VideoSurface) -> Result<Mpv, libmpv2::Error> {
         init.set_property("title", "Laststream")?;
         init.set_property("audio-client-name", "Laststream")?;
         init.set_property("terminal", "yes")?;
-        init.set_property(
-            "msg-level",
-            if cfg!(debug_assertions) {
-                "all=no,cplayer=debug"
-            } else {
-                "all=no"
-            },
-        )?;
+        // Journal de mpv : muet par défaut ; LASTSTREAM_MPV_LOG=v (ou debug, info…) l'active sur la sortie d'erreur.
+        let level = std::env::var("LASTSTREAM_MPV_LOG")
+            .ok()
+            .filter(|l| {
+                [
+                    "fatal", "error", "warn", "info", "status", "v", "debug", "trace",
+                ]
+                .contains(&l.as_str())
+            })
+            .map(|l| format!("all={l}"))
+            .unwrap_or_else(|| {
+                if cfg!(debug_assertions) {
+                    "all=no,cplayer=debug".into()
+                } else {
+                    "all=no".into()
+                }
+            });
+        init.set_property("msg-level", level.as_str())?;
         init.set_property("quiet", "yes")?;
         init.set_property(
             "stream-lavf-o",

@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
-const PLATFORMS = { 'macos-aarch64': 'app.tar.gz', 'macos-x86_64': 'app.tar.gz', 'windows-x86_64': 'setup.exe' };
+const PLATFORMS = { 'macos-aarch64': 'app.tar.gz', 'macos-x86_64': 'app.tar.gz', 'windows-x86_64': 'setup.exe', 'linux-x86_64': 'AppImage' };
 
 export function buildFeed({ platform, version, file, bytes, size, publishedAt }) {
   const ext = PLATFORMS[platform];
