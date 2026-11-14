@@ -47,13 +47,14 @@ jobs:
         persist-credentials: false
     - name: Version of the app matches the tag
       run: grep -q "^version = \"$VERSION\"$" apps/tauri/src-tauri/Cargo.toml || { echo "::error::apps/tauri/src-tauri/Cargo.toml n'est pas en $VERSION"; exit 1; }
+    # Cache restauré avant la préparation de libmpv : la restauration remplace target/.
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
     - name: mpv (Homebrew) staged for the bundle
       run: |
         brew install mpv dylibbundler pkg-config
         bash apps/tauri/scripts/stage-mpv-macos.sh
-    - uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: apps/tauri/src-tauri
     - name: Build the app
       working-directory: apps/tauri
       env:
@@ -105,6 +106,10 @@ jobs:
         persist-credentials: false
     - name: Version of the app matches the tag
       run: grep -q "^version = \"$VERSION\"" apps/tauri/src-tauri/Cargo.toml || { echo "::error::apps/tauri/src-tauri/Cargo.toml n'est pas en $VERSION"; exit 1; }
+    # Cache restauré avant la préparation de libmpv : la restauration remplace target/.
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
     - name: libmpv (Git LFS)
       env:
         LFS_TOKEN: ${{ github.token }}
@@ -116,9 +121,6 @@ jobs:
         mkdir -p apps/tauri/src-tauri/target/mpv-win
         unzip -o -j apps/desktop/libmpv-2_x64.zip "*libmpv-2.dll" -d apps/tauri/src-tauri/target/mpv-win
         test -s apps/tauri/src-tauri/target/mpv-win/libmpv-2.dll
-    - uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: apps/tauri/src-tauri
     - name: Build the installer
       working-directory: apps/tauri
       run: |

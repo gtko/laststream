@@ -80,15 +80,16 @@ jobs:
       with:
         fetch-depth: 1
         persist-credentials: false
+    # Cache restauré avant la préparation de libmpv : la restauration remplace target/.
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
     - name: mpv (Homebrew)
       working-directory: .
       run: brew install mpv dylibbundler pkg-config
     - name: Stage libmpv for the app bundle
       working-directory: apps/tauri
       run: bash scripts/stage-mpv-macos.sh
-    - uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: apps/tauri/src-tauri
     # Tests liés à la libmpv de Homebrew (chemin absolu) : la copie préparée (@rpath) ne se trouve que dans le paquet.
     - name: Tests
       run: cargo test --locked
@@ -127,6 +128,10 @@ jobs:
       with:
         fetch-depth: 1
         persist-credentials: false
+    # Cache restauré avant la préparation de libmpv : la restauration remplace target/.
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
     - name: libmpv (Git LFS)
       working-directory: .
       shell: bash
@@ -140,9 +145,6 @@ jobs:
         mkdir -p apps/tauri/src-tauri/target/mpv-win
         unzip -o -j apps/desktop/libmpv-2_x64.zip "*libmpv-2.dll" -d apps/tauri/src-tauri/target/mpv-win
         test -s apps/tauri/src-tauri/target/mpv-win/libmpv-2.dll
-    - uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: apps/tauri/src-tauri
     - name: Build the installer (NSIS)
       working-directory: apps/tauri
       shell: bash
