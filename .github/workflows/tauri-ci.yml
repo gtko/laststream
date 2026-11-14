@@ -98,7 +98,7 @@ jobs:
         npx tauri android build --target aarch64 --target armv7 --apk
     - name: Kotlin unit tests (plugins shared with apps/mobile)
       working-directory: apps/tauri/src-tauri/gen/android
-      run: bash ./gradlew testUniversalReleaseUnitTest -PabiList=arm64-v8a,armeabi-v7a -ParchList=arm64,arm -PtargetList=aarch64,armv7
+      run: bash ./gradlew testUniversalDebugUnitTest -PabiList=arm64-v8a,armeabi-v7a -ParchList=arm64,arm -PtargetList=aarch64,armv7
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: laststream-android-tauri
