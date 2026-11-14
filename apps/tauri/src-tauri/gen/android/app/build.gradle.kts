@@ -17,6 +17,7 @@ val tauriProperties = Properties().apply {
 // Plugins natifs (lecteur libVLC, téléchargements, mise à jour, écran) et ressources : ceux de l'app Capacitor, compilés
 // tels quels (l'API `com.getcapacitor` qu'ils utilisent est recréée dans src/main/java/com/getcapacitor).
 val capacitorApp = file("../../../../../mobile/android/app/src")
+val sharedPackages = listOf("player", "downloads", "update", "display")
 
 // Version : -PlsVersionCode / -PlsVersionName (CI, même schéma AAAAMMJJNN que l'app Capacitor : la mise à jour en un tap
 // compare ce numéro), sinon celle de tauri.conf.json.
@@ -74,16 +75,15 @@ android {
             )
         }
     }
+    // Paquets partagés de l'app Capacitor (Kotlin : le dossier n'a pas à suivre le paquet). Son activité
+    // (MainActivity.java) n'est pas reprise : MainActivity.kt (TauriActivity) la remplace.
     sourceSets {
         getByName("main") {
-            java.srcDir(capacitorApp.resolve("main/java"))
-            // Activité de l'app Capacitor : remplacée par MainActivity.kt (TauriActivity).
-            java.exclude("com/laststream/app/MainActivity.java")
+            for (pkg in sharedPackages) java.srcDir(capacitorApp.resolve("main/java/com/laststream/app/$pkg"))
             res.setSrcDirs(listOf(capacitorApp.resolve("main/res")))
         }
         getByName("test") {
-            java.srcDir(capacitorApp.resolve("test/java"))
-            java.exclude("com/getcapacitor/myapp/**")
+            for (pkg in sharedPackages) java.srcDir(capacitorApp.resolve("test/java/com/laststream/app/$pkg"))
         }
     }
     compileOptions {
