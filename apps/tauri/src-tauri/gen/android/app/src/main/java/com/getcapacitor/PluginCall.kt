@@ -23,8 +23,9 @@ class PluginCall(
 
     @Volatile private var answered = false
 
-    @get:JvmName("isKeptAlive")
-    var keepAlive: Boolean = false
+    @Volatile private var keepAlive = false
+
+    fun isKeptAlive(): Boolean = keepAlive
 
     fun setKeepAlive(keep: Boolean) {
         keepAlive = keep
