@@ -30,9 +30,10 @@ test('lancé directement : flux écrit (chemin relatif, absolu ; la garde ne dé
   const file = join(dir, 'Laststream-1.2.3-windows-x86_64.setup.exe');
   writeFileSync(file, 'installeur');
   const out = join(dir, 'feed.json');
-  const script = new URL('./tauri-feed.mjs', import.meta.url).pathname;
+  const { fileURLToPath } = await import('node:url');
+  const script = fileURLToPath(new URL('./tauri-feed.mjs', import.meta.url));
   execFileSync(process.execPath, [script, '--platform', 'windows-x86_64', '--version', '1.2.3', '--file', file, '--out', out]);
   assert.equal(JSON.parse(readFileSync(out, 'utf8')).version, '1.2.3');
-  execFileSync(process.execPath, ['scripts/tauri-feed.mjs', '--platform', 'windows-x86_64', '--version', '1.2.3', '--file', file, '--out', out + '2'], { cwd: new URL('..', import.meta.url).pathname });
+  execFileSync(process.execPath, ['scripts/tauri-feed.mjs', '--platform', 'windows-x86_64', '--version', '1.2.3', '--file', file, '--out', out + '2'], { cwd: fileURLToPath(new URL('..', import.meta.url)) });
   assert.equal(JSON.parse(readFileSync(out + '2', 'utf8')).version, '1.2.3');
 });

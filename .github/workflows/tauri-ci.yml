@@ -192,6 +192,11 @@ jobs:
         mkdir -p apps/tauri/src-tauri/target/mpv-win
         unzip -o -j apps/desktop/libmpv-2_x64.zip "*libmpv-2.dll" -d apps/tauri/src-tauri/target/mpv-win
         test -s apps/tauri/src-tauri/target/mpv-win/libmpv-2.dll
+    # Flux de mise à jour écrit sous Windows (chemins D:\…) : le script est lancé par tauri-release.yml.
+    - name: Update feed script on Windows
+      working-directory: apps/tauri
+      shell: bash
+      run: node --test scripts/tauri-feed.test.mjs
     - name: Build the installer (NSIS)
       working-directory: apps/tauri
       shell: bash
