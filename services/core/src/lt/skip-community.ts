@@ -70,6 +70,13 @@ export interface SkipCommunity {
 
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
+/** Saison et épisode d'un épisode dans la numérotation de flux (`<imdb>:<saison>:<épisode>`), sinon ceux de la structure. */
+function streamCoords(episode: SeriesEpisode, imdbId: string): { season: number; episode: number } {
+  const match = episode.streamId === undefined ? null : /^(tt\d+):(\d+):(\d+)$/.exec(episode.streamId);
+  if (match !== null && match[1] === imdbId) return { season: Number(match[2]), episode: Number(match[3]) };
+  return { season: episode.season, episode: episode.episode };
+}
+
 /** Durée en secondes à partir d'une durée TMDB/TVDB en minutes, ou undefined si inconnue. */
 function secondsOf(runtimeMinutes: number | null | undefined): number | undefined {
   return runtimeMinutes !== null && runtimeMinutes !== undefined && runtimeMinutes > 0 ? runtimeMinutes * 60 : undefined;
@@ -229,7 +236,12 @@ export function createSkipCommunity(ctx: LtContext, store: () => SkipRepo, detec
       console.warn(`[lt][skip] déduction de saison indisponible (statut amont : ${err.code})`);
       return { segments: [], complete: false };
     }
-    const season = episodes.filter((episode) => episode.season === target.season);
+    // La cible est en numérotation de flux (IMDb) : pour un anime renuméroté (MAL), la structure est relue par ses
+    // identifiants de flux.
+    const season = episodes.flatMap((episode): SeriesEpisode[] => {
+      const coords = streamCoords(episode, imdbId);
+      return coords.season === target.season ? [{ ...episode, season: coords.season, episode: coords.episode }] : [];
+    });
     const own = season.find((episode) => episode.episode === target.episode);
     const targetDuration =
       secondsOf(own?.runtime) ?? externalLength ?? (await db().durationOf(imdbId, target.season, target.episode));

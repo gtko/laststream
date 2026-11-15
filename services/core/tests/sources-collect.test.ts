@@ -54,6 +54,25 @@ describe('collectStreams', () => {
     ]);
   });
 
+  it('anime : addon aussi interrogé avec les identifiants MAL et Kitsu, flux propres à la fiche marqués altEpisode', async () => {
+    const config = parseConfig({ sources: [{ type: 'upstream', name: 'Amont', url: 'https://a.example.com/addon/manifest.json' }] });
+    const ref: ContentRef = { type: 'series', id: 'tt1234567:3:13', imdbId: 'tt1234567', season: 3, episode: 13, altIds: ['mal:38524:1', 'kitsu:41982:1'] };
+    const { fetch, mock } = mockFetch(async (url) => {
+      const path = new URL(url).pathname;
+      if (path.endsWith('/stream/series/tt1234567:3:13.json')) return jsonResponse({ streams: [{ name: 'Up', infoHash: 'a'.repeat(40) }] });
+      // Même copie que par IMDb, plus une copie connue seulement par la fiche MAL.
+      if (path.endsWith('/stream/series/mal:38524:1.json')) return jsonResponse({ streams: [{ name: 'Up', infoHash: 'a'.repeat(40) }, { name: 'Up', infoHash: 'b'.repeat(40) }] });
+      // Identifiant inconnu de l'addon : son erreur ne compte pas.
+      return jsonResponse({ err: 'unsupported' }, 500);
+    });
+
+    const result = await collectStreams(config, ref, { fetch });
+
+    expect(result.errors).toEqual([]);
+    expect(result.streams.map((s) => [s.infoHash?.[0], s.altEpisode])).toEqual([['a', undefined], ['b', 1]]);
+    expect(mock.mock.calls.map(([url]) => new URL(url).pathname.split('/').pop()).sort()).toEqual(['kitsu:41982:1.json', 'mal:38524:1.json', 'tt1234567:3:13.json']);
+  });
+
   it('isole les erreurs : une source en HTTP 500 n’empêche pas les autres', async () => {
     const config = parseConfig({
       sources: [

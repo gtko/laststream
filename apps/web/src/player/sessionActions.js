@@ -174,9 +174,21 @@ export const notYetAiredMessage = (iso) => 'Pas encore disponible — diffusion 
 /** Le marquage d'un segment demande un épisode identifié (IMDb) et un lastAddon configuré. */
 export const markAllowed = (p) => !!p.imdb && isConfigured();
 
+/**
+ * Saison et épisode de l'épisode en cours dans la numérotation IMDb (celle des sources et des segments de saut) : résolus
+ * au chargement (`p.streamEp`), sinon ceux de l'affichage. Film : 0, 0.
+ */
+export function streamEpisode(p) {
+  if (p.req.type !== 'tv') return { season: 0, episode: 0 };
+  const season = p.cur?.season ?? p.req.season ?? 1;
+  const episode = p.cur?.episode ?? p.req.episode ?? 1;
+  const known = p.streamEp && p.streamEp.of === season + ':' + episode ? p.streamEp : null;
+  return known ? { season: known.season, episode: known.episode } : { season, episode };
+}
+
 export function submitTarget() {
   const p = S.P;
-  return { type: p.req.type === 'tv' ? 'series' : 'movie', imdbId: p.imdb, season: p.req.type === 'tv' ? p.cur.season ?? 1 : 0, episode: p.req.type === 'tv' ? p.cur.episode ?? 1 : 0 };
+  return { type: p.req.type === 'tv' ? 'series' : 'movie', imdbId: p.imdb, ...streamEpisode(p) };
 }
 
 export async function sendSegment(kind, start, end, negative) {

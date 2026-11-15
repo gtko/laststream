@@ -86,8 +86,10 @@ describe('recherche de sources de l’épisode du jour : identifiant envoyé et 
       imdb: 'tt29694831', season: 3, episode: 206, streamId: 'tt29694831:3:206',
     });
 
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain('/stream/series/tt29694831:3:206.json');
+    // La structure de la série est lue avant (identifiants d'anime) ; une seule recherche de sources part.
+    const streams = calls.filter((url) => url.includes('/stream/'));
+    expect(streams).toHaveLength(1);
+    expect(streams[0]).toContain('/stream/series/tt29694831:3:206.json');
     expect(loaded.views).toHaveLength(1);
   });
 });

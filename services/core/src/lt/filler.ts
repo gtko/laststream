@@ -125,9 +125,19 @@ function malTargets(entries: readonly ArmEntry[], episodes: readonly SeriesEpiso
 }
 
 /**
- * Épisodes filler et récap d'une série, dans la numérotation canonique de /series/:tmdbId/episodes. Correspondance
- * IMDb → MAL par ARM. Série inconnue de MAL : liste vide. Panne d'ARM ou d'une fiche Jikan : les autres fiches sont
- * gardées et le résultat est marqué `degraded`.
+ * Fiches MAL d'une structure renumérotée (numérotation MAL) : chaque épisode porte sa fiche et son numéro MAL, y compris
+ * quand une saison est partagée entre plusieurs fiches (anime en plusieurs cours).
+ */
+function numberedTargets(episodes: readonly SeriesEpisode[]): MalTarget[] {
+  const ids = [...new Set(episodes.map((e) => e.mal).filter((id): id is number => id !== undefined))];
+  return ids.map((mal) => ({ mal, find: (n) => episodes.find((e) => e.mal === mal && e.malEpisode === n) }));
+}
+
+/**
+ * Épisodes filler et récap d'une série, dans la numérotation canonique de /series/:tmdbId/episodes. Anime en
+ * numérotation MAL : fiches MAL lues dans la structure. Sinon : correspondance IMDb → MAL par ARM. Série inconnue de
+ * MAL : liste vide. Panne d'ARM ou d'une fiche Jikan : les autres fiches sont gardées et le résultat est marqué
+ * `degraded`.
  */
 export async function seriesFillers(
   ctx: LtContext,
@@ -136,18 +146,22 @@ export async function seriesFillers(
   language: string | undefined,
 ): Promise<FillersResult> {
   const structure = await seriesEpisodes(ctx, svc, tmdbId, language);
-  const imdbId = imdbOf(structure.episodes);
-  if (imdbId === undefined) return { fillers: [], degraded: false };
-  let entries: ArmEntry[];
-  try {
-    entries = await armEntries(ctx, imdbId);
-  } catch (err) {
-    console.warn(`[lt][fillers] ARM indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
-    return { fillers: [], degraded: true };
+  let targets: MalTarget[];
+  if (structure.numbering === 'mal') {
+    targets = numberedTargets(structure.episodes);
+  } else {
+    const imdbId = imdbOf(structure.episodes);
+    if (imdbId === undefined) return { fillers: [], degraded: false };
+    try {
+      targets = malTargets(await armEntries(ctx, imdbId), structure.episodes);
+    } catch (err) {
+      console.warn(`[lt][fillers] ARM indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
+      return { fillers: [], degraded: true };
+    }
   }
   const fillers: FillerEpisode[] = [];
   let degraded = false;
-  for (const target of malTargets(entries, structure.episodes)) {
+  for (const target of targets) {
     let marks: MalFillers;
     try {
       marks = await malFillers(ctx, target.mal);

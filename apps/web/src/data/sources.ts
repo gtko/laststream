@@ -33,6 +33,19 @@ export function episodeStreamId(imdbId: string, season?: number | null, episode?
 }
 
 
+/** Options d'une recherche : torrents sans lien, identifiant de flux de l'épisode, identifiants d'anime (MAL, Kitsu). */
+export interface StreamOptions {
+  torrents?: boolean;
+  streamId?: string | null;
+  altIds?: readonly string[];
+}
+
+/** Query string d'une recherche (`?torrents=1&alt=mal:…,kitsu:…`), vide sans option. */
+function streamQuery(opts: StreamOptions): string {
+  const parts = [...(opts.torrents ? ['torrents=1'] : []), ...(opts.altIds?.length ? ['alt=' + opts.altIds.map(encodeURIComponent).join(',')] : [])];
+  return parts.length ? '?' + parts.join('&') : '';
+}
+
 /** Résultat d'une recherche de sources : streams et sources encore en cours d'interrogation (réponse partielle de lastAddon). */
 export interface StreamsResult {
   streams: Stream[];
@@ -94,10 +107,10 @@ export function parseDeviceTargets(raw: unknown): DeviceTarget[] {
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : []);
 
 /** Streams d'un titre avec la liste des sources encore en attente (`pending`) ; absente dans l'ancienne forme de réponse. */
-export async function fetchStreamsResult(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null, opts: { torrents?: boolean; streamId?: string | null } = {}): Promise<StreamsResult> {
+export async function fetchStreamsResult(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null, opts: StreamOptions = {}): Promise<StreamsResult> {
   const kind = type === 'tv' ? 'series' : 'movie';
   const id = type === 'tv' ? episodeStreamId(imdbId, season, episode, opts.streamId) : imdbId;
-  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown; debrid?: unknown; onlyCached?: unknown; deviceFetch?: unknown; notYetDigital?: unknown; digitalDate?: unknown }>(addonUrl(`stream/${kind}/${id}.json${opts.torrents ? '?torrents=1' : ''}`));
+  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown; debrid?: unknown; onlyCached?: unknown; deviceFetch?: unknown; notYetDigital?: unknown; digitalDate?: unknown }>(addonUrl(`stream/${kind}/${id}.json${streamQuery(opts)}`));
   const notice = typeof res?.notice === 'string' && res.notice ? res.notice : undefined;
   const deviceFetch = parseDeviceTargets(res?.deviceFetch);
   return {
@@ -116,11 +129,11 @@ export interface StreamsStatus {
 }
 
 /** État de la recherche en cours : GET {base}/{config}/lt/streams/status/:type/:id. Null si la route n'existe pas. */
-export async function fetchStreamStatus(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null, opts: { torrents?: boolean; streamId?: string | null } = {}): Promise<StreamsStatus | null> {
+export async function fetchStreamStatus(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null, opts: StreamOptions = {}): Promise<StreamsStatus | null> {
   const kind = type === 'tv' ? 'series' : 'movie';
   const id = type === 'tv' ? episodeStreamId(imdbId, season, episode, opts.streamId) : imdbId;
   try {
-    const res = await requestJson<{ pending?: unknown; count?: unknown }>(ltUrl(`streams/status/${kind}/${id}`, opts.torrents ? { torrents: '1' } : undefined));
+    const res = await requestJson<{ pending?: unknown; count?: unknown }>(ltUrl(`streams/status/${kind}/${id}`, { ...(opts.torrents ? { torrents: '1' } : {}), ...(opts.altIds?.length ? { alt: opts.altIds.join(',') } : {}) }));
     return { pending: strings(res?.pending), count: typeof res?.count === 'number' ? res.count : 0 };
   } catch {
     return null;
