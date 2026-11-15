@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "laststream-mobile",
+  "description": "Interface Laststream sur Android : seule l'API Capacitor recréée (plugin capacitor) est accessible.",
+  "platforms": ["android", "iOS"],
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://app.laststream.app/*"]
+  },
+  "permissions": ["capacitor:default"]
+}

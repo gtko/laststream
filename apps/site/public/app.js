@@ -1,6 +1,7 @@
 (function () {
   'use strict';
-  // Versions et liens : lus dans latest.json (/api/windows, /api/android) ; le HTML garde des valeurs de secours
+  // Versions et liens : lus dans latest.json (/api/<plateforme>, src/worker.js) ; le HTML garde des valeurs de secours
+  // (page de la dernière release GitHub)
   var APP = 'https://app.laststream.app/app/';
   var GITHUB = 'https://github.com/gtko/laststream/releases/download/';
 
@@ -13,8 +14,8 @@
         windows: ['Télécharger pour Windows', 'Détecté : Windows'],
         android: ["Télécharger l'APK Android", 'Détecté : Android'],
         ios: ['Installer la version web', 'Détecté : iPhone ou iPad'],
-        mac: ['Installer la version web', 'Détecté : macOS'],
-        linux: ['Installer la version web', 'Détecté : Linux'],
+        mac: ['Télécharger pour Mac', 'Détecté : macOS'],
+        linux: ['Télécharger pour Linux', 'Détecté : Linux'],
         web: ['Ouvrir dans le navigateur', 'Ta plateforme n\'a pas été reconnue']
       }
     },
@@ -25,8 +26,8 @@
         windows: ['Download for Windows', 'Detected: Windows'],
         android: ['Download the Android APK', 'Detected: Android'],
         ios: ['Install the web version', 'Detected: iPhone or iPad'],
-        mac: ['Install the web version', 'Detected: macOS'],
-        linux: ['Install the web version', 'Detected: Linux'],
+        mac: ['Download for Mac', 'Detected: macOS'],
+        linux: ['Download for Linux', 'Detected: Linux'],
         web: ['Open in browser', 'Your platform was not recognized']
       }
     }
@@ -62,30 +63,39 @@
   if (cta) {
     cta.textContent = LABEL[os][0];
     if (os === 'windows') { cta.href = document.getElementById('win-link').href; cta.setAttribute('download', ''); }
-    else if (os === 'android') cta.href = '#telecharger';
+    else if (os === 'android' || os === 'mac' || os === 'linux') cta.href = '#telecharger';
   }
   var line = document.getElementById('dl-os');
   if (line) line.textContent = LABEL[os][1] + '. ' + T.others;
 
-  // Cartes Windows et Android : version, taille et lien à jour (routes même origine)
+  // Cartes : version, taille et liens à jour (routes même origine). `files` : [id du lien, fichier tiré de l'URL du flux].
+  // Le flux pointe sur le fichier de mise à jour (Mac : .app.tar.gz) ; l'installation se fait avec le .dmg voisin.
   function mb(n) { return Math.round(n / 1048576) + ' ' + T.mb; }
-  function latest(platform, linkId, metaId) {
-    fetch('/api/' + platform, { headers: { accept: 'application/json' } })
+  var same = function (u) { return u; };
+  var dmg = function (u) { return u.replace(/\.app\.tar\.gz$/, '.dmg'); };
+  var deb = function (u) { return u.replace(/\.AppImage$/, '.deb'); };
+  function latest(api, platform, files, metaId, withSize) {
+    fetch('/api/' + api, { headers: { accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
       .then(function (j) {
         if (!j || typeof j.url !== 'string') return;
         var ok = j.url.indexOf(APP + platform + '/') === 0 || (platform === 'android' && j.url.indexOf(GITHUB) === 0);
         if (!ok) return;
-        var a = document.getElementById(linkId);
+        files.forEach(function (f) {
+          var a = document.getElementById(f[0]);
+          if (a) a.href = f[1](j.url);
+        });
         var m = document.getElementById(metaId);
-        if (a) a.href = j.url;
-        if (m && j.versionName) m.textContent = j.versionName + (j.size ? ' · ' + mb(j.size) : '');
-        if (platform === 'windows' && os === 'windows' && cta) cta.href = j.url;
+        if (m && j.versionName) m.textContent = j.versionName + (withSize && j.size ? ' · ' + mb(j.size) : '');
+        if (platform === 'tauri/windows-x86_64' && os === 'windows' && cta) cta.href = j.url;
       })
       .catch(function () { /* valeurs par défaut conservées */ });
   }
-  latest('windows', 'win-link', 'win-meta');
-  latest('android', 'apk-link', 'apk-meta');
+  latest('windows', 'tauri/windows-x86_64', [['win-link', same]], 'win-meta', true);
+  latest('android', 'android', [['apk-link', same]], 'apk-meta', true);
+  latest('macos-aarch64', 'tauri/macos-aarch64', [['mac-arm-link', dmg]], 'mac-meta', false);
+  latest('macos-x86_64', 'tauri/macos-x86_64', [['mac-intel-link', dmg]], null, false);
+  latest('linux', 'tauri/linux-x86_64', [['linux-appimage-link', same], ['linux-deb-link', deb]], 'linux-meta', false);
 })();
 
 // Apparition douce des sections au défilement (désactivée si l'utilisateur réduit les animations)
