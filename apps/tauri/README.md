@@ -1,4 +1,4 @@
-# Laststream : coque Tauri (macOS et Windows)
+# Laststream : app Tauri (macOS, Windows, Linux, Android)
 
 App desktop Laststream construite avec Tauri 2. Elle parle **exactement le même protocole** que la coque Windows
 historique (`apps/desktop`) : l'interface web (`apps/web`) fonctionne sans aucun changement. La coque Windows historique
@@ -35,6 +35,30 @@ Linux, macOS et Windows en plus de `desktop-ci.yml`.
 - « Lecteur du système » accepte la liste `#EXTINF:-1,<titre>` que la page envoie (la coque historique la refusait).
 - Pas de moteur libVLC ni de traitement GPU NVIDIA (`playerBackends` = `["mpv"]`, `gpuVideoProcessing=false`).
 
+## Android
+
+Même app que l'app Capacitor (`apps/mobile`) : même identifiant (`com.laststream.app`, `src-tauri/tauri.android.conf.json`),
+même clé de signature et même `versionCode` (AAAAMMJJNN) ; l'APK Tauri s'installe par-dessus l'APK Capacitor. L'interface
+est chargée depuis `https://app.laststream.app` (page de démarrage `splash/android.html` : sonde du serveur, écran hors
+ligne) et retrouve l'API Capacitor qu'elle attend :
+
+| Élément | Où |
+|---|---|
+| `window.Capacitor` (plateforme `android`, `PluginHeaders`, `nativePromise`, `nativeCallback`) | `src-tauri/src/capacitor.js`, injecté avant les scripts de la page |
+| Commandes `capacitor|call`, `registerListener`, `removeListener` | plugin Tauri `capacitor` (`src/mobile.rs`, permission `capacitor:default` réservée à `app.laststream.app`) |
+| Plugins natifs (lecteur libVLC, téléchargements, mise à jour, écran) | **repris tels quels** de `apps/mobile/android/app/src/main/java` (Gradle `sourceSets`), avec ses ressources |
+| API `com.getcapacitor` dont ils se servent (`Plugin`, `PluginCall`, `JSObject`…) | `gen/android/app/src/main/java/com/getcapacitor`, sur `CapacitorBridgePlugin` |
+| `CapacitorHttp`, `@capacitor/app` (retour, `minimizeApp`) | `gen/android/app/src/main/java/com/laststream/app/bridge` |
+
+`scripts/capacitor.test.mjs` vérifie `capacitor.js` avec le vrai `@capacitor/core` et que ses listes de méthodes suivent
+les `@PluginMethod` Kotlin. Les tests unitaires Kotlin de `apps/mobile` tournent aussi dans le projet Tauri.
+
+```sh
+export ANDROID_HOME=… NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018
+rustup target add aarch64-linux-android armv7-linux-androideabi
+cd apps/tauri && npm ci && npx tauri android build --target aarch64 --target armv7 --apk
+```
+
 ## Construire en local
 
 macOS : `brew install mpv dylibbundler pkg-config`, puis :
@@ -64,6 +88,8 @@ Linux (x86_64) : WebKitGTK et `libmpv-dev` pour compiler. AppImage (libmpv inclu
 | `Laststream-X.Y.Z-macos-aarch64.dmg`, `…-macos-x86_64.dmg` | installation macOS (Apple Silicon, Intel) |
 | `Laststream-X.Y.Z-macos-aarch64.app.tar.gz`, `…-macos-x86_64.app.tar.gz` | mise à jour macOS |
 | `Laststream-X.Y.Z-windows-x86_64.setup.exe` | installation et mise à jour Windows (NSIS) |
+| `Laststream-X.Y.Z-linux-x86_64.AppImage`, `….deb` | installation Linux (l'AppImage se met à jour seule) |
+| `Laststream-X.Y.Z-android-tauri.apk` | Android (à essayer : `android-latest.json` reste celui de l'APK Capacitor) |
 | `tauri-<plateforme>-latest.json` (+ `.sig`) | flux signé ed25519 (clé `LASTSTREAM_UPDATE_SIGNING_KEY`, celle de la coque Windows) |
 
 Le Worker `laststream-edge` sert flux et fichiers sous `https://app.laststream.app/app/tauri/<plateforme>/` (seul hôte

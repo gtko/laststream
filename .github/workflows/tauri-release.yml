@@ -195,3 +195,4 @@ jobs:
         name: tauri-linux-x86_64
         path: dist/*
         if-no-files-found: error
+

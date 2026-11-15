@@ -1,8 +1,15 @@
 // Site statique (Workers Assets). www.laststream.app -> 301 vers la racine, avant tout autre traitement.
-// Routes dynamiques : /api/android et /api/windows -> latest.json de l'app (même origine, pas de CORS).
+// Routes dynamiques : /api/<plateforme> -> latest.json de l'app (même origine, pas de CORS). Android : flux de l'APK ;
+// Windows, Mac, Linux : flux de l'app Tauri (app.laststream.app/app/tauri/<plateforme>/latest.json, servi par laststream-edge).
 const ROOT = 'https://laststream.app';
 const BASE = 'https://app.laststream.app/app/';
-const PLATFORMS = { '/api/android': 'android', '/api/windows': 'windows' };
+export const PLATFORMS = {
+  '/api/android': 'android',
+  '/api/windows': 'tauri/windows-x86_64',
+  '/api/macos-aarch64': 'tauri/macos-aarch64',
+  '/api/macos-x86_64': 'tauri/macos-x86_64',
+  '/api/linux': 'tauri/linux-x86_64',
+};
 // APK Android : publié sur chaque release GitHub du dépôt (workflow Release), plus sur app.laststream.app.
 const GITHUB_RELEASES = 'https://github.com/gtko/laststream/releases/download/';
 

@@ -48,10 +48,17 @@ fn main() {
             .join(format!("mpv-{arch}"));
         println!("cargo:rustc-link-search=native={}", dir.display());
     }
-    // `shell_post` : unique commande Tauri, appelée par le polyfill `window.chrome.webview` (src/bridge.js).
+    // `shell_post` : unique commande Tauri du desktop, appelée par le polyfill `window.chrome.webview` (src/bridge.js).
+    // `capacitor` : plugin Android (gen/android, `CapacitorBridgePlugin`) qui sert l'API Capacitor de l'interface.
     tauri_build::try_build(
         tauri_build::Attributes::new()
-            .app_manifest(tauri_build::AppManifest::new().commands(&["shell_post"])),
+            .app_manifest(tauri_build::AppManifest::new().commands(&["shell_post"]))
+            .plugin(
+                "capacitor",
+                tauri_build::InlinedPlugin::new()
+                    .commands(&["call", "registerListener", "removeListener"])
+                    .default_permission(tauri_build::DefaultPermissionRule::AllowAllCommands),
+            ),
     )
     .expect("tauri-build");
 }

@@ -1,10 +1,13 @@
 name: Release
 
 # Release automatique a chaque merge de PR sur main : bump de version (labels release:minor / release:major, sinon patch),
-# CHANGELOG.md, commit "release: vX.Y.Z" + tag annote vX.Y.Z, installeur Windows + APK Android, puis release GitHub publiee
-# (banniere, changelog, assets, dont android-latest.json : flux de l'APK lu par le site et l'app via laststream-edge).
-# Pas de macOS. Windows : laststream-edge relit le flux signe (latest.json, latest.json.sig) et l'installeur sur la release
-# publiee, comme pour Android ; le televersement R2 (upload.ps1) n'est plus qu'un repli.
+# CHANGELOG.md, commit "release: vX.Y.Z" + tag annote vX.Y.Z, app Tauri (apps/tauri) pour toutes les plateformes, puis
+# release GitHub publiee (banniere, changelog, assets).
+#  - macOS, Windows, Linux : tauri-release.yml (fichiers et flux signes tauri-<plateforme>-latest.json, lus par
+#    laststream-edge sous app.laststream.app/app/tauri/<plateforme>/ : site et mises a jour de l'app) ;
+#  - Android : APK Tauri (job android), meme identifiant, cle et versionCode que l'ancien APK Capacitor, qu'il remplace par
+#    la mise a jour en un tap ; android-latest.json reste le flux lu par le site et l'app via laststream-edge.
+# L'ancienne app Windows (apps/desktop) et l'ancien APK Capacitor (apps/mobile) ne sont plus publies.
 # Label release:skip sur la PR : aucune release.
 # workflow_dispatch(tag) : relance les builds et la publication d'un tag vX.Y.Z existant, sans nouveau bump.
 # Prerequis du depot : voir README.md, section "Releases automatiques" (secrets, permissions d'ecriture, protection de main).
@@ -199,22 +202,7 @@ jobs:
           echo "version_code=$VERSION_CODE"
         } >> "$GITHUB_OUTPUT"
 
-  # Installeur Windows : workflow reutilisable, dependances preparees dans son propre run (deps=artifact), sans publier la release.
-  desktop:
-    needs: prepare
-    if: ${{ needs.prepare.outputs.skip != 'true' }}
-    permissions:
-      contents: write
-    uses: ./.github/workflows/desktop-release.yml
-    with:
-      tag: ${{ needs.prepare.outputs.tag }}
-      deps: artifact
-      publish: false
-    # Secret explicite (pas de heritage) : seul le secret de signature de latest.json est passe au workflow reutilisable.
-    secrets:
-      LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
-
-  # App desktop Tauri (macOS, Windows) : fichiers et flux signés en artefacts. Facultative : un échec ne bloque pas la release.
+  # App Tauri (macOS, Windows, Linux) : fichiers et flux signés en artefacts.
   tauri:
     needs: prepare
     if: ${{ needs.prepare.outputs.skip != 'true' }}
@@ -250,11 +238,15 @@ jobs:
       with:
         distribution: temurin
         java-version: '21'
-    # Le paquet par defaut 'tools' n'existe plus dans sdkmanager : on installe explicitement ce que le build utilise (compileSdk 35).
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       with:
-        packages: 'platform-tools platforms;android-35'
+        packages: 'platform-tools platforms;android-36 build-tools;35.0.0 ndk;27.2.12479018'
+    - name: Rust Android targets
+      run: rustup target add aarch64-linux-android armv7-linux-androideabi
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: apps/tauri/src-tauri
     # Cle de signature stable (signingConfigs.publish, -PlsKeystore) : la meme a chaque release, sinon Android refuse la mise a jour.
     - name: Restore the signing keystore
       env:
@@ -268,25 +260,22 @@ jobs:
         printf '%s' "$ANDROID_DEBUG_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/ls-signing.keystore"
         test -s "$RUNNER_TEMP/ls-signing.keystore"
         keytool -list -keystore "$RUNNER_TEMP/ls-signing.keystore" -storepass android -alias androiddebugkey >/dev/null
-    - name: Build the web app (apps/web/dist, webDir of Capacitor)
-      working-directory: apps/web
+    # App Tauri (apps/tauri) : APK arm64 + armv7, plugins natifs repris de apps/mobile, signé avec la clé de publication.
+    - name: Build the signed release APK (Tauri)
+      working-directory: apps/tauri
+      env:
+        NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.2.12479018
+        ORG_GRADLE_PROJECT_lsVersionCode: ${{ needs.prepare.outputs.version_code }}
+        ORG_GRADLE_PROJECT_lsVersionName: ${{ needs.prepare.outputs.version }}
+        ORG_GRADLE_PROJECT_lsKeystore: ${{ runner.temp }}/ls-signing.keystore
       run: |
         npm ci
-        npm run build:ci
-    - name: Capacitor sync
-      working-directory: apps/mobile
-      run: |
-        npm ci
-        npx cap sync android
-    - name: Assemble the signed release APK
-      working-directory: apps/mobile/android
-      # gradlew est enregistre sans bit executable dans git (mode 100644) : on l'appelle via bash.
-      run: bash ./gradlew assembleRelease "-PlsVersionCode=${VERSION_CODE}" "-PlsVersionName=${VERSION}" "-PlsKeystore=${RUNNER_TEMP}/ls-signing.keystore"
+        npx tauri android build --target aarch64 --target armv7 --apk
     # Garde-fou : l'APK doit porter le certificat du keystore, sinon les téléphones refusent la mise à jour.
     - name: Check the APK signing certificate
       run: |
         set -euo pipefail
-        apk="$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' | head -n 1)"
+        apk="$(find apps/tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release -name '*.apk' | head -n 1)"
         # Lecture du bloc de signature v3/v2 (scripts/apk-cert-sha256.py) : la sortie d'apksigner variait selon les build-tools.
         got="$(python3 scripts/apk-cert-sha256.py "$apk")"
         want="$(keytool -list -v -keystore "$RUNNER_TEMP/ls-signing.keystore" -storepass android -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')"
@@ -297,9 +286,9 @@ jobs:
       run: |
         set -euo pipefail
         mkdir -p dist
-        count="$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' | wc -l)"
+        count="$(find apps/tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release -name '*.apk' | wc -l)"
         if [ "$count" -ne 1 ]; then echo "::error::Un seul APK attendu, $count trouve(s)"; exit 1; fi
-        cp "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk')" "dist/Laststream-${VERSION}.apk"
+        cp "$(find apps/tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release -name '*.apk')" "dist/Laststream-${VERSION}.apk"
     # Flux de version Android, joint a la release : le Worker laststream-edge le relit sur releases/latest/download et le sert
     # sur app.laststream.app/app/android/latest.json (bouton du site, mise a jour en un tap de l'app).
     - name: Build android-latest.json
@@ -326,9 +315,8 @@ jobs:
         if-no-files-found: error
 
   publish:
-    needs: [prepare, desktop, android, tauri]
-    # La coque Tauri est facultative : la release part dès que Windows et Android sont prêts.
-    if: ${{ always() && needs.prepare.outputs.skip != 'true' && needs.desktop.result == 'success' && needs.android.result == 'success' }}
+    needs: [prepare, android, tauri]
+    if: ${{ always() && needs.prepare.outputs.skip != 'true' && needs.android.result == 'success' && needs.tauri.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -338,25 +326,18 @@ jobs:
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.prepare.outputs.tag }}
     steps:
-    - name: Download the Windows assets
-      uses: actions/download-artifact@v4
-      with:
-        name: desktop-release
-        path: dl/desktop
     - name: Download the APK
       uses: actions/download-artifact@v4
       with:
         name: android-apk
         path: dl/android
     - name: Download the Tauri app (macOS, Windows, Linux)
-      if: ${{ needs.tauri.result == 'success' }}
       uses: actions/download-artifact@v4
       with:
         pattern: tauri-*
         merge-multiple: true
         path: dl/tauri
     - name: Upload the Tauri app files and feeds
-      if: ${{ needs.tauri.result == 'success' }}
       run: |
         set -euo pipefail
         shopt -s nullglob
@@ -369,12 +350,8 @@ jobs:
       run: |
         set -euo pipefail
         shopt -s nullglob
-        installers=(dl/desktop/Laststream-Setup-*.exe)
         apks=(dl/android/Laststream-*.apk)
-        if [ "${#installers[@]}" -ne 1 ] || [ "${#apks[@]}" -ne 1 ]; then
-          echo "::error::Un installeur et un APK attendus (${#installers[@]} installeur(s), ${#apks[@]} APK)"
-          exit 1
-        fi
-        for f in dl/desktop/latest.json dl/desktop/latest.json.sig dl/android/android-latest.json; do test -s "$f" || { echo "::error::$f absent"; exit 1; }; done
-        gh release upload "$TAG" "${installers[0]}" "${installers[0]}.sha256" dl/desktop/latest.json dl/desktop/latest.json.sig "${apks[0]}" dl/android/android-latest.json --clobber
+        [ "${#apks[@]}" -eq 1 ] || { echo "::error::Un APK attendu, ${#apks[@]} trouvé(s)"; exit 1; }
+        test -s dl/android/android-latest.json || { echo "::error::android-latest.json absent"; exit 1; }
+        gh release upload "$TAG" "${apks[0]}" dl/android/android-latest.json --clobber
         gh release edit "$TAG" --draft=false --latest

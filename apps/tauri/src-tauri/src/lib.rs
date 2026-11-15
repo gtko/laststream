@@ -1,33 +1,57 @@
-//! Coque Tauri de Laststream (macOS et Windows) : même protocole que la coque Windows historique (`apps/desktop`),
+//! Coque Tauri de Laststream (macOS, Windows, Linux ; Android dans `mobile.rs`) : même protocole que la coque Windows historique (`apps/desktop`),
 //! l'interface web n'a rien à changer. Voir README.md pour l'architecture et la correspondance avec l'ancienne coque.
 
+#[cfg(desktop)]
 pub mod laststream_app;
+#[cfg(mobile)]
+mod mobile;
 
+#[cfg(desktop)]
 mod commands;
+#[cfg(desktop)]
 mod dialogs;
+#[cfg(desktop)]
 mod external;
+#[cfg(desktop)]
 mod local;
+#[cfg(desktop)]
 mod media;
+#[cfg(desktop)]
 mod migrate;
+#[cfg(desktop)]
 mod player;
+#[cfg(desktop)]
 mod services;
+#[cfg(desktop)]
 mod shell;
+#[cfg(desktop)]
 mod splash;
+#[cfg(desktop)]
 mod tray;
+#[cfg(desktop)]
 mod update;
+#[cfg(desktop)]
 mod web;
+#[cfg(desktop)]
 mod window_ops;
+#[cfg(desktop)]
 mod window_state;
 
+#[cfg(desktop)]
 use std::sync::Arc;
+#[cfg(desktop)]
 use std::thread;
 
+#[cfg(desktop)]
 use clap::Parser;
+#[cfg(desktop)]
 use tauri::{
     AppHandle, LogicalSize, Manager, Runtime, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
+#[cfg(desktop)]
 use url::Url;
 
+#[cfg(desktop)]
 use crate::laststream_app::{
     constants::{
         DEV_ENDPOINT, LASTSTREAM_SERVER_DEV_MODE, SERVER_IPC_KEY, WINDOW_MIN_HEIGHT,
@@ -35,10 +59,13 @@ use crate::laststream_app::{
     },
     robust, sentry_report,
 };
+#[cfg(desktop)]
 use crate::shell::Shell;
+#[cfg(desktop)]
 use crate::web::MAIN;
 
 /// Options de la ligne de commande : les mêmes que la coque Windows (`apps/desktop/src/main.rs`).
+#[cfg(desktop)]
 #[derive(Parser, Debug, Clone)]
 #[clap(version)]
 pub struct Opt {
@@ -81,6 +108,7 @@ pub struct Opt {
     pub server_ipc_key: String,
 }
 
+#[cfg(desktop)]
 /// Exécute `f` avec l'état de la coque, s'il existe déjà.
 pub fn with_shell<R: Runtime>(app: &AppHandle<R>, f: impl FnOnce(&Arc<Shell<R>>)) {
     if let Some(shell) = app.try_state::<Arc<Shell<R>>>() {
@@ -88,6 +116,7 @@ pub fn with_shell<R: Runtime>(app: &AppHandle<R>, f: impl FnOnce(&Arc<Shell<R>>)
     }
 }
 
+#[cfg(desktop)]
 /// Quitter pour de bon (menu « Quitter », commande `quit`) : état de la fenêtre enregistré, services arrêtés.
 pub fn quit<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN) {
@@ -98,8 +127,10 @@ pub fn quit<R: Runtime>(app: &AppHandle<R>) {
     app.exit(0);
 }
 
+#[cfg(desktop)]
 const BRIDGE_JS: &str = include_str!("bridge.js");
 
+#[cfg(desktop)]
 /// `window.laststream_server_ipc_key` (attendu par le serveur de streaming façon Stremio), échappé comme la coque Windows.
 fn ipc_key_script(key: &str) -> String {
     let literal = serde_json::to_string(key)
@@ -111,7 +142,17 @@ fn ipc_key_script(key: &str) -> String {
     format!("window.laststream_server_ipc_key = {literal};")
 }
 
+/// Point d'entrée : coque desktop, ou app Android (`mobile.rs`).
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(desktop)]
+    run_desktop();
+    #[cfg(mobile)]
+    mobile::run();
+}
+
+#[cfg(desktop)]
+fn run_desktop() {
     robust::install_panic_hook();
     let _sentry = sentry_report::init();
     let opt = Opt::parse();
@@ -172,6 +213,7 @@ pub fn run() {
         });
 }
 
+#[cfg(desktop)]
 fn create_main_window<R: Runtime>(
     app: &AppHandle<R>,
     opt: &Opt,
@@ -265,6 +307,7 @@ fn create_main_window<R: Runtime>(
     Ok(())
 }
 
+#[cfg(desktop)]
 /// Choisit et charge l'interface : public (par défaut), URL personnalisée, mode local, `--webui-url`, `--development`.
 fn start_ui<R: Runtime>(shell: Arc<Shell<R>>, opt: Opt) {
     let explicit = opt
@@ -274,6 +317,7 @@ fn start_ui<R: Runtime>(shell: Arc<Shell<R>>, opt: Opt) {
     services::start(shell, opt, explicit);
 }
 
+#[cfg(desktop)]
 /// Charge `url` dans la fenêtre principale ; son origine devient la seule écoutée. Même URL (au fragment près) :
 /// fragment puis rechargement, comme la coque Windows.
 pub fn navigate<R: Runtime>(shell: &Shell<R>, url: &str) {
