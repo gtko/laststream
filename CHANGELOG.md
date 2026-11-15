@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.62 – 2026-11-15
+
+- Anime : numérotation MyAnimeList, fillers par fiche MAL, sources cherchées par identifiant MAL et Kitsu (#42) — @gtko
+
 ## v1.0.61 – 2026-11-15
 
 - Flux Tauri : tauri-feed.mjs écrit aussi son fichier sous Windows (#41) — @gtko
