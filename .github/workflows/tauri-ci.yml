@@ -139,7 +139,14 @@ jobs:
         LASTSTREAM_MPV_LIB_DIR: ${{ github.workspace }}/apps/tauri/src-tauri/target/mpv-stage
       run: |
         npm ci
-        npx tauri build --bundles app,dmg --config src-tauri/target/mpv-stage/frameworks.json
+        # hdiutil échoue parfois sur les runners macOS (« create failed - Resource busy ») : nouvel essai, la compilation
+        # reste en cache et seul l'empaquetage est refait.
+        for attempt in 1 2 3; do
+          npx tauri build --bundles app,dmg --config src-tauri/target/mpv-stage/frameworks.json && break
+          [ "$attempt" -lt 3 ] || exit 1
+          echo "::warning::Empaquetage macOS échoué (essai $attempt), nouvel essai"
+          sleep 15
+        done
     - name: Check the bundle (libmpv from Contents/Frameworks)
       working-directory: apps/tauri/src-tauri/target/release/bundle
       run: |
