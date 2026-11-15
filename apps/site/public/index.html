@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Laststream - Ton cinéma, partout</title>
-<meta name="description" content="Laststream réunit ton catalogue, la TV en direct, un lecteur intégré, les profils, les amis et la watch party dans une seule app. Windows, Android et web. Inscription sur invitation.">
+<meta name="description" content="Laststream réunit ton catalogue, la TV en direct, un lecteur intégré, les profils, les amis et la watch party dans une seule app. Windows, Mac, Linux, Android et web. Inscription sur invitation.">
 <meta name="theme-color" content="#0c0b11">
 <meta name="color-scheme" content="dark">
 <link rel="canonical" href="https://laststream.app/">
@@ -19,7 +19,7 @@
 <meta property="og:locale" content="fr_FR">
 <meta property="og:locale:alternate" content="en_US">
 <meta property="og:title" content="Laststream - Ton cinéma, partout">
-<meta property="og:description" content="Catalogue, TV en direct, lecteur intégré, profils, amis et watch party. Sur Windows, Android et dans ton navigateur.">
+<meta property="og:description" content="Catalogue, TV en direct, lecteur intégré, profils, amis et watch party. Sur Windows, Mac, Linux, Android et dans ton navigateur.">
 <meta property="og:url" content="https://laststream.app/">
 <meta property="og:image" content="https://laststream.app/assets/og.png">
 <meta property="og:image:width" content="1200">
@@ -40,10 +40,10 @@
     {
       "@type": "SoftwareApplication",
       "name": "Laststream",
-      "description": "Catalogue, TV en direct, lecteur intégré, profils, amis et watch party dans une seule app. Windows, Android et navigateur.",
+      "description": "Catalogue, TV en direct, lecteur intégré, profils, amis et watch party dans une seule app. Windows, Mac, Linux, Android et navigateur.",
       "url": "https://laststream.app/",
       "image": "https://laststream.app/assets/og.png",
-      "operatingSystem": "Windows, Android, Web",
+      "operatingSystem": "Windows, macOS, Linux, Android, Web",
       "applicationCategory": "MultimediaApplication",
       "inLanguage": "fr",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
@@ -115,7 +115,7 @@
         <a class="btn btn-primary" id="hero-cta" href="#telecharger">Télécharger Laststream</a>
         <a class="btn btn-ghost" href="#etapes">Comment ça marche <span aria-hidden="true">→</span></a>
       </div>
-      <p class="fineprint hero-in" style="--d:7">Windows, Android et navigateur. Laststream n'héberge aucun contenu : il lit les extensions que tu configures. Compatible avec les extensions Stremio.</p>
+      <p class="fineprint hero-in" style="--d:7">Windows, Mac, Linux, Android et navigateur. Laststream n'héberge aucun contenu : il lit les extensions que tu configures. Compatible avec les extensions Stremio.</p>
     </div>
     <div class="hero-shot-wrap hero-in" style="--d:8">
       <div class="hero-shot" data-tilt>
@@ -128,7 +128,7 @@
   <section class="stats" aria-label="Laststream en chiffres">
     <ul class="wrap stats-grid">
       <li data-reveal><span class="stat-num"><span class="count" data-to="15">15</span></span><span class="stat-label">fonctionnalités, rien de superflu</span></li>
-      <li data-reveal style="--d:1"><span class="stat-num"><span class="count" data-to="3">3</span></span><span class="stat-label">écrans : Windows, Android, navigateur</span></li>
+      <li data-reveal style="--d:1"><span class="stat-num"><span class="count" data-to="5">5</span></span><span class="stat-label">écrans : Windows, Mac, Linux, Android, navigateur</span></li>
       <li data-reveal style="--d:2"><span class="stat-num"><span class="count" data-to="4">4</span></span><span class="stat-label">liens d'invitation par compte</span></li>
       <li data-reveal style="--d:3"><span class="stat-num"><span class="count" data-to="0" data-from="100">0</span></span><span class="stat-label">contenu hébergé, jamais</span></li>
     </ul>
@@ -193,7 +193,7 @@
           <div class="step-copy">
             <p class="step-kicker">04 · Partout</p>
             <h3>Ta reprise te suit, du PC au téléphone.</h3>
-            <p>Reprise de lecture, listes et réglages sont synchronisés entre Windows, Android et le navigateur. Et pour le train, tu télécharges tes titres hors ligne.</p>
+            <p>Reprise de lecture, listes et réglages sont synchronisés entre Windows, Mac, Linux, Android et le navigateur. Et pour le train, tu télécharges tes titres hors ligne.</p>
             <img class="step-shot step-shot-phone" src="/assets/shots/mobile-home-600.webp" width="600" height="1298" alt="Accueil de Laststream sur téléphone." loading="lazy">
           </div>
         </article>
@@ -378,33 +378,57 @@
       <ul class="downloads">
         <li class="card dl" data-os="windows" data-reveal>
           <h3>Windows</h3>
-          <p class="dl-meta">Installateur 64 bits · <span id="win-meta">1.0.24 · 93 Mo</span></p>
+          <p class="dl-meta">Installateur 64 bits · <span id="win-meta">Windows 10 et 11</span></p>
           <p>Lecteur natif complet (mpv), mini-lecteur et mises à jour automatiques.</p>
-          <a class="btn btn-primary" id="win-link" href="https://app.laststream.app/app/windows/Laststream-Setup-1.0.24.exe" download>Télécharger pour Windows</a>
-          <p class="dl-note">Si Windows SmartScreen s'affiche : Informations complémentaires, puis Exécuter quand même.</p>
+          <a class="btn btn-primary" id="win-link" href="https://github.com/gtko/laststream/releases/latest" download>Télécharger pour Windows</a>
+          <p class="dl-note">Si Windows SmartScreen s'affiche : Informations complémentaires, puis Exécuter quand même. Tu as l'ancienne app ? Installe celle-ci : ta connexion et tes réglages sont repris, puis désinstalle l'ancienne.</p>
         </li>
         <li class="card dl" data-os="android" data-reveal style="--d:1">
           <h3>Android</h3>
-          <p class="dl-meta">Fichier APK · <span id="apk-meta">2026.10.25.1 · 46 Mo</span></p>
+          <p class="dl-meta">Fichier APK · <span id="apk-meta">Téléphone, tablette et Android TV</span></p>
           <p>Lecteur natif libVLC, mini-lecteur et mise à jour en un tap.</p>
-          <a class="btn btn-primary" id="apk-link" href="https://app.laststream.app/app/android/laststream-2026102501.apk">Télécharger l'APK</a>
+          <a class="btn btn-primary" id="apk-link" href="https://github.com/gtko/laststream/releases/latest">Télécharger l'APK</a>
           <details class="howto"><summary>Comment l'installer</summary>
             <ol><li>Télécharge le fichier APK sur ton téléphone ou ta tablette.</li><li>Ouvre-le. Android te demande d'autoriser l'installation depuis cette source : choisis « Autoriser les sources inconnues » (ou « Autoriser depuis cette source ») pour ton navigateur.</li><li>Valide l'installation, puis ouvre Laststream.</li></ol>
           </details>
         </li>
-        <li class="card dl" data-os="web" data-reveal style="--d:2">
+        <li class="card dl" data-os="mac" data-reveal style="--d:2">
+          <h3>Mac</h3>
+          <p class="dl-meta">Image disque · <span id="mac-meta">macOS 11 ou plus récent</span></p>
+          <p>Lecteur natif complet (mpv), mini-lecteur et mises à jour automatiques.</p>
+          <div class="dl-actions">
+            <a class="btn btn-primary" id="mac-arm-link" href="https://github.com/gtko/laststream/releases/latest">Mac Apple Silicon (M1 et plus)</a>
+            <a class="btn btn-ghost-solid" id="mac-intel-link" href="https://github.com/gtko/laststream/releases/latest">Mac Intel</a>
+          </div>
+          <details class="howto"><summary>Comment l'installer</summary>
+            <ol><li>Ouvre le fichier .dmg, puis glisse Laststream dans Applications.</li><li>L'app n'est pas encore notarisée par Apple : si macOS refuse de l'ouvrir, va dans Réglages Système, Confidentialité et sécurité, puis « Ouvrir quand même ».</li><li>Pour connaître ton Mac : menu Pomme, « À propos de ce Mac ». « Puce Apple » pour Apple Silicon, « Processeur Intel » pour Intel.</li></ol>
+          </details>
+        </li>
+        <li class="card dl" data-os="linux" data-reveal style="--d:3">
+          <h3>Linux</h3>
+          <p class="dl-meta">64 bits · <span id="linux-meta">AppImage ou .deb</span></p>
+          <p>Lecteur natif complet (mpv) et mini-lecteur. L'AppImage se met à jour toute seule.</p>
+          <div class="dl-actions">
+            <a class="btn btn-primary" id="linux-appimage-link" href="https://github.com/gtko/laststream/releases/latest">AppImage</a>
+            <a class="btn btn-ghost-solid" id="linux-deb-link" href="https://github.com/gtko/laststream/releases/latest">Paquet .deb</a>
+          </div>
+          <details class="howto"><summary>Comment l'installer</summary>
+            <ul><li><strong>AppImage :</strong> rends le fichier exécutable (Propriétés, ou <code>chmod +x</code>), puis lance-le.</li><li><strong>.deb (Debian, Ubuntu) :</strong> <code>sudo apt install ./Laststream-*.deb</code>. Les mises à jour passent alors par le .deb suivant.</li></ul>
+          </details>
+        </li>
+        <li class="card dl" data-os="web" data-reveal style="--d:4">
           <h3>Navigateur</h3>
           <p class="dl-meta">Aucune installation · Tous appareils</p>
           <p>Toute l'app dans un onglet, avec la même synchronisation. Idéal pour essayer.</p>
           <a class="btn btn-ghost-solid" href="https://app.laststream.app" rel="noopener">Ouvrir dans le navigateur</a>
         </li>
-        <li class="card dl" data-os="ios mac linux" data-reveal style="--d:3">
-          <h3>iPhone, iPad, Mac et Linux</h3>
+        <li class="card dl" data-os="ios" data-reveal style="--d:5">
+          <h3>iPhone et iPad</h3>
           <p class="dl-meta">Version web installable · App native bientôt</p>
           <p>Installe la version web : elle s'ouvre comme une vraie app, en plein écran.</p>
           <a class="btn btn-ghost-solid" href="https://app.laststream.app" rel="noopener">Installer la version web</a>
           <details class="howto"><summary>Comment l'installer</summary>
-            <ul><li><strong>iPhone et iPad (Safari) :</strong> touche Partager, puis « Sur l'écran d'accueil ».</li><li><strong>Chrome ou Edge (Windows, macOS, Linux) :</strong> clique sur l'icône d'installation dans la barre d'adresse, puis Installer.</li><li><strong>Safari sur macOS :</strong> menu Fichier, puis « Ajouter au Dock ».</li></ul>
+            <ul><li><strong>Safari :</strong> touche Partager, puis « Sur l'écran d'accueil ».</li></ul>
           </details>
         </li>
       </ul>
@@ -423,14 +447,14 @@
         <details><summary>Comment avoir un compte ?</summary><p>L'inscription se fait sur invitation. Demande un lien de parrainage à la personne qui t'a parlé de Laststream : chaque compte en dispose de 4.</p></details>
         <details><summary>Laststream fournit-il des films et des séries ?</summary><p>Non. Laststream n'héberge aucun contenu : c'est un lecteur et un catalogue qui lisent les extensions que tu configures toi-même. Tu restes responsable de ce que tu ajoutes et du respect des droits d'auteur dans ton pays.</p></details>
         <details><summary>Mes données me suivent-elles d'un appareil à l'autre ?</summary><p>Oui : reprise de lecture, listes et réglages sont synchronisés avec ton compte.</p></details>
-        <details><summary>Une app pour iPhone, Mac ou Linux ?</summary><p>Une app native est prévue. En attendant, la version web s'installe comme une app et fonctionne très bien.</p></details>
+        <details><summary>Une app pour iPhone ou iPad ?</summary><p>Une app native est prévue. En attendant, la version web s'installe comme une app et fonctionne très bien.</p></details>
         <details><summary>Comment sont choisies les sources ?</summary><p>Les sources de tes extensions sont triées par langue, puis par qualité, puis par taille. Laststream lance automatiquement la meilleure qui convient à ton débit du moment, et tu peux toujours en choisir une autre dans la liste.</p></details>
         <details><summary>Mes extensions Stremio fonctionnent-elles ?</summary><p>Oui. Laststream lit les extensions au format Stremio : il suffit de coller l'URL du manifest de l'extension, et ses catalogues et sources s'ajoutent à l'app.</p></details>
         <details><summary>Faut-il un service supplémentaire pour lire ?</summary><p>Cela dépend des extensions que tu configures. Laststream ne fournit aucun service de ce type : c'est à toi de choisir tes sources et, si elles l'exigent, les comptes qui vont avec.</p></details>
         <details><summary>Comment fonctionne le profil enfant ?</summary><p>Tu crées un profil enfant à côté des tiens. Il ne montre que des contenus adaptés à l'âge, d'après les classifications d'âge disponibles, n'ouvre ni les extensions ni les réglages, et on n'en sort qu'avec un code.</p></details>
         <details><summary>Les amis et la watch party, c'est disponible ?</summary><p>Oui. Amis, messages, fil d'activité, bibliothèques partagées et watch party sont disponibles avec un compte, mais pas depuis un profil enfant. Ta bibliothèque reste privée par défaut et chaque participant lit avec ses propres sources : rien n'est partagé entre comptes.</p></details>
         <details><summary>Faut-il un compte pour rejoindre une watch party ?</summary><p>Non. Un invité peut rejoindre une watch party sans compte, via le lien d'invitation que tu lui envoies. Il lit avec ses propres sources.</p></details>
-        <details><summary>Comment sont mises à jour les apps ?</summary><p>Sur Windows, les mises à jour sont automatiques. Sur Android, l'app te propose la nouvelle version et l'installe en un tap. La version web est toujours à jour.</p></details>
+        <details><summary>Comment sont mises à jour les apps ?</summary><p>Sur Windows, Mac et Linux (AppImage), les mises à jour sont automatiques. Sur Android, l'app te propose la nouvelle version et l'installe en un tap. La version web est toujours à jour.</p></details>
       </div>
     </div>
   </section>

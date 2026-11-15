@@ -6,8 +6,6 @@ name: Tauri release
 #    signée ad hoc ;
 #  - windows-x86_64 : Laststream-X.Y.Z-windows-x86_64.setup.exe (NSIS, installation et mise à jour), non signé ;
 #  - linux-x86_64 : Laststream-X.Y.Z-linux-x86_64.AppImage (installation et mise à jour) et .deb ;
-#  - Android : Laststream-X.Y.Z-android-tauri.apk, même identifiant, clé et versionCode que l'APK Capacitor (il l'installe
-#    par-dessus) ; pas de flux : android-latest.json reste celui de l'APK Capacitor jusqu'à la bascule ;
 #  - pour chaque plateforme : tauri-<plateforme>-latest.json et sa signature ed25519 (.sig), même clé que la coque Windows.
 # Le Worker laststream-edge sert flux et fichiers sous https://app.laststream.app/app/tauri/<plateforme>/.
 on:
@@ -17,14 +15,8 @@ on:
         description: 'Tag déjà poussé, format vX.Y.Z'
         required: true
         type: string
-      version_code:
-        description: 'versionCode Android (AAAAMMJJNN), le même que l’APK Capacitor'
-        required: true
-        type: string
     secrets:
       LASTSTREAM_UPDATE_SIGNING_KEY:
-        required: true
-      ANDROID_DEBUG_KEYSTORE_B64:
         required: true
 
 permissions:
@@ -204,65 +196,3 @@ jobs:
         path: dist/*
         if-no-files-found: error
 
-  android:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      TAG: ${{ inputs.tag }}
-      VERSION_CODE: ${{ inputs.version_code }}
-    steps:
-    - name: Check the tag and the versionCode
-      run: |
-        [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Tag inattendu : $TAG"; exit 1; }
-        [[ "$VERSION_CODE" =~ ^[0-9]{10}$ ]] || { echo "::error::versionCode inattendu : $VERSION_CODE"; exit 1; }
-        echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
-    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      with:
-        ref: refs/tags/${{ inputs.tag }}
-        fetch-depth: 1
-        persist-credentials: false
-    - uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: '21'
-    - uses: android-actions/setup-android@v3
-      with:
-        packages: 'platform-tools platforms;android-36 build-tools;35.0.0 ndk;27.2.12479018'
-    # Même clé que l'APK Capacitor (release.yml, job android) : sinon Android refuse de l'installer par-dessus.
-    - name: Restore the signing keystore
-      env:
-        ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
-      run: |
-        set -euo pipefail
-        printf '%s' "$ANDROID_DEBUG_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/ls-signing.keystore"
-        keytool -list -keystore "$RUNNER_TEMP/ls-signing.keystore" -storepass android -alias androiddebugkey >/dev/null
-    - name: Rust Android targets
-      run: rustup target add aarch64-linux-android armv7-linux-androideabi
-    - uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: apps/tauri/src-tauri
-    - name: Build the signed APK
-      working-directory: apps/tauri
-      env:
-        NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.2.12479018
-        ORG_GRADLE_PROJECT_lsVersionCode: ${{ inputs.version_code }}
-        ORG_GRADLE_PROJECT_lsKeystore: ${{ runner.temp }}/ls-signing.keystore
-      run: |
-        npm ci
-        ORG_GRADLE_PROJECT_lsVersionName="$VERSION" npx tauri android build --target aarch64 --target armv7 --apk
-    - name: Check the signing certificate and name the APK
-      run: |
-        set -euo pipefail
-        apks=(apps/tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk)
-        [ "${#apks[@]}" -eq 1 ] || { echo "::error::Un APK attendu"; exit 1; }
-        got="$(python3 scripts/apk-cert-sha256.py "${apks[0]}")"
-        want="$(keytool -list -v -keystore "$RUNNER_TEMP/ls-signing.keystore" -storepass android -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')"
-        if [ -z "$got" ] || [ "$got" != "$want" ]; then echo "::error::APK signé avec une autre clé que le keystore de publication"; exit 1; fi
-        mkdir -p dist
-        cp "${apks[0]}" "dist/Laststream-$VERSION-android-tauri.apk"
-        ls -la dist
-    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-      with:
-        name: tauri-android
-        path: dist/*
-        if-no-files-found: error

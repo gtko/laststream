@@ -619,12 +619,15 @@ html:not(.js) .step-shot { display: block; }
 }
 
 /* Téléchargements */
-.downloads { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap); }
+.downloads { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); }
 .dl { display: flex; flex-direction: column; gap: 12px; }
 .dl h3 { font-size: 24px; margin-bottom: 0; }
 .card .dl-meta { font-size: 14px; color: var(--muted); }
 .dl .btn { margin-top: auto; width: 100%; white-space: normal; text-align: center; padding-inline: 18px; }
 .card .dl-note { font-size: 14px; color: var(--muted); }
+/* Deux fichiers pour une plateforme (Mac Apple Silicon / Intel, Linux AppImage / .deb) */
+.dl-actions { margin-top: auto; display: grid; gap: 8px; }
+.dl-actions .btn { margin-top: 0; }
 .howto summary { cursor: pointer; font-size: 15px; font-weight: 500; color: var(--accent-ink); padding: 6px 0; }
 .howto ol, .howto ul { padding-left: 18px; margin-top: 8px; display: grid; gap: 6px; font-size: 15px; color: var(--ink-2); }
 .howto ol { list-style: decimal; }
