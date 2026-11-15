@@ -20,3 +20,20 @@ test('nom de fichier ou plateforme inattendus : refusés', () => {
   assert.throws(() => buildFeed({ ...base, platform: 'linux-x86_64', file: 'x' }));
   assert.throws(() => buildFeed({ ...base, version: '1.2', platform: 'windows-x86_64', file: 'Laststream-1.2-windows-x86_64.setup.exe' }));
 });
+
+test('lancé directement : flux écrit (chemin relatif, absolu ; la garde ne dépend pas du format Unix)', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, writeFileSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'tauri-feed-'));
+  const file = join(dir, 'Laststream-1.2.3-windows-x86_64.setup.exe');
+  writeFileSync(file, 'installeur');
+  const out = join(dir, 'feed.json');
+  const { fileURLToPath } = await import('node:url');
+  const script = fileURLToPath(new URL('./tauri-feed.mjs', import.meta.url));
+  execFileSync(process.execPath, [script, '--platform', 'windows-x86_64', '--version', '1.2.3', '--file', file, '--out', out]);
+  assert.equal(JSON.parse(readFileSync(out, 'utf8')).version, '1.2.3');
+  execFileSync(process.execPath, ['scripts/tauri-feed.mjs', '--platform', 'windows-x86_64', '--version', '1.2.3', '--file', file, '--out', out + '2'], { cwd: fileURLToPath(new URL('..', import.meta.url)) });
+  assert.equal(JSON.parse(readFileSync(out + '2', 'utf8')).version, '1.2.3');
+});
