@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.60 – 2026-11-15
+
+- App Tauri pour macOS, Windows, Linux et Android, à la place des anciennes apps (#38) — @gtko
+
 ## v1.0.59 – 2026-11-12
 
 - Lecteur Android : « Suivant » ferme le lecteur plein écran pour montrer la recherche de source (#37) — @gtko
