@@ -45,7 +45,7 @@ const ALT_IDS_MAX = 2;
  * Identifiants d'anime de l'épisode (`?alt=mal:<id>:<épisode>,kitsu:<id>:<épisode>`), fournis par l'app pour un anime en
  * numérotation MyAnimeList. Séries seulement ; valeur mal formée ignorée.
  */
-export function withAltIds(ref: ContentRef, alt: string | string[] | undefined): ContentRef {
+function withAltIds(ref: ContentRef, alt: string | string[] | undefined): ContentRef {
   if (ref.type !== 'series' || typeof alt !== 'string') return ref;
   const ids = [...new Set(alt.split(',').filter((id) => ALT_ID.test(id)))].slice(0, ALT_IDS_MAX);
   return ids.length === 0 ? ref : { ...ref, altIds: ids };
