@@ -51,6 +51,11 @@ export interface RawStream {
   magnet?: string;
   behaviorHints?: Record<string, unknown>;
   sources?: string[];
+  /**
+   * Flux obtenu par un identifiant d'anime (`mal:` / `kitsu:`) : numéro de l'épisode dans cette fiche. L'addon a déjà
+   * choisi l'épisode ; une release numérotée ainsi est acceptée (voir rejectionOf).
+   */
+  altEpisode?: number;
   /** Indexeurs ayant renvoyé ce flux (Prowlarr, Jackett). Fusionné par infoHash dans collectStreams. */
   indexers?: string[];
   /** Addon amont d'où vient le flux (nom du manifest ou de la source, logo si connu). Absent pour un indexeur. */
@@ -92,6 +97,11 @@ export interface ContentRef {
   imdbId: string;
   season?: number;
   episode?: number;
+  /**
+   * Anime : identifiants équivalents de l'épisode chez MyAnimeList et Kitsu (`mal:<id>:<épisode>`, `kitsu:<id>:<épisode>`),
+   * fournis par l'app. Les addons amont sont aussi interrogés avec eux.
+   */
+  altIds?: string[];
 }
 
 /** Provenance d'un flux, pour l'affichage : un addon amont ou un indexeur. */

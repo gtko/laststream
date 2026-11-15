@@ -1,6 +1,7 @@
 import { getLangPrefs, LANG_VO, type LangPrefs } from '../data/langPrefs';
 import { NoImdbError, resolveImdbId } from '../data/imdbResolve';
 import { getBandwidthSetting } from '../data/prefs';
+import { episodeIds } from '../data/series';
 import { fetchStreamsResult, fetchStreamStatus, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
 import type { DeviceTarget } from '../data/sources';
 import type { Lang, Stream } from '../data/stream';
@@ -143,7 +144,10 @@ async function fetchSources(req: SourceRequest, retry: boolean): Promise<LoadedS
   }
   // Les torrents sans lien ne sont demandés au serveur que si l'appareil a un débrideur (option avancée).
   const clientOk = debrid().hasAny();
-  const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode, { torrents: clientOk, streamId: req.streamId });
+  // Série : identifiant de flux de la structure canonique (un anime en numérotation MyAnimeList garde sa numérotation
+  // IMDb pour les sources) et identifiants d'anime (MAL, Kitsu), aussi envoyés aux addons.
+  const ids = req.type === 'tv' ? await episodeIds(req, imdb) : null;
+  const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode, { torrents: clientOk, streamId: ids?.streamId ?? req.streamId, altIds: ids?.altIds });
   // Film pas encore sorti en numérique : aucune source (les releases restantes ne sont pas fiables), pas d'appel à l'appareil.
   const yet = res.notYetDigital === true;
   const device = yet ? undefined : startDeviceFetch(requestKey(req), res.deviceFetch ?? [], Date.now(), retry);
@@ -240,7 +244,8 @@ export async function pollSources(req: SourceRequest, current: LoadedSources): P
   const serverPending = current.serverPending ?? current.pending;
   // Le serveur n'a plus rien en attente : seul le repli de l'appareil peut encore faire avancer la liste.
   if (!serverPending.length) return current;
-  const status = await fetchStreamStatus(req.type, current.imdb, req.season, req.episode, { torrents: debrid().hasAny(), streamId: req.streamId });
+  const ids = req.type === 'tv' ? await episodeIds(req, current.imdb) : null;
+  const status = await fetchStreamStatus(req.type, current.imdb, req.season, req.episode, { torrents: debrid().hasAny(), streamId: ids?.streamId ?? req.streamId, altIds: ids?.altIds });
   if (!status) return device?.pending.length ? current : { ...current, pending: [] };
   if (statusChanged({ count: current.serverCount ?? current.views.length, pending: serverPending }, status)) return refresh();
   return current;

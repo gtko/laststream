@@ -174,6 +174,9 @@ function rejectionOf(candidate: Candidate, ref: ContentRef, titles: TitleVariant
   const scope = candidate.parsed.scope ?? {};
   // Numéro absolu (anime) sans remappage connu (remappeur absent ou en délai) : la release n'est pas écartée, faute
   // de moyen de la vérifier. Avec un remappage, la correspondance est exigée.
+  // Flux trouvé par un identifiant d'anime (MAL, Kitsu) : l'addon a déjà choisi l'épisode de cette fiche. Une release
+  // numérotée comme la fiche (« - 05 », ou « S02E05 » pour une fiche qui est la 2e saison) est acceptée.
+  if (raw.altEpisode !== undefined && (scope.absolute === raw.altEpisode || scope.episode === raw.altEpisode)) return undefined;
   const absoluteOnly = scope.absolute !== undefined && scope.episode === undefined && scope.pack === undefined;
   if (absoluteOnly && absolute === undefined) return undefined;
   return scopeCovers(scope, season, episode, absolute) ? undefined : 'portee';

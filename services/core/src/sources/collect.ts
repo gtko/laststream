@@ -118,6 +118,50 @@ async function searchUpstreamSoft(
   return { streams: current.streams ?? [], pending: [] };
 }
 
+/** Clé d'un flux pour repérer la même copie rendue par deux identifiants d'un même addon. */
+const streamKey = (stream: RawStream): string | undefined =>
+  stream.infoHash !== undefined ? `${stream.infoHash.toLowerCase()}:${stream.fileIdx ?? ''}` : stream.url;
+
+/**
+ * Addon amont interrogé avec l'identifiant IMDb puis, pour un anime, avec ses identifiants MAL et Kitsu (`ref.altIds`),
+ * en parallèle. Les flux trouvés seulement par un identifiant d'anime portent `altEpisode` (numéro dans la fiche).
+ * Un addon qui ne connaît pas ces identifiants répond vide ou en erreur : seul l'échec de la recherche IMDb compte.
+ */
+async function searchWithAltIds(
+  source: Extract<SourceConfig, { type: 'upstream' }>,
+  ref: ContentRef,
+  opts: CollectOptions,
+): Promise<SourceOutcome> {
+  const main = searchUpstreamSoft(source, ref, opts);
+  const alts = (ref.altIds ?? []).map((id) => {
+    const { altIds: _altIds, ...plain } = ref;
+    return searchUpstreamSoft(source, { ...plain, id }, opts).then(
+      (outcome) => ({ id, outcome }),
+      () => undefined,
+    );
+  });
+  const [outcome, ...extra] = await Promise.all([main, ...alts]);
+  const seen = new Set(outcome.streams.map(streamKey).filter((key) => key !== undefined));
+  const streams = [...outcome.streams];
+  const pending = new Set(outcome.pending);
+  const background = outcome.settled === undefined ? [] : [outcome.settled];
+  for (const alt of extra) {
+    if (alt === undefined) continue;
+    const altEpisode = Number(alt.id.split(':')[2]);
+    for (const stream of alt.outcome.streams) {
+      const key = streamKey(stream);
+      if (key !== undefined && seen.has(key)) continue;
+      if (key !== undefined) seen.add(key);
+      streams.push({ ...stream, altEpisode });
+    }
+    for (const name of alt.outcome.pending) pending.add(name);
+    if (alt.outcome.settled !== undefined) background.push(alt.outcome.settled.catch(() => undefined));
+  }
+  const merged: SourceOutcome = { streams, pending: [...pending] };
+  if (background.length > 0) merged.settled = Promise.all(background).then(() => undefined);
+  return merged;
+}
+
 /**
  * Fusionne les copies d'un même infoHash venues de plusieurs indexeurs (flux portant `indexers`).
  * Garde la première occurrence, à sa place ; `indexers` reçoit l'union des noms, dans l'ordre d'arrivée.
@@ -176,7 +220,7 @@ export async function collectStreams(config: Config, ref: ContentRef, opts: Coll
   // à temps, au lieu d'être coupée par la limite externe (qui ne garde rien de la source).
   const inner: CollectOptions =
     opts.budgetMs === undefined ? opts : { ...opts, budgetMs: Math.max(0, opts.budgetMs - SOURCE_MARGIN_MS) };
-  const runs = active.map(({ source }) => bounded(searchUpstreamSoft(source, ref, inner), source.name, opts.budgetMs));
+  const runs = active.map(({ source }) => bounded(searchWithAltIds(source, ref, inner), source.name, opts.budgetMs));
   const settled = await Promise.allSettled(runs);
 
   const streams: RawStream[] = [];

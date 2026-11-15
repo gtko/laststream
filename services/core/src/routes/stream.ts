@@ -38,6 +38,19 @@ function parseContentRef(type: string, id: string): ContentRef | undefined {
   return undefined;
 }
 
+const ALT_ID = /^(?:mal|kitsu):[1-9]\d{0,8}:[1-9]\d{0,3}$/;
+const ALT_IDS_MAX = 2;
+
+/**
+ * Identifiants d'anime de l'épisode (`?alt=mal:<id>:<épisode>,kitsu:<id>:<épisode>`), fournis par l'app pour un anime en
+ * numérotation MyAnimeList. Séries seulement ; valeur mal formée ignorée.
+ */
+function withAltIds(ref: ContentRef, alt: string | string[] | undefined): ContentRef {
+  if (ref.type !== 'series' || typeof alt !== 'string') return ref;
+  const ids = [...new Set(alt.split(',').filter((id) => ALT_ID.test(id)))].slice(0, ALT_IDS_MAX);
+  return ids.length === 0 ? ref : { ...ref, altIds: ids };
+}
+
 /** Ce que publicBaseUrl lit d'une requête : son URL et ses en-têtes (HonoRequest, ou une requête simulée). */
 export interface RequestLike {
   url: string;
@@ -135,8 +148,9 @@ export function registerStreamRoutes(app: App, deps: AppDeps, backend: UserBacke
     if (config instanceof Response) return config;
 
     c.header('Cache-Control', CACHE_CONTROL);
-    const ref = parseContentRef(c.req.param('type'), c.req.param('idjson').replace(/\.json$/, ''));
-    if (ref === undefined) return sendJson(c, { streams: [] });
+    const parsed = parseContentRef(c.req.param('type'), c.req.param('idjson').replace(/\.json$/, ''));
+    if (parsed === undefined) return sendJson(c, { streams: [] });
+    const ref = withAltIds(parsed, queryParams(c).alt);
 
     // Addons amont : manifest (nom, logo) chargé en arrière-plan, pour les provenances affichées aux requêtes suivantes.
     if (deps.fetch === undefined) {
@@ -157,8 +171,9 @@ export function registerStreamRoutes(app: App, deps: AppDeps, backend: UserBacke
     const config = await configOf(c);
     if (config instanceof Response) return config;
     c.header('Cache-Control', PARTIAL_CACHE_CONTROL);
-    const ref = parseContentRef(c.req.param('type'), c.req.param('id').replace(/\.json$/, ''));
-    if (ref === undefined) return sendJson(c, { pending: [], count: 0 });
+    const parsed = parseContentRef(c.req.param('type'), c.req.param('id').replace(/\.json$/, ''));
+    if (parsed === undefined) return sendJson(c, { pending: [], count: 0 });
+    const ref = withAltIds(parsed, queryParams(c).alt);
     return sendJson(c, await getStreamsStatus(config, ref, contextOf(c, 'soft')));
   });
 }

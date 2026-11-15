@@ -5,6 +5,7 @@ import { resumePosition } from '../data/watchWith';
 import { DEMO_BLOCKED_MSG, isDemo } from '../data/demo';
 import { getVideoLang } from '../data/prefs';
 import { resolveImdbId } from '../data/imdbResolve';
+import { episodeIds } from '../data/series';
 import { userStore } from '../data/userStore';
 import { addonProgressKey, addonOf, addonResumeSource } from './addonRequest';
 import { getAddonProgress } from '../data/addonUserStore';
@@ -19,7 +20,7 @@ import { parseProbe } from './tracks';
 import { nextPhase } from './phase';
 import { partyBridge } from '../party/bridge';
 import { setPresenceMedia } from './presenceV2';
-import { markAllowed } from './sessionActions.js';
+import { markAllowed, streamEpisode } from './sessionActions.js';
 import { teardown } from './sessionClose.js';
 import { syncNative } from './sessionNative.js';
 import { playView } from './sessionPlay.js';
@@ -160,7 +161,14 @@ function loadSideData(token) {
       if (!p.imdb) p.imdb = (await resolveImdbId(p.req.type, p.req.id)).imdb || '';
       if (alive()) S.ui.setMarkAvailable(markAllowed(p));
       if (p.imdb && isConfigured()) {
-        const r = await skipSegments(p.req.type === 'tv' ? 'series' : 'movie', p.imdb, p.req.type === 'tv' ? p.req.season ?? 1 : 0, p.req.type === 'tv' ? p.req.episode ?? 1 : 0);
+        // Série : segments indexés en numérotation IMDb (celle des sources), pas en numérotation d'affichage (anime MAL).
+        if (p.req.type === 'tv') {
+          const ids = await episodeIds(p.req, p.imdb);
+          if (!p.req.streamId) p.req.streamId = ids.streamId;
+          p.streamEp = { of: (p.req.season ?? 1) + ':' + (p.req.episode ?? 1), season: ids.season, episode: ids.episode };
+        }
+        const ep = streamEpisode(p);
+        const r = await skipSegments(p.req.type === 'tv' ? 'series' : 'movie', p.imdb, ep.season, ep.episode);
         if (alive()) {
           p.segments = normalizeSkip(r);
           syncNative();
