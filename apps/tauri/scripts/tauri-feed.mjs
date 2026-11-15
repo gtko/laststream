@@ -5,7 +5,8 @@
 // signé par apps/desktop/scripts/sign-update.mjs (même clé ed25519 que la coque Windows).
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const PLATFORMS = { 'macos-aarch64': 'app.tar.gz', 'macos-x86_64': 'app.tar.gz', 'windows-x86_64': 'setup.exe', 'linux-x86_64': 'AppImage' };
 
@@ -36,7 +37,12 @@ function arg(name) {
   return process.argv[i + 1];
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/** Vrai si le script est lancé directement (`node scripts/tauri-feed.mjs …`), sous Windows compris (file:///D:/…). */
+export function isMain(metaUrl, argv1) {
+  return !!argv1 && metaUrl === pathToFileURL(resolve(argv1)).href;
+}
+
+if (isMain(import.meta.url, process.argv[1])) {
   const file = arg('file');
   const feed = buildFeed({
     platform: arg('platform'),
