@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.61 – 2026-11-15
+
+- Flux Tauri : tauri-feed.mjs écrit aussi son fichier sous Windows (#41) — @gtko
+
 ## v1.0.60 – 2026-11-15
 
 - App Tauri pour macOS, Windows, Linux et Android, à la place des anciennes apps (#38) — @gtko
