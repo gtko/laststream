@@ -198,19 +198,22 @@ describe('pipeline v2 : filtres de contenu (TMDB, Cinemeta)', () => {
   });
 
   it('film 2026 pas encore sorti en numérique : l’homonyme d’une autre année est écarté, réponse notYetDigital', async () => {
+    // Sorti il y a un mois (dans la fenêtre de quatre mois) : la date suit le jour du test.
+    const released = new Date(Date.now() - 30 * 24 * 3600e3).toISOString().slice(0, 10);
+    const year = released.slice(0, 4);
     const odyssey = routedFetch([
       CINEMETA,
       (url) => {
         if (url.hostname !== 'api.themoviedb.org') return undefined;
         if (url.pathname.startsWith('/3/find/')) return json({ movie_results: [{ id: 9002 }] });
-        if (url.pathname === '/3/movie/9002') return json({ title: 'L’Odyssée', original_title: 'The Odyssey', runtime: 120, release_date: '2026-07-17', release_dates: { results: [] } });
-        if (url.pathname === '/3/movie/9002/release_dates') return json({ results: [{ iso_3166_1: 'FR', release_dates: [{ type: 3, release_date: '2026-07-17T00:00:00.000Z' }] }] });
+        if (url.pathname === '/3/movie/9002') return json({ title: 'L’Odyssée', original_title: 'The Odyssey', runtime: 120, release_date: released, release_dates: { results: [] } });
+        if (url.pathname === '/3/movie/9002/release_dates') return json({ results: [{ iso_3166_1: 'FR', release_dates: [{ type: 3, release_date: `${released}T00:00:00.000Z` }] }] });
         if (url.pathname === '/3/movie/9002/watch/providers') return json({ results: {} });
         return json({}, 404);
       },
       upstreamWith([
         { name: 'Upstream', title: 'The.Odyssey.1997.STV.DVDRip', infoHash: H.a, behaviorHints: { videoSize: 2 * GB } },
-        { name: 'Upstream', title: 'The.Odyssey.2026.2160p.WEB-DL', infoHash: H.b, behaviorHints: { videoSize: 20 * GB } },
+        { name: 'Upstream', title: `The.Odyssey.${year}.2160p.WEB-DL`, infoHash: H.b, behaviorHints: { videoSize: 20 * GB } },
       ]),
     ]);
     const result = await getStreams(cfg({ sources: [UPSTREAM], services: { tmdbToken: 'tmdb-token' } }), movie('tt7100060'), ctxFor(odyssey.fetch));

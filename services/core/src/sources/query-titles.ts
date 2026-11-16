@@ -31,6 +31,8 @@ export interface TitleVariants {
   aliases?: string[];
   /** Film : date (AAAA-MM-JJ) de la première sortie numérique ou physique (TMDB, région FR, repli US), si TMDB la donne. */
   digitalDate?: string;
+  /** Film : date (AAAA-MM-JJ) de la première sortie (TMDB `release_date`), si elle est connue. */
+  released?: string;
   /** Film : vrai quand TMDB a répondu avec ses dates de sortie. Sans `digitalDate`, aucune sortie numérique n'est connue. */
   digitalKnown?: boolean;
   /** Film : vrai si TMDB liste un fournisseur dans la région (abonnement, gratuit, publicité, location, achat). */
@@ -256,6 +258,8 @@ async function fetchTmdbTitles(ref: ContentRef, token: string, fetchFn: FetchFn,
   if (tvdbId !== undefined) out.tvdbId = tvdbId;
   const aliases = aliasesOf(en, isMovie, titles);
   if (aliases.length > 0) out.aliases = aliases;
+  const released = isMovie ? (dayOf(en?.[dateKey]) ?? dayOf(fr?.[dateKey])) : undefined;
+  if (released !== undefined) out.released = released;
   if (isMovie && releases !== undefined) {
     out.digitalKnown = true;
     const digital = digitalDateOf(releases);
@@ -282,23 +286,21 @@ function dayOf(value: unknown): string | undefined {
 }
 
 /**
- * Première sortie numérique (type 4) ou physique (type 5) d'un film (`/movie/{id}/release_dates`) : région FR, à défaut US
- * (dates de la région seulement, sans mélange). Renvoie undefined si aucune date de ces types n'est connue.
+ * Première sortie numérique (type 4) ou physique (type 5) d'un film (`/movie/{id}/release_dates`) : celle de la région
+ * FR ; sans date de ces types en FR, la plus ancienne des autres régions (une sortie numérique à l'étranger suffit à ce
+ * que des copies circulent). Renvoie undefined si aucune date de ces types n'est connue.
  */
 function digitalDateOf(releases: Record<string, unknown>): string | undefined {
   const entries = Array.isArray(releases.results) ? releases.results.filter(isRecord) : [];
-  const datesOf = (code: string): Record<string, unknown>[] => {
-    const entry = entries.find((r) => r.iso_3166_1 === code);
-    return entry !== undefined && Array.isArray(entry.release_dates) ? entry.release_dates.filter(isRecord) : [];
-  };
-  const own = datesOf('FR');
-  const usable = own.length > 0 ? own : datesOf('US');
-  const days = usable
-    .filter((d) => d.type === 4 || d.type === 5)
-    .map((d) => dayOf(d.release_date))
-    .filter((day): day is string => day !== undefined)
-    .sort();
-  return days[0];
+  const daysOf = (regions: Record<string, unknown>[]): string[] =>
+    regions
+      .flatMap((entry) => (Array.isArray(entry.release_dates) ? entry.release_dates.filter(isRecord) : []))
+      .filter((d) => d.type === 4 || d.type === 5)
+      .map((d) => dayOf(d.release_date))
+      .filter((day): day is string => day !== undefined)
+      .sort();
+  const own = daysOf(entries.filter((r) => r.iso_3166_1 === 'FR'));
+  return own[0] ?? daysOf(entries)[0];
 }
 
 /**
@@ -325,6 +327,7 @@ function finish(found: TitleVariants, fallback: TitleInfo | undefined): TitleVar
   if (found.en !== undefined) out.en = found.en;
   if (found.tvdbId !== undefined) out.tvdbId = found.tvdbId;
   if (found.aliases !== undefined) out.aliases = found.aliases;
+  if (found.released !== undefined) out.released = found.released;
   if (found.digitalKnown !== undefined) out.digitalKnown = found.digitalKnown;
   if (found.digitalDate !== undefined) out.digitalDate = found.digitalDate;
   if (found.watchable !== undefined) out.watchable = found.watchable;
@@ -513,14 +516,22 @@ function dayOfTime(now: number): string {
 const RECENT_RELEASE_YEARS = 3;
 
 /**
+ * Délai après la première sortie au-delà duquel un film sans date numérique dans TMDB n'est plus tenu pour « pas encore
+ * disponible » : quatre mois (fenêtre de la vidéo en France, plus longue qu'ailleurs). TMDB n'a pas toujours cette date.
+ */
+const DIGITAL_WINDOW_DAYS = 120;
+
+/**
  * Film sans sortie numérique ou physique passée (TMDB) : encore en salle, ou annoncé. Ne vaut que pour une sortie récente :
  * un ancien film sans date numérique dans TMDB n'est pas « pas encore disponible ». Un film déjà listé chez un
- * fournisseur dans la région n'est pas non plus « pas encore disponible ». Sans donnée TMDB : faux.
+ * fournisseur dans la région, ou sorti depuis plus de DIGITAL_WINDOW_DAYS sans date numérique connue, n'est pas non plus
+ * « pas encore disponible ». Sans donnée TMDB : faux.
  */
 export function movieNotYetDigital(variants: TitleVariants, now: number = Date.now()): boolean {
   if (variants.digitalKnown !== true || variants.year === undefined || variants.watchable === true) return false;
   if (variants.year < new Date(now).getUTCFullYear() - RECENT_RELEASE_YEARS) return false;
-  return variants.digitalDate === undefined || variants.digitalDate > dayOfTime(now);
+  if (variants.digitalDate !== undefined) return variants.digitalDate > dayOfTime(now);
+  return variants.released === undefined || variants.released > dayOfTime(now - DIGITAL_WINDOW_DAYS * 24 * 3600e3);
 }
 
 /** Années admises pour la release d'un film : année de la sortie originale et année de la sortie numérique (si connue). */

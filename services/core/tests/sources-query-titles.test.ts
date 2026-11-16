@@ -65,6 +65,7 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
     expect(variants).toEqual({
       titles: ['Dune: Part Two', 'Dune : Deuxième Partie'],
       year: 2024,
+      released: '2024-02-27',
       fr: 'Dune : Deuxième Partie',
       en: 'Dune: Part Two',
     });
