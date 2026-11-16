@@ -113,6 +113,28 @@ describe('getTitleVariants : dates de sortie des films', () => {
     expect(movieNotYetDigital(fallback, NOW)).toBe(false);
   });
 
+  it('FR sans date numérique mais sortie numérique ailleurs : cette date compte (des copies circulent)', async () => {
+    const releases = {
+      results: [
+        { iso_3166_1: 'FR', release_dates: [{ type: 3, release_date: '2026-07-17T00:00:00.000Z' }] },
+        { iso_3166_1: 'CA', release_dates: [{ type: 5, release_date: '2026-10-06T00:00:00.000Z' }] },
+        { iso_3166_1: 'US', release_dates: [{ type: 3, release_date: '2026-07-17T00:00:00.000Z' }, { type: 4, release_date: '2026-09-15T00:00:00.000Z' }] },
+      ],
+    };
+    const variants = await getTitleVariants(FILM, { tmdbToken: TOKEN, fetch: tmdb(filmTable(releases)), cache: new TtlCache() });
+    expect(variants.digitalDate).toBe('2026-09-15');
+    expect(movieNotYetDigital(variants, NOW)).toBe(false);
+  });
+
+  it('aucune date numérique dans TMDB : « pas encore disponible » pendant quatre mois après la sortie, plus ensuite', async () => {
+    const releases = { results: [{ iso_3166_1: 'FR', release_dates: [{ type: 3, release_date: '2026-07-17T00:00:00.000Z' }] }] };
+    const variants = await getTitleVariants(FILM, { tmdbToken: TOKEN, fetch: tmdb(filmTable(releases)), cache: new TtlCache() });
+    expect(variants.released).toBe('2026-07-17');
+    expect(movieNotYetDigital(variants, Date.UTC(2026, 10, 13, 12))).toBe(true); // 119 jours après
+    expect(movieNotYetDigital(variants, Date.UTC(2026, 10, 16, 12))).toBe(false); // 122 jours après
+    expect(movieReleaseFits('L.Odyssee.2026.MULTI.VFQ.1080p.BluRay.HDLight.x265', variants, Date.UTC(2026, 10, 16, 12))).toBe(true);
+  });
+
   it('fournisseur dans la région (watch/providers) : pas « pas encore disponible », même sans date numérique', async () => {
     const releases = { results: [{ iso_3166_1: 'FR', release_dates: [{ type: 3, release_date: '2026-07-17T00:00:00.000Z' }] }] };
     const providers = { results: { FR: { flatrate: [{ provider_name: 'Svc' }] } } };
