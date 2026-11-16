@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.63 – 2026-11-16
+
+- Films : « pas encore disponible » seulement tant que c'est plausible (#43) — @gtko
+
 ## v1.0.62 – 2026-11-15
 
 - Anime : numérotation MyAnimeList, fillers par fiche MAL, sources cherchées par identifiant MAL et Kitsu (#42) — @gtko
