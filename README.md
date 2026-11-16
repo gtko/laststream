@@ -39,9 +39,11 @@ Les releases automatiques du produit (installeur Windows + APK Android) portent 
 
 Le workflow `.github/workflows/release.yml` se déclenche à chaque PR fusionnée sur `main` : bump de version (patch par défaut,
 label `release:minor` ou `release:major` sur la PR pour monter d'un cran), `CHANGELOG.md` à la racine, commit `release: vX.Y.Z`
-et tag annoté `vX.Y.Z` sur `main`, build de l'installeur Windows (`desktop-release.yml` appelé en `workflow_call`) et de l'APK
-Android, puis release GitHub publiée avec bannière, changelog et assets (installeur, `latest.json` + `.sig`, APK).
-Le label `release:skip` sur la PR désactive la release. Pas de build macOS. Relance manuelle des builds d'un tag existant :
+et tag annoté `vX.Y.Z` sur `main`, build de l'app Tauri (`apps/tauri`) pour macOS (Apple Silicon et Intel), Windows et Linux
+(`tauri-release.yml` appelé en `workflow_call`) et de son APK Android, puis release GitHub publiée avec bannière, changelog et
+assets (`.dmg`, `.app.tar.gz`, `.setup.exe`, `.AppImage`, `.deb`, flux `tauri-<plateforme>-latest.json` + `.sig`, APK,
+`android-latest.json`). L'ancienne app Windows (`apps/desktop`) et l'ancien APK Capacitor (`apps/mobile`) ne sont plus publiés.
+Le label `release:skip` sur la PR désactive la release. Relance manuelle des builds d'un tag existant :
 Actions → Release → Run workflow avec `tag` = `vX.Y.Z` (sans nouveau bump).
 
 Reprise et limites :
@@ -55,7 +57,7 @@ Reprise et limites :
 Réglages requis sur le dépôt :
 
 - Secrets : `ANDROID_DEBUG_KEYSTORE_B64` (keystore de signature de l'APK, en base64) et `LASTSTREAM_UPDATE_SIGNING_KEY` (clé ed25519
-  de signature de `latest.json`).
+  de signature des flux de mise à jour).
 - APK Android : chaque release joint `android-latest.json` (versionCode, URL de l'APK de la release, SHA-256). Le Worker
   `laststream-edge` le relit sur `releases/latest/download/` et le sert sur `https://app.laststream.app/app/android/latest.json`
   (bouton « Télécharger l'APK » du site, mise à jour en un tap de l'app). Aucun secret supplémentaire.

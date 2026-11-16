@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.0.62 – 2026-11-15
+
+- Anime : numérotation MyAnimeList, fillers par fiche MAL, sources cherchées par identifiant MAL et Kitsu (#42) — @gtko
+
+## v1.0.61 – 2026-11-15
+
+- Flux Tauri : tauri-feed.mjs écrit aussi son fichier sous Windows (#41) — @gtko
+
+## v1.0.60 – 2026-11-15
+
+- App Tauri pour macOS, Windows, Linux et Android, à la place des anciennes apps (#38) — @gtko
+
+## v1.0.59 – 2026-11-12
+
+- Lecteur Android : « Suivant » ferme le lecteur plein écran pour montrer la recherche de source (#37) — @gtko
+
 ## v1.0.58 – 2026-11-11
 
 - Release : vérification de la signature APK sans apksigner (#35) — @gtko

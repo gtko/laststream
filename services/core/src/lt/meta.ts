@@ -92,6 +92,12 @@ interface MetaFiche {
   partial: boolean;
 }
 
+/**
+ * Version de la numérotation des épisodes dans les couches stockées. 2 : anime en numérotation MyAnimeList. Une couche
+ * de série d'une autre version est reconstruite à sa lecture (les textes de la couche traduction suivent ces numéros).
+ */
+const EPISODES_VERSION = 2;
+
 /** Couche « base » (schéma 2) : données sans langue, chemins d'images TMDB (jamais d'URL complète). */
 interface BaseLayer {
   schema: typeof SCHEMA_VERSION;
@@ -110,6 +116,8 @@ interface BaseLayer {
   tvdb: MetaTvdb | null;
   /** Structure des saisons et des épisodes (dates de diffusion…), sans les textes traduits. */
   episodes: BaseEpisodes | null;
+  /** Version de la numérotation des épisodes (séries) : une couche d'une autre version est reconstruite. */
+  episodesVersion?: typeof EPISODES_VERSION;
   /** TVDB ou épisodes indisponibles, ou clé TVDB manquante : la couche expire plus tôt. */
   partial: boolean;
 }
@@ -118,6 +126,7 @@ type Season = SeriesEpisodes['seasons'][number];
 type Episode = SeriesEpisodes['episodes'][number];
 interface BaseEpisodes {
   source: SeriesEpisodes['source'];
+  numbering?: SeriesEpisodes['numbering'];
   seasons: Omit<Season, 'name'>[];
   episodes: Omit<Episode, 'name' | 'overview'>[];
 }
@@ -134,6 +143,8 @@ interface L10nLayer {
   backdropPath: string | null;
   seasons: { number: number; name: string }[] | null;
   episodes: { season: number; episode: number; name: string | null; overview: string | null }[] | null;
+  /** Version de la numérotation des épisodes dont dépendent les clés de `seasons` et `episodes`. */
+  episodesVersion?: typeof EPISODES_VERSION;
 }
 
 /** Couche « notes » (schéma 2). `partial` : notes absentes faute de clé ou de réponse, relues dès qu'une clé est disponible. */
@@ -260,6 +271,7 @@ function splitEpisodes(full: SeriesEpisodes | null): { base: BaseEpisodes | null
   return {
     base: {
       source: full.source,
+      ...(full.numbering === undefined ? {} : { numbering: full.numbering }),
       seasons: full.seasons.map(({ name: _name, ...season }) => season),
       episodes: full.episodes.map(({ name: _name, overview: _overview, ...episode }) => episode),
     },
@@ -337,6 +349,7 @@ async function buildCore(ctx: LtContext, svc: MetaServices, type: MetaType, tmdb
     cast,
     tvdb,
     episodes: split.base,
+    ...(type === 'series' ? { episodesVersion: EPISODES_VERSION } : {}),
     // Complète seulement si les clés de service couvrent TVDB et les épisodes ; sinon une heure au plus de stockage.
     partial: tvdbPart.failed || episodesPart.failed || (type === 'series' && tvdbId !== null && svc.tvdbApiKey === undefined),
   };
@@ -351,6 +364,7 @@ async function buildCore(ctx: LtContext, svc: MetaServices, type: MetaType, tmdb
     backdropPath: str(json.backdrop_path) ?? (english === undefined ? null : str(english.backdrop_path)),
     seasons: split.seasons,
     episodes: split.episodes,
+    ...(type === 'series' ? { episodesVersion: EPISODES_VERSION } : {}),
   };
   return { base, l10n };
 }
@@ -362,6 +376,7 @@ function mergeEpisodes(base: BaseEpisodes | null, l10n: L10nLayer): SeriesEpisod
   const texts = new Map((l10n.episodes ?? []).map((e) => [`${e.season}:${e.episode}`, e]));
   return {
     source: base.source,
+    ...(base.numbering === undefined ? {} : { numbering: base.numbering }),
     seasons: base.seasons.map((s) => ({
       number: s.number,
       name: seasonNames.get(s.number) ?? '',
@@ -383,6 +398,9 @@ function mergeEpisodes(base: BaseEpisodes | null, l10n: L10nLayer): SeriesEpisod
         tmdbSeason: e.tmdbSeason,
         tmdbEpisode: e.tmdbEpisode,
         ...(e.streamId === undefined ? {} : { streamId: e.streamId }),
+        ...(e.mal === undefined ? {} : { mal: e.mal }),
+        ...(e.malEpisode === undefined ? {} : { malEpisode: e.malEpisode }),
+        ...(e.kitsu === undefined ? {} : { kitsu: e.kitsu }),
       };
     }),
   };
@@ -685,8 +703,11 @@ async function resolveRatings(
   return { layer: loaded, stale: loaded.state !== 'fresh' };
 }
 
-const isBase = (v: Record<string, unknown>): boolean => typeof v.tmdbId === 'number' && (v.type === 'movie' || v.type === 'series');
-const isL10n = (v: Record<string, unknown>): boolean => typeof v.title === 'string' && Array.isArray(v.genres);
+// Séries : la couche doit porter la numérotation courante des épisodes (anime renumérotés d'après MyAnimeList).
+const isBase = (v: Record<string, unknown>): boolean =>
+  typeof v.tmdbId === 'number' && (v.type === 'movie' || (v.type === 'series' && v.episodesVersion === EPISODES_VERSION));
+const isL10n = (v: Record<string, unknown>): boolean =>
+  typeof v.title === 'string' && Array.isArray(v.genres) && (v.episodes === null || v.episodes === undefined || v.episodesVersion === EPISODES_VERSION);
 const isRatings = (v: Record<string, unknown>): boolean => typeof v.partial === 'boolean';
 
 /**

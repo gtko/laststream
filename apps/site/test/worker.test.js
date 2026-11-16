@@ -13,7 +13,7 @@ const LATEST = {
 };
 
 // Faux environnement : ASSETS et APP enregistrent leurs appels et répondent sans réseau.
-// APP renvoie un latest.json dont l'url pointe sur la plateforme demandée (android ou windows).
+// APP renvoie un latest.json dont l'url pointe sur la plateforme demandée (android ou tauri/<plateforme>).
 function fakeEnv() {
   const seen = { assets: [], app: [] };
   return {
@@ -28,7 +28,7 @@ function fakeEnv() {
       fetch: async (input) => {
         const url = String(input);
         seen.app.push(url);
-        const platform = url.split('/').at(-2);
+        const platform = url.slice('https://app.laststream.app/app/'.length, -'/latest.json'.length);
         return Response.json({ ...LATEST, url: `https://app.laststream.app/app/${platform}/laststream.apk` });
       },
     },
@@ -74,10 +74,18 @@ test('laststream.app/ : servi par ASSETS', async () => {
   assert.deepEqual(env.seen.app, []);
 });
 
-for (const platform of ['android', 'windows']) {
-  test(`laststream.app/api/${platform} : relais de latest.json depuis app.laststream.app`, async () => {
+// Android : flux de l'APK ; Windows, Mac (Apple Silicon, Intel), Linux : flux de l'app Tauri.
+const ROUTES = {
+  android: 'android',
+  windows: 'tauri/windows-x86_64',
+  'macos-aarch64': 'tauri/macos-aarch64',
+  'macos-x86_64': 'tauri/macos-x86_64',
+  linux: 'tauri/linux-x86_64',
+};
+for (const [route, platform] of Object.entries(ROUTES)) {
+  test(`laststream.app/api/${route} : relais de ${platform}/latest.json depuis app.laststream.app`, async () => {
     const env = fakeEnv();
-    const res = await get(`https://laststream.app/api/${platform}`, env);
+    const res = await get(`https://laststream.app/api/${route}`, env);
     assert.equal(res.status, 200);
     assert.deepEqual(env.seen.app, [`https://app.laststream.app/app/${platform}/latest.json`]);
     assert.deepEqual(env.seen.assets, []);
@@ -90,6 +98,17 @@ for (const platform of ['android', 'windows']) {
     });
   });
 }
+
+test('laststream.app/api/windows : fichier hors de app/tauri/windows-x86_64/ refusé (ancienne app comprise)', async () => {
+  const envWith = (url) => ({ ASSETS: { fetch: async () => new Response('asset') }, APP: { fetch: async () => Response.json({ ...LATEST, url }) } });
+  for (const bad of [
+    'https://app.laststream.app/app/windows/Laststream-Setup-1.0.24.exe',
+    'https://app.laststream.app/app/tauri/linux-x86_64/Laststream-1.0.60-linux-x86_64.AppImage',
+    'https://app.laststream.app/app/tauri/windows-x86_64/../x.exe',
+  ]) {
+    assert.equal((await get('https://laststream.app/api/windows', envWith(bad))).status, 502, bad);
+  }
+});
 
 test('laststream.app/api/autre : non relayé, servi par ASSETS', async () => {
   const env = fakeEnv();

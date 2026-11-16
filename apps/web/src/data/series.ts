@@ -18,8 +18,16 @@ export interface CanonEpisode {
   runtime?: number;
   /** Chemin TMDB (/abc.jpg) ou URL complète. */
   still: string;
-  /** Identifiant de flux `<imdb>:<saison>:<épisode>` avec la numérotation du serveur, absent si inconnu. */
+  /**
+   * Identifiant de flux `<imdb>:<saison>:<épisode>` dans la numérotation des sources (IMDb), absent si inconnu. Pour un
+   * anime numéroté d'après MyAnimeList, il diffère de `season:episode` (affichage, « vu », reprise).
+   */
   streamId?: string;
+  /** Anime : fiche MyAnimeList de l'épisode et son numéro dans cette fiche. */
+  mal?: number;
+  malEpisode?: number;
+  /** Anime : fiche Kitsu équivalente (même numéro d'épisode que MAL). */
+  kitsu?: number;
 }
 
 export interface CanonSeason {
@@ -43,6 +51,22 @@ const num = (v: unknown): number | undefined => (typeof v === 'number' && Number
 const day = (v: unknown): string => (typeof v === 'string' ? v.slice(0, 10) : '');
 /** `{ streamId }` quand le serveur en fournit un (texte non vide), sinon rien. */
 const streamIdOf = (v: unknown): { streamId?: string } => (typeof v === 'string' && v !== '' ? { streamId: v } : {});
+
+/** Fiches MAL et Kitsu d'un épisode d'anime (entiers positifs), sinon rien. */
+function animeIdsOf(e: Raw): Pick<CanonEpisode, 'mal' | 'malEpisode' | 'kitsu'> {
+  const id = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : undefined);
+  const mal = id(e.mal);
+  const malEpisode = id(e.malEpisode);
+  if (mal === undefined || malEpisode === undefined) return {};
+  const kitsu = id(e.kitsu);
+  return { mal, malEpisode, ...(kitsu === undefined ? {} : { kitsu }) };
+}
+
+/** Identifiants d'anime d'un épisode pour les sources : `mal:<id>:<épisode>`, puis `kitsu:<id>:<épisode>`. */
+export function altIdsOf(e: Pick<CanonEpisode, 'mal' | 'malEpisode' | 'kitsu'> | null | undefined): string[] {
+  if (!e || e.mal === undefined || e.malEpisode === undefined) return [];
+  return [`mal:${e.mal}:${e.malEpisode}`, ...(e.kitsu === undefined ? [] : [`kitsu:${e.kitsu}:${e.malEpisode}`])];
+}
 
 /** Lit la réponse du serveur (noms de champs tolérés : snake_case ou camelCase). Null si elle est inexploitable. */
 export function normalizeCanon(raw: unknown): Canon | null {
@@ -68,6 +92,7 @@ export function normalizeCanon(raw: unknown): Canon | null {
         runtime: num(pick(e, 'runtime', 'length')),
         still: String(pick(e, 'still', 'still_path', 'stillPath', 'image', 'thumbnail') ?? ''),
         ...streamIdOf(pick(e, 'streamId', 'stream_id')),
+        ...animeIdsOf(e),
       });
     }
     episodes.sort((a, b) => a.episode - b.episode);
@@ -188,4 +213,40 @@ export function bonusLast<T extends { season_number: number; episode_count?: num
   const real = seasons.filter((s) => s.season_number > 0).sort((a, b) => a.season_number - b.season_number);
   const bonus = seasons.filter((s) => s.season_number === 0 && (s.episode_count ?? 1) > 0);
   return [...real, ...bonus];
+}
+
+/** Identifiants d'un épisode pour les sources, les sous-titres et les segments de saut. */
+export interface EpisodeIds {
+  /** `<imdb>:<saison>:<épisode>` dans la numérotation des sources. */
+  streamId: string;
+  /** Saison et épisode de `streamId` (ceux de l'affichage si l'identifiant n'est pas de cette forme). */
+  season: number;
+  episode: number;
+  /** Anime : `mal:<id>:<épisode>` et `kitsu:<id>:<épisode>`. */
+  altIds: string[];
+}
+
+/**
+ * Identifiants de l'épisode affiché (saison, épisode de la structure canonique) : son identifiant de flux, connu de la
+ * demande ou lu dans la structure, et ses identifiants d'anime. Un anime numéroté d'après MyAnimeList garde ainsi ses
+ * sources, ses sous-titres et ses segments de saut en numérotation IMDb. Structure indisponible : `<imdb>:saison:épisode`.
+ */
+export async function episodeIds(
+  req: { id: string | number; season?: number | null; episode?: number | null; streamId?: string | null },
+  imdb: string,
+): Promise<EpisodeIds> {
+  const season = req.season ?? 1;
+  const episode = req.episode ?? 1;
+  let canon: Canon | null = null;
+  try {
+    // api() lève tout de suite sans lastAddon configuré : l'échec, comme une structure indisponible, garde le repli.
+    if (/^\d+$/.test(String(req.id))) canon = await fetchCanon(req.id);
+  } catch {
+    canon = null;
+  }
+  const hit = canon?.seasons.find((s) => s.number === season)?.episodes.find((e) => e.episode === episode);
+  const streamId = req.streamId || hit?.streamId || `${imdb}:${season}:${episode}`;
+  const match = /^(tt\d+):(\d+):(\d+)$/.exec(streamId);
+  const own = match !== null && match[1] === imdb;
+  return { streamId, season: own ? Number(match[2]) : season, episode: own ? Number(match[3]) : episode, altIds: altIdsOf(hit) };
 }

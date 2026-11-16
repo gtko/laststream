@@ -71,6 +71,7 @@ describe('NativeEngine', () => {
       seek: vi.fn(async () => {}), setRate: vi.fn(async () => {}), setAudioTrack: vi.fn(async () => {}), setSubtitleTrack: vi.fn(async () => {}),
       addSubtitles: vi.fn(async () => {}), update: vi.fn(async () => {}),
       minimize: vi.fn(async () => ({ mini: true })), expand: vi.fn(async () => ({ mini: false })),
+      getState: vi.fn(async () => ({ open: true, mini: false })),
     };
     return { plugin, fire: (ev: string, d: unknown) => handlers.get(ev)?.(d) };
   }
@@ -133,6 +134,22 @@ describe('NativeEngine', () => {
     await expect(e.expand()).resolves.toBe(false);
     plugin.minimize.mockRejectedValueOnce(new Error('absent'));
     await expect(e.minimize()).resolves.toBe(false);
+  });
+
+  it('vignette : miniChanged passe aussi moteur détaché (recherche de source) ; isMini() lit l’état réel', async () => {
+    const { plugin, fire } = fakePlugin();
+    const e = new NativeEngine(plugin);
+    await e.load({ url: 'http://x/a.mkv', startAt: 0, open: {} });
+    const mini = vi.fn();
+    e.on('mini', mini);
+    e.detach();
+    fire('miniChanged', { mini: false });
+    expect(mini.mock.calls).toEqual([[false]]);
+    await expect(e.isMini()).resolves.toBe(false);
+    plugin.getState.mockResolvedValueOnce({ open: true, mini: true });
+    await expect(e.isMini()).resolves.toBe(true);
+    plugin.getState.mockRejectedValueOnce(new Error('absent'));
+    await expect(e.isMini()).resolves.toBe(false);
   });
 
   it('relaie fin, erreur, fermeture et épisode suivant ; ignore les évènements après destroy', async () => {

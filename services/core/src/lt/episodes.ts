@@ -2,6 +2,7 @@ import { isRecord } from '../sources/http.js';
 import { cachedInBlobs } from './blob-cache.js';
 import { LtError, type LtContext, recordAt, TTL } from './context.js';
 import { type CinemetaThumb, cinemetaThumbs, pickThumb } from './cinemeta-thumbs.js';
+import { type MalEntry, malEntriesOf, malNumbers } from './mal.js';
 import { type Lang, seasonKey, SUPPORTED_LANGS, ttlMs } from './meta-policy.js';
 import { tmdbFetch, tmdbGet, tvdbAiredEpisodes, type TvdbAiredEpisode, type TvdbLang } from './providers.js';
 
@@ -32,12 +33,22 @@ export interface SeriesEpisode {
   /** Coordonnées TMDB de l'épisode, null s'il n'a pas d'équivalent côté TMDB. */
   tmdbSeason: number | null;
   tmdbEpisode: number | null;
-  /** Identifiant de flux `<imdb>:<saison>:<épisode>` avec la numérotation de cette structure ; absent si IMDb inconnu. */
+  /**
+   * Identifiant de flux `<imdb>:<saison>:<épisode>` dans la numérotation de la source (TVDB, groupe ou TMDB), celle des
+   * addons au format Stremio ; absent si IMDb inconnu. Pour un anime renuméroté (MAL), il diffère de `season:episode`.
+   */
   streamId?: string;
+  /** Anime : fiche MyAnimeList de l'épisode et son numéro dans cette fiche (`mal:<id>:<numéro>` pour les sources). */
+  mal?: number;
+  malEpisode?: number;
+  /** Anime : fiche Kitsu équivalente (`kitsu:<id>:<numéro>`, même numéro que MAL). */
+  kitsu?: number;
 }
 
 export interface SeriesEpisodes {
   source: EpisodeSource;
+  /** `mal` : saisons et numéros d'épisodes de MyAnimeList (une saison par fiche MAL). Absent : numérotation de la source. */
+  numbering?: 'mal';
   seasons: SeriesSeason[];
   episodes: SeriesEpisode[];
 }
@@ -525,7 +536,77 @@ async function withCinemetaStills(
 async function load(ctx: LtContext, svc: SeriesServices, tmdbId: string, language: string): Promise<Loaded> {
   const base = await loadStructure(ctx, svc, tmdbId, language);
   const done = await withCinemetaStills(ctx, base.details, base.loaded.body);
-  return { body: withStreamIds(done.body, base.details.imdbId), degraded: base.loaded.degraded || done.failed };
+  const body = withStreamIds(done.body, base.details.imdbId);
+  const degraded = base.loaded.degraded || done.failed;
+  let entries: MalEntry[];
+  try {
+    entries = await malEntriesOf(ctx, tmdbId);
+  } catch (err) {
+    if (!(err instanceof LtError)) throw err;
+    console.warn(`[lt][episodes] liste des fiches MAL indisponible, numérotation de la source (statut amont : ${err.code})`);
+    return { body, degraded: true };
+  }
+  return { body: withMalNumbering(body, entries), degraded };
+}
+
+const DEFAULT_SEASON_NAME = /^(saison|season)\s+\d+$/i;
+
+/**
+ * Anime : regroupe les épisodes par fiche MyAnimeList. Chaque fiche devient une saison (numérotée dans l'ordre de la
+ * série) et ses épisodes prennent leur numéro MAL. Une saison sans fiche MAL garde ses épisodes tels quels, à sa place
+ * dans l'ordre. Les spéciaux et les identifiants de flux ne changent pas. Sans fiche applicable : structure inchangée.
+ */
+export function withMalNumbering(body: SeriesEpisodes, entries: readonly MalEntry[]): SeriesEpisodes {
+  if (entries.length === 0) return body;
+  const regular = body.episodes.filter((e) => e.season !== 0);
+  const specials = body.episodes.filter((e) => e.season === 0);
+  const byGroup = body.source === 'tmdb-group';
+  const numbers = malNumbers(
+    entries,
+    body.source === 'tvdb' ? 'tvdb' : 'tmdb',
+    regular.map((e) => ({ season: byGroup ? e.tmdbSeason : e.season, episode: byGroup ? e.tmdbEpisode : e.episode, absolute: e.absolute })),
+  );
+  if (numbers.every((n) => n === undefined)) return body;
+  const order = new Map<string, number>();
+  const sources = new Map<number, Set<number>>();
+  const seen = new Set<string>();
+  const episodes: SeriesEpisode[] = [];
+  regular.forEach((e, i) => {
+    const number = numbers[i];
+    const group = number === undefined ? `season:${e.season}` : `mal:${number.mal}`;
+    const season = order.get(group) ?? order.size + 1;
+    order.set(group, season);
+    const episode = number?.episode ?? e.episode;
+    if (seen.has(`${season}:${episode}`)) return;
+    seen.add(`${season}:${episode}`);
+    (sources.get(season) ?? sources.set(season, new Set()).get(season))?.add(e.season);
+    episodes.push({
+      ...e,
+      season,
+      episode,
+      ...(number === undefined ? {} : { mal: number.mal, malEpisode: number.episode, ...(number.kitsu === undefined ? {} : { kitsu: number.kitsu }) }),
+    });
+  });
+  const seasons: SeriesSeason[] = [...new Set(episodes.map((e) => e.season))].map((number) => {
+    const own = episodes.filter((e) => e.season === number);
+    const from = [...(sources.get(number) ?? [])];
+    // Saison d'origine reprise en entier par une seule fiche : son nom, son affiche et sa date sont gardés.
+    const origin = from.length === 1 ? body.seasons.find((s) => s.number === from[0]) : undefined;
+    const whole = origin !== undefined && origin.episodeCount === own.length;
+    return {
+      number,
+      name: whole && !DEFAULT_SEASON_NAME.test(origin.name) ? origin.name : seasonDefaultName(number),
+      episodeCount: own.length,
+      airDate: (whole ? origin.airDate : null) ?? earliestDate(own),
+      poster: origin?.poster ?? null,
+    };
+  });
+  return {
+    ...body,
+    numbering: 'mal',
+    seasons: [...seasons, ...body.seasons.filter((s) => s.number === 0)],
+    episodes: [...episodes, ...specials],
+  };
 }
 
 /** `<imdb>:<saison>:<épisode>` pour chaque épisode, avec la numérotation de la structure (TVDB, groupe ou TMDB). */
@@ -581,7 +662,7 @@ export async function seriesEpisodes(
   language: string | undefined,
 ): Promise<SeriesEpisodes> {
   const req = parseSeriesRequest(tmdbId, language);
-  const key = `episodes:v4:${req.tmdbId}:${req.language}:${svc.tvdbApiKey === undefined ? 'tmdb' : 'tvdb'}`;
+  const key = `episodes:v5:${req.tmdbId}:${req.language}:${svc.tvdbApiKey === undefined ? 'tmdb' : 'tvdb'}`;
   const loaded = await ctx.state.cache.get<Loaded>(
     key,
     (value) => (value.degraded ? TTL.tvPartial : TTL.episodes),

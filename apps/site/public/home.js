@@ -1,5 +1,5 @@
 /* Accueil Laststream (FR et EN) : menu, révélations, compteurs, story pinée, tilt du héro, lightbox.
-   Les téléchargements dynamiques (/api/windows, /api/android) restent dans /app.js. */
+   Les téléchargements dynamiques (/api/<plateforme>) restent dans /app.js. */
 (function () {
   'use strict';
 
