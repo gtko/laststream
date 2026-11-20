@@ -490,6 +490,8 @@ export class NativeEngine extends Emitter {
     // Toujours transmis, comme `closed` : perdu pendant une recherche de source (moteur détaché), la page croyait la vignette encore
     // affichée et, à l'épisode suivant, mettait le lecteur plein écran en pause au lieu de le fermer (il cachait la recherche).
     plugin.addListener('miniChanged', (d) => this.emit('mini', !!(d && d.mini))).catch(() => {});
+    on('openParty', () => this.emit('openParty'));
+    on('openFriends', () => this.emit('openFriends'));
     // Couche sociale (LAST-1612) : réaction et réponse posées dans le natif, erreur à afficher.
     on('react', (d) => this.emit('react', d));
     on('reply', (d) => this.emit('reply', d));

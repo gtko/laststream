@@ -7,8 +7,8 @@ import { Thumbs } from './thumbview.js';
 import { debrid, PROVIDER_LABEL } from '../sources/debridClient';
 import { createPlayerUI } from './ui.js';
 import { createMessageBubble } from './messageBubble';
-import { openConversation } from '../ui/socialSidebar.js';
-import { mountPartyPanel } from '../ui/partypanel.js';
+import { openConversation, openSidebar } from '../ui/socialSidebar.js';
+import { mountPartyPanel, setPartyPanelDocked, togglePartyPanel } from '../ui/partypanel.js';
 import { getState as getSocialState, sendMessage as sendSocialMessage, subscribe as subscribeSocial } from '../data/socialStore';
 import { onAction, onKey, panelData, playEpisode, seekTo, sendSegment, togglePlay } from './sessionActions.js';
 import { closePlayer } from './sessionClose.js';
@@ -23,6 +23,8 @@ import * as playerState from './playerState';
 import { nudgeTick, onEnded, refreshUI, saveProgress, syncTicks, ticksAsleep } from './sessionTick.js';
 import { ensureExternalSubs, onReady, onTracks } from './sessionTracks.js';
 import { reopenTracksEvent } from './sessionReopen.js';
+import { partyBridge } from '../party/bridge';
+import { toast as pageToast } from '../ui/dom.js';
 
 
 export function ensureUI() {
@@ -162,6 +164,8 @@ function applyMini(on) {
   if (!S.ui) return;
   S.nativeMini = on && !!S.P && !!S.P.engine && S.P.engine.kind === 'native';
   S.ui.root.classList.toggle('is-native-mini', S.nativeMini);
+  // Lecteur web masqué (vignette native) : le panneau watch party passe sur la page pour rester utilisable.
+  setPartyPanelDocked(S.nativeMini);
   // L'état d'abord : il démasque la page (body.lp-covered, backdrop.ts). Si la vignette web échouait, la page restait
   // masquée derrière la vignette native (écran vide).
   playerState.set({ mini: on });
@@ -236,6 +240,13 @@ export function bindEngine(e) {
   // Vignette native : réduite ou agrandie depuis le natif (tap, bouton retour, geste), l'état web suit.
   e.on('mini', (on) => { if (S.P && S.P.engine === e) { if (on) { saveProgress(true); miniState.minimize(); } else { S.nativeMini = false; miniState.expand(); } } });
   e.on('selectSource', (d) => { if (S.P && S.P.engine === e) onNativeSource(d); });
+  // Boutons « Watch party » et « Amis » du lecteur natif : il est déjà réduit en vignette, la page ouvre le panneau.
+  e.on('openParty', () => {
+    if (!S.P || S.P.engine !== e) return;
+    if (partyBridge.available() && !S.P.addon) togglePartyPanel(true);
+    else pageToast('Watch party indisponible pour cette lecture'); // toast de la page : celui du lecteur web est masqué
+  });
+  e.on('openFriends', () => { if (S.P && S.P.engine === e) openSidebar(); });
   e.on('selectEpisode', (d) => { if (S.P && S.P.engine === e) playEpisode(Number(d.season), Number(d.episode)); });
   e.on('loadSeason', (d) => { if (S.P && S.P.engine === e) ensureEpisodes(Number(d.season)).then(syncNative); });
   // Couche sociale du lecteur natif (LAST-1612) : réaction et réponse posées dans le natif, erreur à afficher.
