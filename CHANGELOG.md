@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.64 – 2026-11-20
+
+- Lecteur Android : lecteur web masqué en PiP, boutons Watch party et Amis (#36) — @gtko
+
 ## v1.0.63 – 2026-11-16
 
 - Films : « pas encore disponible » seulement tant que c'est plausible (#43) — @gtko
