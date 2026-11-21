@@ -16,8 +16,8 @@ export interface WebCompatContext {
   serverUp: boolean;
   /** Hôte déjà refusé par la sonde de plages (CORS) : son son ne peut pas être décodé par l'app. */
   rangeDenied: (url: string | undefined | null) => boolean;
-  /** Vrai si cette source s'ouvrira dans un lecteur externe réglé sur l'appareil (VLC, Infuse, playlist…) : ce lecteur lit tout,
-   *  la compatibilité du navigateur ne compte plus. Absent : lecture intégrée pour toutes les sources. */
+  /** Vrai si cette source, quand le navigateur ne la lit pas, s'ouvrira dans un lecteur externe réglé sur l'appareil (VLC, Infuse,
+   *  playlist…) : ce lecteur lit tout, elle n'est donc pas bloquée. Absent : lecture intégrée seulement. */
   external?: ((v: SourceView) => boolean) | null;
 }
 
@@ -25,7 +25,12 @@ const OK: WebCompat = { level: 'ok', reason: '' };
 
 export function webCompatOf(v: SourceView, ctx: WebCompatContext): WebCompat {
   if (!ctx.web) return OK;
-  if (ctx.external?.(v)) return OK;
+  const c = browserCompat(v, ctx);
+  return c.level !== 'ok' && ctx.external?.(v) ? OK : c;
+}
+
+/** Compatibilité avec le seul lecteur du navigateur. */
+function browserCompat(v: SourceView, ctx: WebCompatContext): WebCompat {
   if (v.badContainer && !ctx.serverUp) return { level: 'blocked', reason: 'Format ' + v.badContainer.toUpperCase() + ' non pris en charge par ce navigateur' };
   if (v.convert === 'video' && !ctx.serverUp) {
     return { level: 'blocked', reason: 'Vidéo ' + (v.codec || 'inconnue') + ' non prise en charge par ce navigateur' };

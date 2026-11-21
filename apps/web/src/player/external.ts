@@ -109,13 +109,12 @@ export function iosNeedsExternal(v: ExternalSourceInfo, url: string = v.stream?.
 }
 
 /**
- * Règle de compatibilité « cette source s'ouvrira dans un lecteur externe » (VLC, Infuse, intent Android, playlist .m3u…), selon le
- * lecteur réglé sur l'appareil. Lecteur externe choisi : toutes les sources ; iPhone et iPad en « auto » : celles que Safari ne lit
- * pas (elles partent au lecteur préféré) ; lecture intégrée : null.
+ * Règle de compatibilité « si le navigateur ne lit pas cette source, un lecteur externe la lira » (VLC, Infuse, intent Android,
+ * playlist .m3u…), selon le lecteur réglé sur l'appareil : lecteur externe choisi, ou iPhone et iPad en « auto » (la source part
+ * alors au lecteur préféré, VLC par défaut) ; lecture intégrée : null.
  */
-export function externalSourceRule(platform: Platform = detectPlatform(), playerId: string = currentPlayer(platform)): ((v: ExternalSourceInfo) => boolean) | null {
-  if (platform === 'ios' && playerId === 'auto') return (v) => iosNeedsExternal(v);
-  if (isExternalChoice(playerId)) return () => true;
+export function externalSourceRule(platform: Platform = detectPlatform(), playerId: string = currentPlayer(platform)): (() => boolean) | null {
+  if ((platform === 'ios' && playerId === 'auto') || isExternalChoice(playerId)) return () => true;
   return null;
 }
 
