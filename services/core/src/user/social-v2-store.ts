@@ -2416,7 +2416,7 @@ export class SocialV2Store {
   // Groupes
 
   /**
-   * Vérifie des profils à ajouter à un groupe dont `owner` est propriétaire : amis acceptés du propriétaire (pas le foyer),
+   * Vérifie des profils à ajouter à un groupe dont `owner` est propriétaire : amis acceptés du propriétaire ou profils de son foyer,
    * qui acceptent ses messages (préférence `messagesFrom`) et sans blocage avec lui. `not_friend` prime sur `not_allowed`
    * (dont `refused` liste les pids). `undefined` : tous conviennent.
    */
@@ -2425,7 +2425,7 @@ export class SocialV2Store {
     let notFriend = false;
     for (const pid of pids) {
       if (this.isBlockedEither(owner, pid)) refused.push(pid);
-      else if (this.relationOf(owner, pid) !== 'friend') notFriend = true;
+      else if (this.relationOf(owner, pid) === undefined) notFriend = true;
       else if (!this.acceptsMessagesFrom(pid, owner)) refused.push(pid);
     }
     if (notFriend) return { result: 'not_friend' };
@@ -2433,7 +2433,7 @@ export class SocialV2Store {
   }
 
   /**
-   * Crée un groupe dont le créateur est propriétaire. Membres = amis acceptés du créateur (pas le foyer), distincts, sans
+   * Crée un groupe dont le créateur est propriétaire. Membres = amis acceptés du créateur ou profils de son foyer, distincts, sans
    * lui-même, qui acceptent ses messages et ne sont pas bloqués (sinon `not_allowed`, avec les pids refusés). 10 créations
    * par heure et par profil. Le créateur est membre et lit le groupe dès maintenant.
    */

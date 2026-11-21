@@ -58,6 +58,13 @@ describe('listes partagées', () => {
     return created.body.id;
   }
 
+  it('le foyer compte comme ami : un profil du même compte peut être membre d’une liste partagée', async () => {
+    const res = await as<ListDetail>(app, cast.alice, 'POST', '/user/social/lists', { body: { name: 'Famille', members: [cast.alice2.pid] } });
+    expect(res.status).toBe(201);
+    const shared = await as<{ lists: ListSummary[] }>(app, cast.alice2, 'GET', '/user/social/lists');
+    expect(shared.body.lists).toHaveLength(1);
+  });
+
   it('création : le propriétaire et les amis membres ; un non-ami est refusé sans rien créer', async () => {
     const refused = await as<{ error: string }>(app, cast.alice, 'POST', '/user/social/lists', { body: { name: 'Refusée', members: [cast.carol.pid] } });
     expect(refused.status).toBe(403);

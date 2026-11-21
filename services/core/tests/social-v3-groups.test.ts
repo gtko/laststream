@@ -98,8 +98,13 @@ describe('création (POST /user/social/groups)', () => {
     expect(JSON.stringify(res.body)).not.toContain(cast.alice.profile);
   });
 
-  it('refus : non-ami ou foyer 403 not_friend ; moi-même 400 self ; trop peu ou doublons 400 ; nom vide ou trop long 400', async () => {
-    expect((await createGroup(cast.alice, { name: 'G', members: [cast.bob.pid, cast.alice2.pid] })).body.error).toBe('not_friend');
+  it('le foyer compte comme ami : un profil du même compte peut être membre', async () => {
+    const res = await createGroup(cast.alice, { name: 'Famille', members: [cast.bob.pid, cast.alice2.pid] });
+    expect(res.status).toBe(201);
+    expect(res.body.group?.members.map((m) => m.pid).sort()).toEqual([cast.bob.pid, cast.alice2.pid].sort());
+  });
+
+  it('refus : non-ami 403 not_friend ; moi-même 400 self ; trop peu ou doublons 400 ; nom vide ou trop long 400', async () => {
     expect((await createGroup(cast.bob, { name: 'G', members: [cast.carol.pid, cast.alice.pid] })).body.error).toBe('not_friend');
     expect((await createGroup(cast.alice, { name: 'G', members: [cast.bob.pid, cast.alice.pid] })).body.error).toBe('self');
     expect((await createGroup(cast.alice, { name: 'G', members: [cast.bob.pid] })).status).toBe(400);
@@ -207,7 +212,8 @@ describe('modification (PUT /user/social/groups/:id)', () => {
     const readded = await updateGroup(cast.alice, id, { add: [cast.carol.pid] });
     expect(readded.body.group?.members.map((m) => m.pid).sort()).toEqual([cast.bob.pid, cast.carol.pid].sort());
 
-    expect((await updateGroup(cast.alice, id, { add: [cast.alice2.pid] })).body.error).toBe('not_friend');
+    const household = await updateGroup(cast.alice, id, { add: [cast.alice2.pid] });
+    expect(household.body.group?.members.map((m) => m.pid).sort()).toEqual([cast.bob.pid, cast.carol.pid, cast.alice2.pid].sort());
     expect((await updateGroup(cast.alice, id, { remove: [cast.alice.pid] })).body.error).toBe('self');
     expect((await updateGroup(cast.alice, id, { add: [cast.bob.pid], remove: [cast.bob.pid] })).status).toBe(400);
     expect((await updateGroup(cast.alice, id, { remove: [cast.bob.pid, cast.bob.pid] })).status).toBe(400);

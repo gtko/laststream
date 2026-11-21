@@ -408,8 +408,14 @@ export async function unlock(id: string, pin: string): Promise<void> {
 
 export const hasValidToken = (id: string): boolean => validProfileToken(id) !== undefined;
 
+/** Champs qu'un profil modifie lui-même, sans passer par le profil principal (le serveur accepte X-Profile-Id = lui-même). */
+const OWN_APPEARANCE_KEYS: ReadonlySet<string> = new Set(['avatar', 'avatarColor']);
+
 export async function saveProfile(id: string | null, input: Partial<ProfileInput>): Promise<ProfileDto> {
-  const actor = managerActor();
+  // Avatar ou couleur du profil actif : il agit pour lui-même (profil secondaire, enfant ou membre du foyer invité).
+  const keys = Object.keys(input);
+  const ownAppearance = id !== null && id === auth.profile?.id && keys.length > 0 && keys.every((k) => OWN_APPEARANCE_KEYS.has(k));
+  const actor = ownAppearance ? id : managerActor();
   const dto = id
     ? await api.updateProfile(id, input, actor)
     : await api.createProfile(input as ProfileInput, actor);

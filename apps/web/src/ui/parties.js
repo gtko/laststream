@@ -141,7 +141,7 @@ function paintRooms() {
   const mine = shown.filter((r) => hostFriend(r.host, friends));
   const pub = mine.length ? shown.filter((r) => !mine.includes(r)) : shown;
   const taken = new Set(rooms.map((r) => hostFriend(r.host, friends)).filter(Boolean).map((f) => f.pid));
-  const knock = friends.filter((f) => !f.muted && !f.household && f.watching && f.status !== 'offline' && f.status !== 'dnd' && !taken.has(f.pid) && (!filter.kind || f.watching.type === filter.kind));
+  const knock = friends.filter((f) => !f.muted && f.watching && f.status !== 'offline' && f.status !== 'dnd' && !taken.has(f.pid) && (!filter.kind || f.watching.type === filter.kind));
   const cta = paneMode === 'public' ? 'Entrer' : 'Rejoindre';
   const more = cursor ? '<div class="wp-more"><button type="button" class="btn btn-ghost" data-wp-more>Charger plus</button></div>' : '';
   const nbFriends = mine.length + knock.length;

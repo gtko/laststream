@@ -21,8 +21,8 @@ import { esc, rewriteKeepingFocus } from './util.js';
 /** Amis montrés au plus (les salons d'abord, puis les amis en ligne). */
 const ROWS_MAX = 8;
 
-/** Amis invitables : mes amis (jamais le foyer ni les amis en sourdine). */
-const friendsNow = () => sortedFriends().filter((f) => !f.household && !f.muted);
+/** Amis invitables : mes amis et les profils de mon foyer (jamais les amis en sourdine). */
+const friendsNow = () => sortedFriends().filter((f) => !f.muted);
 
 /** Lignes de la feuille : [ami, salon ou null], salons d'abord, puis les amis connectés. */
 function watchWithRows(friends, rooms) {

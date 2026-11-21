@@ -292,6 +292,22 @@ describe('session verrouillée', () => {
     });
   });
 
+  it('change elle-même son avatar et sa couleur ; jamais ceux d’un autre profil, ni son PIN', async () => {
+    const token = await marieLoggedIn();
+    const headers = { 'x-profile-id': marie };
+    const own = await request<{ avatar: string | null; avatarColor: string }>(app, 'PATCH', `/user/profiles/${marie}`, {
+      token,
+      headers,
+      body: { avatar: 'dicebear:adventurer:marie', avatarColor: '#ff5a36' },
+    });
+    expect(own.status).toBe(200);
+    expect(own.body).toMatchObject({ avatar: 'dicebear:adventurer:marie', avatarColor: '#ff5a36' });
+    const other = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${sam}`, { token, headers: { 'x-profile-id': sam }, body: { avatar: null } });
+    expect(other).toMatchObject({ status: 403, body: { error: 'profile_locked' } });
+    const pin = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${marie}`, { token, headers, body: { pin: '1234' } });
+    expect(pin).toMatchObject({ status: 403, body: { error: 'profile_locked' } });
+  });
+
   it('n’ouvre pas l’administration du propriétaire, même avec le profil administrateur', async () => {
     const token = await marieLoggedIn();
     const res = await request<ErrorBody>(app, 'GET', '/admin/me', { token, headers: mainHeader() });

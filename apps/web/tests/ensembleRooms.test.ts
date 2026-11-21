@@ -157,12 +157,14 @@ describe('Maintenant : en direct chez tes amis', () => {
     expect(document.activeElement).toBe(next);
   });
 
-  it('foyer et ne-pas-déranger : pas de carte ; salon complet d’un ami : carte Complet gardée', async () => {
+  it('ne-pas-déranger : pas de carte ; foyer : carte comme un ami ; salon complet d’un ami : carte Complet gardée', async () => {
     await open('maintenant', [room({ id: 'a', title: 'Plein', host: 'zoe', participants: 8, maxParticipants: 8 })], [
       friend('F1', 'Zoé', { watching: watching() }), friend('H1', 'Léo', { household: true, watching: watching() }), friend('D1', 'Dan', { status: 'dnd', watching: watching() }),
     ]);
-    expect($$('[data-ens-knock]')).toHaveLength(0);
-    expect($$('.wp-watching')).toHaveLength(0);
+    expect($$('[data-ens-knock]')).toHaveLength(1);
+    expect($$('.wp-watching')).toHaveLength(1);
+    expect($('.wp-watching').textContent).toContain('Léo');
+    expect($('.wp-watching').textContent).not.toContain('Dan');
     const full = $<HTMLButtonElement>('.wp-friends [data-room="a"] .wp-join');
     expect(full.disabled).toBe(true);
     expect(full.textContent).toBe('Complet');

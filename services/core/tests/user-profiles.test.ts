@@ -136,9 +136,9 @@ describe('profils : modification et suppression (profil principal seulement)', (
     for (const actor of [jessica.id, kid.id]) {
       const create = await request<ErrorBody>(app, 'POST', '/user/profiles', { ...asProfile(actor), body: { name: 'Intrus' } });
       const patch = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${kid.id}`, { ...asProfile(actor), body: { name: 'Renommé' } });
-      const avatar = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${actor}`, { ...asProfile(actor), body: { avatarColor: '#ff0000' } });
+      const rename = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${actor}`, { ...asProfile(actor), body: { name: 'Autre', avatarColor: '#ff0000' } });
       const del = await request<ErrorBody>(app, 'DELETE', `/user/profiles/${jessica.id}`, asProfile(actor));
-      for (const res of [create, patch, avatar, del]) {
+      for (const res of [create, patch, rename, del]) {
         expect(res.status).toBe(403);
         expect(res.body).toEqual({ error: 'main_profile_required' });
       }
@@ -168,6 +168,24 @@ describe('profils : modification et suppression (profil principal seulement)', (
     expect(mixed.body).toEqual({ error: 'main_profile_required' });
     const kidPin = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${kid.id}`, { ...asProfile(kid.id), body: { pin: '3333' } });
     expect(kidPin.body).toEqual({ error: 'main_profile_required' });
+  });
+
+  it('un profil secondaire (adulte ou enfant) change lui-même son avatar et sa couleur, jamais ceux d un autre', async () => {
+    const jessica = (await createProfile({ name: 'Jessica', pin: '1111' })).body as ProfileBody;
+    const kid = (await createProfile({ name: 'Theo', isKid: true })).body as ProfileBody;
+    const noToken = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${jessica.id}`, { ...asProfile(jessica.id), body: { avatarColor: '#ff0000' } });
+    expect(noToken.body).toEqual({ error: 'pin_required' });
+    const token = ((await unlock(jessica.id, '1111')).body as UnlockBody).token;
+    const own = await request<ProfileBody & { avatar: string | null }>(app, 'PATCH', `/user/profiles/${jessica.id}`, {
+      ...asProfile(jessica.id, token),
+      body: { avatar: 'dicebear:adventurer:jess', avatarColor: '#ff0000' },
+    });
+    expect(own.status).toBe(200);
+    expect(own.body).toMatchObject({ avatar: 'dicebear:adventurer:jess', avatarColor: '#ff0000' });
+    const kidOwn = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${kid.id}`, { ...asProfile(kid.id), body: { avatar: 'hero:heros:theo' } });
+    expect(kidOwn.status).toBe(200);
+    const cross = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${kid.id}`, { ...asProfile(jessica.id, token), body: { avatar: null } });
+    expect(cross.body).toEqual({ error: 'main_profile_required' });
   });
 
   it('principal protégé par PIN : sans son jeton, la gestion est refusée (403 pin_required) ; avec, elle passe', async () => {
