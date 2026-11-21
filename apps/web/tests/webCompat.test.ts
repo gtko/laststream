@@ -143,6 +143,13 @@ describe('webCompatOf : lecteur externe réglé (VLC…)', () => {
     for (const s of [hevc, dts, mp4Dts]) expect(webCompatOf(views([s])[0], ctx({ external: () => true })).level).toBe('ok');
   });
 
+  it('une source déjà lisible par le navigateur ne consulte pas la règle', () => {
+    let asked = 0;
+    const direct = mk('Film.1080p.WEB.AAC.mp4');
+    expect(webCompatOf(views([direct])[0], ctx({ external: () => { asked += 1; return true; } })).level).toBe('ok');
+    expect(asked).toBe(0);
+  });
+
   it('la règle ne concerne que les sources qu’elle désigne', () => {
     const onlyMkv = (v: SourceView) => v.filename.endsWith('.mkv');
     expect(webCompatOf(views([dts])[0], ctx({ external: onlyMkv })).level).toBe('ok');

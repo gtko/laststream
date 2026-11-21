@@ -41,6 +41,7 @@ import './styles/downloads.css';
 import './styles/downloads-tv.css';
 import { auth, initAuth, isKidProfile, kidSection, offlineWithoutSession } from './data/auth';
 import { userStore } from './data/userStore';
+import { settleExternalWatch } from './player/externalWatch';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';
 import { applyTheme, readTheme } from './data/theme';
 import { applyDeviceMode } from './ui/device.js';
@@ -120,6 +121,7 @@ const foyerTok = demoMode ? null : parseFoyerToken(location.hash || '');
 const joinPage = !demoMode && (joinRouteOf(location.hash || '') !== null || sharePage || foyerTok !== null);
 if (!demoMode) await initAuth({ anonymous: joinPage });
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
+settleExternalWatch(); // lecture dans VLC (ou autre) pendant que l'app était fermée : position estimée ou « vu »
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });
 // L'écran de connexion / de choix du profil (auth-ui, avatars, éditeur) n'est chargé que s'il faut l'afficher.
 if (!joinPage && !demoMode && (auth.status === 'needs-login' || auth.status === 'needs-profile' || offlineWithoutSession())) await (await import('./ui/auth-ui.js')).runAuthFlow();

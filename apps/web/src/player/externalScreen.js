@@ -6,6 +6,10 @@ import { currentPlayer, detectPlatform, iosNeedsExternal, isExternalChoice, laun
 import { getPreferredExternal } from '../data/prefs';
 import { mark } from '../ui/watched.js';
 import { isOfflineView } from './offlinePlay';
+import { webCompatContext } from '../sources/load';
+import { webCompatOf } from '../sources/webCompat';
+import { formatClock } from './progress';
+import { beginExternalWatch, dropExternalWatch, dropPendingExternalWatch, externalDuration, noteExternalLeft, settleExternalWatch } from './externalWatch';
 
 /** Source passant par le serveur (proxy) : son adresse locale n’est pas joignable depuis une autre application. */
 const NOTE_PROXY = 'Cette source passe par notre serveur et ne peut pas s’ouvrir dans un lecteur externe. Essaie une autre source.';
@@ -18,7 +22,8 @@ const NOT_INSTALLED_MS = 2000;
 
 let seq = 0;
 let timer = 0;
-/** Écran courant : session, adresse de la source, lecteur retenu pour cet écran (un choix ponctuel ne change pas le réglage), plateforme. */
+/** Écran courant : session, adresse de la source, lecteur retenu pour cet écran (un choix ponctuel ne change pas le réglage), plateforme,
+ *  position estimée au dernier retour (secondes, pour une relance depuis le même écran). */
 let cur = null;
 
 const labelOf = (id, platform) => SHORT[id] || (playerOptions(platform).find((o) => o.id === id) || { label: id }).label;
@@ -44,17 +49,22 @@ function choiceFor(playerId, platform, blocked) {
 
 /**
  * Court-circuit de la préparation, avant la sonde et le moteur : lecteur externe retenu pour cette source, ou null (lecture intégrée).
- * iPhone et iPad, réglage « auto » : seul un conteneur que le lecteur intégré ne lit pas (MKV, AVI…, d’après le nom ou l’analyse) part à l’externe.
+ * iPhone et iPad, réglage « auto » : une source que Safari ne lit pas (conteneur MKV, AVI…, codec ou son refusés) part au lecteur préféré (VLC).
  */
 export function externalPlan(view, media) {
   const platform = detectPlatform();
   let playerId = currentPlayer(platform);
   if (platform === 'ios' && playerId === 'auto') {
-    if (!iosNeedsExternal(view, media.url)) return null;
+    if (!iosNeedsExternal(view, media.url) && browserReads(view)) return null;
     playerId = getPreferredExternal();
   }
   if (!isExternalChoice(playerId)) return null;
   return choiceFor(playerId, platform, media.proxied === true);
+}
+
+/** Safari lit-il cette source tout seul (vidéo et son), sans lecteur externe ? */
+function browserReads(view) {
+  return webCompatOf(view, { ...webCompatContext(), external: null }).level === 'ok';
 }
 
 /** Démarre la lecture externe à la place du moteur : aucun moteur, aucune progression, écran externe (ou message si le lien passe par le serveur). */
@@ -93,7 +103,7 @@ function showBlocked(p) {
 }
 
 function showExternal(p, url, playerId) {
-  cur = { p, url, playerId, platform: detectPlatform() };
+  cur = { p, url, playerId, platform: detectPlatform(), position: 0 };
   seq += 1;
   S.ui.setLoading(null);
   renderMain();
@@ -128,6 +138,7 @@ function launchNow() {
   if (!c) return;
   const sent = launch(planLaunch(c.playerId, c.url, screenTitle(c.p), c.platform));
   clearTimeout(timer);
+  if (sent) trackLaunch(c); else dropExternalWatch();
   // iPhone : si la page est encore visible après le délai, l’app n’est sans doute pas installée (au retour de l’app, l’écran reste).
   if (sent && c.platform === 'ios') {
     const mine = seq;
@@ -135,6 +146,49 @@ function launchNow() {
       if (mine === seq && S.P === c.p && document.visibilityState === 'visible') S.ui.toast(labelOf(c.playerId, c.platform) + ' n’est peut-être pas installé.', 5000);
     }, NOT_INSTALLED_MS);
   }
+}
+
+/** Durée de ce qui est lu (secondes) : épisode ou film d’après TMDB, sinon l’estimation de la source, sinon 0. */
+function durationOf(p) {
+  if (p.req.type === 'tv' && p.cur && p.cur.season != null) {
+    const eps = p.episodes && p.episodes.get ? p.episodes.get(p.cur.season) : null;
+    const info = eps && eps.find ? eps.find((e) => e.episode === p.cur.episode) : null;
+    return externalDuration(info && info.runtime, p.view && p.view.durationSec);
+  }
+  return externalDuration(p.model && p.model.minutes, p.view && p.view.durationSec);
+}
+
+/** Suivi de la lecture externe (position estimée au retour, « vu » à 80 %). Titre d’addon : pas de suivi (progression indexée à part). */
+function trackLaunch(c) {
+  const p = c.p;
+  if (p.addon) { dropExternalWatch(); return; }
+  const it = p.meta || {};
+  beginExternalWatch({
+    key: p.req.key, type: p.req.type, id: Number(p.req.id), title: it.title || '', poster: it.poster || '', backdrop: it.backdrop || '',
+    season: p.cur.season != null ? p.cur.season : undefined, episode: p.cur.episode != null ? p.cur.episode : undefined,
+  }, durationOf(p), c.position);
+}
+
+/** Retour dans l’app après le lecteur externe : enregistre la position estimée, ou le « vu », et le dit. */
+function externalReturn() {
+  const est = settleExternalWatch();
+  if (!est) return;
+  const here = !!cur && S.P === cur.p;
+  if (here) {
+    clearTimeout(timer);
+    seq += 1;
+    cur.position = est.watched ? 0 : est.position;
+    // Écran externe encore ouvert, pas fini : si la personne retourne dans le lecteur, le suivi reprend de cette position.
+    if (!est.watched) beginExternalWatch(est.watch.entry, est.watch.duration, est.position);
+  }
+  if (S.ui) S.ui.toast(est.watched ? 'Marqué comme vu' : 'Reprise enregistrée à ' + formatClock(est.position), 4000);
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) noteExternalLeft();
+    else externalReturn();
+  });
 }
 
 async function copyLink() {
@@ -151,6 +205,7 @@ async function markSeen() {
 /** Fermeture de la session : l’écran externe ne retient plus la session fermée. */
 export function forgetExternal() {
   cur = null;
+  dropPendingExternalWatch();
 }
 
 /** Boutons de l’écran externe, routés par onAction (sessionActions). */
