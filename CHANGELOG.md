@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.68 – 2026-11-21
+
+- Sources : les MKV ne sont plus « non supporté » quand VLC est réglé (#48) — @gtko
+
 ## v1.0.67 – 2026-11-21
 
 - App Tauri : ancienne app Windows migrée, notarisation macOS prête, updater Linux corrigé (#45) — @gtko
