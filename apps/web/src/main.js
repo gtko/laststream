@@ -72,7 +72,7 @@ import { servedByLastAddon } from './data/configSync';
 import { setServedOrigin } from './data/serverMode';
 import { wipeDeviceDebrid } from './sources/debridWipe';
 import { isPurgePending } from './downloads/settings';
-import { initUiUpdateBanner, initUpdateBanner } from './ui/update-banner.js';
+import { initShellUpdateBanner, initUiUpdateBanner, initUpdateBanner } from './ui/update-banner.js';
 import { installPreloadReload } from './ui/preloadReload.js';
 import { initBackdrop } from './player/backdrop';
 import { initTrailersGate } from './ui/trailersGate.js';
@@ -164,5 +164,7 @@ setTimeout(() => { announceShellReady(); }, 8000);
 initUpdateBanner();
 // Windows et web : bannière « Une nouvelle version est disponible » quand le serveur publie un autre build de l'interface.
 initUiUpdateBanner({ isPlayerOpen });
+// Ancienne coque Windows : bandeau « Installer » quand elle a téléchargé la nouvelle app (sans effet ailleurs).
+void initShellUpdateBanner();
 // Annonces publiques : bannière refermable, appel réseau sans bloquer l'affichage (jamais sur #/admin).
 initAnnouncementBanner();

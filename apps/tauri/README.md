@@ -4,6 +4,8 @@ App Laststream construite avec Tauri 2, publiée à chaque release pour macOS, W
 l'ancienne coque Windows (Rust, WebView2) et l'ancienne app Android Capacitor, retirées du dépôt (voir l'historique git)
 et dont elle a repris le code encore utile. Elle parle **exactement le même protocole** que l'ancienne coque Windows :
 l'interface web (`apps/web`) fonctionne sans aucun changement.
+Chaque release sert encore à l'ancienne coque Windows un flux `latest.json` (installeur NSIS de cette app) pour qu'elle
+passe à l'app Tauri (voir « Mises à jour »).
 
 ## Architecture
 
@@ -71,7 +73,8 @@ LASTSTREAM_MPV_LIB_DIR=$PWD/src-tauri/target/mpv-stage \
   npx tauri build --bundles app,dmg --config src-tauri/target/mpv-stage/frameworks.json
 ```
 
-L'app n'est pas notarisée (pas de compte Apple Developer) : au premier lancement, clic droit → Ouvrir.
+Sans les secrets Apple, la release est signée ad hoc et non notarisée : au premier lancement, macOS la bloque (Réglages
+Système → Confidentialité et sécurité → « Ouvrir quand même »). Voir « Signature et notarisation macOS ».
 
 Windows : `libmpv-2.dll` (archive Git LFS `mpv/libmpv-2_x64.zip`) est installée à côté de l'exécutable ; la liaison
 utilise `mpv/x64/mpv.lib` (`mpv/arm64` pour une compilation ARM64). Voir `.github/workflows/tauri-ci.yml`.
@@ -100,3 +103,34 @@ accepté par l'updater). L'icône de l'app se régénère depuis `images/laststr
 - Mode local sous macOS : Node, `lastaddon.cjs`, l'interface et ffmpeg ne sont pas encore embarqués dans le paquet
   (le mode public, par défaut, n'en a pas besoin).
 - Touches multimédia hors focus (Centre de contrôle macOS) : seules celles reçues par la fenêtre active sont relayées.
+
+## Mises à jour
+
+Flux signés ed25519 (clé `LASTSTREAM_UPDATE_SIGNING_KEY`, clé publique dans `src-tauri/src/laststream_app/constants.rs`),
+servis par laststream-edge depuis la dernière release GitHub :
+
+| App | Flux | Fichier installé |
+|---|---|---|
+| macOS (aarch64, x86_64) | `app.laststream.app/app/tauri/macos-<arch>/latest.json` | `.app.tar.gz` : l'app est remplacée puis relancée |
+| Windows | `app.laststream.app/app/tauri/windows-x86_64/latest.json` | installeur NSIS en silencieux (`/S`), puis relance |
+| Linux (AppImage) | `app.laststream.app/app/tauri/linux-x86_64/latest.json` | l'AppImage (`$APPIMAGE`) est remplacée ; le `.deb` ne se met pas à jour seul (aucun contrôle) |
+| Android | `app.laststream.app/app/android/latest.json` | APK, installeur système (même paquet et même certificat que l'ancien APK Capacitor) |
+| Ancienne coque Windows (≤ 1.0.59) | `app.laststream.app/app/windows/latest.json` | même installeur NSIS, publié aussi sous `Laststream-Setup-X.Y.Z.exe` ; la page affiche « La nouvelle app Laststream est prête — Installer » (`initShellUpdateBanner`), l'installeur s'ouvre en mode normal |
+
+## Signature et notarisation macOS
+
+`tauri-release.yml` signe avec un certificat Developer ID, active le runtime renforcé (droits :
+`src-tauri/mac/Entitlements.plist`), fait notariser et agrafer l'app puis le `.dmg`, dès que ces 5 secrets du dépôt existent
+(Settings → Secrets and variables → Actions). Aucun : build ad hoc comme avant. Une partie seulement : la release échoue.
+
+| Secret | Contenu |
+|---|---|
+| `APPLE_CERTIFICATE` | certificat **Developer ID Application** exporté en `.p12` depuis le Trousseau (avec sa clé privée), encodé en base64 : `base64 -i certificat.p12 \| pbcopy` |
+| `APPLE_CERTIFICATE_PASSWORD` | mot de passe choisi à l'export du `.p12` |
+| `APPLE_ID` | e-mail du compte Apple Developer |
+| `APPLE_PASSWORD` | mot de passe **pour app** créé sur account.apple.com (Connexion et sécurité → Mots de passe pour app), pas le mot de passe du compte |
+| `APPLE_TEAM_ID` | identifiant d'équipe à 10 caractères (developer.apple.com → Membership details) |
+
+L'identité de signature est lue dans le certificat (aucun secret de plus). Les apps déjà installées (signées ad hoc) passent
+à la version notarisée par la mise à jour habituelle : le remplacement se fait sans quarantaine, donc sans blocage.
+

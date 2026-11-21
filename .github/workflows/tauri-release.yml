@@ -3,8 +3,10 @@ name: Tauri release
 # Coque Tauri (apps/tauri) : construit, pour un tag vX.Y.Z déjà poussé, les fichiers d'une release et leurs flux signés.
 # Appelé par release.yml (releases automatiques) ; n'expose que des artefacts, release.yml publie.
 #  - macos-aarch64 et macos-x86_64 : Laststream-X.Y.Z-<plateforme>.dmg (installation) et .app.tar.gz (mise à jour), app
-#    signée ad hoc ;
-#  - windows-x86_64 : Laststream-X.Y.Z-windows-x86_64.setup.exe (NSIS, installation et mise à jour), non signé ;
+#    signée Developer ID et notarisée si les secrets Apple sont fournis, sinon signée ad hoc ;
+#  - windows-x86_64 : Laststream-X.Y.Z-windows-x86_64.setup.exe (NSIS, installation et mise à jour), non signé ; le même
+#    installeur sous le nom Laststream-Setup-X.Y.Z.exe avec latest.json (+ .sig) : flux de l'ancienne coque Windows
+#    (retirée du dépôt), qui passe ainsi à l'app Tauri ;
 #  - linux-x86_64 : Laststream-X.Y.Z-linux-x86_64.AppImage (installation et mise à jour) et .deb ;
 #  - pour chaque plateforme : tauri-<plateforme>-latest.json et sa signature ed25519 (.sig), même clé que la coque Windows.
 # Le Worker laststream-edge sert flux et fichiers sous https://app.laststream.app/app/tauri/<plateforme>/.
@@ -18,6 +20,17 @@ on:
     secrets:
       LASTSTREAM_UPDATE_SIGNING_KEY:
         required: true
+      # Signature Developer ID et notarisation macOS : facultatives, toutes ensemble (voir le job macos).
+      APPLE_CERTIFICATE:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
 
 permissions:
   contents: read
@@ -55,20 +68,103 @@ jobs:
       run: |
         brew install mpv dylibbundler pkg-config
         bash apps/tauri/scripts/stage-mpv-macos.sh
+    # Signature Developer ID et notarisation : seulement si les 5 secrets Apple sont présents (voir apps/tauri/README.md,
+    # « Signature et notarisation macOS »). Aucun : app signée ad hoc comme avant (avertissement). Une partie seulement :
+    # erreur, pour ne jamais publier par mégarde une app à moitié configurée.
+    - name: Apple signing certificate
+      id: apple
+      env:
+        APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        set -euo pipefail
+        present=0
+        for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+          [ -n "${!v}" ] && present=$((present + 1))
+        done
+        if [ "$present" -eq 0 ]; then
+          echo "::warning::Secrets Apple absents : app macOS signée ad hoc, non notarisée."
+          echo "signed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [ "$present" -ne 5 ]; then
+          echo "::error::Secrets Apple incomplets ($present/5) : APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_ID, APPLE_PASSWORD et APPLE_TEAM_ID sont tous nécessaires."
+          exit 1
+        fi
+        # Trousseau temporaire, propre à ce job (le runner est jetable).
+        keychain="$RUNNER_TEMP/laststream-signing.keychain-db"
+        keychain_password="$(uuidgen)"
+        printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+        security create-keychain -p "$keychain_password" "$keychain"
+        security set-keychain-settings -lut 21600 "$keychain"
+        security unlock-keychain -p "$keychain_password" "$keychain"
+        security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+        rm -f "$RUNNER_TEMP/cert.p12"
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+        security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+        identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -n 1)"
+        if [ -z "$identity" ]; then
+          echo "::error::Aucune identité « Developer ID Application » dans APPLE_CERTIFICATE (un certificat « Apple Development » ou « Mac App Distribution » ne permet pas la notarisation)."
+          exit 1
+        fi
+        echo "Identité de signature : $identity"
+        echo "APPLE_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+        echo "signed=true" >> "$GITHUB_OUTPUT"
     - name: Build the app
       working-directory: apps/tauri
       env:
         LASTSTREAM_MPV_LIB_DIR: ${{ github.workspace }}/apps/tauri/src-tauri/target/mpv-stage
+        SIGNED: ${{ steps.apple.outputs.signed }}
+        # Lus par la CLI Tauri : notarisation (notarytool) et agrafage de Laststream.app quand une identité est fournie.
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: |
+        set -euo pipefail
         npm ci
+        config=src-tauri/target/mpv-stage/frameworks.json
+        if [ "$SIGNED" = "true" ]; then
+          # Bibliothèques mpv + identité Developer ID, runtime renforcé et droits (une seule configuration fusionnée).
+          jq --arg id "$APPLE_SIGNING_IDENTITY" --arg ent "$GITHUB_WORKSPACE/apps/tauri/src-tauri/mac/Entitlements.plist" \
+            '.bundle.macOS += {signingIdentity: $id, hardenedRuntime: true, entitlements: $ent}' \
+            "$config" > src-tauri/target/mpv-stage/release-config.json
+          config=src-tauri/target/mpv-stage/release-config.json
+        else
+          unset APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+        fi
         # hdiutil échoue parfois sur les runners macOS (« create failed - Resource busy ») : nouvel essai, la compilation
         # reste en cache et seul l'empaquetage est refait.
         for attempt in 1 2 3; do
-          npx tauri build --bundles app,dmg --config src-tauri/target/mpv-stage/frameworks.json && break
+          npx tauri build --bundles app,dmg --config "$config" && break
           [ "$attempt" -lt 3 ] || exit 1
           echo "::warning::Empaquetage macOS échoué (essai $attempt), nouvel essai"
           sleep 15
         done
+    # Le .dmg lui-même : notarisé et agrafé à son tour, pour que Gatekeeper l'accepte hors ligne dès l'ouverture.
+    - name: Notarize the disk image and check the signatures
+      if: ${{ steps.apple.outputs.signed == 'true' }}
+      env:
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        set -euo pipefail
+        bundle=apps/tauri/src-tauri/target/release/bundle
+        app="$bundle/macos/Laststream.app"
+        dmgs=("$bundle"/dmg/*.dmg)
+        [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::Un .dmg attendu"; exit 1; }
+        codesign --verify --deep --strict --verbose=2 "$app"
+        # Le .dmg est signé par Tauri en principe ; sinon il l'est ici (Gatekeeper vérifie sa signature avant de l'ouvrir).
+        codesign --verify "${dmgs[0]}" 2>/dev/null || codesign --sign "$APPLE_SIGNING_IDENTITY" --timestamp "${dmgs[0]}"
+        xcrun stapler validate "$app"
+        spctl --assess --type execute --verbose=4 "$app"
+        xcrun notarytool submit "${dmgs[0]}" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait --timeout 30m
+        xcrun stapler staple "${dmgs[0]}"
+        xcrun stapler validate "${dmgs[0]}"
+        spctl --assess --type open --context context:primary-signature --verbose=4 "${dmgs[0]}"
     - name: Name the files, build and sign the feed
       env:
         LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
@@ -145,6 +241,14 @@ jobs:
         node apps/tauri/scripts/tauri-feed.mjs --platform "$PLATFORM" --version "$VERSION" \
           --file "dist/Laststream-$VERSION-$PLATFORM.setup.exe" --out "dist/tauri-$PLATFORM-latest.json"
         node apps/tauri/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
+        # Ancienne coque Windows (retirée du dépôt, jusqu'à 1.0.59) : elle lit app.laststream.app/app/windows/latest.json, que
+        # laststream-edge relit dans latest.json de la dernière release. Sans ce flux, elle restait sur sa version pour
+        # toujours. Même installeur NSIS, au nom et au format que l'ancien updater attend, signé avec la même clé.
+        cp "${installers[0]}" "dist/Laststream-Setup-$VERSION.exe"
+        node apps/tauri/scripts/windows-manifest.mjs build "dist/Laststream-Setup-$VERSION.exe" \
+          --notes "Laststream $TAG" --out dist/latest.json
+        node apps/tauri/scripts/sign-update.mjs dist/latest.json
+        test -s dist/latest.json && test -s dist/latest.json.sig || { echo "::error::Flux de l'ancienne coque Windows absent"; exit 1; }
         ls -la dist
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:

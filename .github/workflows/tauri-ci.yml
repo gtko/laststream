@@ -195,7 +195,7 @@ jobs:
     - name: Update feed script on Windows
       working-directory: apps/tauri
       shell: bash
-      run: node --test scripts/tauri-feed.test.mjs
+      run: node --test scripts/tauri-feed.test.mjs scripts/windows-manifest.test.mjs
     - name: Build the installer (NSIS)
       working-directory: apps/tauri
       shell: bash

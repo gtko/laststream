@@ -7,6 +7,7 @@ name: Release
 #    laststream-edge sous app.laststream.app/app/tauri/<plateforme>/ : site et mises a jour de l'app) ;
 #  - Android : APK Tauri (job android), meme identifiant, cle et versionCode que l'ancien APK Capacitor, qu'il remplace par
 #    la mise a jour en un tap ; android-latest.json reste le flux lu par le site et l'app via laststream-edge.
+# L'ancienne app Windows (retiree du depot) recoit encore latest.json (installeur NSIS Tauri) pour passer a l'app Tauri.
 # Label release:skip sur la PR : aucune release.
 # workflow_dispatch(tag) : relance les builds et la publication d'un tag vX.Y.Z existant, sans nouveau bump.
 # Prerequis du depot : voir README.md, section "Releases automatiques" (secrets, permissions d'ecriture, protection de main).
@@ -156,7 +157,7 @@ jobs:
           echo
           cat section.md
           echo
-          echo "Téléchargements : installeur Windows, APK Android."
+          echo "Téléchargements : macOS (.dmg), Windows (.setup.exe), Linux (.AppImage, .deb), Android (.apk)."
         } > body.md
         gh release create "v${VERSION}" banner.png --draft --verify-tag --title "Laststream v${VERSION}" --notes-file body.md
 
@@ -185,7 +186,7 @@ jobs:
         } >> "$GITHUB_OUTPUT"
         if ! gh release view "$INPUT_TAG" > /dev/null 2>&1; then
           gh release create "$INPUT_TAG" --draft --verify-tag --title "Laststream $INPUT_TAG" \
-            --notes "Téléchargements : installeur Windows, APK Android. Voir CHANGELOG.md pour le détail."
+            --notes "Téléchargements : macOS (.dmg), Windows (.setup.exe), Linux (.AppImage, .deb), Android (.apk). Voir CHANGELOG.md pour le détail."
         fi
 
     - name: Expose version, tag and version code
@@ -210,6 +211,12 @@ jobs:
       tag: ${{ needs.prepare.outputs.tag }}
     secrets:
       LASTSTREAM_UPDATE_SIGNING_KEY: ${{ secrets.LASTSTREAM_UPDATE_SIGNING_KEY }}
+      # Facultatifs : signature Developer ID et notarisation macOS (apps/tauri/README.md).
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
   android:
     needs: prepare
@@ -341,9 +348,10 @@ jobs:
         set -euo pipefail
         shopt -s nullglob
         # macOS (aarch64, x86_64) : .dmg, .app.tar.gz, flux, signature ; Windows : installeur, flux, signature ;
-        # Linux : AppImage, .deb, flux, signature.
-        files=(dl/tauri/Laststream-*-macos-*.dmg dl/tauri/Laststream-*-macos-*.app.tar.gz dl/tauri/Laststream-*-windows-x86_64.setup.exe dl/tauri/Laststream-*-linux-x86_64.AppImage dl/tauri/Laststream-*-linux-x86_64.deb dl/tauri/tauri-*-latest.json dl/tauri/tauri-*-latest.json.sig)
-        [ "${#files[@]}" -eq 15 ] || { echo "::error::15 fichiers Tauri attendus, ${#files[@]} trouvés"; exit 1; }
+        # Linux : AppImage, .deb, flux, signature ; ancienne coque Windows : installeur Laststream-Setup-X.Y.Z.exe,
+        # latest.json et sa signature (flux que laststream-edge relit pour la faire passer à l'app Tauri).
+        files=(dl/tauri/Laststream-*-macos-*.dmg dl/tauri/Laststream-*-macos-*.app.tar.gz dl/tauri/Laststream-*-windows-x86_64.setup.exe dl/tauri/Laststream-*-linux-x86_64.AppImage dl/tauri/Laststream-*-linux-x86_64.deb dl/tauri/tauri-*-latest.json dl/tauri/tauri-*-latest.json.sig dl/tauri/Laststream-Setup-*.exe dl/tauri/latest.json dl/tauri/latest.json.sig)
+        [ "${#files[@]}" -eq 18 ] || { echo "::error::18 fichiers Tauri attendus, ${#files[@]} trouvés"; exit 1; }
         gh release upload "$TAG" "${files[@]}" --clobber
     - name: Upload the assets and publish the release
       run: |
