@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.67 – 2026-11-21
+
+- App Tauri : ancienne app Windows migrée, notarisation macOS prête, updater Linux corrigé (#45) — @gtko
+
 ## v1.0.66 – 2026-11-21
 
 - Retrait des anciennes apps Windows et Android Capacitor (apps/desktop, apps/mobile) (#46) — @gtko
