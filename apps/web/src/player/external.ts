@@ -100,6 +100,25 @@ export function currentPlayer(platform: Platform = detectPlatform()): string {
 /** Vrai si le choix ouvre une autre application (ni « intégré », ni « auto »). */
 export const isExternalChoice = (id: string): boolean => id !== 'builtin' && id !== 'auto';
 
+/** Source vue par la règle du lecteur externe : adresse, nom de fichier, conteneur que le navigateur ne lit pas (MKV…). */
+interface ExternalSourceInfo { stream?: { url?: string | null } | null; filename?: string; badContainer?: string }
+
+/** iPhone et iPad, réglage « auto » : la source part au lecteur externe si son conteneur n'est pas lu par Safari (MKV, AVI…). */
+export function iosNeedsExternal(v: ExternalSourceInfo, url: string = v.stream?.url || ''): boolean {
+  return !!v.badContainer || looksUnplayableOnIOS(url, v.filename || url);
+}
+
+/**
+ * Règle de compatibilité « cette source s'ouvrira dans un lecteur externe » (VLC, Infuse, intent Android, playlist .m3u…), selon le
+ * lecteur réglé sur l'appareil. Lecteur externe choisi : toutes les sources ; iPhone et iPad en « auto » : celles que Safari ne lit
+ * pas (elles partent au lecteur préféré) ; lecture intégrée : null.
+ */
+export function externalSourceRule(platform: Platform = detectPlatform(), playerId: string = currentPlayer(platform)): ((v: ExternalSourceInfo) => boolean) | null {
+  if (platform === 'ios' && playerId === 'auto') return (v) => iosNeedsExternal(v);
+  if (isExternalChoice(playerId)) return () => true;
+  return null;
+}
+
 /** Playlist M3U d'une seule entrée. Le titre ne garde pas de retour à la ligne. */
 export function buildM3u(url: string, title: string): string {
   return `#EXTM3U\n#EXTINF:-1,${title.replace(/[\r\n]+/g, ' ')}\n${url.replace(/[\r\n]+/g, '')}\n`;

@@ -2,7 +2,7 @@
  * aucune écriture de progression (une entrée sans durée polluerait « Continuer »). Choix du lecteur et schémas : ./external. */
 import { S } from './sessionState.js';
 import { stopWebAudio } from './sessionPlay.js';
-import { currentPlayer, detectPlatform, isExternalChoice, launch, looksUnplayableOnIOS, planLaunch, playerOptions } from './external';
+import { currentPlayer, detectPlatform, iosNeedsExternal, isExternalChoice, launch, planLaunch, playerOptions } from './external';
 import { getPreferredExternal } from '../data/prefs';
 import { mark } from '../ui/watched.js';
 import { isOfflineView } from './offlinePlay';
@@ -44,13 +44,13 @@ function choiceFor(playerId, platform, blocked) {
 
 /**
  * Court-circuit de la préparation, avant la sonde et le moteur : lecteur externe retenu pour cette source, ou null (lecture intégrée).
- * iPhone et iPad, réglage « auto » : seul un conteneur que le lecteur intégré ne lit pas (MKV, AVI…) part à l’externe.
+ * iPhone et iPad, réglage « auto » : seul un conteneur que le lecteur intégré ne lit pas (MKV, AVI…, d’après le nom ou l’analyse) part à l’externe.
  */
 export function externalPlan(view, media) {
   const platform = detectPlatform();
   let playerId = currentPlayer(platform);
   if (platform === 'ios' && playerId === 'auto') {
-    if (!looksUnplayableOnIOS(media.url, view.filename || media.url)) return null;
+    if (!iosNeedsExternal(view, media.url)) return null;
     playerId = getPreferredExternal();
   }
   if (!isExternalChoice(playerId)) return null;

@@ -37,7 +37,7 @@ import { stopAutoSync, toastBusy } from './sessionTracks.js';
 import { bindEngine } from './sessionUi.js';
 import { castSourceChanged } from './sessionCast.js';
 import { NOTE_NOT_EXTERNAL, externalPlan, openExternal } from './externalScreen.js';
-import { looksUnplayableOnIOS } from './external';
+import { iosNeedsExternal } from './external';
 
 
 /** Message clair pour une erreur de débridage sur l'appareil. */
@@ -99,7 +99,7 @@ async function prepareView(p, cand, signal, local = false, opts = {}) {
   let ext = externalPlan(view, media);
   // Lien passant par le serveur : impossible hors de l'app. Ailleurs, la lecture reste intégrée, avec un avis. Sur iPhone et iPad, pareil
   // pour un format que le lecteur intégré lit ; un MKV (format illisible sur iOS) garde l'écran bloqué.
-  if (ext && ext.blocked && (ext.platform !== 'ios' || !looksUnplayableOnIOS(media.url, view.filename || media.url))) { p.notice = NOTE_NOT_EXTERNAL; ext = null; }
+  if (ext && ext.blocked && (ext.platform !== 'ios' || !iosNeedsExternal(view, media.url))) { p.notice = NOTE_NOT_EXTERNAL; ext = null; }
   if (ext) return { shell, media, probe: null, choice: ext, conversion: 'none', hlsUrl: null, hlsId: '', direct: !!direct };
   let probe = p.hint && p.hint.url === media.url ? p.hint.probe : null;
   if (!shell && !native && media.up && !probe) probe = await fetchProbe(media.url, media.base, signal);

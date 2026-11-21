@@ -7,6 +7,7 @@ import type { DeviceTarget } from '../data/sources';
 import type { Lang, Stream } from '../data/stream';
 import { deviceAddonName, fetchDeviceStreams, mergeDeviceStreams } from './deviceFetch';
 import { browserCaps, inShell } from '../player/caps';
+import { externalSourceRule } from '../player/external';
 import { serverLikelyUp } from '../player/server';
 import { rangeDenied } from './hostRange';
 import { webCompatOf, type WebCompatContext } from './webCompat';
@@ -376,9 +377,10 @@ function alsoAccepted(lp: LangPrefs): readonly Lang[] {
   return lp.learn ? ['original', 'multi'] : [];
 }
 
-/** Contexte de la règle de compatibilité web : navigateur seul, serveur de streaming présent ou non, hôtes refusés. */
+/** Contexte de la règle de compatibilité web : navigateur seul, serveur de streaming présent ou non, hôtes refusés, lecteur externe réglé. */
 export function webCompatContext(): WebCompatContext {
-  return { web: !inShell(), serverUp: serverLikelyUp(), rangeDenied };
+  const web = !inShell();
+  return { web, serverUp: serverLikelyUp(), rangeDenied, external: web ? externalSourceRule() : null };
 }
 
 /** `originalLang` : langue d'origine du titre (code à deux lettres) quand elle est connue ; sinon omise. `maxHeight` : plafond de résolution (ODY-236), par défaut celui de l'appareil. `lp` : réglages de langue effectifs du titre (animes : voir `resolveLangPrefs`), les réglages généraux à défaut. */
