@@ -1,7 +1,7 @@
-//! App Android : l'interface est chargée depuis le serveur Laststream, comme dans l'app Capacitor (`apps/mobile`), et
+//! App Android : l'interface est chargée depuis le serveur Laststream, comme dans l'ancienne app Capacitor, et
 //! retrouve l'API Capacitor qu'elle attend (`window.Capacitor`, plugins natifs) par `capacitor.js`, injecté avant ses
-//! scripts. Les plugins Kotlin de l'app Capacitor (lecteur libVLC, téléchargements, mise à jour, écran) sont repris tels
-//! quels par le projet Gradle (`gen/android`) et servis par le plugin Tauri `capacitor` (`CapacitorBridgePlugin`).
+//! scripts. Les plugins Kotlin repris de l'app Capacitor (lecteur libVLC, téléchargements, mise à jour, écran) sont compilés
+//! par le projet Gradle (`gen/android`) et servis par le plugin Tauri `capacitor` (`CapacitorBridgePlugin`).
 //!
 //! Démarrage : `android.html` (dans `splash/`) sonde le serveur puis s'y rend ; hors ligne, elle propose de réessayer.
 

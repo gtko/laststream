@@ -6,7 +6,7 @@
  *   serveur publie /version.json à chaque déploiement : contrôle peu après le lancement, au retour au premier plan (1 fois / min au
  *   plus) puis toutes les 10 min. Masquée pendant une lecture ou en plein écran ; option : mise à jour seule après 5 min sans
  *   interaction.
- * - Ancienne coque Windows (apps/desktop, jusqu'à 1.0.59) : « La nouvelle app Laststream est prête — Installer »
+ * - Ancienne coque Windows (retirée du dépôt, jusqu'à 1.0.59) : « La nouvelle app Laststream est prête — Installer »
  *   (`initShellUpdateBanner`). La coque télécharge et vérifie l'installeur puis envoie `autoupdater-show-notif`, mais ne l'installe
  *   qu'à la réception de `autoupdater-notif-clicked`, que la page n'envoyait jamais : sans ce bandeau, elle ne se mettait pas à
  *   jour. L'app Tauri affiche sa propre boîte « Redémarrer maintenant » : rien ici. */

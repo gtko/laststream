@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.66 – 2026-11-21
+
+- Retrait des anciennes apps Windows et Android Capacitor (apps/desktop, apps/mobile) (#46) — @gtko
+
+## v1.0.65 – 2026-11-21
+
+- Films : sources de nouveau visibles pour un film déjà sorti en BluRay (L'Odyssée) (#47) — @gtko
+
 ## v1.0.64 – 2026-11-20
 
 - Lecteur Android : lecteur web masqué en PiP, boutons Watch party et Amis (#36) — @gtko

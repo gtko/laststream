@@ -1,5 +1,5 @@
-//! Services locaux (mode `{"server":"local"}` de shell.json, ou `--webui-url`) : mêmes règles que la coque Windows
-//! (`apps/desktop/src/laststream_app/lastaddon.rs` et `laststream_server/`).
+//! Services locaux (mode `{"server":"local"}` de shell.json, ou `--webui-url`) : mêmes règles que l'ancienne
+//! coque Windows (`lastaddon.rs` et `laststream_server/`, retirés du dépôt).
 //!
 //! - lastAddon : un service déjà actif sur `http://127.0.0.1:7000` (`/health` → `{"ok":true}`) est réutilisé tel quel ;
 //!   sinon Node lance `lastaddon/lastaddon.cjs` (ressources de l'app) sur le premier port libre à partir de 7000,

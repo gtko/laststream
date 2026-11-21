@@ -6,7 +6,7 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
-    "icons": "tauri icon ../desktop/images/laststream.png -o src-tauri/icons"
+    "icons": "tauri icon images/laststream.png -o src-tauri/icons"
   },
   "devDependencies": {
     "@capacitor/core": "7.6.9",

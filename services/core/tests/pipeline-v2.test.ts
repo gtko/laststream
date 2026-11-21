@@ -197,11 +197,10 @@ describe('pipeline v2 : filtres de contenu (TMDB, Cinemeta)', () => {
     expect(result.streams[0]?.laststream).toMatchObject({ bitrateMbps: 23.9 });
   });
 
-  it('film 2026 pas encore sorti en numérique : l’homonyme d’une autre année est écarté, réponse notYetDigital', async () => {
-    // Sorti il y a un mois (dans la fenêtre de quatre mois) : la date suit le jour du test.
+  /** Film sorti en salle il y a un mois (fenêtre de quatre mois), sans date numérique dans TMDB, et ses releases. */
+  const recentFilm = (releases: { title: string; infoHash: string; size: number }[]) => {
     const released = new Date(Date.now() - 30 * 24 * 3600e3).toISOString().slice(0, 10);
-    const year = released.slice(0, 4);
-    const odyssey = routedFetch([
+    return routedFetch([
       CINEMETA,
       (url) => {
         if (url.hostname !== 'api.themoviedb.org') return undefined;
@@ -211,13 +210,29 @@ describe('pipeline v2 : filtres de contenu (TMDB, Cinemeta)', () => {
         if (url.pathname === '/3/movie/9002/watch/providers') return json({ results: {} });
         return json({}, 404);
       },
-      upstreamWith([
-        { name: 'Upstream', title: 'The.Odyssey.1997.STV.DVDRip', infoHash: H.a, behaviorHints: { videoSize: 2 * GB } },
-        { name: 'Upstream', title: `The.Odyssey.${year}.2160p.WEB-DL`, infoHash: H.b, behaviorHints: { videoSize: 20 * GB } },
-      ]),
+      upstreamWith(releases.map((r) => ({ name: 'Upstream', title: r.title, infoHash: r.infoHash, behaviorHints: { videoSize: r.size } }))),
+    ]);
+  };
+  const thisYear = new Date(Date.now() - 30 * 24 * 3600e3).toISOString().slice(0, 4);
+
+  it('film 2026 pas encore sorti en numérique : l’homonyme d’une autre année est écarté, réponse notYetDigital', async () => {
+    const odyssey = recentFilm([
+      { title: 'The.Odyssey.1997.STV.DVDRip', infoHash: H.a, size: 2 * GB },
+      { title: `The.Odyssey.${thisYear}.MULTI.1080p.x264`, infoHash: H.b, size: 20 * GB },
     ]);
     const result = await getStreams(cfg({ sources: [UPSTREAM], services: { tmdbToken: 'tmdb-token' } }), movie('tt7100060'), ctxFor(odyssey.fetch));
     expect(result.notYetDigital).toBe(true);
+    expect(result.streams).toHaveLength(1);
+    expect(hashOf(result.streams[0])).toBe(H.b);
+  });
+
+  it('TMDB sans date numérique mais BluRay de l’année du film : sortie numérique faite, pas notYetDigital', async () => {
+    const odyssey = recentFilm([
+      { title: 'The.Odyssey.1997.STV.DVDRip', infoHash: H.a, size: 2 * GB },
+      { title: `L.Odyssee.${thisYear}.MULTI.VFQ.1080p.BluRay.HDLight.AC3.5.1.x265-SUPERFLU`, infoHash: H.b, size: 4 * GB },
+    ]);
+    const result = await getStreams(cfg({ sources: [UPSTREAM], services: { tmdbToken: 'tmdb-token' } }), movie('tt7100061'), ctxFor(odyssey.fetch));
+    expect(result.notYetDigital).toBeUndefined();
     expect(result.streams).toHaveLength(1);
     expect(hashOf(result.streams[0])).toBe(H.b);
   });

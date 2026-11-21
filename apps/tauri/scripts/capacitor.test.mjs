@@ -84,8 +84,7 @@ test('écouteur : canal Tauri, messages remis dans l’ordre, retrait', async ()
 
 // ---------- Méthodes déclarées = méthodes Kotlin ----------
 
-const MOBILE = new URL('../../mobile/android/app/src/main/java/com/laststream/app/', import.meta.url);
-const BRIDGE = new URL('../src-tauri/gen/android/app/src/main/java/com/laststream/app/bridge/', import.meta.url);
+const PLUGINS = new URL('../src-tauri/gen/android/app/src/main/java/com/laststream/app/', import.meta.url);
 
 function kotlinFiles(dir) {
   return readdirSync(dir).flatMap((f) => {
@@ -96,7 +95,7 @@ function kotlinFiles(dir) {
 
 function pluginMethods() {
   const out = {};
-  for (const file of [...kotlinFiles(MOBILE.pathname), ...kotlinFiles(BRIDGE.pathname)]) {
+  for (const file of kotlinFiles(PLUGINS.pathname)) {
     const src = readFileSync(file, 'utf8');
     const name = src.match(/@CapacitorPlugin\(\s*name\s*=\s*"([^"]+)"/)?.[1];
     if (!name) continue;

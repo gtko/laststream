@@ -7,8 +7,7 @@ name: Release
 #    laststream-edge sous app.laststream.app/app/tauri/<plateforme>/ : site et mises a jour de l'app) ;
 #  - Android : APK Tauri (job android), meme identifiant, cle et versionCode que l'ancien APK Capacitor, qu'il remplace par
 #    la mise a jour en un tap ; android-latest.json reste le flux lu par le site et l'app via laststream-edge.
-# L'ancienne app Windows (apps/desktop) et l'ancien APK Capacitor (apps/mobile) ne sont plus publies ; l'ancienne app
-# Windows recoit encore latest.json (installeur NSIS Tauri) pour passer a l'app Tauri.
+# L'ancienne app Windows (retiree du depot) recoit encore latest.json (installeur NSIS Tauri) pour passer a l'app Tauri.
 # Label release:skip sur la PR : aucune release.
 # workflow_dispatch(tag) : relance les builds et la publication d'un tag vX.Y.Z existant, sans nouveau bump.
 # Prerequis du depot : voir README.md, section "Releases automatiques" (secrets, permissions d'ecriture, protection de main).
@@ -132,7 +131,7 @@ jobs:
         set -euo pipefail
         git config user.name 'github-actions[bot]'
         git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-        git add CHANGELOG.md apps/desktop/Cargo.toml apps/desktop/Cargo.lock apps/desktop/setup/Laststream.iss apps/tauri/src-tauri/Cargo.toml apps/tauri/src-tauri/Cargo.lock
+        git add CHANGELOG.md apps/tauri/src-tauri/Cargo.toml apps/tauri/src-tauri/Cargo.lock
         git commit -m "release: v${VERSION}"
         pushed=false
         for attempt in 1 2 3; do
@@ -267,7 +266,7 @@ jobs:
         printf '%s' "$ANDROID_DEBUG_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/ls-signing.keystore"
         test -s "$RUNNER_TEMP/ls-signing.keystore"
         keytool -list -keystore "$RUNNER_TEMP/ls-signing.keystore" -storepass android -alias androiddebugkey >/dev/null
-    # App Tauri (apps/tauri) : APK arm64 + armv7, plugins natifs repris de apps/mobile, signé avec la clé de publication.
+    # App Tauri (apps/tauri) : APK arm64 + armv7, plugins natifs Kotlin, signé avec la clé de publication.
     - name: Build the signed release APK (Tauri)
       working-directory: apps/tauri
       env:

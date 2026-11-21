@@ -74,5 +74,5 @@ Retour arrière : `npx wrangler@4.151.1 rollback` (ou `wrangler rollback <versio
 ## Autres cibles
 
 - **Interface web** : servie par lastaddon-core ; elle part avec `npm run deploy:worker -- --ui <build>`, depuis un tag lastaddon.
-- **Shell (laststream-shell-ng)** : release sur tag par workflow GitHub, suivie dans LAST-159 ; non couverte par ces scripts.
+- **App Tauri (macOS, Windows, Linux, Android)** : release automatique `vX.Y.Z` à chaque PR fusionnée (`.github/workflows/release.yml`) ; non couverte par ces scripts.
 - Secrets : jamais par ces scripts (`wrangler secret put`).

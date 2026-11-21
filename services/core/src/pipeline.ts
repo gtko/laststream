@@ -19,7 +19,7 @@ import type { TitleInfo } from './sources/indexers.js';
 import { getTitleVariants, movieNotYetDigital, movieReleaseFits, nameMatchesTitles, releaseYearFits, type TitleVariants } from './sources/query-titles.js';
 import { resolveInfoHashes } from './torrent/enrich.js';
 import { scrubUrl, type TorrentCache } from './torrent/fetch-torrent.js';
-import type { ContentRef, RawStream, StremioStream, StreamOrigin } from './types.js';
+import type { ContentRef, RawStream, SourceKind, StremioStream, StreamOrigin } from './types.js';
 import type { AnimeMapper } from './anime/mapping.js';
 
 /**
@@ -180,6 +180,17 @@ function rejectionOf(candidate: Candidate, ref: ContentRef, titles: TitleVariant
   const absoluteOnly = scope.absolute !== undefined && scope.episode === undefined && scope.pack === undefined;
   if (absoluteOnly && absolute === undefined) return undefined;
   return scopeCovers(scope, season, episode, absolute) ? undefined : 'portee';
+}
+
+/** Sources d'une release qui n'existent qu'après la sortie numérique ou physique (BluRay, WEB). */
+const HOME_VIDEO_SOURCES: ReadonlySet<SourceKind> = new Set<SourceKind>(['REMUX', 'BluRay', 'WEB-DL', 'WEBRip']);
+
+/**
+ * Vrai si une release retenue (titre et année du film vérifiés) est un BluRay ou un WEB : la sortie numérique a eu lieu,
+ * quoi qu'en dise TMDB (dates manquantes ou en retard). Le film n'est alors pas « pas encore disponible ».
+ */
+function hasHomeVideoRelease(candidates: readonly Candidate[]): boolean {
+  return candidates.some((candidate) => HOME_VIDEO_SOURCES.has(candidate.parsed.source));
 }
 
 /** Compteurs par étape (débogage), journalisés si LASTADDON_DEBUG=1 : jamais de contenu, seulement des nombres. */
@@ -643,7 +654,7 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   lap('i.format');
   const result: PipelineResult = { streams: formatted, errors: collected.errors };
   if (collected.deviceFetch !== undefined) result.deviceFetch = collected.deviceFetch;
-  if (ref.type === 'movie' && movieNotYetDigital(titles)) {
+  if (ref.type === 'movie' && movieNotYetDigital(titles) && !hasHomeVideoRelease(candidates)) {
     result.notYetDigital = true;
     if (titles.digitalDate !== undefined) result.digitalDate = titles.digitalDate;
   }
