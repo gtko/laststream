@@ -1,10 +1,11 @@
 /**
- * Données utilisateur : bibliothèque, progression, « continuer à regarder », épisodes vus, profils.
- * Toute l'interface passe par l'interface `UserStore` ; l'implémentation actuelle est locale (localStorage).
- *
- * TODO(lastAddon user-data API) : écrire un adaptateur serveur (comptes, profils, bibliothèque, progression,
- * import Stremio) qui implémente `UserStore` (cache local synchrone + synchronisation en arrière-plan), puis
- * l'installer avec `setUserStore(adapter)` au démarrage (src/main.js). Aucun autre code n'est à modifier.
+ * Données utilisateur : bibliothèque, progression, « continuer à regarder », épisodes vus, suivis, notes, profils.
+ * Toute l'interface passe par l'interface `UserStore`. Deux implémentations :
+ * - `ServerUserStore` (serverUserStore.ts) : le compte lastAddon, installée par auth.ts une fois le profil choisi ;
+ *   la connexion est obligatoire, c'est donc le cas normal.
+ * - `LocalUserStore` (ci-dessous, localStorage) : repli quand le serveur est injoignable au démarrage, sur un serveur
+ *   sans API /user, sur la page d'invitation anonyme et en mode démo. Elle sert aussi de cache local à l'adaptateur
+ *   serveur pour les « vus », les suivis et les notes.
  */
 import { emitDataEvent } from './events';
 import { watchedTitlesFromSeen, type WatchedTitle } from './watchedHistory';
@@ -421,7 +422,7 @@ export class LocalUserStore implements UserStore {
 
 let current: UserStore = new LocalUserStore();
 
-/** Point d'accroche de l'adaptateur serveur (voir TODO en tête de fichier). */
+/** Installe l'implémentation active (auth.ts : serveur ou repli local ; demo.ts : mémoire). */
 export function setUserStore(store: UserStore): void {
   current = store;
 }
