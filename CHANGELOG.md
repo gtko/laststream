@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.70 – 2026-11-21
+
+- Foyer : chaque membre change sa photo de profil, et le foyer compte comme ami (#50) — @gtko
+
 ## v1.0.69 – 2026-11-21
 
 - Lecteur externe : repli VLC automatique sur iPhone et suivi de la lecture dans VLC (#49) — @gtko
