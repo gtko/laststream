@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- App Android Tauri : mêmes composants et permissions que l'app Capacitor (apps/mobile/android/app/src/main/AndroidManifest.xml).
-     Ressources et plugins natifs repris de apps/mobile (voir build.gradle.kts). -->
+<!-- App Android Tauri : mêmes composants et permissions que l'ancienne app Capacitor, qu'elle remplace.
+     Ressources (src/main/res) et plugins natifs (src/main/java/com/laststream/app) repris de cette app. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

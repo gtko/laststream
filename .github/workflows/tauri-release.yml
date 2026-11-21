@@ -82,7 +82,7 @@ jobs:
         tar -czf "dist/Laststream-$VERSION-$PLATFORM.app.tar.gz" -C "$bundle/macos" Laststream.app
         node apps/tauri/scripts/tauri-feed.mjs --platform "$PLATFORM" --version "$VERSION" \
           --file "dist/Laststream-$VERSION-$PLATFORM.app.tar.gz" --out "dist/tauri-$PLATFORM-latest.json"
-        node apps/desktop/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
+        node apps/tauri/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
         ls -la dist
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
@@ -124,9 +124,9 @@ jobs:
         auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
         echo "::add-mask::$auth"
         GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
-          git lfs pull --include="apps/desktop/libmpv-2_x64.zip"
+          git lfs pull --include="apps/tauri/mpv/libmpv-2_x64.zip"
         mkdir -p apps/tauri/src-tauri/target/mpv-win
-        unzip -o -j apps/desktop/libmpv-2_x64.zip "*libmpv-2.dll" -d apps/tauri/src-tauri/target/mpv-win
+        unzip -o -j apps/tauri/mpv/libmpv-2_x64.zip "*libmpv-2.dll" -d apps/tauri/src-tauri/target/mpv-win
         test -s apps/tauri/src-tauri/target/mpv-win/libmpv-2.dll
     - name: Build the installer
       working-directory: apps/tauri
@@ -144,7 +144,7 @@ jobs:
         cp "${installers[0]}" "dist/Laststream-$VERSION-$PLATFORM.setup.exe"
         node apps/tauri/scripts/tauri-feed.mjs --platform "$PLATFORM" --version "$VERSION" \
           --file "dist/Laststream-$VERSION-$PLATFORM.setup.exe" --out "dist/tauri-$PLATFORM-latest.json"
-        node apps/desktop/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
+        node apps/tauri/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
         ls -la dist
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
@@ -195,7 +195,7 @@ jobs:
         cp "$bundle"/deb/*.deb "dist/Laststream-$VERSION-$PLATFORM.deb"
         node apps/tauri/scripts/tauri-feed.mjs --platform "$PLATFORM" --version "$VERSION" \
           --file "dist/Laststream-$VERSION-$PLATFORM.AppImage" --out "dist/tauri-$PLATFORM-latest.json"
-        node apps/desktop/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
+        node apps/tauri/scripts/sign-update.mjs "dist/tauri-$PLATFORM-latest.json"
         ls -la dist
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:

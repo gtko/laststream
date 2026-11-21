@@ -1,13 +1,12 @@
-//! Traitement vidéo GPU (NVIDIA RTX VSR / True HDR, D3D11) : propre à la coque Windows historique, cette coque ne le
+//! Traitement vidéo GPU (NVIDIA RTX VSR / True HDR, D3D11) : propre à l'ancienne coque Windows, cette coque ne le
 //! propose pas (poignée de main `gpuVideoProcessing=false`). Sous Windows, la détection de la mémoire unifiée du GPU
-//! (profil mpv « fast ») reprend le module de la coque Windows.
+//! (profil mpv « fast ») reprend le module de l'ancienne coque (`gpu_video_processing/windows_gpu.rs`).
 
 pub fn gpu_video_processing_supported() -> bool {
     false
 }
 
 #[cfg(windows)]
-#[path = "../../../../desktop/src/laststream_app/gpu_video_processing.rs"]
 #[allow(dead_code)]
 mod windows_gpu;
 

@@ -2,7 +2,7 @@
 //   node scripts/tauri-feed.mjs --platform macos-aarch64 --version 1.2.3 --file Laststream-1.2.3-macos-aarch64.app.tar.gz --out tauri-macos-aarch64-latest.json
 // `versionDesc` est l'adresse du flux lui-même (pas de descripteur séparé à télécharger). Le Worker laststream-edge sert le
 // flux et le fichier sous https://app.laststream.app/app/tauri/<plateforme>/ depuis la release GitHub ; le flux est ensuite
-// signé par apps/desktop/scripts/sign-update.mjs (même clé ed25519 que la coque Windows).
+// signé par scripts/sign-update.mjs (même clé ed25519 que l'ancienne coque Windows).
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';

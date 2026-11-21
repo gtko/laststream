@@ -1,4 +1,4 @@
-//! Coque Tauri de Laststream (macOS, Windows, Linux ; Android dans `mobile.rs`) : même protocole que la coque Windows historique (`apps/desktop`),
+//! Coque Tauri de Laststream (macOS, Windows, Linux ; Android dans `mobile.rs`) : même protocole que l'ancienne coque Windows (retirée du dépôt),
 //! l'interface web n'a rien à changer. Voir README.md pour l'architecture et la correspondance avec l'ancienne coque.
 
 #[cfg(desktop)]
@@ -64,7 +64,7 @@ use crate::shell::Shell;
 #[cfg(desktop)]
 use crate::web::MAIN;
 
-/// Options de la ligne de commande : les mêmes que la coque Windows (`apps/desktop/src/main.rs`).
+/// Options de la ligne de commande : les mêmes que l'ancienne coque Windows.
 #[cfg(desktop)]
 #[derive(Parser, Debug, Clone)]
 #[clap(version)]

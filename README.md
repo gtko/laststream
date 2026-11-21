@@ -2,12 +2,13 @@
 
 Mono-repo de Laststream : applications, services Cloudflare et contrat partagé. Chaque dossier garde ses propres
 `package.json`, tests et README ; l'historique de chaque ancien dépôt est conservé (tags préfixés par projet).
+L'ancienne app Windows (`apps/desktop`, Rust + WebView2) et l'ancienne app Android Capacitor (`apps/mobile`), remplacées
+par `apps/tauri`, ont été retirées du dépôt : leur code reste dans l'historique git.
 
 | Dossier | Contenu | Ancien dépôt | Mise en production |
 | --- | --- | --- | --- |
 | `apps/web` | Interface (Vite) | `gtko/laststream-app` | servie par lastaddon-core (voir `services/core`) |
-| `apps/mobile` | Application Android (Capacitor, interface chargée depuis le serveur) | `gtko/laststream-app` (`android/`) | APK publiée dans R2 (`apps/web/scripts/publish-android.mjs`) |
-| `apps/desktop` | Application Windows (Rust, mpv) | `gtko/laststream-shell-ng` | tag `desktop-vX.Y.Z` + workflow « Desktop release » |
+| `apps/tauri` | Application Tauri : macOS, Windows, Linux, Android (interface chargée depuis le serveur, lecteur mpv / libVLC) | `gtko/laststream-shell-ng` et `gtko/laststream-app` (`android/`) | release automatique `vX.Y.Z` (voir plus bas) |
 | `apps/site` | Site vitrine www.laststream.app | `gtko/laststream-site` | Workers Builds (laststream-www, dossier racine `apps/site`) |
 | `services/core` | Worker lastaddon-core : API, salons, sert `apps/web` | `gtko/lastaddon` | Workers Builds (dossier racine `services/core`, build `npm run build:cloudflare`) |
 | `services/edge` | Worker laststream-edge : app.laststream.app, APK/EXE depuis R2 | `gtko/laststream-edge` | Workers Builds (dossier racine `services/edge`) |
@@ -16,24 +17,26 @@ Mono-repo de Laststream : applications, services Cloudflare et contrat partagé.
 ## Démarrer
 
 ```bash
-git lfs install                 # binaires de apps/desktop (dll, exe, archives libmpv) en Git LFS
+git lfs install                 # libmpv pour Windows (apps/tauri/mpv : dll, archive) en Git LFS
 git clone https://github.com/gtko/laststream
 cd laststream/apps/web && npm ci && npm run dev
 ```
 
-Pour travailler sans les binaires Windows : `GIT_LFS_SKIP_SMUDGE=1 git clone …` (pointeurs LFS seulement).
+Pour travailler sans les binaires Windows : `GIT_LFS_SKIP_SMUDGE=1 git clone …` (pointeurs LFS seulement). App Tauri :
+voir `apps/tauri/README.md`.
 
 ## CI
 
 Un workflow par projet, à la racine (`.github/workflows/`), déclenché seulement par les changements de son dossier :
-`web-ci.yml` et `core-ci.yml` (aussi sur `packages/protocol`), `edge-ci.yml`, `desktop-ci.yml`. Tous tournent sur les runners
-hébergés par GitHub : web, core et edge sur `ubuntu-latest`, desktop sur `windows-latest`.
+`web-ci.yml` et `core-ci.yml` (aussi sur `packages/protocol`), `edge-ci.yml`, `tauri-ci.yml`. Tous tournent sur les runners
+hébergés par GitHub : web, core et edge sur `ubuntu-latest`, Tauri sur Linux, Android, macOS et Windows.
 
 ## Tags
 
-Préfixés par projet : `core-vX.Y.Z`, `edge-vX.Y.Z`, `desktop-vX.Y.Z`, `site-vX.Y.Z`, `protocol-vX.Y.Z`, `web-vX.Y.Z`.
-Les tags des anciens dépôts ont été renommés ainsi à l'import (ex. `v0.4.3` de lastaddon → `core-v0.4.3`).
-Les releases automatiques du produit (installeur Windows + APK Android) portent le tag non préfixé `vX.Y.Z`.
+Préfixés par projet : `core-vX.Y.Z`, `edge-vX.Y.Z`, `site-vX.Y.Z`, `protocol-vX.Y.Z`, `web-vX.Y.Z` (et `desktop-vX.Y.Z`
+pour les anciennes versions de l'app Windows). Les tags des anciens dépôts ont été renommés ainsi à l'import (ex. `v0.4.3`
+de lastaddon → `core-v0.4.3`). Les releases automatiques du produit (app Tauri pour toutes les plateformes + APK Android)
+portent le tag non préfixé `vX.Y.Z`.
 
 ### Releases automatiques
 
@@ -42,7 +45,7 @@ label `release:minor` ou `release:major` sur la PR pour monter d'un cran), `CHAN
 et tag annoté `vX.Y.Z` sur `main`, build de l'app Tauri (`apps/tauri`) pour macOS (Apple Silicon et Intel), Windows et Linux
 (`tauri-release.yml` appelé en `workflow_call`) et de son APK Android, puis release GitHub publiée avec bannière, changelog et
 assets (`.dmg`, `.app.tar.gz`, `.setup.exe`, `.AppImage`, `.deb`, flux `tauri-<plateforme>-latest.json` + `.sig`, APK,
-`android-latest.json`). L'ancienne app Windows (`apps/desktop`) et l'ancien APK Capacitor (`apps/mobile`) ne sont plus publiés.
+`android-latest.json`). La version est écrite dans `apps/tauri/src-tauri/Cargo.toml` et `Cargo.lock` (`scripts/release/version.mjs`).
 Le label `release:skip` sur la PR désactive la release. Relance manuelle des builds d'un tag existant :
 Actions → Release → Run workflow avec `tag` = `vX.Y.Z` (sans nouveau bump).
 
@@ -65,4 +68,4 @@ Réglages requis sur le dépôt :
 - Si `main` est protégée, autoriser GitHub Actions à contourner la protection (bypass) : le workflow pousse le commit de release
   et le tag directement.
 
-Pour Windows comme pour Android, le Worker `laststream-edge` relit le flux de version et l'installeur sur la dernière release publiée : le site et la mise à jour automatique suivent chaque release, une fois le Worker déployé. Le téléversement R2 (`apps/desktop/upload.ps1`) ne sert plus que de repli si GitHub est injoignable.
+Pour toutes les plateformes, le Worker `laststream-edge` relit le flux de version et l'installeur sur la dernière release publiée : le site et la mise à jour automatique suivent chaque release, une fois le Worker déployé.
