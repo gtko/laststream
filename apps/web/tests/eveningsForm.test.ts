@@ -441,7 +441,7 @@ describe('carte et onglets', () => {
 describe('feuille « Regarder avec… »', () => {
   const room = (o: Record<string, unknown> = {}) => ({ id: 'r1', title: 'Severance', host: 'Léa', participants: 1, maxParticipants: 6, mediaType: 'series', ...o });
 
-  it('amis en salon : Rejoindre ; amis en ligne : Inviter ; hors ligne, foyer et sourdine absents', async () => {
+  it('amis en salon : Rejoindre ; amis et foyer en ligne : Inviter ; hors ligne et sourdine absents', async () => {
     parties.listParties.mockResolvedValue({ rooms: [room()], nextCursor: null });
     social.getState().friends = [person('p2', 'Tom'), person('p3', 'Léa'), person('p4', 'Malo', { status: 'offline' }), person('p5', 'Zoé', { muted: true })] as any;
     ww.openWatchWith(null, { name: 'Severance' });
@@ -453,7 +453,8 @@ describe('feuille « Regarder avec… »', () => {
     expect(d.querySelector('[data-ww-invite="p2"]')).not.toBeNull();
     expect(d.textContent).not.toContain('Malo');
     expect(d.textContent).not.toContain('Zoé');
-    expect(d.textContent).not.toContain('Maison');
+    // Le foyer compte comme ami : invitable comme les autres.
+    expect(d.querySelector('[data-ww-invite="p9"]')).not.toBeNull();
   });
   it('Inviter ferme la feuille et lance le flux d’invitation de salon existant', () => {
     ww.openWatchWith(null, { name: 'Severance' });
@@ -463,12 +464,14 @@ describe('feuille « Regarder avec… »', () => {
   });
   it('sans ami : message clair, « Planifier une soirée » reste proposé', () => {
     social.getState().friends = [] as any;
+    social.getState().household = [] as any;
     ww.openWatchWith(null, { name: 'Severance' });
     expect(dialog()!.textContent).toMatch(/pas encore d’amis/);
     expect(dialog()!.querySelector('[data-ww-plan]')).not.toBeNull();
   });
   it('amis tous hors ligne : message dédié', () => {
     social.getState().friends = [person('p4', 'Malo', { status: 'offline' })] as any;
+    social.getState().household = [] as any;
     ww.openWatchWith(null, { name: 'Severance' });
     expect(dialog()!.textContent).toMatch(/Aucun ami n’est en ligne/);
   });

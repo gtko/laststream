@@ -463,8 +463,12 @@ export class SocialV3Store {
 
   // Outils internes
 
-  /** Vrai si `a` et `b` sont amis acceptés (le foyer n'est pas une amitié). */
+  /** Vrai si `a` et `b` sont amis acceptés, ou deux profils adultes du même foyer (même compte) : le foyer compte comme ami. */
   private isFriend(a: string, b: string): boolean {
+    const household = this.db
+      .prepare('SELECT 1 AS x FROM profiles pa JOIN profiles pb ON pb.account_id = pa.account_id WHERE pa.pid = ? AND pb.pid = ? AND pb.is_kid = 0')
+      .get(a, b);
+    if (household !== undefined) return true;
     const { low, high } = pairOf(a, b);
     return this.db.prepare("SELECT 1 AS x FROM profile_friendships WHERE low_pid = ? AND high_pid = ? AND status = 'accepted'").get(low, high) !== undefined;
   }

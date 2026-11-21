@@ -22,7 +22,7 @@ import {
   verifySecret,
 } from './crypto.js';
 import { continueWatching, normalizeProgress } from './progress.js';
-import { assertNotLocked, assertUnlocked, nowIso, profileOf, SESSION_TTL_MS, scopeOf, sessionOf } from './session.js';
+import { assertNotLocked, assertProfileAccess, assertUnlocked, nowIso, profileOf, SESSION_TTL_MS, scopeOf, sessionOf } from './session.js';
 import { registerHouseholdRoutes } from './household-routes.js';
 import { countryCode } from './title-starts.js';
 import { parseTvSources, TV_SOURCES_PURPOSE } from './tv-sources.js';
@@ -448,13 +448,22 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const rawBody = c.get('body');
     const keys = rawBody !== null && typeof rawBody === 'object' ? Object.keys(rawBody) : [];
     const session = await sessionOf(users, c);
-    assertNotLocked(session);
+    const locked = session.lockedProfileId !== null;
+    // Session verrouillée (membre du foyer invité) : seul son propre profil, jamais un autre profil du compte.
+    assertProfileAccess(session, String(c.req.param('id')));
     const profile = await profileOf(users, session.account, c);
     const account = session.account;
-    // Exception : un profil adulte change son propre code PIN (jeton de son profil exigé) ; le reste passe par le principal.
-    const ownPinOnly = !profile.isKid && keys.length === 1 && keys[0] === 'pin' && c.req.header('x-profile-id') === profile.id;
-    if (ownPinOnly) assertUnlocked(c, session, profile, deps.secret);
-    else await managerOf(users, c, false);
+    // Exception : un profil modifie lui-même son apparence (avatar, couleur) et, s'il est adulte et hors session verrouillée,
+    // son propre code PIN. Il s'annonce par X-Profile-Id = lui-même, avec le jeton de son PIN s'il en a un. Le reste
+    // (nom, enfant, catalogues, autres profils) passe par le profil principal.
+    const ownField = (k: string) => k === 'avatar' || k === 'avatarColor' || (k === 'pin' && !profile.isKid && !locked);
+    const selfEdit = keys.length > 0 && keys.every(ownField) && c.req.header('x-profile-id') === profile.id;
+    if (selfEdit) {
+      if (!locked) assertUnlocked(c, session, profile, deps.secret);
+    } else {
+      assertNotLocked(session);
+      await managerOf(users, c, false);
+    }
     const patch = parseWith(updateProfileSchema, rawBody);
     const isKid = patch.isKid ?? profile.isKid;
     const fields: ProfileEditableFields = {
