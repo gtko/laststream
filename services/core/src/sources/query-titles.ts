@@ -6,6 +6,12 @@ import { sharedCache, type TtlCache } from '../cache/ttl-cache.js';
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
 const DEFAULT_TIMEOUT_MS = 4000;
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Version du format des titres en cache (KV partagé, 7 jours, plus 7 jours de service périmé). À changer quand un champ
+ * est ajouté à TmdbTitles : sans cela, les entrées écrites avant gardent l'ancien format jusqu'à deux semaines (v2 :
+ * `released`, sans lequel un film sorti en salle restait « pas encore disponible »).
+ */
+const TITLES_CACHE_VERSION = 'v2';
 const IMDB_ID = /^tt\d+$/;
 const MAX_TITLE_LENGTH = 200;
 
@@ -346,8 +352,10 @@ export async function getTitleVariants(ref: ContentRef, opts: TitleVariantsOptio
     if (token === undefined || token === '' || !IMDB_ID.test(ref.imdbId)) return finish({ titles: [] }, fallback);
 
     // Résultats complets non vides seulement (TTL nul sinon) ; les appels simultanés partagent une seule requête.
+    // Clé versionnée (TITLES_CACHE_VERSION) : une entrée écrite par une version antérieure, sans les champs ajoutés
+    // depuis, n'est plus relue.
     const found = await (opts.cache ?? sharedCache()).get<TmdbTitles>(
-      `titles:${ref.type}:${ref.imdbId}`,
+      `titles:${TITLES_CACHE_VERSION}:${ref.type}:${ref.imdbId}`,
       (result) => (result.complete && result.titles.length > 0 ? CACHE_TTL_MS : 0),
       () => fetchTmdbTitles(ref, token, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
       { provider: 'tmdb', swr: true },
