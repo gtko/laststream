@@ -1,8 +1,9 @@
 # Laststream : app Tauri (macOS, Windows, Linux, Android)
 
 App desktop Laststream construite avec Tauri 2. Elle parle **exactement le même protocole** que la coque Windows
-historique (`apps/desktop`) : l'interface web (`apps/web`) fonctionne sans aucun changement. La coque Windows historique
-reste celle qui est publiée sous Windows tant que celle-ci n'a pas été validée.
+historique (`apps/desktop`) : l'interface web (`apps/web`) fonctionne sans aucun changement. C'est la seule app desktop
+publiée depuis la v1.0.61 ; la coque Windows historique n'est plus construite, mais chaque release lui sert encore un flux
+`latest.json` (installeur NSIS de cette app) pour qu'elle passe à l'app Tauri (voir « Mises à jour »).
 
 ## Architecture
 
@@ -71,7 +72,8 @@ LASTSTREAM_MPV_LIB_DIR=$PWD/src-tauri/target/mpv-stage \
   npx tauri build --bundles app,dmg --config src-tauri/target/mpv-stage/frameworks.json
 ```
 
-L'app n'est pas notarisée (pas de compte Apple Developer) : au premier lancement, clic droit → Ouvrir.
+Sans les secrets Apple, la release est signée ad hoc et non notarisée : au premier lancement, macOS la bloque (Réglages
+Système → Confidentialité et sécurité → « Ouvrir quand même »). Voir « Signature et notarisation macOS ».
 
 Windows : `libmpv-2.dll` (archive LFS `apps/desktop/libmpv-2_x64.zip`) est installée à côté de l'exécutable ; la liaison
 utilise `apps/desktop/mpv-x64/mpv.lib`. Voir `.github/workflows/tauri-ci.yml`.
@@ -100,3 +102,34 @@ accepté par l'updater). Un échec de la construction Tauri ne bloque pas la rel
 - Mode local sous macOS : Node, `lastaddon.cjs`, l'interface et ffmpeg ne sont pas encore embarqués dans le paquet
   (le mode public, par défaut, n'en a pas besoin).
 - Touches multimédia hors focus (Centre de contrôle macOS) : seules celles reçues par la fenêtre active sont relayées.
+
+## Mises à jour
+
+Flux signés ed25519 (clé `LASTSTREAM_UPDATE_SIGNING_KEY`, clé publique dans `apps/desktop/src/laststream_app/constants.rs`),
+servis par laststream-edge depuis la dernière release GitHub :
+
+| App | Flux | Fichier installé |
+|---|---|---|
+| macOS (aarch64, x86_64) | `app.laststream.app/app/tauri/macos-<arch>/latest.json` | `.app.tar.gz` : l'app est remplacée puis relancée |
+| Windows | `app.laststream.app/app/tauri/windows-x86_64/latest.json` | installeur NSIS en silencieux (`/S`), puis relance |
+| Linux (AppImage) | `app.laststream.app/app/tauri/linux-x86_64/latest.json` | l'AppImage (`$APPIMAGE`) est remplacée ; le `.deb` ne se met pas à jour seul (aucun contrôle) |
+| Android | `app.laststream.app/app/android/latest.json` | APK, installeur système (même paquet et même certificat que l'ancien APK Capacitor) |
+| Ancienne coque Windows (`apps/desktop`) | `app.laststream.app/app/windows/latest.json` | même installeur NSIS, publié aussi sous `Laststream-Setup-X.Y.Z.exe` ; la page affiche « La nouvelle app Laststream est prête — Installer » (`initShellUpdateBanner`), l'installeur s'ouvre en mode normal |
+
+## Signature et notarisation macOS
+
+`tauri-release.yml` signe avec un certificat Developer ID, active le runtime renforcé (droits :
+`src-tauri/mac/Entitlements.plist`), fait notariser et agrafer l'app puis le `.dmg`, dès que ces 5 secrets du dépôt existent
+(Settings → Secrets and variables → Actions). Aucun : build ad hoc comme avant. Une partie seulement : la release échoue.
+
+| Secret | Contenu |
+|---|---|
+| `APPLE_CERTIFICATE` | certificat **Developer ID Application** exporté en `.p12` depuis le Trousseau (avec sa clé privée), encodé en base64 : `base64 -i certificat.p12 \| pbcopy` |
+| `APPLE_CERTIFICATE_PASSWORD` | mot de passe choisi à l'export du `.p12` |
+| `APPLE_ID` | e-mail du compte Apple Developer |
+| `APPLE_PASSWORD` | mot de passe **pour app** créé sur account.apple.com (Connexion et sécurité → Mots de passe pour app), pas le mot de passe du compte |
+| `APPLE_TEAM_ID` | identifiant d'équipe à 10 caractères (developer.apple.com → Membership details) |
+
+L'identité de signature est lue dans le certificat (aucun secret de plus). Les apps déjà installées (signées ad hoc) passent
+à la version notarisée par la mise à jour habituelle : le remplacement se fait sans quarantaine, donc sans blocage.
+

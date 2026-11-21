@@ -5,12 +5,17 @@
  * - Interface Windows (WebView2) et web : « Une nouvelle version est disponible », en bas de l'écran (`initUiUpdateBanner`). Le
  *   serveur publie /version.json à chaque déploiement : contrôle peu après le lancement, au retour au premier plan (1 fois / min au
  *   plus) puis toutes les 10 min. Masquée pendant une lecture ou en plein écran ; option : mise à jour seule après 5 min sans
- *   interaction. */
+ *   interaction.
+ * - Ancienne coque Windows (apps/desktop, jusqu'à 1.0.59) : « La nouvelle app Laststream est prête — Installer »
+ *   (`initShellUpdateBanner`). La coque télécharge et vérifie l'installeur puis envoie `autoupdater-show-notif`, mais ne l'installe
+ *   qu'à la réception de `autoupdater-notif-clicked`, que la page n'envoyait jamais : sans ce bandeau, elle ne se mettait pas à
+ *   jour. L'app Tauri affiche sa propre boîte « Redémarrer maintenant » : rien ici. */
 import { captureMessage } from '@sentry/browser';
 import { getUiUpdateAuto, getUiUpdateNotify } from '../data/prefs';
 import {
   bannerModel, checkForUpdate, dismiss, INSTALL_MESSAGES, installUpdate, sizeLabel, updateSupported,
 } from '../data/appUpdate';
+import { connectShell } from '../player/shell';
 import {
   applyUpdate, currentBuild, fetchDeployedBuild, isSnoozed, readSnooze, shouldShowBanner, snoozeBuild, uiUpdateActive,
 } from '../data/uiUpdate';
@@ -225,4 +230,45 @@ export function initUiUpdateBanner(deps = {}) {
   }
 
   return { check, refresh, destroy };
+}
+
+/** Coque Tauri (macOS, Windows, Linux) : elle propose elle-même le redémarrage (boîte native), la page n'a rien à afficher. */
+const isTauriShell = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+/**
+ * Ancienne coque Windows : bandeau « Installer » à la réception de `autoupdater-show-notif` ; le bouton envoie
+ * `autoupdater-notif-clicked` (la coque revérifie le SHA-256 de l'installeur, le lance et se ferme). `deps.connect` substitue
+ * la connexion à la coque en test. Renvoie une promesse de `destroy` (retire le bandeau, ignore les signaux suivants).
+ */
+export async function initShellUpdateBanner(deps = {}) {
+  const tauri = deps.isTauri ?? isTauriShell();
+  if (tauri) return () => {};
+  const shell = await (deps.connect || connectShell)().catch(() => null);
+  if (!shell) return () => {};
+  let root = null;
+  let stopped = false;
+  const remove = () => { if (root) root.remove(); root = null; };
+  shell.on('autoupdater-show-notif', () => {
+    if (stopped || root) return;
+    const r = el('div', 'uiupd-banner');
+    r.setAttribute('role', 'status');
+    const info = el('div', 'upd-info');
+    info.append(
+      el('p', 'upd-text', 'La nouvelle app Laststream est prête'),
+      el('p', 'upd-sub', 'L’app se ferme et l’installeur s’ouvre : suis ses étapes, ta connexion est conservée.'),
+    );
+    const go = el('button', 'upd-go', 'Installer');
+    go.type = 'button';
+    const later = el('button', 'upd-later', 'Plus tard');
+    later.type = 'button';
+    go.addEventListener('click', () => {
+      go.disabled = true;
+      shell.send('autoupdater-notif-clicked');
+    });
+    later.addEventListener('click', remove);
+    r.append(info, go, later);
+    document.body.append(r);
+    root = r;
+  });
+  return () => { stopped = true; remove(); };
 }

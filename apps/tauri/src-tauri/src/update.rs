@@ -41,8 +41,22 @@ fn default_endpoint() -> Url {
     .expect("URL du flux valide")
 }
 
+/// Linux : seule l'AppImage sait se remplacer. Installée par le .deb (pas de variable APPIMAGE), l'app téléchargeait
+/// l'AppImage entière toutes les 12 h puis proposait un redémarrage qui échouait : aucun contrôle dans ce cas, le
+/// gestionnaire de paquets s'en charge.
+fn can_self_update() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var_os("APPIMAGE").is_some_and(|path| !path.is_empty())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
 pub fn start<R: Runtime>(shell: &Arc<Shell<R>>, opt: &Opt) {
-    let disabled = opt.no_autoupdater || opt.development;
+    let disabled = opt.no_autoupdater || opt.development || !can_self_update();
     let Some(endpoint) = updater::resolve_endpoint(
         opt.autoupdater_endpoint
             .clone()
