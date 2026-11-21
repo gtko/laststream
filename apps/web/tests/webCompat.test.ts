@@ -133,3 +133,24 @@ describe('reprise automatique : failoverCandidates', () => {
     expect(failoverCandidates(list, dolbyA, ctx())).not.toContain(dts);
   });
 });
+
+describe('webCompatOf : lecteur externe réglé (VLC…)', () => {
+  const hevc = mk('Film.2160p.WEB.HEVC.AAC.mkv', { resolution: '2160p', height: 2160, codec: 'HEVC' });
+  const dts = mk('Film.1080p.BluRay.DTS.mkv');
+  const mp4Dts = mk('Film.1080p.BluRay.DTS.mp4');
+
+  it('lecteur externe choisi : un MKV HEVC ou DTS n’est plus bloqué', () => {
+    for (const s of [hevc, dts, mp4Dts]) expect(webCompatOf(views([s])[0], ctx({ external: () => true })).level).toBe('ok');
+  });
+
+  it('la règle ne concerne que les sources qu’elle désigne', () => {
+    const onlyMkv = (v: SourceView) => v.filename.endsWith('.mkv');
+    expect(webCompatOf(views([dts])[0], ctx({ external: onlyMkv })).level).toBe('ok');
+    expect(webCompatOf(views([mp4Dts])[0], ctx({ external: onlyMkv })).level).toBe('blocked');
+  });
+
+  it('la reprise automatique garde les sources que le lecteur externe lit', () => {
+    const pool = views([hevc, dts]);
+    expect(failoverCandidates(pool, pool[0], ctx({ external: () => true }))).toHaveLength(2);
+  });
+});

@@ -9,7 +9,7 @@ vi.mock('@capacitor/core', async (importOriginal) => {
 
 import { isIOS } from '../src/player/appDownload';
 import {
-  buildM3u, currentPlayer, defaultPlayer, detectPlatform, isExternalChoice, launch, looksUnplayableOnIOS,
+  buildM3u, currentPlayer, defaultPlayer, detectPlatform, externalSourceRule, iosNeedsExternal, isExternalChoice, launch, looksUnplayableOnIOS,
   planLaunch, playerOptions, type LaunchPlan, type Platform,
 } from '../src/player/external';
 import { getExternalPlayer, getPreferredExternal, setExternalPlayer, setPreferredExternal } from '../src/data/prefs';
@@ -307,5 +307,35 @@ describe('réglages du lecteur externe, par appareil', () => {
     expect(() => setPreferredExternal('infuse')).not.toThrow();
     expect(getExternalPlayer()).toBe('');
     expect(getPreferredExternal()).toBe('vlc');
+  });
+});
+
+describe('règle de compatibilité du lecteur externe (externalSourceRule)', () => {
+  const mkv = { stream: { url: 'https://h.example/dl/abc?token=1' }, filename: 'Film.1080p.mkv', badContainer: '' };
+  const mp4 = { stream: { url: 'https://h.example/dl/abc.mp4' }, filename: 'Film.1080p.mp4', badContainer: '' };
+  const sniffedMkv = { stream: { url: 'https://h.example/dl/abc' }, filename: '', badContainer: 'mkv' };
+
+  it('iPhone avec VLC choisi : toutes les sources partent dans VLC', () => {
+    const rule = externalSourceRule('ios', 'vlc');
+    expect(rule).not.toBeNull();
+    for (const v of [mkv, mp4, sniffedMkv]) expect(rule!(v)).toBe(true);
+  });
+
+  it('iPhone en « auto » : seulement les formats que Safari ne lit pas (nom ou analyse)', () => {
+    const rule = externalSourceRule('ios', 'auto')!;
+    expect(rule(mkv)).toBe(true);
+    expect(rule(sniffedMkv)).toBe(true);
+    expect(rule(mp4)).toBe(false);
+  });
+
+  it('navigateur avec la playlist .m3u : toutes les sources ; lecture intégrée : aucune règle', () => {
+    expect(externalSourceRule('web', 'm3u')!(mkv)).toBe(true);
+    expect(externalSourceRule('web', 'builtin')).toBeNull();
+    expect(externalSourceRule('ios', 'builtin')).toBeNull();
+  });
+
+  it('iosNeedsExternal : conteneur détecté par l’analyse même sans extension', () => {
+    expect(iosNeedsExternal(sniffedMkv)).toBe(true);
+    expect(iosNeedsExternal(mp4)).toBe(false);
   });
 });
