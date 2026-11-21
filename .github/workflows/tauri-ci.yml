@@ -1,14 +1,13 @@
 name: Tauri CI
 
-# App Tauri (apps/tauri : macOS, Windows, Linux, Android). Elle compile aussi les modules partagés de apps/desktop (#[path]) :
-# un changement de ces fichiers est donc vérifié ici en plus de Desktop CI.
+# App Tauri (apps/tauri : macOS, Windows, Linux, Android).
 
 on:
   pull_request:
-    paths: ['apps/tauri/**', 'apps/desktop/src/laststream_app/**', 'apps/mobile/android/app/src/**', '.github/workflows/tauri-ci.yml']
+    paths: ['apps/tauri/**', '.github/workflows/tauri-ci.yml']
   push:
     branches: [main]
-    paths: ['apps/tauri/**', 'apps/desktop/src/laststream_app/**', 'apps/mobile/android/app/src/**', '.github/workflows/tauri-ci.yml']
+    paths: ['apps/tauri/**', '.github/workflows/tauri-ci.yml']
 
 permissions:
   contents: read
@@ -22,7 +21,7 @@ defaults:
     working-directory: apps/tauri/src-tauri
 
 jobs:
-  # Tests (modules partagés compris), format et clippy, puis AppImage et .deb en artefact, sous Linux.
+  # Tests, format et clippy, puis AppImage et .deb en artefact, sous Linux.
   linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -42,11 +41,11 @@ jobs:
     - name: Format
       run: cargo fmt --check
     - name: Clippy
-      # new-without-default : avertissement du code partagé de la coque Windows (robust.rs), laissé tel quel.
+      # new-without-default : avertissement du code repris de l'ancienne coque Windows (robust.rs), laissé tel quel.
       run: cargo clippy --locked -- -D warnings -A clippy::new-without-default
     - name: Tests
       run: cargo test --locked
-    - name: Script tests (bridge.js in a simulated WebView2, capacitor.js, update feed)
+    - name: Script tests (bridge.js in a simulated WebView2, capacitor.js, update feed and its signature)
       working-directory: apps/tauri
       run: |
         npm ci
@@ -64,7 +63,7 @@ jobs:
           apps/tauri/src-tauri/target/release/bundle/deb/*.deb
         retention-days: 14
 
-  # Android : plugins Kotlin repris de apps/mobile (tests unitaires) et APK arm64 + armv7 en artefact (clé de debug).
+  # Android : plugins Kotlin natifs (tests unitaires) et APK arm64 + armv7 en artefact (clé de debug).
   android:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -96,7 +95,7 @@ jobs:
       run: |
         npm ci
         npx tauri android build --target aarch64 --target armv7 --apk
-    - name: Kotlin unit tests (plugins shared with apps/mobile)
+    - name: Kotlin unit tests (native plugins)
       working-directory: apps/tauri/src-tauri/gen/android
       run: bash ./gradlew testUniversalDebugUnitTest -PabiList=arm64-v8a,armeabi-v7a -ParchList=arm64,arm -PtargetList=aarch64,armv7
     - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -188,9 +187,9 @@ jobs:
         auth=$(printf 'x-access-token:%s' "$LFS_TOKEN" | base64 -w0)
         echo "::add-mask::$auth"
         GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
-          git lfs pull --include="apps/desktop/libmpv-2_x64.zip"
+          git lfs pull --include="apps/tauri/mpv/libmpv-2_x64.zip"
         mkdir -p apps/tauri/src-tauri/target/mpv-win
-        unzip -o -j apps/desktop/libmpv-2_x64.zip "*libmpv-2.dll" -d apps/tauri/src-tauri/target/mpv-win
+        unzip -o -j apps/tauri/mpv/libmpv-2_x64.zip "*libmpv-2.dll" -d apps/tauri/src-tauri/target/mpv-win
         test -s apps/tauri/src-tauri/target/mpv-win/libmpv-2.dll
     # Flux de mise à jour écrit sous Windows (chemins D:\…) : le script est lancé par tauri-release.yml.
     - name: Update feed script on Windows

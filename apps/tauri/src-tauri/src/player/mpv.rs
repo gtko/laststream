@@ -1,5 +1,5 @@
-//! Moteur mpv de la coque Tauri. Reprend la logique de `apps/desktop/src/laststream_app/laststream_player/player.rs`
-//! (protocole de `communication.rs`, partagé) : propriétés observées, `mpv-set-prop` (repli int64), commandes
+//! Moteur mpv de la coque Tauri. Reprend la logique du lecteur de l'ancienne coque Windows (`player.rs`)
+//! (protocole de `laststream_app/laststream_player/communication.rs`) : propriétés observées, `mpv-set-prop` (repli int64), commandes
 //! `stop`/`loadfile`/`sub-add`/`sub-remove`, sous-titres asynchrones annulés à chaque changement de média,
 //! `mpv-event-video-ready` numéroté, reprise après un arrêt inattendu de mpv (3 relances / 60 s, réglages,
 //! observations et média rejoués à la dernière position), fin en erreur et message si le budget est épuisé.
@@ -44,7 +44,8 @@ const MIN_RESUME_SECONDS: f64 = 1.0;
 const THREAD_POLL: Duration = Duration::from_millis(100);
 
 const MIB: u64 = 1024 * 1024;
-/// Tampon par défaut, identique à la coque Windows (voir apps/desktop/docs/mpv-cache.md).
+/// Tampon par défaut, identique à l'ancienne coque Windows (mesures LAST-146 : `apps/desktop/docs/mpv-cache.md` dans
+/// l'historique git, avant le retrait de cette coque).
 const BUFFER_OPTIONS: [(&str, &str); 6] = [
     ("cache", "yes"),
     ("cache-secs", "3600"),

@@ -36,7 +36,7 @@ fn main() {
             println!("cargo:rustc-link-lib=framework={framework}");
         }
     }
-    // Windows : liaison avec libmpv par la bibliothèque d'import de la coque Windows (apps/desktop/mpv-<arch>/mpv.lib) ;
+    // Windows : liaison avec libmpv par la bibliothèque d'import `mpv/<arch>/mpv.lib` (apps/tauri/mpv) ;
     // la DLL libmpv-2.dll est embarquée à l'empaquetage.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
@@ -44,8 +44,8 @@ fn main() {
             _ => "x64",
         };
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../desktop")
-            .join(format!("mpv-{arch}"));
+            .join("../mpv")
+            .join(arch);
         println!("cargo:rustc-link-search=native={}", dir.display());
     }
     // `shell_post` : unique commande Tauri du desktop, appelée par le polyfill `window.chrome.webview` (src/bridge.js).

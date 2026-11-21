@@ -1,12 +1,10 @@
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   bannerModel, CHECK_INTERVAL_MS, isDismissed, isNewer, parseManifest, shouldCheck, sizeLabel,
 } from '../src/data/appUpdate';
 import { PUBLIC_BASE } from '../src/data/config';
-import { buildManifest, parseArgs, publish, readMeta, sha256File } from '../scripts/publish-android.mjs';
 
 const SHA = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
 
@@ -69,17 +67,17 @@ describe('manifeste latest.json', () => {
   });
 });
 
-describe('configuration Capacitor', () => {
-  const cfg = JSON.parse(readFileSync(join(__dirname, '..', '..', 'mobile', 'capacitor.config.json'), 'utf8'));
+describe('app Android (Tauri)', () => {
+  const tauri = join(__dirname, '..', '..', 'tauri');
+  const splash = readFileSync(join(tauri, 'splash', 'android.html'), 'utf8');
+  const capability = JSON.parse(readFileSync(join(tauri, 'src-tauri', 'capabilities', 'mobile.json'), 'utf8'));
 
-  it('charge l’interface depuis le serveur Laststream (une seule adresse, celle de PUBLIC_BASE)', () => {
-    expect(cfg.server.url).toBe(PUBLIC_BASE);
-    expect(cfg.server.androidScheme).toBe('https');
-    expect(cfg.server.allowNavigation).toEqual([new URL(PUBLIC_BASE).host]);
+  it('charge l’interface depuis le serveur Laststream (celui de PUBLIC_BASE)', () => {
+    expect(splash).toContain(`var SERVER = '${PUBLIC_BASE}/';`);
+    expect(JSON.stringify(capability)).toContain(`"${PUBLIC_BASE}/*"`);
   });
 
-  it('page hors ligne embarquée avec bouton Réessayer, tournée vers la même adresse', () => {
-    expect(cfg.server.errorPath).toBe('offline.html');
+  it('page hors ligne du service worker avec bouton Réessayer, tournée vers la même adresse', () => {
     const html = readFileSync(join(__dirname, '..', 'public', 'offline.html'), 'utf8');
     expect(html).toContain('Laststream est hors ligne');
     expect(html).toContain('Réessayer');
@@ -119,41 +117,5 @@ describe('bannière de mise à jour', () => {
     (root.querySelector('.upd-x') as HTMLButtonElement).click();
     expect(document.querySelector('.upd-banner')).toBeNull();
     expect(dismissedCode()).toBe(9);
-  });
-});
-
-describe('script publish-android', () => {
-  it('lit les arguments', () => {
-    expect(parseArgs(['--apk', 'a.apk', '--notes', 'x y', '--flag'])).toEqual({ apk: 'a.apk', notes: 'x y', flag: true });
-  });
-
-  it('lit output-metadata.json', () => {
-    expect(readMeta({ elements: [{ versionCode: 2026101803, versionName: '2026.10.18.3' }] })).toEqual({ versionCode: 2026101803, versionName: '2026.10.18.3' });
-    expect(() => readMeta({ elements: [] })).toThrow();
-  });
-
-  it('SHA-256 d’un fichier', async () => {
-    const d = mkdtempSync(join(tmpdir(), 'pub-'));
-    writeFileSync(join(d, 'a.bin'), 'abc');
-    expect(await sha256File(join(d, 'a.bin'))).toBe(SHA);
-  });
-
-  it('manifeste : adresse https nommée par versionCode', () => {
-    const m = buildManifest({ versionCode: 7, versionName: '7', sha256: SHA, size: 10, baseUrl: 'https://x.test/app/android/', notes: ' n ' });
-    expect(m).toEqual({ versionCode: 7, versionName: '7', url: 'https://x.test/app/android/laststream-7.apk', sha256: SHA, size: 10, notes: 'n' });
-    expect(() => buildManifest({ versionCode: 7, versionName: '7', sha256: SHA, size: 1, baseUrl: 'http://x.test' })).toThrow();
-    expect(() => buildManifest({ versionCode: 7, versionName: '7', sha256: 'zz', size: 1 })).toThrow();
-  });
-
-  it('publish : écrit latest.json et prépare l’APK, et le manifeste est accepté par l’application', async () => {
-    const d = mkdtempSync(join(tmpdir(), 'pub-'));
-    writeFileSync(join(d, 'app.apk'), 'abc');
-    writeFileSync(join(d, 'meta.json'), JSON.stringify({ elements: [{ versionCode: 2026101802, versionName: '2026.10.18.2' }] }));
-    const r = await publish({ apk: join(d, 'app.apk'), meta: join(d, 'meta.json'), out: join(d, 'out'), stage: join(d, 'stage'), notes: 'Test' });
-    expect(existsSync(join(d, 'stage', 'laststream-2026101802.apk'))).toBe(true);
-    const written = JSON.parse(readFileSync(join(d, 'out', 'latest.json'), 'utf8'));
-    expect(written).toEqual(r.manifest);
-    expect(written.sha256).toBe(SHA);
-    expect(parseManifest(written)).toMatchObject({ versionCode: 2026101802, sha256: SHA });
   });
 });

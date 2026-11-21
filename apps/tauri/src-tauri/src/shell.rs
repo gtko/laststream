@@ -1,5 +1,5 @@
-//! État de la coque et répartition des commandes de la page (même liste blanche, mêmes réponses que la coque Windows,
-//! voir `apps/desktop/src/laststream_app/app.rs`). Les commandes sont traitées une à une, dans l'ordre d'arrivée,
+//! État de la coque et répartition des commandes de la page (même liste blanche, mêmes réponses que l'ancienne coque
+//! Windows, `app.rs`, retirée du dépôt). Les commandes sont traitées une à une, dans l'ordre d'arrivée,
 //! sur le fil `ipc-dispatch` ; une panique dans l'une n'empêche pas les suivantes.
 
 use std::sync::atomic::{AtomicBool, Ordering};
