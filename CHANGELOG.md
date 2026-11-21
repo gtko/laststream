@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.69 – 2026-11-21
+
+- Lecteur externe : repli VLC automatique sur iPhone et suivi de la lecture dans VLC (#49) — @gtko
+
 ## v1.0.68 – 2026-11-21
 
 - Sources : les MKV ne sont plus « non supporté » quand VLC est réglé (#48) — @gtko
