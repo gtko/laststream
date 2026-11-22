@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Page générée par guides-capture/build-guides.mjs (texte : guides-content.mjs) : modifier la source, pas ce fichier. -->
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -7,6 +8,9 @@
 <meta name="description" content="La TV en direct lit des playlists M3U fournies par ton opérateur ou ton service IPTV, et en option un guide des programmes XMLTV.">
 <meta name="theme-color" content="#0c0b11">
 <link rel="canonical" href="https://laststream.app/guides/tv-en-direct/">
+<link rel="alternate" hreflang="fr" href="https://laststream.app/guides/tv-en-direct/">
+<link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/live-tv/">
+<link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/tv-en-direct/">
 <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
@@ -19,12 +23,12 @@
 <meta property="og:image" content="https://laststream.app/guides/tv-en-direct/img/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Grille de la TV en direct&nbsp;: les chaînes de la playlist avec le guide des programmes">
+<meta property="og:image:alt" content="Réglages, TV en direct : les champs de la playlist M3U sont numérotés de 1 à 4">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Configurer la TV en direct (playlist M3U) - Guides Laststream">
 <meta name="twitter:description" content="La TV en direct lit des playlists M3U fournies par ton opérateur ou ton service IPTV, et en option un guide des programmes XMLTV.">
 <meta name="twitter:image" content="https://laststream.app/guides/tv-en-direct/img/og.jpg">
-<meta name="twitter:image:alt" content="Grille de la TV en direct&nbsp;: les chaînes de la playlist avec le guide des programmes">
+<meta name="twitter:image:alt" content="Réglages, TV en direct : les champs de la playlist M3U sont numérotés de 1 à 4">
 <link rel="preload" href="/assets/fonts/sora-latin-800.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/fonts/jakarta-latin-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/style.css">
@@ -34,8 +38,18 @@
   "@context": "https://schema.org",
   "@type": "BreadcrumbList",
   "itemListElement": [
-    { "@type": "ListItem", "position": 1, "name": "Guides", "item": "https://laststream.app/guides/" },
-    { "@type": "ListItem", "position": 2, "name": "Configurer la TV en direct (playlist M3U)", "item": "https://laststream.app/guides/tv-en-direct/" }
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Guides",
+      "item": "https://laststream.app/guides/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Configurer la TV en direct (playlist M3U)",
+      "item": "https://laststream.app/guides/tv-en-direct/"
+    }
   ]
 }
 </script>
@@ -60,8 +74,8 @@
     </nav>
     <a class="btn btn-sm" href="/#telecharger">Télécharger</a>
     <nav class="lang" aria-label="Langue">
-      <a href="/guides/tv-en-direct/" hreflang="fr" aria-current="page">FR</a>
-      <a href="/en/" hreflang="en">EN</a>
+      <a href="/guides/tv-en-direct/" hreflang="fr" lang="fr" aria-current="page">FR</a>
+      <a href="/en/guides/live-tv/" hreflang="en" lang="en">EN</a>
     </nav>
   </div>
 </header>
@@ -83,65 +97,76 @@
         <li>Android</li>
       </ul>
       <figure class="shot">
-        <video class="clip" src="./clip.mp4" poster="./img/poster.webp" width="1280" height="800" autoplay muted loop playsinline controls preload="metadata"></video>
+        <video class="clip" src="./clip.mp4" poster="./img/poster.webp" width="1280" height="800" autoplay muted loop playsinline controls preload="metadata" aria-label="Vidéo du parcours complet, sans son"></video>
       </figure>
     </div>
   </header>
 
   <article class="wrap narrow guide-body">
-    <section aria-labelledby="h-etapes">
-      <h2 id="h-etapes">Étapes</h2>
+    <section class="guide-prereq" aria-labelledby="h-prereq">
+      <h2 id="h-prereq">Prérequis</h2>
+      <ul>
+        <li>L’app Windows ou Android&nbsp;: un navigateur ne peut pas joindre la plupart des playlists.</li>
+        <li>L’adresse de ta playlist M3U (et, si tu l’as, celle du guide XMLTV).</li>
+      </ul>
+    </section>
+    <section aria-labelledby="h-steps">
+      <h2 id="h-steps">Étapes</h2>
+      <p class="guide-note">Sur chaque capture, le cadre jaune montre où toucher ou cliquer&nbsp;; les numéros donnent l’ordre.</p>
       <ol class="guide-steps">
         <li>
-          <p>Ouvre Réglages, catégorie TV en direct, carte «&nbsp;Playlists M3U&nbsp;».</p>
+          <p>Touche ton avatar, puis «&nbsp;Réglages&nbsp;», puis «&nbsp;TV en direct&nbsp;» dans la colonne de gauche.</p>
           <figure class="shot">
-            <img src="./img/01-reglages-tv-1280.webp" srcset="./img/01-reglages-tv-1280.webp 1280w, ./img/01-reglages-tv.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="Réglages, catégorie TV en direct&nbsp;: la carte «&nbsp;Playlists M3U&nbsp;» indique «&nbsp;Aucune playlist ajoutée&nbsp;», et le formulaire «&nbsp;Ajouter une playlist M3U&nbsp;» est juste en dessous.">
+            <img src="./img/01-reglages-tv-1280.webp" srcset="./img/01-reglages-tv-1280.webp 1280w, ./img/01-reglages-tv.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="Réglages : la catégorie « TV en direct » est encadrée.">
           </figure>
         </li>
         <li>
-          <p>Dans «&nbsp;Ajouter une playlist M3U&nbsp;», renseigne&nbsp;: Nom (facultatif, 60 caractères)&nbsp;; Adresse de la playlist (http ou https&nbsp;; si elle contient des identifiants, ils sont chiffrés)&nbsp;; Guide des programmes (XMLTV) (facultatif, <code>.xml</code> ou <code>.xml.gz</code>).</p>
+          <p>Dans «&nbsp;Ajouter une playlist M3U&nbsp;», renseigne un nom (1, facultatif), l’«&nbsp;Adresse de la playlist&nbsp;» (2) et, si tu l’as, le «&nbsp;Guide des programmes (XMLTV)&nbsp;» (3, <code>.xml</code> ou <code>.xml.gz</code>).</p>
+          <p>Touche «&nbsp;Ajouter la playlist&nbsp;» (4). Tu peux aussi «&nbsp;Importer un fichier&nbsp;» <code>.m3u</code> depuis l’appareil.</p>
           <figure class="shot">
-            <img src="./img/02-formulaire-1280.webp" srcset="./img/02-formulaire-1280.webp 1280w, ./img/02-formulaire.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="Formulaire «&nbsp;Ajouter une playlist M3U&nbsp;» rempli&nbsp;: nom «&nbsp;Ma box TV&nbsp;», adresse de la playlist en .m3u et adresse du guide des programmes en .xml.">
+            <img src="./img/02-formulaire-1280.webp" srcset="./img/02-formulaire-1280.webp 1280w, ./img/02-formulaire.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="Formulaire « Ajouter une playlist M3U » rempli : nom, adresse de la playlist, guide XMLTV et bouton « Ajouter la playlist » numérotés de 1 à 4.">
           </figure>
         </li>
         <li>
-          <p>Touche «&nbsp;Ajouter la playlist&nbsp;». Tu peux aussi «&nbsp;Importer un fichier&nbsp;» <code>.m3u</code> ou <code>.m3u8</code> depuis l'appareil.</p>
+          <p>Quand le message «&nbsp;… chaînes ajoutées, guide à jour&nbsp;» s’affiche, reviens à l’accueil et ouvre l’onglet «&nbsp;Direct&nbsp;».</p>
+          <figure class="shot">
+            <img src="./img/03-onglet-direct-1280.webp" srcset="./img/03-onglet-direct-1280.webp 1280w, ./img/03-onglet-direct.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="Barre du haut de l’accueil : l’onglet « Direct » est encadré.">
+          </figure>
         </li>
         <li>
-          <p>Touche «&nbsp;Enregistrer&nbsp;», puis ouvre l'onglet TV&nbsp;: les chaînes apparaissent, filtrables par catégorie (colonne de gauche).</p>
+          <p>Tes chaînes apparaissent avec le badge «&nbsp;Box&nbsp;», avec leurs programmes. La colonne de gauche filtre par catégorie.</p>
           <figure class="shot">
-            <img src="./img/03-chaines-1280.webp" srcset="./img/03-chaines-1280.webp 1280w, ./img/03-chaines.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="Onglet TV&nbsp;: les chaînes de la playlist apparaissent dans la grille avec le guide des programmes, chacune avec son numéro et le badge «&nbsp;Box&nbsp;», et les catégories sont listées à gauche.">
+            <img src="./img/04-chaines-1280.webp" srcset="./img/04-chaines-1280.webp 1280w, ./img/04-chaines.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="Page « TV en direct » : la première chaîne de la playlist et ses programmes sont encadrés.">
           </figure>
+        </li>
+        <li>
           <p>Touche un programme pour voir sa fiche, puis «&nbsp;Regarder&nbsp;».</p>
           <figure class="shot">
-            <img src="./img/04-guide-1280.webp" srcset="./img/04-guide-1280.webp 1280w, ./img/04-guide.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="Fiche du programme «&nbsp;Le point sur la semaine&nbsp;» au-dessus du guide&nbsp;: 21:30 à 22:30, en cours, avec le bouton «&nbsp;Regarder&nbsp;».">
+            <img src="./img/05-guide-1280.webp" srcset="./img/05-guide-1280.webp 1280w, ./img/05-guide.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="Fiche du programme en cours, avec le bouton « Regarder », encadrée au-dessus de la grille des programmes.">
           </figure>
         </li>
       </ol>
     </section>
-
     <aside class="guide-tip" aria-label="Bon à savoir">
       <p class="guide-tip-title">Bon à savoir</p>
       <ul>
-        <li>Abonné Freebox&nbsp;: «&nbsp;Détecter ma Freebox&nbsp;» ajoute la playlist de la box sans rien saisir.</li>
-        <li>Chaque playlist se désactive, s'actualise ou se retire depuis sa ligne.</li>
+        <li>Abonné Freebox&nbsp;: «&nbsp;Détecter ma Freebox&nbsp;» ajoute les chaînes de la box sans rien saisir.</li>
+        <li>Chaque playlist se désactive, s’actualise ou se retire depuis sa ligne, dans «&nbsp;Playlists M3U&nbsp;».</li>
         <li>Les playlists du compte sont gérées par le profil principal.</li>
       </ul>
     </aside>
-
     <section aria-labelledby="h-format">
       <h2 id="h-format">Format attendu</h2>
       <pre><code>#EXTM3U
-#EXTINF:-1 tvg-id="chaine1.fr" tvg-name="Chaîne 1" tvg-logo="https://exemple.com/logo1.png" group-title="Généralistes" tvg-chno="1",Chaîne 1
-https://exemple.com/live/chaine1.m3u8</code></pre>
-      <p>La première ligne doit être <code>#EXTM3U</code>. Chaque <code>#EXTINF</code> est suivi de l'adresse du flux (http, https, rtsp, rtp ou udp). <code>group-title</code> donne la catégorie, <code>tvg-chno</code> le numéro (1 à 9999), <code>tvg-id</code> fait le lien avec le guide XMLTV.</p>
-
+      #EXTINF:-1 tvg-id="chaine1.fr" tvg-name="Chaîne 1" tvg-logo="https://exemple.com/logo1.png" group-title="Généralistes" tvg-chno="1",Chaîne 1
+      https://exemple.com/live/chaine1.m3u8</code></pre>
+      <p>La première ligne doit être <code>#EXTM3U</code>. Chaque <code>#EXTINF</code> est suivi de l’adresse du flux (http, https, rtsp, rtp ou udp). <code>group-title</code> donne la catégorie, <code>tvg-chno</code> le numéro (1 à 9999), <code>tvg-id</code> fait le lien avec le guide XMLTV.</p>
       <table class="guide-table">
         <thead>
           <tr><th scope="col">Limite</th><th scope="col">Valeur</th></tr>
         </thead>
         <tbody>
-          <tr><th scope="row">Taille d'une playlist</th><td>20 Mo</td></tr>
+          <tr><th scope="row">Taille d’une playlist</th><td>20 Mo</td></tr>
           <tr><th scope="row">Délai de chargement</th><td>20 s</td></tr>
           <tr><th scope="row">Actualisation automatique</th><td>toutes les 24 h</td></tr>
           <tr><th scope="row">Playlists par compte</th><td>20</td></tr>
@@ -149,17 +174,15 @@ https://exemple.com/live/chaine1.m3u8</code></pre>
         </tbody>
       </table>
     </section>
-
-    <section aria-labelledby="h-ca-marche-pas">
-      <h2 id="h-ca-marche-pas">Si ça ne marche pas</h2>
+    <section aria-labelledby="h-probleme">
+      <h2 id="h-probleme">Si ça ne marche pas</h2>
       <ul>
-        <li><strong>«&nbsp;Cette adresse ne renvoie pas une playlist M3U.&nbsp;»</strong> → l'adresse pointe vers une page web ou un fichier d'un autre format.</li>
+        <li><strong>«&nbsp;Cette adresse ne renvoie pas une playlist M3U.&nbsp;»</strong> → l’adresse pointe vers une page web ou un fichier d’un autre format.</li>
         <li><strong>«&nbsp;Aucune chaîne trouvée dans cette playlist.&nbsp;»</strong> → fichier vide ou mal formé.</li>
-        <li><strong>«&nbsp;Adresse injoignable&nbsp;: vérifie la connexion (et le réseau de ta box pour une Freebox).&nbsp;»</strong> → vérifie l'adresse et ta connexion.</li>
-        <li><strong>«&nbsp;Disponible dans les apps Windows et Android&nbsp;: un navigateur ne peut pas joindre ta box.&nbsp;»</strong> → un navigateur web ne peut pas joindre la plupart des playlists&nbsp;: utilise l'app Windows ou Android.</li>
+        <li><strong>«&nbsp;Adresse injoignable&nbsp;»</strong> → vérifie l’adresse et ta connexion (et le réseau de ta box pour une Freebox).</li>
+        <li><strong>Dans un navigateur</strong> → un navigateur web ne peut pas joindre la plupart des playlists&nbsp;: utilise l’app Windows ou Android.</li>
       </ul>
     </section>
-
     <nav class="guide-pager" aria-label="Guides voisins">
       <a class="prev" href="/guides/ajouter-une-source/">
         <small>Guide précédent</small>

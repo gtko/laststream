@@ -1,6 +1,10 @@
 # Gabarit d'un guide
 
-Gabarit des pages `public/guides/<slug>/index.html`, à copier pour chaque nouveau guide (`guides/<slug>/index.html`).
+Structure des pages `public/guides/<slug>/index.html` (FR) et `public/en/guides/<slug>/index.html` (EN).
+
+Ces pages sont désormais générées par `build-guides.mjs` à partir de `guides-content.mjs` : pour un nouveau guide, ajoute
+son texte (FR et EN) dans `guides-content.mjs`, son scénario annoté dans `capture-guides.mjs`, puis lance la capture,
+`--install` et `build-guides.mjs`. La structure ci-dessous reste la référence du gabarit.
 
 Ce texte était le commentaire d'en-tête des guides publiés. Il est déplacé ici : ce fichier reste hors `public/`, donc il n'est pas publié.
 

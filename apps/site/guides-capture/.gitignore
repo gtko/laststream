@@ -7,3 +7,4 @@ node_modules/
 .capture-data-source/
 .capture-data-tv/
 .capture-data-site/
+/.capture-data-guides/
