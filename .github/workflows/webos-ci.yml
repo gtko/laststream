@@ -1,0 +1,39 @@
+name: webOS CI
+
+# App LG webOS (apps/webos) : tests du paquet .ipk et build à blanc.
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/webos/**', '.github/workflows/webos-ci.yml', '!**/*.md']
+  pull_request:
+    branches: [main]
+    paths: ['apps/webos/**', '.github/workflows/webos-ci.yml', '!**/*.md']
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/webos
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Tests et paquet .ipk
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tests
+        run: npm test
+      - name: Paquet
+        run: npm run build -- --version 0.0.1

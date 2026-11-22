@@ -571,6 +571,14 @@ describe('clavier', () => {
     expect(keyToAction('x', ctx)).toBeNull();
   });
 
+  it('touches média des télécommandes (TV LG)', () => {
+    expect(keyToAction('MediaPlay', ctx)).toEqual({ type: 'play' });
+    expect(keyToAction('MediaPause', ctx)).toEqual({ type: 'pause' });
+    expect(keyToAction('MediaFastForward', ctx)).toEqual({ type: 'seek', by: 3 * SEEK_STEP });
+    expect(keyToAction('MediaRewind', ctx)).toEqual({ type: 'seek', by: -3 * SEEK_STEP });
+    expect(keyToAction('MediaStop', ctx)).toEqual({ type: 'back' });
+  });
+
   it('les combinaisons du navigateur et les champs de saisie ne sont pas détournés', () => {
     expect(keyToAction('f', ctx, { ctrl: true })).toBeNull();
     expect(keyToAction('f', { ...ctx, typing: true })).toBeNull();

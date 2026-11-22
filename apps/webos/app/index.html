@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<title>Laststream</title>
+<!-- App LG webOS (LAST-1643) : page de démarrage locale, comme splash/android.html de l'app Android. Elle vérifie que la TV
+     est assez récente, sonde le serveur Laststream puis s'y rend ; hors ligne, elle reste ici et propose de réessayer.
+     L'interface (apps/web) reconnaît webOS à son agent utilisateur : mode TV, touche Retour et touches média. -->
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0c0b11; color: #f4f2f7; font: 500 32px/1.5 "LG Smart UI", "Museo Sans", system-ui, sans-serif; }
+  main { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 64px; text-align: center; }
+  .mark { width: 160px; height: 160px; }
+  h1 { margin: 12px 0 0; font-size: 52px; font-weight: 800; letter-spacing: -0.01em; }
+  p { margin: 0; max-width: 30em; color: #a19dae; }
+  button { margin-top: 20px; min-height: 88px; padding: 0 56px; border: 0; border-radius: 20px; background: #ff5a36; color: #0c0b11; font: inherit; font-weight: 800; cursor: pointer; }
+  button:focus { outline: 6px solid #f4f2f7; outline-offset: 6px; }
+  button[disabled] { opacity: 0.6; }
+  .status { min-height: 1.5em; font-size: 28px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <img class="mark" src="largeIcon.png" alt="">
+  <div id="offline" hidden>
+    <h1>Laststream est hors ligne</h1>
+    <p>Impossible de joindre le serveur Laststream. Vérifie la connexion Internet de la TV, puis réessaie.</p>
+    <button id="retry" type="button">Réessayer</button>
+  </div>
+  <div id="old" hidden>
+    <h1>TV trop ancienne</h1>
+    <p>Laststream demande webOS 23 ou plus récent (TV et projecteurs LG de 2023 et après, ou modèles plus anciens mis à jour).
+      Mets à jour le logiciel de la TV dans Paramètres, Assistance, Mise à jour du logiciel.</p>
+  </div>
+  <p class="status" id="status" role="status">Connexion…</p>
+</main>
+<script>
+  // Adresse du serveur Laststream : la même que PUBLIC_BASE (apps/web/src/data/config.ts) et splash/android.html.
+  var SERVER = 'https://app.laststream.app/';
+  // Navigateur minimal de l'interface : Chromium 94 (webOS 23). En dessous, la page resterait blanche (await de premier niveau,
+  // Object.hasOwn…) : on l'explique plutôt.
+  var MIN_CHROME = 94;
+  var offline = document.getElementById('offline');
+  var btn = document.getElementById('retry');
+  var status = document.getElementById('status');
+
+  function chromeMajor() {
+    var m = /Chrome\/(\d+)/.exec(navigator.userAgent || '');
+    return m ? parseInt(m[1], 10) : 0;
+  }
+  // Retour (461) sur cette page : on rend la main à la TV (disableBackHistoryAPI dans appinfo.json).
+  function exitApp() {
+    var apis = [window.webOS, window.PalmSystem];
+    for (var i = 0; i < apis.length; i++) {
+      try { if (apis[i] && typeof apis[i].platformBack === 'function') { apis[i].platformBack(); return; } } catch (e) { /* suivante */ }
+    }
+    window.close();
+  }
+  document.addEventListener('keydown', function (e) { if (e.keyCode === 461) { e.preventDefault(); exitApp(); } });
+
+  function probe() {
+    btn.disabled = true;
+    status.textContent = 'Connexion…';
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 8000);
+    fetch(SERVER + 'health', { mode: 'no-cors', cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then(function () { location.replace(SERVER); })
+      .catch(function () {
+        offline.hidden = false;
+        status.textContent = btn.dataset.tried ? 'Toujours hors ligne.' : '';
+        btn.dataset.tried = '1';
+        btn.disabled = false;
+        btn.focus();
+      })
+      .then(function () { clearTimeout(timer); });
+  }
+
+  var major = chromeMajor();
+  if (major && major < MIN_CHROME) {
+    document.getElementById('old').hidden = false;
+    status.textContent = 'Navigateur de la TV : Chromium ' + major + '.';
+  } else {
+    btn.addEventListener('click', probe);
+    window.addEventListener('online', probe);
+    probe();
+  }
+</script>
+</body>
+</html>

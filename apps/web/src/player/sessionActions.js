@@ -492,6 +492,8 @@ export function onKey(e) {
   const st = S.P.view && S.P.engine ? S.P.engine.state() : null;
   switch (action.type) {
     case 'toggle-play': togglePlay(); break;
+    case 'play': if (!st || st.paused) togglePlay(); break;
+    case 'pause': if (st && !st.paused) togglePlay(); break;
     case 'seek': seekBy(action.by); break;
     case 'volume': { S.P.engine.setMuted(false); const v = stepVolume(st.volume, action.by); S.P.engine.setVolume(v); rememberVolume(v); S.ui.toast('Volume ' + Math.round(v * 100) + ' %', 900); break; }
     case 'fullscreen': toggleFullscreen(); break;

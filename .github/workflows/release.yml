@@ -6,7 +6,8 @@ name: Release
 #  - macOS, Windows, Linux : tauri-release.yml (fichiers et flux signes tauri-<plateforme>-latest.json, lus par
 #    laststream-edge sous app.laststream.app/app/tauri/<plateforme>/ : site et mises a jour de l'app) ;
 #  - Android : APK Tauri (job android), meme identifiant, cle et versionCode que l'ancien APK Capacitor, qu'il remplace par
-#    la mise a jour en un tap ; android-latest.json reste le flux lu par le site et l'app via laststream-edge.
+#    la mise a jour en un tap ; android-latest.json reste le flux lu par le site et l'app via laststream-edge ;
+#  - TV et projecteurs LG : paquet webOS Laststream-X.Y.Z-webos.ipk (job webos, apps/webos), installe en mode developpeur.
 # L'ancienne app Windows (retiree du depot) recoit encore latest.json (installeur NSIS Tauri) pour passer a l'app Tauri.
 # Label release:skip sur la PR : aucune release.
 # workflow_dispatch(tag) : relance les builds et la publication d'un tag vX.Y.Z existant, sans nouveau bump.
@@ -157,7 +158,7 @@ jobs:
           echo
           cat section.md
           echo
-          echo "Téléchargements : macOS (.dmg), Windows (.setup.exe), Linux (.AppImage, .deb), Android (.apk)."
+          echo "Téléchargements : macOS (.dmg), Windows (.setup.exe), Linux (.AppImage, .deb), Android (.apk), TV LG webOS (.ipk)."
         } > body.md
         gh release create "v${VERSION}" banner.png --draft --verify-tag --title "Laststream v${VERSION}" --notes-file body.md
 
@@ -186,7 +187,7 @@ jobs:
         } >> "$GITHUB_OUTPUT"
         if ! gh release view "$INPUT_TAG" > /dev/null 2>&1; then
           gh release create "$INPUT_TAG" --draft --verify-tag --title "Laststream $INPUT_TAG" \
-            --notes "Téléchargements : macOS (.dmg), Windows (.setup.exe), Linux (.AppImage, .deb), Android (.apk). Voir CHANGELOG.md pour le détail."
+            --notes "Téléchargements : macOS (.dmg), Windows (.setup.exe), Linux (.AppImage, .deb), Android (.apk), TV LG webOS (.ipk). Voir CHANGELOG.md pour le détail."
         fi
 
     - name: Expose version, tag and version code
@@ -320,9 +321,43 @@ jobs:
           dist/android-latest.json
         if-no-files-found: error
 
+  # TV et projecteurs LG (webOS) : paquet .ipk sans signature (installation en mode developpeur, apps/webos/README.md).
+  webos:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+    - name: checkout the tag
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ format('refs/tags/{0}', needs.prepare.outputs.tag) }}
+        persist-credentials: false
+    - name: Setup Node 22
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Test and build the webOS package
+      working-directory: apps/webos
+      run: |
+        set -euo pipefail
+        npm test
+        SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" node scripts/build-ipk.mjs --version "$VERSION" --out ../../dist
+        test -s "../../dist/Laststream-${VERSION}-webos.ipk"
+    - name: Upload the webOS package
+      uses: actions/upload-artifact@v4
+      with:
+        name: webos-ipk
+        path: dist/Laststream-*-webos.ipk
+        if-no-files-found: error
+
   publish:
-    needs: [prepare, android, tauri]
-    if: ${{ always() && needs.prepare.outputs.skip != 'true' && needs.android.result == 'success' && needs.tauri.result == 'success' }}
+    needs: [prepare, android, tauri, webos]
+    if: ${{ always() && needs.prepare.outputs.skip != 'true' && needs.android.result == 'success' && needs.tauri.result == 'success' && needs.webos.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -337,6 +372,11 @@ jobs:
       with:
         name: android-apk
         path: dl/android
+    - name: Download the webOS package
+      uses: actions/download-artifact@v4
+      with:
+        name: webos-ipk
+        path: dl/webos
     - name: Download the Tauri app (macOS, Windows, Linux)
       uses: actions/download-artifact@v4
       with:
@@ -360,5 +400,7 @@ jobs:
         apks=(dl/android/Laststream-*.apk)
         [ "${#apks[@]}" -eq 1 ] || { echo "::error::Un APK attendu, ${#apks[@]} trouvé(s)"; exit 1; }
         test -s dl/android/android-latest.json || { echo "::error::android-latest.json absent"; exit 1; }
-        gh release upload "$TAG" "${apks[0]}" dl/android/android-latest.json --clobber
+        ipks=(dl/webos/Laststream-*-webos.ipk)
+        [ "${#ipks[@]}" -eq 1 ] || { echo "::error::Un paquet webOS attendu, ${#ipks[@]} trouvé(s)"; exit 1; }
+        gh release upload "$TAG" "${apks[0]}" dl/android/android-latest.json "${ipks[0]}" --clobber
         gh release edit "$TAG" --draft=false --latest
