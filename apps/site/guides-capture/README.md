@@ -13,8 +13,29 @@ hôtes externes apparaissent dans son rapport, « hôtes bloqués », sans être
 | `capture-source.mjs` | `ajouter-une-source/` (4 images, poster, clip) | port 7001, addon d'exemple port 7101 |
 | `capture-profils.mjs` | `creer-un-profil/` et `profil-enfant/` (images, poster, clip) | port de `CAPTURE_API_URL` (7000 par défaut) |
 | `capture-tv.mjs` | `tv-en-direct/` (4 images, poster, clip) | port 7002 (`CAPTURE_TV_API_URL`), TV d'exemple port 7102 |
+| `capture-site.mjs` | `site/` : captures de la page d'accueil du site (`public/assets/shots`) | aucune (mode démo de l'app) |
 
-`mock-catalog.mjs` fournit le catalogue factice (titres inventés, affiches du site) servi dans le navigateur de test.
+## Captures de la page d'accueil (`capture-site.mjs`)
+
+Ouvre l'app en mode démo (`?demo=1&clean=1`, profils Alex et Léo), sans compte ni API : la config publique, le
+catalogue et les images sont servis par le script (catalogue factice ci-dessus, sans bande-annonce sauf pour l'accueil
+enfant, qui n'en met pas d'autre en avant). Seules les polices Google Fonts sont chargées de l'extérieur.
+
+```bash
+cd apps/web && npx vite --port 8093 --strictPort      # terminal 1
+cd apps/site/guides-capture && CAPTURE_APP_URL=http://localhost:8093 node capture-site.mjs   # terminal 2
+```
+
+Produit `out/site/<nom>.webp` (2400x1500, ou 1170x2532 pour `mobile-*`) avec ses variantes `-1200` et `-600`. Relis-les,
+puis copie celles à remplacer dans `public/assets/shots/`. `settings` n'affiche aucune affiche : inutile de la remplacer.
+Si le Chromium de Playwright manque, `CAPTURE_CHROMIUM` désigne un autre exécutable.
+
+`mock-catalog.mjs` fournit le catalogue factice servi dans le navigateur de test : titres inventés, avec pour chacun une
+jaquette (`posters/titres/<id>.webp`) et, pour les titres mis en avant, un fond large (`posters/fonds/<id>.webp`). Ces
+images sont générées par IA (OpenRouter, modèle `meta/muse-image`) d'après le titre et le synopsis du catalogue : aucune
+affiche ni photo de film réel, donc aucun problème de droits. Un titre sans image propre retombe sur l'image de son thème
+(`posters/<thème>-800.webp`). Pour ajouter un titre, génère sa jaquette en 2:3 avec le titre écrit dessus et enregistre-la
+en WebP 600x900 sous son identifiant.
 Il est lu par les trois scripts de capture. Règle : fantasy, horreur, noir et western sont classés 16+ ; les titres
 visibles par un enfant de 12 ans ont une affiche famille, anime ou ocean. `capture-source.mjs` s'appuie sur le film
 « Les Gardiens du phare » (`tt9001001`) : ne pas retirer cet identifiant.
