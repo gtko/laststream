@@ -113,3 +113,6 @@
   .guide-steps > li::before { width: 36px; height: 36px; font-size: 1rem; }
   .guide-body .guide-prereq, .guide-tip { padding: 20px 18px; }
 }
+
+/* Légende des captures annotées (cadre jaune, numéros) */
+.guide-note { margin: 12px 0 0 !important; color: var(--muted); font-size: 0.95rem; }

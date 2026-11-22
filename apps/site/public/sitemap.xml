@@ -16,23 +16,73 @@
   </url>
   <url>
     <loc>https://laststream.app/guides/</loc>
-    <lastmod>2026-10-19</lastmod>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/</loc>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/"/>
   </url>
   <url>
     <loc>https://laststream.app/guides/creer-un-profil/</loc>
-    <lastmod>2026-10-19</lastmod>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/creer-un-profil/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/create-a-profile/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/creer-un-profil/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/create-a-profile/</loc>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/creer-un-profil/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/create-a-profile/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/creer-un-profil/"/>
   </url>
   <url>
     <loc>https://laststream.app/guides/profil-enfant/</loc>
-    <lastmod>2026-10-19</lastmod>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/profil-enfant/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/kids-profile/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/profil-enfant/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/kids-profile/</loc>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/profil-enfant/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/kids-profile/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/profil-enfant/"/>
   </url>
   <url>
     <loc>https://laststream.app/guides/ajouter-une-source/</loc>
-    <lastmod>2026-10-19</lastmod>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/ajouter-une-source/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/add-a-source/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/ajouter-une-source/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/add-a-source/</loc>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/ajouter-une-source/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/add-a-source/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/ajouter-une-source/"/>
   </url>
   <url>
     <loc>https://laststream.app/guides/tv-en-direct/</loc>
-    <lastmod>2026-10-19</lastmod>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/tv-en-direct/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/live-tv/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/tv-en-direct/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/live-tv/</loc>
+    <lastmod>2026-11-22</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/tv-en-direct/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/live-tv/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/tv-en-direct/"/>
   </url>
   <url>
     <loc>https://laststream.app/beta-migrants/</loc>
