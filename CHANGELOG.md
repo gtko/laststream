@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.71 – 2026-11-22
+
+- Site : jaquettes originales générées par IA à la place des vraies affiches (#52) — @gtko
+
 ## v1.0.70 – 2026-11-21
 
 - Foyer : chaque membre change sa photo de profil, et le foyer compte comme ami (#50) — @gtko
