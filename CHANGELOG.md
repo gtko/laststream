@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.72 – 2026-11-22
+
+- Site : guides FR et EN refaits avec captures annotées (où cliquer) (#53) — @gtko
+
 ## v1.0.71 – 2026-11-22
 
 - Site : jaquettes originales générées par IA à la place des vraies affiches (#52) — @gtko
