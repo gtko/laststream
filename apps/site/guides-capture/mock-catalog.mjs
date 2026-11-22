@@ -1,8 +1,8 @@
-// Catalogue factice des captures : titres inventés en français, affiches et fonds = images du site
-// (guides-capture/posters, copie des anciennes affiches du site). Servi uniquement par page.route() dans le navigateur de test : aucun appel TMDB,
+// Catalogue factice des captures : titres inventés en français, jaquettes et fonds générés par IA pour chaque titre
+// (guides-capture/posters/titres et posters/fonds), avec repli sur les images de thème. Servi uniquement par page.route() dans le navigateur de test : aucun appel TMDB,
 // aucune clé, aucune image tierce. Les formes de réponse suivent celles lues par l'app (ui/catalog.js,
 // ui/registry.js, data/rows.ts, lastAddon src/lt/top10.ts).
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,13 +11,30 @@ const POSTERS = resolve(here, 'posters'); // copie locale : les affiches ont qui
 const THEMES = new Set(['anime', 'famille', 'fantasy', 'horreur', 'noir', 'ocean', 'scifi', 'western']);
 const imageCache = new Map();
 
-/** Image du site pour un chemin TMDB factice (`/<thème>-<id>.jpg` ou `/<thème>-<id>-fond.jpg`). */
+function cached(path) {
+  if (!imageCache.has(path)) imageCache.set(path, existsSync(path) ? readFileSync(path) : null);
+  return imageCache.get(path);
+}
+
+/**
+ * Image pour un chemin TMDB factice (`/<thème>-<id>.jpg` ou `/<thème>-<id>-fond.jpg`).
+ * Ordre : jaquette propre au titre (`posters/titres/<id>.webp`), fond propre au titre (`posters/fonds/<id>.webp`),
+ * puis jaquette du titre en guise de fond, puis image du thème. Jaquettes et fonds générés par IA (OpenRouter,
+ * meta/muse-image) avec les titres inventés de ce catalogue : aucune affiche réelle.
+ */
 export function posterBuffer(pathname) {
-  const name = pathname.split('/').pop() || '';
-  const theme = name.split('-')[0];
+  const name = (pathname.split('/').pop() || '').replace(/\.\w+$/, '');
+  const [theme, id, kind] = name.split('-');
+  if (/^\d+$/.test(id || '')) {
+    if (kind === 'fond') {
+      const fond = cached(join(POSTERS, 'fonds', `${id}.webp`));
+      if (fond) return fond;
+    }
+    const titre = cached(join(POSTERS, 'titres', `${id}.webp`));
+    if (titre) return titre;
+  }
   const file = THEMES.has(theme) ? theme : 'noir';
-  if (!imageCache.has(file)) imageCache.set(file, readFileSync(join(POSTERS, `${file}-800.webp`)));
-  return imageCache.get(file);
+  return cached(join(POSTERS, `${file}-800.webp`));
 }
 
 const GENRE_NAME = {
