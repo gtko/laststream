@@ -264,3 +264,31 @@ describe('parrainage', () => {
     expect((await request(app, 'GET', '/user/profiles', { token: bob.token })).status).toBe(402);
   });
 });
+
+describe('migration 36 : 2 billets de parrainage sur un serveur existant', () => {
+  it('quotas restés à 4 → 2 (jamais sous les billets utilisés), défaut du serveur à 2 ; base neuve inchangée', async () => {
+    const { DatabaseSync } = await import('node:sqlite');
+    const { wrapSqlite } = await import('../src/platform/node/user-db.js');
+    const { MIGRATIONS, migrate } = await import('../src/user/migrations.js');
+    const db = wrapSqlite(new DatabaseSync(':memory:'));
+    migrate(db, MIGRATIONS.filter((m) => m.version < 36));
+    const add = (id: string, quota: number) =>
+      db.prepare('INSERT INTO accounts (id, username, password_hash, is_owner, created_at, invite_quota) VALUES (?, ?, ?, 0, ?, ?)').run(id, id, 'x', '2026-01-01', quota);
+    add('a', 4);
+    add('b', 4);
+    add('c', 10);
+    for (const [n, user] of [['1', 'x1'], ['2', 'x2'], ['3', 'x3']] as const) {
+      add(user, 4);
+      db.prepare('INSERT INTO invites (id, code, inviter_id, created_at, used_by, used_at) VALUES (?, ?, ?, ?, ?, ?)').run(`i${n}`, `C${n}`, 'b', '2026-01-01', user, '2026-01-02');
+    }
+    migrate(db);
+    const quota = (id: string) => Number(db.prepare('SELECT invite_quota AS q FROM accounts WHERE id = ?').get(id)?.q);
+    expect(quota('a')).toBe(2);
+    expect(quota('b')).toBe(3);
+    expect(quota('c')).toBe(10);
+    expect(db.prepare("SELECT value FROM app_settings WHERE key = 'invite_default_quota'").get()?.value).toBe('2');
+    const fresh = wrapSqlite(new DatabaseSync(':memory:'));
+    migrate(fresh);
+    expect(fresh.prepare("SELECT value FROM app_settings WHERE key = 'invite_default_quota'").get()).toBeUndefined();
+  });
+});
