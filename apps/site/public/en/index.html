@@ -83,6 +83,7 @@
         <li><a href="#etapes">How it works</a></li>
         <li><a href="#apercu">Preview</a></li>
         <li><a href="#ensemble">Together</a></li>
+        <li><a href="#tarif">Pricing</a></li>
         <li><a href="#faq">FAQ</a></li>
         <li><a href="/en/guides/">Guides</a></li>
       </ul>
@@ -130,7 +131,7 @@
     <ul class="wrap stats-grid">
       <li data-reveal><span class="stat-num"><span class="count" data-to="15">15</span></span><span class="stat-label">features, nothing you don't need</span></li>
       <li data-reveal style="--d:1"><span class="stat-num"><span class="count" data-to="5">5</span></span><span class="stat-label">screens: Windows, Mac, Linux, Android, browser</span></li>
-      <li data-reveal style="--d:2"><span class="stat-num"><span class="count" data-to="4">4</span></span><span class="stat-label">invitation links per account</span></li>
+      <li data-reveal style="--d:2"><span class="stat-num">€<span class="count" data-to="24">24</span></span><span class="stat-label">a year for the online service, free self-hosted</span></li>
       <li data-reveal style="--d:3"><span class="stat-num"><span class="count" data-to="0" data-from="100">0</span></span><span class="stat-label">content hosted, ever</span></li>
     </ul>
   </section>
@@ -334,9 +335,10 @@
       <div class="split-copy">
         <p class="eyebrow">By invitation</p>
         <h2 id="invit-title" class="display fill">A circle that grows by word of mouth.</h2>
-        <p class="lead">You can't sign up freely: each account has 4 referral links to give away.</p>
+        <p class="lead">You can't sign up freely: each account has 2 referral tickets to give away.</p>
         <ul class="checklist">
-          <li data-reveal><strong>4 links per account.</strong> You'll find them in Settings, under "My invitations".</li>
+          <li data-reveal><strong>2 tickets per account.</strong> You'll find them in Settings, under "My invitations".</li>
+          <li data-reveal style="--d:1"><strong>A gift on both sides.</strong> Your invitee pays half price for their first year, and you get 6 months free when they subscribe.</li>
           <li data-reveal style="--d:1"><strong>Clear tracking.</strong> Each link is free, sent or used. You can copy it, share it or revoke it.</li>
           <li data-reveal style="--d:2"><strong>No link yet?</strong> Ask the person who told you about Laststream.</li>
         </ul>
@@ -345,9 +347,7 @@
         <p class="invites-title">My invitations</p>
         <ul>
           <li><span class="inv-n">Link 1</span><code>laststream…/?invite=••••</code><span class="pill pill-free">Free</span></li>
-          <li><span class="inv-n">Link 2</span><code>laststream…/?invite=••••</code><span class="pill pill-sent">Sent</span></li>
-          <li><span class="inv-n">Link 3</span><code>Link used</code><span class="pill pill-used">Used</span></li>
-          <li><span class="inv-n">Link 4</span><code>laststream…/?invite=••••</code><span class="pill pill-free">Free</span></li>
+          <li><span class="inv-n">Link 2</span><code>Link used · +6 months</code><span class="pill pill-used">Used</span></li>
         </ul>
       </div>
     </div>
@@ -457,8 +457,45 @@
     </div>
   </section>
 
+  <!-- PRICING -->
+  <section class="section section-alt" id="tarif" aria-labelledby="tarif-title">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">Pricing</p>
+        <h2 id="tarif-title" class="display fill">Two ways to use Laststream.</h2>
+        <p class="lead">The online service is funded by the people who use it. The code stays public: anyone can run it at home.</p>
+      </div>
+      <ul class="plans">
+        <li class="plan is-main" data-reveal>
+          <p class="plan-k">Laststream online</p>
+          <p class="plan-price"><span>€24</span> per year</p>
+          <p class="plan-sub">that's €2 a month · supporter subscription</p>
+          <ul class="checklist plan-list">
+            <li>Profiles, library and progress synced across all your screens.</li>
+            <li>One subscription for the whole household.</li>
+            <li>Friends, movie nights and watch parties.</li>
+            <li>Invited by a friend: your first year is €12.</li>
+          </ul>
+          <a class="btn btn-primary" href="https://app.laststream.app" rel="noopener">Open Laststream</a>
+        </li>
+        <li class="plan" data-reveal style="--d:1">
+          <p class="plan-k">Self-hosted</p>
+          <p class="plan-price"><span>Free</span></p>
+          <p class="plan-sub">on your own server</p>
+          <ul class="checklist plan-list">
+            <li>Laststream's code is public on GitHub.</li>
+            <li>You install and run it yourself.</li>
+            <li>No subscription, no account limit.</li>
+          </ul>
+          <a class="btn btn-ghost" href="https://github.com/gtko/laststream" rel="noopener">See the code on GitHub</a>
+        </li>
+      </ul>
+      <p class="plans-note"><strong>Laststream does not provide or install any Stremio add-ons.</strong> The subscription pays for the service (accounts, sync, apps), not for content: you add the sources you use yourself.</p>
+    </div>
+  </section>
+
   <!-- FAQ -->
-  <section class="section section-alt" id="faq" aria-labelledby="faq-title">
+  <section class="section" id="faq" aria-labelledby="faq-title">
     <div class="wrap faq-wrap">
       <div class="section-head">
         <p class="eyebrow">FAQ</p>
@@ -466,7 +503,9 @@
         <p class="faq-guides">Need a walkthrough? <a href="/en/guides/">Read the guides <span aria-hidden="true">→</span></a></p>
       </div>
       <div class="faq">
-        <details><summary>How do I get an account?</summary><p>Sign-up is by invitation. Ask the person who told you about Laststream for a referral link: each account has 4.</p></details>
+        <details><summary>How do I get an account?</summary><p>Sign-up is by invitation. Ask the person who told you about Laststream for a referral ticket: each account has 2.</p></details>
+        <details><summary>How much does Laststream cost?</summary><p>The online service costs €24 per year (€2 a month), as a supporter subscription that covers your whole household. Invited by a friend, your first year is €12. You can also run Laststream for free on your own server: its code is public on <a href="https://github.com/gtko/laststream" rel="noopener">GitHub</a>.</p></details>
+        <details><summary>Does the subscription include add-ons or content?</summary><p>No. Laststream does not provide or install any Stremio add-ons and hosts no content. The subscription pays for the service: accounts, sync, apps and servers. You add the sources you use yourself.</p></details>
         <details><summary>Does Laststream provide movies and TV shows?</summary><p>No. Laststream hosts no content: it is a player and catalog that read the extensions you configure yourself. You are responsible for what you add and for respecting copyright laws in your country.</p></details>
         <details><summary>Does my data follow me from one device to another?</summary><p>Yes: playback progress, lists and settings are synced with your account.</p></details>
         <details><summary>Is there an app for iPhone or iPad?</summary><p>A native app is planned. In the meantime, the web version installs like an app and works very well.</p></details>
@@ -503,6 +542,7 @@
       <ul>
         <li><a href="#fonctions">Features</a></li>
         <li><a href="#telecharger">Download</a></li>
+        <li><a href="#tarif">Pricing</a></li>
         <li><a href="#faq">FAQ</a></li>
         <li><a href="/en/guides/">Guides</a></li>
         <li><a href="/" hreflang="fr" lang="fr">Français</a></li>
