@@ -54,10 +54,12 @@ a.soc-name:hover { color: var(--accent); }
 .soc-tile .card, .lib-cell .card { width: 100%; }
 .soc-tile-acts { display: flex; flex-direction: column; gap: 6px; }
 .soc-tile-acts .btn { width: 100%; justify-content: center; }
-.lib-vis { position: absolute; top: 8px; right: 8px; z-index: 3; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; border: 0; cursor: pointer; background: rgba(12, 11, 17, 0.72); color: var(--soft); backdrop-filter: blur(6px); }
+.lib-vis { position: absolute; top: 8px; right: 8px; z-index: 5; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; border: 0; cursor: pointer; background: rgba(12, 11, 17, 0.72); color: var(--soft); backdrop-filter: blur(6px); }
 .lib-vis svg { width: 18px; height: 18px; }
 .lib-vis.is-on { background: var(--accent); color: var(--on-accent); }
 .lib-vis:hover, .lib-vis:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+/* L'œil occupe le coin haut droit : le ruban « TOP 10 » passe à gauche (le badge de nouveauté n'y est jamais en même temps). */
+.lib-cell .rib-top { right: auto; left: 8px; }
 .lib-share-note { margin: 0; font-size: 13px; color: var(--dim); }
 
 /* ---------- Salons ---------- */
@@ -485,6 +487,12 @@ body.lp-open .ss { z-index: 620; }
 @media (min-width: 768px) {
   body.ss-open #app, body.ss-open #detail { padding-right: 380px; }
   body.ss-open .topbar { right: 380px; }
+}
+/* Barre des amis ouverte : la barre du haut perd 380 px (456 px avec le rail d'amis). Les entrées du menu principal
+   passent dans « Explorer » comme sous 1100 px de large (styles.css), sinon elles chevauchent recherche et profil. */
+@media (min-width: 768px) and (max-width: 1555px) {
+  body.ss-open .s-a .nav-wide { display: none; }
+  body.ss-open .nav-pop-compact { display: grid; }
 }
 
 /* Mobile < 768 px : page « Amis » de la barre de navigation du bas */

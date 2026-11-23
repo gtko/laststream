@@ -97,7 +97,7 @@
 
 .tk-picks-h { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .tk-picks-t { font-family: var(--ff-title); font-weight: 700; font-size: 16px; color: var(--text); }
-.tk-picks-n { font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tk-picks-n { flex: none; white-space: nowrap; font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 .tk-picks-n.is-full { color: var(--tk-danger-text); }
 .tk-note-warn { color: var(--tk-danger-text); }
 .tk-status { min-height: 1.2em; margin: 0; font-size: 13px; color: var(--accent-hover); }
@@ -231,6 +231,9 @@
 .tk-close:hover { background: var(--line); color: var(--text); }
 .tk-close:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .tk-compose-t { padding-right: 40px; }
+/* Le compteur des coups de cœur est en haut à droite, sous la croix, quand les deux colonnes sont côte à côte. */
+.tk-compose:not(.is-sheet) .tk-picks-h { padding-right: 36px; }
+@media (max-width: 760px) { .tk-compose:not(.is-sheet) .tk-picks-h { padding-right: 0; } }
 
 /* ---- Feuille du bas (mobile) ---- */
 .tk-scrim { position: fixed; inset: 0; z-index: 560; background: rgba(6, 5, 10, 0.62); animation: tkFade 0.18s ease both; }
