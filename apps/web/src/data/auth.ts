@@ -24,8 +24,7 @@ import { claimDownloadsOwner, markPurgePending, setDownloadsOwner } from '../dow
  * d'un serveur sans API /user, de la page d'invitation anonyme et d'un serveur injoignable pendant une session existante.
  */
 
-/** `needs-subscription` : compte connecté sur le service hébergé, sans abonnement de soutien en cours (402). */
-export type AuthStatus = 'local' | 'offline' | 'needs-login' | 'needs-profile' | 'needs-subscription' | 'ready';
+export type AuthStatus = 'local' | 'offline' | 'needs-login' | 'needs-profile' | 'ready';
 
 export const auth = {
   status: 'local' as AuthStatus,
@@ -115,8 +114,6 @@ export const offlineWithoutSession = (): boolean => auth.status === 'offline' &&
  */
 export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<AuthStatus> {
   authEvents.onUnauthorized = () => { void signOut(true); };
-  // Abonnement expiré en cours d'utilisation : un rechargement ramène à l'écran d'abonnement.
-  authEvents.onSubscriptionRequired = () => { if (auth.status === 'ready') location.reload(); };
   clearLegacyLocalMode(); // installations qui avaient choisi « continuer sans compte » : connexion obligatoire
   if (opts.anonymous) return useLocal('local');
   // Aucune adresse enregistrée (premier lancement hors lastAddon) : le serveur Laststream par défaut, pour afficher l'écran
@@ -163,8 +160,7 @@ export async function loadProfiles(known?: string | null): Promise<AuthStatus> {
   try {
     const { profiles } = await api.listProfiles();
     auth.profiles = profiles.map(profileFromDto);
-  } catch (err) {
-    if (err instanceof UserApiError && err.status === 402) return useLocal('needs-subscription');
+  } catch {
     return useLocal('offline');
   }
   const lockedId = known !== undefined ? known : await readLockedProfile();

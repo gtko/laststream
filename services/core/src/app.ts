@@ -22,7 +22,6 @@ import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
 import { registerPartyRoutes } from './party/routes.js';
 import { registerUserRoutes } from './user/routes.js';
-import { registerBillingWebhook } from './billing/routes.js';
 import { registerAdminRoutes } from './admin/api.js';
 import { registerPublicAnnouncementRoute } from './admin/ops-announcements.js';
 import { createMaintenanceGate, maintenanceMiddleware } from './admin/maintenance.js';
@@ -286,7 +285,6 @@ export function createApp(deps: AppDeps): App {
   registerPlayRoutes(app, deps);
   registerLtRoutes(app, deps, backend);
   registerUserRoutes(app, deps, backend, maintenance);
-  registerBillingWebhook(app, deps, backend);
   const party = deps.party ?? platform().createPartyBackend?.();
   registerPartyRoutes(app, deps, backend, party);
   // Rappels des soirées planifiées : minuterie du processus sous Node ; sous Workers, l'alarme du Durable Object des données.

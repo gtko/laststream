@@ -26,7 +26,6 @@ import { updateSupported } from '../data/appUpdate';
 import { tvPanelHTML } from './settings-tv.js';
 import { appearancePanel } from './settings-appearance.js';
 import { invitesCard, refreshInvites } from './invites.js';
-import { billingCardSlot, refreshBillingCard } from './subscribe-ui.js';
 import { migrationCard } from './migration.js';
 import { householdInvitesCard, refreshHouseholdInvites, resetHouseholdList } from './household.js';
 import {
@@ -80,7 +79,7 @@ function accountPanel() {
     rowHTML('Connecté en tant que', '', () => '<span class="set-val">' + esc(auth.username) + '</span>') +
     rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span>' +
       (owner ? '<button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>' : '')) +
-    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + billingCardSlot() + parentalCard() + adminCard() +
+    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + parentalCard() + adminCard() +
     (owner ? invitesCard() + householdInvitesCard() : '') + data +
     (owner ? migrationCard() : '');
 }
@@ -402,7 +401,6 @@ export async function showSettings() {
   detailEl.innerHTML = pageHTML();
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
-  if (isServerMode()) void refreshBillingCard();
   if (isServerMode() && isMainProfile() && !isProfileLocked()) {
     refreshInvites();
     void refreshHouseholdInvites();

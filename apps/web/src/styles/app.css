@@ -86,14 +86,6 @@
   .auth-panel { padding: 8px 0 24px; background: none; border: 0; box-shadow: none; border-radius: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .auth-spin { animation: none; } }
-/* Abonnement de soutien : écran « Activer ton accès ». */
-.sub-price { margin: 0; color: var(--soft); font-size: 15px; }
-.sub-amount { font-family: var(--ff-title); font-size: 30px; font-weight: 800; color: var(--text); margin-right: 4px; }
-.sub-offer { margin: 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); font-size: 14px; line-height: 1.5; }
-.sub-facts { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; color: var(--dim); font-size: 14px; line-height: 1.5; }
-.sub-facts a { color: var(--accent); }
-.sub-actions { display: flex; flex-direction: column; gap: 10px; }
-.sub-actions .auth-link { align-self: center; }
 .auth-actions { justify-content: center; margin-top: 8px; }
 .auth-actions { align-items: stretch; }
 .auth-actions .btn { min-height: 44px; box-sizing: border-box; line-height: 1.2; }

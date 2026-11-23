@@ -97,11 +97,9 @@ export interface ProgressWrite {
 }
 
 /** Évènements remontés à l'interface (session expirée, PIN requis). */
-export const authEvents: { onUnauthorized: () => void; onPinRequired: (profileId: string) => void; onSubscriptionRequired: () => void } = {
+export const authEvents: { onUnauthorized: () => void; onPinRequired: (profileId: string) => void } = {
   onUnauthorized: () => undefined,
   onPinRequired: () => undefined,
-  /** 402 subscription_required : l'abonnement de soutien du compte a expiré pendant l'utilisation. */
-  onSubscriptionRequired: () => undefined,
 };
 
 interface CallOptions {
@@ -159,7 +157,6 @@ export async function call<T>(path: string, o: CallOptions = {}): Promise<T> {
     });
     if (res.status === 401 && !o.anonymous && code === 'unauthorized') authEvents.onUnauthorized();
     if (res.status === 403 && code === 'pin_required' && o.profileId) authEvents.onPinRequired(o.profileId);
-    if (res.status === 402 && code === 'subscription_required') authEvents.onSubscriptionRequired();
     throw err;
   }
   return json as T;
@@ -177,30 +174,6 @@ export const passwordReset = (token: string, password: string) =>
   call<void>('/password-reset', { method: 'POST', body: { token, password }, anonymous: true });
 /** Session courante. `lockedProfileId` : profil sur lequel la session est verrouillée (invitation au foyer), sinon null. */
 export const me = (timeoutMs?: number) => call<{ account: AccountDto; lockedProfileId?: string | null }>('/me', { timeoutMs });
-
-// ---- Abonnement de soutien ----
-/** État de l'abonnement (serveur hébergé). `enabled: false` : serveur sans abonnement, accès libre. */
-export interface BillingDto {
-  enabled: boolean;
-  access: boolean;
-  /** owner, free (transition), comp (offert), paid (abonnement), disabled, ou null (pas d'accès). */
-  reason: 'owner' | 'free' | 'comp' | 'paid' | 'disabled' | null;
-  accessUntil?: string | null;
-  subscribed?: boolean;
-  status?: string | null;
-  paidUntil?: string | null;
-  cancelAtPeriodEnd?: boolean;
-  compUntil?: string | null;
-  freeUntil?: string | null;
-  /** Faux depuis une session verrouillée sur un profil du foyer : seul le titulaire gère l'abonnement. */
-  canManage?: boolean;
-  hasCustomer?: boolean;
-  price?: { amount: number; currency: string; interval: string } | null;
-  referral?: { discount: boolean; rewardMonths: number; earnedMonths: number };
-}
-export const billing = () => call<BillingDto>('/billing');
-export const billingCheckout = () => call<{ url: string }>('/billing/checkout', { method: 'POST', body: {} });
-export const billingPortal = () => call<{ url: string }>('/billing/portal', { method: 'POST', body: {} });
 
 // ---- Profils ----
 export const listProfiles = () => call<{ profiles: ProfileDto[] }>('/profiles');

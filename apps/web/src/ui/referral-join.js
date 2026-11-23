@@ -195,7 +195,7 @@ function showArrival(ctx) {
         '<p class="rf-kicker rf-up rf-d1">' + icon(18, TICKET_BODY) + '<span>Billet de parrainage</span></p>' +
         '<h1 id="rf-title" class="rf-h1 rf-up rf-d2" tabindex="-1">Ta place est réservée.</h1>' +
         '<div class="rf-note rf-up rf-d3">' + avatarHTML(c.name, c.avatar, 'rf-av--note') +
-          '<div><p class="rf-note-who"><strong>' + esc(c.handle) + '</strong> t’offre un de ses 2 billets</p>' +
+          '<div><p class="rf-note-who"><strong>' + esc(c.handle) + '</strong> t’offre un de ses 4 billets</p>' +
           (c.message ? '<p class="rf-note-msg">« ' + esc(c.message) + ' »</p>' : '') + '</div></div>' +
         '<div class="rf-actions rf-up rf-d4">' +
           '<button type="button" class="rf-cta" data-rf-create><span>Créer mon compte</span>' + ARROW + '</button>' +
@@ -227,7 +227,7 @@ function showAccount(ctx) {
       '<div class="rf-mini rf-drop"><div class="rf-mini-text"><span>BILLET N° ' + esc(c.number) + ' · ADMIS</span><strong>Offert par ' + esc(c.handle) + '</strong></div>' +
         '<span class="rf-mini-stub" aria-hidden="true"></span><span class="rf-shine" aria-hidden="true"></span></div>' +
       '<h1 id="rf-title" class="rf-h1 rf-h1--form rf-up rf-d1" tabindex="-1">Crée ton compte</h1>' +
-      '<p class="rf-sub rf-up rf-d1">Ton propre compte, ton foyer, et 2 billets à offrir à ton tour.</p>' +
+      '<p class="rf-sub rf-up rf-d1">Ton propre compte, ton foyer, et 4 billets à offrir à ton tour.</p>' +
       '<form id="rf-form" class="rf-form" data-level="0" novalidate>' +
         '<div class="rf-field rf-up rf-d2"><label for="rf-name">Nom de profil</label>' +
           '<div class="rf-name-row"><span class="rf-av rf-av--form"' + avatarAttrs(null, AVATAR_COLOR) + ' data-rf-initial aria-hidden="true">?</span>' +
@@ -342,7 +342,7 @@ async function submitAccount(ctx, page) {
   showWelcome(ctx, { name: v.username, autoFriend: v.autoFriend, handle: typeof handle === 'string' ? handle : '' });
 }
 
-/** Écran 3 « Tu es dans la salle » : billet déchiré, identifiant ami, carte du parrain, teaser des 2 billets. */
+/** Écran 3 « Tu es dans la salle » : billet déchiré, identifiant ami, carte du parrain, teaser des 4 billets. */
 function showWelcome(ctx, who) {
   const c = ctx.ticket;
   const name = who.name || 'toi';
@@ -359,7 +359,7 @@ function showWelcome(ctx, who) {
         '<div><strong>' + esc(c.handle) + ' · ' + (who.autoFriend ? 'ton ami' : 'ton parrain') + '</strong>' +
         '<span>' + (who.autoFriend ? 'Ami ajouté dès ton arrivée' : 'Ton billet est validé') + '</span></div></div>' +
       '<div class="rf-next rf-up rf-d4"><span class="rf-next-tickets" aria-hidden="true"><i></i><i></i><i></i><i></i></span>' +
-        '<div><strong>À ton tour : 2 billets</strong><span>Invite tes proches depuis Parrainage</span></div></div>' +
+        '<div><strong>À ton tour : 4 billets</strong><span>Invite tes proches depuis Parrainage</span></div></div>' +
       '<button type="button" class="rf-cta rf-cta--block rf-up rf-d5" data-rf-enter><span>Découvrir l’accueil</span>' + ARROW + '</button>' +
     '</div></section>';
   paint(ctx, html, (page) => {

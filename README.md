@@ -15,19 +15,6 @@ par `apps/tauri`, ont été retirées du dépôt : leur code reste dans l'histor
 | `services/edge` | Worker laststream-edge : app.laststream.app, APK/EXE depuis R2 | `gtko/laststream-edge` | Workers Builds (dossier racine `services/edge`) |
 | `packages/protocol` | `@laststream/protocol` : types partagés web/serveur | `gtko/laststream-protocol` | dépendance locale (`file:../../packages/protocol`) |
 
-## Service en ligne ou auto-hébergement
-
-Deux façons d'utiliser Laststream :
-
-- **En ligne** sur [app.laststream.app](https://app.laststream.app) : abonnement de soutien à 24 € par an (2 € par mois),
-  pour tout le foyer, payé par Stripe. Inscription par billet de parrainage (2 par compte) ; le filleul paie sa première
-  année à moitié prix et le parrain gagne 6 mois offerts. Détails : [services/core/docs/abonnement.md](services/core/docs/abonnement.md).
-- **Chez soi**, gratuitement : ce dépôt contient tout le code. Sans clés Stripe, le serveur (`services/core`) ne demande
-  aucun abonnement. Lancement : voir [services/core/README.md](services/core/README.md).
-
-Dans les deux cas, **Laststream ne fournit ni n'installe aucune extension Stremio** et n'héberge aucun contenu : chaque
-compte ajoute lui-même les sources qu'il utilise.
-
 ## Démarrer
 
 ```bash
