@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.75 – 2026-11-23
+
+- Corrige trois défauts d'affichage vus dans les captures des guides (LAST-1648) (#55) — @gtko
+
 ## v1.0.74 – 2026-11-23
 
 - App TV et projecteurs LG (webOS) (#51) — @gtko
