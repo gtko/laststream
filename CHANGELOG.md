@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.77 – 2026-11-23
+
+- Abonnement de soutien à 24 €/an pour le service en ligne (LAST-1650) (#57) — @gtko
+
 ## v1.0.76 – 2026-11-23
 
 - Site : vidéo démo FR / EN avec choix de la langue (LAST-1649) (#56) — @gtko
