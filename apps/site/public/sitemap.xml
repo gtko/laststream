@@ -85,6 +85,118 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/tv-en-direct/"/>
   </url>
   <url>
+    <loc>https://laststream.app/guides/inviter-un-proche/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/inviter-un-proche/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/invite-someone/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/inviter-un-proche/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/invite-someone/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/inviter-un-proche/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/invite-someone/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/inviter-un-proche/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/guides/importer-stremio/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/importer-stremio/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/import-from-stremio/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/importer-stremio/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/import-from-stremio/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/importer-stremio/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/import-from-stremio/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/importer-stremio/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/guides/ajouter-des-amis/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/ajouter-des-amis/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/add-friends/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/ajouter-des-amis/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/add-friends/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/ajouter-des-amis/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/add-friends/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/ajouter-des-amis/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/guides/watch-party/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/watch-party/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/watch-party/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/watch-party/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/watch-party/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/watch-party/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/watch-party/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/watch-party/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/guides/partager-sa-bibliotheque/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/partager-sa-bibliotheque/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/share-your-library/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/partager-sa-bibliotheque/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/share-your-library/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/partager-sa-bibliotheque/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/share-your-library/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/partager-sa-bibliotheque/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/guides/sous-titres-et-langues/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/sous-titres-et-langues/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/subtitles-and-languages/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/sous-titres-et-langues/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/subtitles-and-languages/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/sous-titres-et-langues/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/subtitles-and-languages/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/sous-titres-et-langues/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/guides/lecture-confort/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/lecture-confort/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/playback-comfort/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/lecture-confort/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/playback-comfort/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/lecture-confort/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/playback-comfort/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/lecture-confort/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/guides/nettoyer-recommandations/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/nettoyer-recommandations/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/clean-up-recommendations/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/nettoyer-recommandations/"/>
+  </url>
+  <url>
+    <loc>https://laststream.app/en/guides/clean-up-recommendations/</loc>
+    <lastmod>2026-11-23</lastmod>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://laststream.app/guides/nettoyer-recommandations/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/clean-up-recommendations/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/nettoyer-recommandations/"/>
+  </url>
+  <url>
     <loc>https://laststream.app/beta-migrants/</loc>
     <lastmod>2026-10-27</lastmod>
   </url>
