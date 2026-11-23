@@ -1,0 +1,16 @@
+{
+  "id": "com.laststream.app",
+  "version": "0.0.0",
+  "vendor": "Laststream",
+  "type": "web",
+  "main": "index.html",
+  "title": "Laststream",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "splashBackground": "splash.png",
+  "bgColor": "#0c0b11",
+  "iconColor": "#ff5a36",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "transparent": false
+}

@@ -1,0 +1,10 @@
+{
+  "name": "laststream-webos",
+  "private": true,
+  "type": "module",
+  "description": "Laststream pour TV et projecteurs LG (webOS) : paquet .ipk qui ouvre l'interface web en mode TV.",
+  "scripts": {
+    "build": "node scripts/build-ipk.mjs",
+    "test": "node --test scripts/ipk.test.mjs"
+  }
+}

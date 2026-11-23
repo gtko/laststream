@@ -9,6 +9,7 @@ par `apps/tauri`, ont été retirées du dépôt : leur code reste dans l'histor
 | --- | --- | --- | --- |
 | `apps/web` | Interface (Vite) | `gtko/laststream-app` | servie par lastaddon-core (voir `services/core`) |
 | `apps/tauri` | Application Tauri : macOS, Windows, Linux, Android (interface chargée depuis le serveur, lecteur mpv / libVLC) | `gtko/laststream-shell-ng` et `gtko/laststream-app` (`android/`) | release automatique `vX.Y.Z` (voir plus bas) |
+| `apps/webos` | App TV et projecteurs LG (webOS) : paquet `.ipk`, interface chargée depuis le serveur | — | release automatique `vX.Y.Z` (`.ipk`, installation en mode développeur : voir `apps/webos/README.md`) |
 | `apps/site` | Site vitrine www.laststream.app | `gtko/laststream-site` | Workers Builds (laststream-www, dossier racine `apps/site`) |
 | `services/core` | Worker lastaddon-core : API, salons, sert `apps/web` | `gtko/lastaddon` | Workers Builds (dossier racine `services/core`, build `npm run build:cloudflare`) |
 | `services/edge` | Worker laststream-edge : app.laststream.app, APK/EXE depuis R2 | `gtko/laststream-edge` | Workers Builds (dossier racine `services/edge`) |
@@ -28,8 +29,8 @@ voir `apps/tauri/README.md`.
 ## CI
 
 Un workflow par projet, à la racine (`.github/workflows/`), déclenché seulement par les changements de son dossier :
-`web-ci.yml` et `core-ci.yml` (aussi sur `packages/protocol`), `edge-ci.yml`, `tauri-ci.yml`. Tous tournent sur les runners
-hébergés par GitHub : web, core et edge sur `ubuntu-latest`, Tauri sur Linux, Android, macOS et Windows.
+`web-ci.yml` et `core-ci.yml` (aussi sur `packages/protocol`), `edge-ci.yml`, `tauri-ci.yml`, `webos-ci.yml`. Tous tournent sur
+les runners hébergés par GitHub : web, core, edge et webOS sur `ubuntu-latest`, Tauri sur Linux, Android, macOS et Windows.
 
 ## Tags
 
@@ -43,9 +44,9 @@ portent le tag non préfixé `vX.Y.Z`.
 Le workflow `.github/workflows/release.yml` se déclenche à chaque PR fusionnée sur `main` : bump de version (patch par défaut,
 label `release:minor` ou `release:major` sur la PR pour monter d'un cran), `CHANGELOG.md` à la racine, commit `release: vX.Y.Z`
 et tag annoté `vX.Y.Z` sur `main`, build de l'app Tauri (`apps/tauri`) pour macOS (Apple Silicon et Intel), Windows et Linux
-(`tauri-release.yml` appelé en `workflow_call`) et de son APK Android, puis release GitHub publiée avec bannière, changelog et
+(`tauri-release.yml` appelé en `workflow_call`), de son APK Android et du paquet LG webOS (`apps/webos`), puis release GitHub publiée avec bannière, changelog et
 assets (`.dmg`, `.app.tar.gz`, `.setup.exe`, `.AppImage`, `.deb`, flux `tauri-<plateforme>-latest.json` + `.sig`, APK,
-`android-latest.json`). La version est écrite dans `apps/tauri/src-tauri/Cargo.toml` et `Cargo.lock` (`scripts/release/version.mjs`).
+`android-latest.json`, `Laststream-X.Y.Z-webos.ipk`). La version est écrite dans `apps/tauri/src-tauri/Cargo.toml` et `Cargo.lock` (`scripts/release/version.mjs`).
 Le label `release:skip` sur la PR désactive la release. Relance manuelle des builds d'un tag existant :
 Actions → Release → Run workflow avec `tag` = `vX.Y.Z` (sans nouveau bump).
 

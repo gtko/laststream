@@ -2,6 +2,8 @@
 
 export type KeyAction =
   | { type: 'toggle-play' }
+  | { type: 'play' }
+  | { type: 'pause' }
   | { type: 'seek'; by: number }
   | { type: 'volume'; by: number }
   | { type: 'fullscreen' }
@@ -56,7 +58,12 @@ export function keyToAction(key: string, ctx: KeyContext, mods: { ctrl?: boolean
     case 'e': case 'E': return { type: 'panel', name: 'episodes' };
     case 'i': case 'I': return { type: 'mini' };
     case 'n': case 'N': case 'MediaTrackNext': return { type: 'next' };
-    case 'Escape': case 'Backspace': case 'BrowserBack': return { type: 'back' };
+    // Touches média des télécommandes (TV LG : ui/webosKeys.js) : lecture et pause séparées, avance et retour rapides, stop.
+    case 'MediaPlay': return { type: 'play' };
+    case 'MediaPause': return { type: 'pause' };
+    case 'MediaFastForward': return { type: 'seek', by: 3 * SEEK_STEP };
+    case 'MediaRewind': return { type: 'seek', by: -3 * SEEK_STEP };
+    case 'Escape': case 'Backspace': case 'BrowserBack': case 'MediaStop': return { type: 'back' };
     case 'Tab': case 'Enter': return { type: 'wake' };
     default: return null;
   }

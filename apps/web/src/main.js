@@ -53,6 +53,7 @@ import { load } from './ui/home.js';
 import { parseRoute, showView } from './ui/router.js';
 import { startDlBadgeWatch } from './ui/dlBadgeWatch.js';
 import { startAndroidBack } from './ui/androidBack.js';
+import { startWebOsKeys } from './ui/webosKeys.js';
 import { ensureSocial, setSocialLoader, setSocialNotifier } from './ui/socialHooks.js';
 import { shareCodeFrom } from './ui/shareModel.js';
 import { isPlayerOpen } from './player/sessionLoader.js';
@@ -88,6 +89,8 @@ stripReloadParam(); // retire le paramètre `_ls` laissé par un rechargement de
 initSentry(); // supervision des erreurs (no-op sans VITE_SENTRY_DSN, en dev et en tests)
 initNativeScreen(); // Android : résolution réelle de la sortie vidéo pour le plafond automatique (ODY-251)
 wipeDeviceDebrid(); // plus aucune clé de débrideur sur l'appareil
+// TV et projecteurs LG : touche Retour et touches média de la télécommande (LAST-1643), dès l'écran de connexion.
+startWebOsKeys();
 // Déconnexion explicite suivie d'un rechargement : la purge des téléchargements du compte précédent se termine ici.
 if (isPurgePending()) void import('./downloads/service').then((m) => m.purgeForOwnerChange()).catch(() => undefined);
 
