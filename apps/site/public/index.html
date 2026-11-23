@@ -83,6 +83,7 @@
         <li><a href="#etapes">Comment ça marche</a></li>
         <li><a href="#apercu">Aperçu</a></li>
         <li><a href="#ensemble">Ensemble</a></li>
+        <li><a href="#tarif">Tarif</a></li>
         <li><a href="#faq">FAQ</a></li>
         <li><a href="/guides/">Guides</a></li>
       </ul>
@@ -130,7 +131,7 @@
     <ul class="wrap stats-grid">
       <li data-reveal><span class="stat-num"><span class="count" data-to="15">15</span></span><span class="stat-label">fonctionnalités, rien de superflu</span></li>
       <li data-reveal style="--d:1"><span class="stat-num"><span class="count" data-to="5">5</span></span><span class="stat-label">écrans : Windows, Mac, Linux, Android, navigateur</span></li>
-      <li data-reveal style="--d:2"><span class="stat-num"><span class="count" data-to="4">4</span></span><span class="stat-label">liens d'invitation par compte</span></li>
+      <li data-reveal style="--d:2"><span class="stat-num"><span class="count" data-to="24">24</span> €</span><span class="stat-label">par an pour le service en ligne, gratuit chez soi</span></li>
       <li data-reveal style="--d:3"><span class="stat-num"><span class="count" data-to="0" data-from="100">0</span></span><span class="stat-label">contenu hébergé, jamais</span></li>
     </ul>
   </section>
@@ -334,9 +335,10 @@
       <div class="split-copy">
         <p class="eyebrow">Sur invitation</p>
         <h2 id="invit-title" class="display fill">Un cercle qui s'agrandit de proche en proche.</h2>
-        <p class="lead">On ne s'inscrit pas librement : chaque compte dispose de 4 liens de parrainage à offrir.</p>
+        <p class="lead">On ne s'inscrit pas librement : chaque compte dispose de 2 billets de parrainage à offrir.</p>
         <ul class="checklist">
-          <li data-reveal><strong>4 liens par compte.</strong> Tu les retrouves dans Réglages, dans « Mes invitations ».</li>
+          <li data-reveal><strong>2 billets par compte.</strong> Tu les retrouves dans Réglages, dans « Mes invitations ».</li>
+          <li data-reveal style="--d:1"><strong>Un cadeau des deux côtés.</strong> Ton filleul paie sa première année à moitié prix, et tu gagnes 6 mois offerts quand il s'abonne.</li>
           <li data-reveal style="--d:1"><strong>Un suivi clair.</strong> Chaque lien est libre, envoyé ou utilisé. Tu peux le copier, le partager ou le révoquer.</li>
           <li data-reveal style="--d:2"><strong>Pas encore de lien ?</strong> Demande à la personne qui t'a parlé de Laststream.</li>
         </ul>
@@ -345,9 +347,7 @@
         <p class="invites-title">Mes invitations</p>
         <ul>
           <li><span class="inv-n">Lien 1</span><code>laststream…/?invite=••••</code><span class="pill pill-free">Libre</span></li>
-          <li><span class="inv-n">Lien 2</span><code>laststream…/?invite=••••</code><span class="pill pill-sent">Envoyé</span></li>
-          <li><span class="inv-n">Lien 3</span><code>Lien consommé</code><span class="pill pill-used">Utilisé</span></li>
-          <li><span class="inv-n">Lien 4</span><code>laststream…/?invite=••••</code><span class="pill pill-free">Libre</span></li>
+          <li><span class="inv-n">Lien 2</span><code>Lien consommé · +6 mois</code><span class="pill pill-used">Utilisé</span></li>
         </ul>
       </div>
     </div>
@@ -457,8 +457,45 @@
     </div>
   </section>
 
+  <!-- TARIF -->
+  <section class="section section-alt" id="tarif" aria-labelledby="tarif-title">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">Tarif</p>
+        <h2 id="tarif-title" class="display fill">Deux façons d'utiliser Laststream.</h2>
+        <p class="lead">Le service en ligne est financé par celles et ceux qui l'utilisent. Le code reste public : chacun peut l'installer chez soi.</p>
+      </div>
+      <ul class="plans">
+        <li class="plan is-main" data-reveal>
+          <p class="plan-k">Laststream en ligne</p>
+          <p class="plan-price"><span>24 €</span> par an</p>
+          <p class="plan-sub">soit 2 € par mois · abonnement de soutien</p>
+          <ul class="checklist plan-list">
+            <li>Profils, bibliothèque et progression synchronisés sur tous tes écrans.</li>
+            <li>Un abonnement pour tout le foyer.</li>
+            <li>Amis, soirées et watch party.</li>
+            <li>Invité par un ami : ta première année à 12 €.</li>
+          </ul>
+          <a class="btn btn-primary" href="https://app.laststream.app" rel="noopener">Ouvrir Laststream</a>
+        </li>
+        <li class="plan" data-reveal style="--d:1">
+          <p class="plan-k">Chez toi</p>
+          <p class="plan-price"><span>Gratuit</span></p>
+          <p class="plan-sub">sur ton propre serveur</p>
+          <ul class="checklist plan-list">
+            <li>Le code de Laststream est public sur GitHub.</li>
+            <li>Tu l'installes et tu l'administres toi-même.</li>
+            <li>Aucun abonnement, aucune limite de compte.</li>
+          </ul>
+          <a class="btn btn-ghost" href="https://github.com/gtko/laststream" rel="noopener">Voir le code sur GitHub</a>
+        </li>
+      </ul>
+      <p class="plans-note"><strong>Laststream ne fournit ni n'installe aucune extension Stremio.</strong> L'abonnement paie le service (comptes, synchronisation, apps), pas du contenu : tu ajoutes toi-même les sources que tu utilises.</p>
+    </div>
+  </section>
+
   <!-- FAQ -->
-  <section class="section section-alt" id="faq" aria-labelledby="faq-title">
+  <section class="section" id="faq" aria-labelledby="faq-title">
     <div class="wrap faq-wrap">
       <div class="section-head">
         <p class="eyebrow">FAQ</p>
@@ -466,7 +503,9 @@
         <p class="faq-guides">Besoin d'un pas-à-pas ? <a href="/guides/">Lire les guides <span aria-hidden="true">→</span></a></p>
       </div>
       <div class="faq">
-        <details><summary>Comment avoir un compte ?</summary><p>L'inscription se fait sur invitation. Demande un lien de parrainage à la personne qui t'a parlé de Laststream : chaque compte en dispose de 4.</p></details>
+        <details><summary>Comment avoir un compte ?</summary><p>L'inscription se fait sur invitation. Demande un billet de parrainage à la personne qui t'a parlé de Laststream : chaque compte en dispose de 2.</p></details>
+        <details><summary>Combien coûte Laststream ?</summary><p>Le service en ligne coûte 24 € par an (2 € par mois), sous forme d'abonnement de soutien qui couvre tout ton foyer. Invité par un ami, ta première année est à 12 €. Tu peux aussi installer Laststream gratuitement sur ton propre serveur : son code est public sur <a href="https://github.com/gtko/laststream" rel="noopener">GitHub</a>.</p></details>
+        <details><summary>L'abonnement donne-t-il accès à des extensions ou à du contenu ?</summary><p>Non. Laststream ne fournit ni n'installe aucune extension Stremio et n'héberge aucun contenu. L'abonnement paie le service : comptes, synchronisation, apps et serveurs. Tu ajoutes toi-même les sources que tu utilises.</p></details>
         <details><summary>Laststream fournit-il des films et des séries ?</summary><p>Non. Laststream n'héberge aucun contenu : c'est un lecteur et un catalogue qui lisent les extensions que tu configures toi-même. Tu restes responsable de ce que tu ajoutes et du respect des droits d'auteur dans ton pays.</p></details>
         <details><summary>Mes données me suivent-elles d'un appareil à l'autre ?</summary><p>Oui : reprise de lecture, listes et réglages sont synchronisés avec ton compte.</p></details>
         <details><summary>Une app pour iPhone ou iPad ?</summary><p>Une app native est prévue. En attendant, la version web s'installe comme une app et fonctionne très bien.</p></details>
@@ -497,12 +536,13 @@
   <div class="wrap footer-grid">
     <div>
       <a class="brand" href="#top"><img src="/assets/logo.svg" alt="" width="24" height="24"><span>Laststream</span></a>
-      <p>Laststream n'héberge aucun contenu : il lit les extensions que tu configures. Inscription sur invitation.</p>
+      <p>Laststream n'héberge aucun contenu et ne fournit aucune extension : il lit celles que tu configures. Inscription sur invitation. Service en ligne : 24 € par an. <a href="https://github.com/gtko/laststream" rel="noopener">Code sur GitHub</a>.</p>
     </div>
     <nav aria-label="Liens du pied de page">
       <ul>
         <li><a href="#fonctions">Fonctions</a></li>
         <li><a href="#telecharger">Télécharger</a></li>
+        <li><a href="#tarif">Tarif</a></li>
         <li><a href="#faq">FAQ</a></li>
         <li><a href="/guides/">Guides</a></li>
         <li><a href="/en/" hreflang="en" lang="en">English</a></li>

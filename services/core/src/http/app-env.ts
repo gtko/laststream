@@ -17,6 +17,8 @@ interface AppVariables {
   edge: boolean;
   /** Corps JSON décodé (undefined si la requête n'en porte pas ou n'est pas en JSON). */
   body: unknown;
+  /** Corps JSON brut (texte), tel que reçu : sert à vérifier une signature (webhook Stripe). */
+  rawBody?: string;
   /** Nature de l'erreur interne en cours (nom et message de l'exception) : lue par les métriques, jamais renvoyée au client. */
   failure?: string;
 }

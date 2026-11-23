@@ -1001,6 +1001,48 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE server_services_v35 RENAME TO server_services;
     `,
   },
+  {
+    version: 36,
+    name: 'abonnement de soutien : état Stripe par compte, accès offert, récompenses de parrainage, événements traités, 2 billets par compte',
+    sql: `
+      -- Une ligne par compte qui a touché à l'abonnement (paiement, accès offert). paid_until : fin de la période payée
+      -- (ou de l'essai) selon Stripe ; comp_until : accès offert (parrainage, geste) ; first_paid_at : premier paiement non nul.
+      CREATE TABLE billing (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        customer_id TEXT UNIQUE,
+        subscription_id TEXT UNIQUE,
+        status TEXT,
+        paid_until TEXT,
+        cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+        comp_until TEXT,
+        first_paid_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      -- Récompense du parrain : une seule par filleul (6 mois offerts au premier paiement du filleul).
+      CREATE TABLE referral_rewards (
+        invitee_id TEXT PRIMARY KEY,
+        inviter_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        months INTEGER NOT NULL,
+        granted_at TEXT NOT NULL
+      );
+      CREATE INDEX referral_rewards_inviter ON referral_rewards(inviter_id);
+
+      -- Événements Stripe déjà traités (idempotence des webhooks).
+      CREATE TABLE billing_events (
+        id TEXT PRIMARY KEY,
+        received_at TEXT NOT NULL
+      );
+
+      -- Parrainage du service en ligne : 2 billets par compte (au lieu de 4), seulement sur un serveur qui a déjà des comptes
+      -- (une base neuve garde le défaut du code, réglable dans /admin). Les quotas restés à 4 passent à 2, sans descendre
+      -- sous le nombre de billets déjà utilisés ; un quota réglé à la main (autre que 4) est gardé.
+      UPDATE accounts SET invite_quota = MAX(2, (SELECT COUNT(*) FROM invites i WHERE i.inviter_id = accounts.id AND i.used_at IS NOT NULL))
+        WHERE invite_quota = 4;
+      INSERT INTO app_settings (key, value) SELECT 'invite_default_quota', '2' WHERE EXISTS (SELECT 1 FROM accounts)
+        ON CONFLICT(key) DO UPDATE SET value = '2' WHERE value = '4';
+    `,
+  },
 ];
 
 /**

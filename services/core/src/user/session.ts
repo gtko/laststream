@@ -1,7 +1,9 @@
+import { accessReason, EMPTY_BILLING, isAccessExempt } from '../billing/access.js';
+import { billingConfig } from '../billing/config.js';
 import type { Ctx } from '../http/app-env.js';
 import { hashSessionToken, verifyProfileToken } from './crypto.js';
 import type { UserRepo } from './repo.js';
-import type { Account, ProfileRecord } from './store.js';
+import type { Account, ProfileRecord, SessionAccess } from './store.js';
 import { UserApiError } from './validation.js';
 
 /** Authentification des requêtes /user et /party : session (jeton Bearer), profil et déverrouillage par PIN. */
@@ -22,6 +24,8 @@ export interface Session {
   account: Account;
   /** Profil auquel la session est verrouillée (invitation du foyer), ou null pour une session libre. */
   lockedProfileId: string | null;
+  /** Échéances de l'abonnement de soutien du compte (le foyer en profite aussi). */
+  access: SessionAccess;
 }
 
 /** Session valide de la requête (jeton Bearer), ou 401. */
@@ -31,8 +35,14 @@ export async function sessionOf(store: UserRepo, c: Ctx): Promise<Session> {
   const tokenHash = hashSessionToken(token);
   const found = await store.accountForSession(tokenHash, nowIso());
   if (found === undefined) throw new UserApiError(401, 'unauthorized');
-  const { lockedProfileId, ...account } = found;
-  return { tokenHash, account, lockedProfileId };
+  const { lockedProfileId, access, ...account } = found;
+  // Abonnement de soutien (serveur hébergé seulement) : sans accès, seules la connexion, le compte et l'abonnement répondent.
+  const config = billingConfig();
+  if (config !== undefined && !isAccessExempt(c.req.method, c.req.path)) {
+    const reason = accessReason(config, account.isOwner, { ...EMPTY_BILLING, ...access }, Date.now());
+    if (reason === null) throw new UserApiError(402, 'subscription_required');
+  }
+  return { tokenHash, account, lockedProfileId, access };
 }
 
 /**

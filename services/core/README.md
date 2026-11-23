@@ -107,6 +107,13 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | `LASTADDON_STREAMING_SERVER` | `http://127.0.0.1:11470` | Serveur de streaming local relayé sous `/_ss/*` quand l'interface est servie. Origine locale uniquement (`localhost`, `127.0.0.1` ou `[::1]`). Voir « Distribution ». |
 | `LASTADDON_ENV_FILE` | `.env` à la racine du projet | Emplacement du fichier `.env` (secret). Chemin absolu conseillé pour une application packagée. Voir « Distribution ». |
 | `LASTADDON_ALLOW_SIGNUP` | `0` | Mettre `1` pour ouvrir l'inscription libre (serveur perso). Sinon seul le premier compte s'inscrit sans lien ; les suivants exigent un lien de parrainage (voir [docs/social.md](docs/social.md)). |
+| `STRIPE_SECRET_KEY` | — | Secret. Clé Stripe (`sk_test_…` ou `sk_live_…`). Avec `STRIPE_PRICE_ID`, active l'abonnement de soutien. Absente : accès libre. |
+| `STRIPE_PRICE_ID` | — | Prix annuel récurrent de l'abonnement (`price_…`). |
+| `STRIPE_WEBHOOK_SECRET` | — | Secret. Signature du webhook `POST /billing/stripe/webhook` (`whsec_…`). Absent : le webhook répond 503. |
+| `STRIPE_REFERRAL_COUPON_ID` | — | Coupon de bienvenue des filleuls (50 %, `repeating` 12 mois). Absent : pas de remise. |
+| `STRIPE_AUTOMATIC_TAX` | `0` | `1` : TVA calculée par Stripe Tax (adresse de facturation demandée). |
+| `LASTADDON_BILLING_FREE_UNTIL` | — | Date ISO : accès offert à tous jusqu'à cette date (lancement). Le premier prélèvement d'un abonnement pris avant attend cette date. |
+| `LASTADDON_REFERRAL_REWARD_MONTHS` | `6` | Mois offerts au parrain au premier paiement de chaque filleul (0 à 24). |
 | `LASTADDON_BOOTSTRAP_TOKEN` | aucun | Si défini, le premier compte exige l'en-tête `X-Bootstrap-Token` avec cette valeur. Voir « Données utilisateur ». |
 | `PORT` | `7000` | Port d'écoute HTTP. |
 
@@ -553,6 +560,8 @@ lastAddon peut stocker pour chaque utilisateur sa bibliothèque, sa progression,
 **Premier compte (risque à connaître).** Le premier compte créé devient propriétaire. Si `LASTADDON_BOOTSTRAP_TOKEN` est défini, il faut l'en-tête `X-Bootstrap-Token` avec cette valeur pour créer ce premier compte. Sans cette variable, quiconque atteint le serveur avant vous peut créer ce compte. Pour un usage local mono-utilisateur, ce risque est acceptable. Pour un serveur exposé sur Internet, définissez `LASTADDON_BOOTSTRAP_TOKEN`.
 
 **Inscription.** Les comptes suivants ne sont créés qu'avec un lien de parrainage (`invite` dans le corps de `/user/register`), ou si `LASTADDON_ALLOW_SIGNUP=1`. Amis, présence, bibliothèques partagées, titres masqués et watch party : [docs/social.md](docs/social.md). Un nom déjà pris renvoie `409 username_taken`, ce qui révèle qu'il existe. Ce choix est assumé : `/user/register` est limité à 10 requêtes par minute et par IP.
+
+**Abonnement de soutien (service hébergé seulement).** Sans `STRIPE_SECRET_KEY` ni `STRIPE_PRICE_ID`, rien ne change : tous les comptes ont accès, comme sur tout serveur auto-hébergé. Quand les deux sont définis, un compte sans accès reçoit `402 subscription_required` sur toutes les routes `/user` et `/party`, sauf `/user/me`, connexion et compte (`refresh`, `logout`, `logout-all`, `password`, `DELETE /account`) et `/user/billing*`. Le propriétaire a toujours accès. Un abonnement couvre tout le compte, donc tout le foyer (profils et invités du foyer). Détails et règles : [docs/abonnement.md](docs/abonnement.md).
 
 **Sessions.** Un jeton de 256 bits, valable 180 jours, renouvelé par `POST /user/refresh` (l'ancien jeton cesse de valoir). Un compte garde au plus 20 sessions : la plus ancienne est supprimée au-delà. `POST /user/logout-all` ferme toutes les sessions. `POST /user/password` change le mot de passe et ferme les autres sessions. `DELETE /user/account` supprime le compte et toutes ses données, après confirmation du mot de passe.
 

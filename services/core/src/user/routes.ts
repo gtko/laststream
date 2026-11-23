@@ -24,6 +24,7 @@ import {
 import { continueWatching, normalizeProgress } from './progress.js';
 import { assertNotLocked, assertProfileAccess, assertUnlocked, nowIso, profileOf, SESSION_TTL_MS, scopeOf, sessionOf } from './session.js';
 import { registerHouseholdRoutes } from './household-routes.js';
+import { registerBillingUserRoutes, sessionSubscription } from '../billing/routes.js';
 import { countryCode } from './title-starts.js';
 import { parseTvSources, TV_SOURCES_PURPOSE } from './tv-sources.js';
 import { registerSocialRoutes } from './social-routes.js';
@@ -347,11 +348,13 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
           role: 'member',
         },
         lockedProfileId: session.lockedProfileId,
+        subscription: sessionSubscription(session),
       });
     }
     return sendJson(c, {
       account: { ...session.account, role: session.account.isOwner ? 'owner' : 'member' },
       lockedProfileId: null,
+      subscription: sessionSubscription(session),
     });
   });
 
@@ -871,6 +874,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   registerSocialEveningRoutes(router, deps, backend);
   registerDebridLinkRoutes(router, deps, backend);
   registerHouseholdRoutes(router, deps, backend);
+  registerBillingUserRoutes(router, deps, backend);
 
   router.all('*', () => {
     throw new UserApiError(404, 'not_found');

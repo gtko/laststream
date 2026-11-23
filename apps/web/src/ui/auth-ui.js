@@ -11,6 +11,7 @@ import { brand } from './fragments.js';
 import { ICON } from './icons.js';
 import { openProfileEditor, PROFILE_COLORS as COLORS } from './profile-editor.js';
 import { mountReferral, referralReasonText } from './referral-join.js';
+import { mountSubscribe, subscribeLoadingHTML } from './subscribe-ui.js';
 import { esc } from './util.js';
 
 /** Message de l'écran de connexion quand le serveur ne répond pas et qu'aucune session n'existe. */
@@ -470,6 +471,7 @@ function route() {
   if (auth.status === 'needs-login') { showLogin(); return; }
   if (offlineWithoutSession()) { showLogin(OFFLINE_MSG); return; }
   if (auth.status === 'needs-profile') { openPicker(); return; }
+  if (auth.status === 'needs-subscription') { show(subscribeLoadingHTML()); void mountSubscribe(el()); return; }
   hide();
   if (resolveFlow) { const r = resolveFlow; resolveFlow = null; r(); }
   else location.reload();
@@ -477,7 +479,7 @@ function route() {
 
 /** Affiche l'écran requis par l'état de connexion ; se résout quand le profil est prêt. */
 export function runAuthFlow() {
-  if (auth.status !== 'needs-login' && auth.status !== 'needs-profile' && !offlineWithoutSession()) return Promise.resolve();
+  if (auth.status !== 'needs-login' && auth.status !== 'needs-profile' && auth.status !== 'needs-subscription' && !offlineWithoutSession()) return Promise.resolve();
   return new Promise((resolve) => {
     resolveFlow = resolve;
     route();

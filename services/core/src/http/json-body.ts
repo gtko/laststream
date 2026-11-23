@@ -68,6 +68,7 @@ export function jsonBody(limit: number = DEFAULT_JSON_LIMIT): MiddlewareHandler<
     const encoding = request.headers.get('content-encoding');
     if (encoding !== null && encoding.trim().toLowerCase() !== 'identity') throw new HttpError(415);
     const text = new TextDecoder('utf-8').decode(await readLimited(request, limit));
+    c.set('rawBody', text);
     if (text.length === 0) {
       c.set('body', {});
     } else {
