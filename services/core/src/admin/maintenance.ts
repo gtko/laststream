@@ -58,6 +58,8 @@ function exempt(c: Ctx): boolean {
   const path = c.req.path;
   if (path === '/admin' || path.startsWith('/admin/')) return true;
   if (path === '/health') return true;
+  // Webhook Stripe : un paiement reçu pendant la maintenance doit quand même être enregistré.
+  if (c.req.method === 'POST' && path === '/billing/stripe/webhook') return true;
   // Écran d'inscription : doit pouvoir annoncer la maintenance au lieu d'échouer.
   if (c.req.method === 'GET' && (path === '/user/signup-info' || path === '/user/signup-info/')) return true;
   return c.req.method === 'POST' && (path === '/user/login' || path === '/user/login/');

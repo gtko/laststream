@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import type { BillingState } from '../billing/access.js';
+import * as billingSql from '../billing/store.js';
 import { readAppSettings } from './app-settings.js';
 import {
   type HouseholdCreateResult,
@@ -58,7 +60,14 @@ export interface AccountRecord extends Account {
 }
 
 /** Compte d'une session valide, et profil auquel la session est verrouillée (null = session libre). */
-export type SessionAccount = Account & { lockedProfileId: string | null };
+/** Échéances d'accès lues avec la session (abonnement de soutien), sans requête de plus. */
+export interface SessionAccess {
+  status: string | null;
+  paidUntil: string | null;
+  compUntil: string | null;
+}
+
+export type SessionAccount = Account & { lockedProfileId: string | null; access: SessionAccess };
 
 /** Profil tel que vu par le client : aucun secret, aucun compteur de PIN. */
 export interface Profile {
@@ -545,18 +554,31 @@ export class UserStore {
   accountForSession(tokenHash: string, now: string): SessionAccount | undefined {
     const row = this.db
       .prepare(
-        `SELECT a.id, a.username, a.is_owner, a.created_at, s.last_seen_at, s.profile_id
-         FROM sessions s JOIN accounts a ON a.id = s.account_id
+        `SELECT a.id, a.username, a.is_owner, a.created_at, s.last_seen_at, s.profile_id,
+           b.status AS billing_status, b.paid_until AS billing_paid_until, b.comp_until AS billing_comp_until
+         FROM sessions s JOIN accounts a ON a.id = s.account_id LEFT JOIN billing b ON b.account_id = a.id
          WHERE s.token_hash = ? AND s.expires_at > ? AND a.suspended_at IS NULL
            AND (s.profile_id IS NULL OR EXISTS (SELECT 1 FROM profiles p WHERE p.id = s.profile_id))`,
       )
-      .get(tokenHash, now) as (Omit<AccountRow, 'password_hash'> & { last_seen_at: number | null; profile_id: string | null }) | undefined;
+      .get(tokenHash, now) as
+      | (Omit<AccountRow, 'password_hash'> & {
+          last_seen_at: number | null;
+          profile_id: string | null;
+          billing_status: string | null;
+          billing_paid_until: string | null;
+          billing_comp_until: string | null;
+        })
+      | undefined;
     if (row === undefined) return undefined;
     const nowMs = Date.parse(now);
     if (row.last_seen_at === null || nowMs - Number(row.last_seen_at) >= SESSION_TOUCH_INTERVAL_MS) {
       this.db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(nowMs, tokenHash);
     }
-    return { ...toAccount(row), lockedProfileId: row.profile_id ?? null };
+    return {
+      ...toAccount(row),
+      lockedProfileId: row.profile_id ?? null,
+      access: { status: row.billing_status ?? null, paidUntil: row.billing_paid_until ?? null, compUntil: row.billing_comp_until ?? null },
+    };
   }
 
   deleteSession(tokenHash: string): void {
@@ -1350,5 +1372,51 @@ export class UserStore {
         }
       }
     });
+  }
+
+  // Abonnement de soutien (voir src/billing)
+
+  billingOf(accountId: string): BillingState {
+    return billingSql.billingOf(this.db, accountId);
+  }
+
+  accountOfBillingCustomer(customerId: string): string | undefined {
+    return billingSql.accountOfCustomer(this.db, customerId);
+  }
+
+  billingAccountExists(accountId: string): boolean {
+    return billingSql.accountExists(this.db, accountId);
+  }
+
+  setBillingCustomer(accountId: string, customerId: string, now: string): void {
+    billingSql.setCustomer(this.db, accountId, customerId, now);
+  }
+
+  applyBillingSubscription(accountId: string, sub: billingSql.SubscriptionWrite, now: string): void {
+    billingSql.applySubscription(this.db, accountId, sub, now);
+  }
+
+  extendBillingComp(accountId: string, months: number, from: string, now: string): string {
+    return billingSql.extendComp(this.db, accountId, months, from, now);
+  }
+
+  billingInviterOf(accountId: string): string | null {
+    return billingSql.inviterOf(this.db, accountId);
+  }
+
+  recordBillingFirstPayment(accountId: string, months: number, now: string): string | null {
+    return billingSql.recordFirstPayment(this.db, accountId, months, now);
+  }
+
+  billingRewardMonths(accountId: string): number {
+    return billingSql.rewardMonthsOf(this.db, accountId);
+  }
+
+  markBillingEvent(eventId: string, now: string): boolean {
+    return billingSql.markEvent(this.db, eventId, now);
+  }
+
+  unmarkBillingEvent(eventId: string): void {
+    billingSql.unmarkEvent(this.db, eventId);
   }
 }
