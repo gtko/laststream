@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.76 – 2026-11-23
+
+- Site : vidéo démo FR / EN avec choix de la langue (LAST-1649) (#56) — @gtko
+
 ## v1.0.75 – 2026-11-23
 
 - Corrige trois défauts d'affichage vus dans les captures des guides (LAST-1648) (#55) — @gtko
