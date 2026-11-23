@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.73 – 2026-11-23
+
+- Guides du site : 8 nouveaux guides FR/EN illustrés (#54) — @gtko
+
 ## v1.0.72 – 2026-11-22
 
 - Site : guides FR et EN refaits avec captures annotées (où cliquer) (#53) — @gtko
