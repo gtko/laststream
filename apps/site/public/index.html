@@ -79,6 +79,7 @@
     <nav class="nav" id="nav" aria-label="Navigation principale">
       <ul>
         <li><a href="#fonctions">Fonctions</a></li>
+        <li><a href="#demo">Démo</a></li>
         <li><a href="#etapes">Comment ça marche</a></li>
         <li><a href="#apercu">Aperçu</a></li>
         <li><a href="#ensemble">Ensemble</a></li>
@@ -132,6 +133,27 @@
       <li data-reveal style="--d:2"><span class="stat-num"><span class="count" data-to="4">4</span></span><span class="stat-label">liens d'invitation par compte</span></li>
       <li data-reveal style="--d:3"><span class="stat-num"><span class="count" data-to="0" data-from="100">0</span></span><span class="stat-label">contenu hébergé, jamais</span></li>
     </ul>
+  </section>
+
+  <!-- DÉMO VIDÉO -->
+  <section class="section demo" id="demo" aria-labelledby="demo-title">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">La démo</p>
+        <h2 id="demo-title" class="display fill">Une minute pour tout voir.</h2>
+        <p class="lead">Laststream en vidéo, avec voix off et sous-titres. Choisis la langue de la démo.</p>
+      </div>
+      <div class="demo-player" data-reveal>
+        <div class="demo-lang" role="group" aria-label="Langue de la vidéo">
+          <button type="button" data-demo-lang="fr" lang="fr" aria-pressed="true" aria-label="Français">FR</button>
+          <button type="button" data-demo-lang="en" lang="en" aria-pressed="false" aria-label="English">EN</button>
+        </div>
+        <video class="demo-video" controls playsinline preload="none" width="1920" height="1080" poster="/assets/demo/poster-fr.webp" aria-label="Vidéo de démonstration de Laststream : accueil, fiche d'un titre, sources, profils et lecture." data-demo-video>
+          <source src="/assets/demo/demo-fr.mp4" type="video/mp4">
+          <p>Ton navigateur ne lit pas cette vidéo. <a href="/assets/demo/demo-fr.mp4">Télécharger la démo (MP4)</a>.</p>
+        </video>
+      </div>
+    </div>
   </section>
 
   <!-- STORY (signature) -->
