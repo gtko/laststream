@@ -9,7 +9,7 @@ hôtes externes apparaissent dans son rapport, « hôtes bloqués », sans être
 
 | Script | Produit |
 | --- | --- |
-| `capture-guides.mjs` | captures annotées des 4 guides, en français et en anglais (`out/guides/<lang>/<guide>/`) |
+| `capture-guides.mjs` | captures annotées des 12 guides, en français et en anglais (`out/guides/<lang>/<guide>/`) |
 | `build-guides.mjs` | pages HTML des guides FR (`public/guides/`) et EN (`public/en/guides/`), d'après `guides-content.mjs` |
 | `capture-site.mjs` | `site/` : captures de la page d'accueil du site (`public/assets/shots`) |
 | `smoke.mjs` | `smoke-qui-regarde.png`, `smoke.webm` (historique) |
@@ -20,6 +20,12 @@ Chaque guide est rejoué dans l'app, pour chaque langue, sur un stockage neuf : 
 (`services/core`, port 7004 par défaut, `CAPTURE_API_PORT`), crée un compte jetable, l'addon d'exemple (port 7101) et la
 TV d'exemple (port 7102). Le catalogue est celui de `mock-catalog.mjs` (titres inventés, jaquettes générées par IA) :
 aucune affiche réelle.
+
+Les guides qui ont besoin des fonctions sociales (amis, watch party, billets, bibliothèque partagée, import) tournent sur
+le Worker de l'API (`backend: 'worker'` dans `GUIDES`) : `wrangler dev --local`, avec Durable Objects et stockage jetable
+(le serveur Node n'a pas de watch party). Les guides à deux (amis, watch party) créent un second compte « Léo » dans un
+autre contexte du même navigateur (`secondAccount`). Le guide d'import (`stremio: true`) répond à la place de
+`api.strem.io` avec un faux compte Stremio (`STREMIO_LIBRARY`) : aucun appel à Stremio.
 
 Les captures sont prises sans annotation (la vidéo `clip.mp4` reste propre), puis annotées : cadre jaune autour de
 l'endroit où cliquer, pastille numérotée et bulle de texte dans la langue du guide. Les zones et les textes des bulles

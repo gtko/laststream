@@ -216,11 +216,27 @@ ${prev ? `      <a class="prev" href="${urlOf(prev, lang)}">
   return parts.join('');
 }
 
+function indexSection(id, kicker, title, from, to) {
+  return `      <section class="guide-index-sec" aria-labelledby="${id}">
+        <p class="kicker">${kicker}</p>
+        <h2 id="${id}">${title}</h2>
+        <ul class="cards">
+${GUIDES.slice(from, to).map((g, j) => `          <li class="card guide-card">
+            <a href="${urlOf(g, 'en')}">
+              <span class="guide-num" aria-hidden="true">${String(from + j + 1).padStart(2, '0')}</span>
+              <h3>${g.en.title}</h3>
+              <p>${g.en.card}</p>
+            </a>
+          </li>`).join('\n')}
+        </ul>
+      </section>`;
+}
+
 function enIndex() {
   const u = UI.en;
   const parts = [head('en', {
     title: 'Guides - Laststream',
-    description: 'Short step-by-step guides to get started with Laststream: profiles, Stremio sources, live TV.',
+    description: 'Short step-by-step guides to get started with Laststream: profiles, Stremio sources, live TV, friends, watch parties and settings.',
     url: '/en/guides/',
     image: '/assets/og.png',
     imageAlt: 'Laststream logo and the tagline Your cinema, everywhere',
@@ -232,25 +248,14 @@ function enIndex() {
   <header class="guide-hero">
     <div class="wrap">
       <h1>Guides</h1>
-      <p class="lead">Short step-by-step guides to get started with Laststream, from your first profile to live TV. Every screenshot shows where to click.</p>
+      <p class="lead">Short step-by-step guides to get started with Laststream, from your first profile to a watch party with friends. Every screenshot shows where to click.</p>
     </div>
   </header>
 
   <section class="guide-index" aria-label="Guides">
     <div class="wrap">
-      <section class="guide-index-sec" aria-labelledby="h-essentials">
-        <p class="kicker">Getting started</p>
-        <h2 id="h-essentials">The essential guides</h2>
-        <ul class="cards">
-${GUIDES.map((g, i) => `          <li class="card guide-card">
-            <a href="${urlOf(g, 'en')}">
-              <span class="guide-num" aria-hidden="true">${String(i + 1).padStart(2, '0')}</span>
-              <h3>${g.en.title}</h3>
-              <p>${g.en.card}</p>
-            </a>
-          </li>`).join('\n')}
-        </ul>
-      </section>
+${indexSection('h-essentials', 'Getting started', 'The essential guides', 0, 4)}
+${indexSection('h-further', 'Going further', 'Friends, import and settings', 4, GUIDES.length)}
     </div>
   </section>
 </main>
