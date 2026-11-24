@@ -33,7 +33,7 @@ const TEN_MIN_MS = 10 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 /** Catégorie des watch parties communautaires : chaque sujet y porte une séance (date de début, inscriptions, salon). */
-export const EVENT_CATEGORY = 'watch-parties';
+const EVENT_CATEGORY = 'watch-parties';
 /** Une séance se programme de 5 minutes à 90 jours à l'avance. */
 const EVENT_MIN_LEAD_MS = 5 * 60 * 1000;
 const EVENT_MAX_AHEAD_MS = 90 * DAY_MS;
@@ -250,7 +250,7 @@ function topicOf(row: SqlRow): ForumTopicSummary {
  * Extrait en texte brut d'un message (accueil) : spoilers remplacés, marques Markdown retirées, espaces resserrés, coupé à
  * 160 caractères. Le client l'affiche comme texte, jamais comme HTML.
  */
-export function excerptOf(body: string): string {
+function excerptOf(body: string): string {
   const plain = body
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/\|\|[\s\S]*?\|\|/g, '[spoiler]')
