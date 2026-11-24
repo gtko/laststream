@@ -176,7 +176,8 @@ export const logout = () => call<void>('/logout', { method: 'POST' });
 export const passwordReset = (token: string, password: string) =>
   call<void>('/password-reset', { method: 'POST', body: { token, password }, anonymous: true });
 /** Session courante. `lockedProfileId` : profil sur lequel la session est verrouillée (invitation au foyer), sinon null. */
-export const me = (timeoutMs?: number) => call<{ account: AccountDto; lockedProfileId?: string | null }>('/me', { timeoutMs });
+export const me = (timeoutMs?: number) =>
+  call<{ account: AccountDto; lockedProfileId?: string | null; subscription?: { enabled: boolean; required: boolean } }>('/me', { timeoutMs });
 
 // ---- Abonnement de soutien ----
 /** État de l'abonnement (serveur hébergé). `enabled: false` : serveur sans abonnement, accès libre. */

@@ -1,3 +1,4 @@
+import type { ForumStore } from '../forum/store.js';
 import type { AdminStore } from './admin-store.js';
 import type { MetaStore } from './meta-store.js';
 import type { EveningStore } from './social-evenings-store.js';
@@ -42,6 +43,9 @@ export type SocialEveningsRepo = AsyncRepo<EveningStore>;
 /** Administration : comptes, réglages globaux, journal d'audit, réinitialisation de mot de passe, signalements. */
 export type AdminRepo = AsyncRepo<AdminStore>;
 
+/** Forum communautaire (LAST-1651) : catégories, sujets, messages, réactions, signalements, modération. */
+export type ForumRepo = AsyncRepo<ForumStore>;
+
 /** Index des fiches partagées (R2 meta/…) : identifiants croisés, recherche par IMDb ou TVDB. */
 export type MetaRepo = AsyncRepo<MetaStore>;
 
@@ -55,6 +59,7 @@ export interface UserBackend {
   socialEvenings(): SocialEveningsRepo;
   admin(): AdminRepo;
   meta(): MetaRepo;
+  forum(): ForumRepo;
   /** Faux tant qu'aucune base n'existe (Node : fichier absent et jamais ouvert) : rien à lire, et lire n'en créerait pas. Absent = vrai. */
   hasData?(): boolean;
   /** Libère les ressources (fichier fermé). Sans effet pour un Durable Object ; idempotent. */

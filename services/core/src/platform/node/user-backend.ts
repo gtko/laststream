@@ -1,3 +1,4 @@
+import { ForumStore } from '../../forum/store.js';
 import { AdminStore } from '../../user/admin-store.js';
 import { MetaStore } from '../../user/meta-store.js';
 import { existsSync } from 'node:fs';
@@ -25,6 +26,7 @@ export function createNodeUserBackend(options: { path?: string } = {}): UserBack
         socialEvenings: EveningStore;
         admin: AdminStore;
         meta: MetaStore;
+        forum: ForumStore;
         close(): void;
       }
     | undefined;
@@ -40,6 +42,7 @@ export function createNodeUserBackend(options: { path?: string } = {}): UserBack
         socialEvenings: new EveningStore(db),
         admin: new AdminStore(db),
         meta: new MetaStore(db),
+        forum: new ForumStore(db),
         close: () => db.close(),
       };
     }
@@ -53,6 +56,7 @@ export function createNodeUserBackend(options: { path?: string } = {}): UserBack
   let socialEvenings: ReturnType<typeof asyncRepo<EveningStore>> | undefined;
   let admin: ReturnType<typeof asyncRepo<AdminStore>> | undefined;
   let meta: ReturnType<typeof asyncRepo<MetaStore>> | undefined;
+  let forum: ReturnType<typeof asyncRepo<ForumStore>> | undefined;
   return {
     users: () => (users ??= asyncRepo(open().users)),
     skips: () => (skips ??= asyncRepo(open().skips)),
@@ -62,6 +66,7 @@ export function createNodeUserBackend(options: { path?: string } = {}): UserBack
     socialEvenings: () => (socialEvenings ??= asyncRepo(open().socialEvenings)),
     admin: () => (admin ??= asyncRepo(open().admin)),
     meta: () => (meta ??= asyncRepo(open().meta)),
+    forum: () => (forum ??= asyncRepo(open().forum)),
     hasData: () => stores !== undefined || existsSync(options.path ?? userDbPath()),
     close: () => {
       stores?.close();
@@ -74,6 +79,7 @@ export function createNodeUserBackend(options: { path?: string } = {}): UserBack
       socialEvenings = undefined;
       admin = undefined;
       meta = undefined;
+      forum = undefined;
     },
   };
 }

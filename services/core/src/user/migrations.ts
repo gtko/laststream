@@ -1037,6 +1037,113 @@ export const MIGRATIONS: readonly Migration[] = [
     // Les quotas de billets ne sont pas touchés ici : la règle « 2 billets » est propre au service en ligne et se règle
     // dans /admin (un serveur auto-hébergé garde ses réglages).
   },
+  {
+    version: 37,
+    name: 'forum communautaire : catégories, sujets, messages, réactions, signalements, modérateurs, exclusions',
+    sql: `
+      -- Catégories fixes (ordre d'affichage par position). staff_only : seuls les modérateurs y ouvrent un sujet.
+      CREATE TABLE forum_categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        icon TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        staff_only INTEGER NOT NULL DEFAULT 0 CHECK (staff_only IN (0, 1))
+      );
+      INSERT INTO forum_categories (id, name, description, icon, position, staff_only) VALUES
+        ('annonces', 'Annonces', 'Nouveautés de Laststream et vie du service.', '📣', 0, 1),
+        ('bugs', 'Remontée de bugs', 'Un problème dans l''app ? Décris-le ici : appareil, version, étapes pour le reproduire.', '🐞', 1, 0),
+        ('idees', 'Idées et demandes', 'Propose une fonctionnalité ou vote pour celles des autres.', '💡', 2, 0),
+        ('aide', 'Entraide', 'Questions sur l''installation, les profils, la lecture, les appareils.', '🤝', 3, 0),
+        ('guides', 'Guides et astuces', 'Tutoriels de la communauté, réglages, bonnes pratiques.', '📘', 4, 0),
+        ('extensions', 'Extensions Stremio et sources', 'Extensions, catalogues, listes TV : configuration et retours. Pas de lien vers du contenu piraté.', '🧩', 5, 0),
+        ('films', 'Films et séries', 'Coups de cœur, critiques, discussions (pense aux balises spoiler).', '🎬', 6, 0),
+        ('watch-parties', 'Watch parties', 'Propose une séance à date fixe : les membres s''inscrivent et regardent ensemble en lecture synchronisée.', '🍿', 7, 0),
+        ('hors-sujet', 'Hors-sujet', 'Tout le reste, dans la bonne humeur.', '☕', 8, 0);
+
+      -- Sujet : titre et métadonnées ; son premier message (forum_posts) porte le texte. Horodatages en ms epoch.
+      -- hidden : masqué par un modérateur, ou par son auteur s'il n'avait pas de réponse.
+      CREATE TABLE forum_topics (
+        id TEXT PRIMARY KEY,
+        category_id TEXT NOT NULL REFERENCES forum_categories(id),
+        author_pid TEXT NOT NULL,
+        title TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_post_at INTEGER NOT NULL,
+        last_post_pid TEXT NOT NULL,
+        reply_count INTEGER NOT NULL DEFAULT 0,
+        pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+        locked INTEGER NOT NULL DEFAULT 0 CHECK (locked IN (0, 1)),
+        hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1))
+      );
+      CREATE INDEX forum_topics_category ON forum_topics(category_id, hidden, pinned, last_post_at);
+      CREATE INDEX forum_topics_author ON forum_topics(author_pid);
+
+      -- Message. hidden : '' visible, 'author' supprimé par son auteur (texte effacé), 'mod' masqué par un modérateur,
+      -- 'auto' masqué automatiquement après plusieurs signalements, en attente d'un modérateur.
+      CREATE TABLE forum_posts (
+        id TEXT PRIMARY KEY,
+        topic_id TEXT NOT NULL REFERENCES forum_topics(id) ON DELETE CASCADE,
+        author_pid TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        edited_at INTEGER,
+        hidden TEXT NOT NULL DEFAULT '' CHECK (hidden IN ('', 'author', 'mod', 'auto'))
+      );
+      CREATE INDEX forum_posts_topic ON forum_posts(topic_id, created_at);
+      CREATE INDEX forum_posts_author ON forum_posts(author_pid, created_at);
+
+      CREATE TABLE forum_reactions (
+        post_id TEXT NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+        pid TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (post_id, pid, emoji)
+      );
+
+      -- Un signalement par message et par profil ; status 'open' jusqu'à la décision d'un modérateur.
+      CREATE TABLE forum_reports (
+        post_id TEXT NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+        reporter_pid TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        details TEXT,
+        created_at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+        PRIMARY KEY (post_id, reporter_pid)
+      );
+      CREATE INDEX forum_reports_open ON forum_reports(status, created_at);
+
+      -- Modérateurs nommés par le propriétaire du serveur (le propriétaire l'est toujours).
+      CREATE TABLE forum_moderators (
+        pid TEXT PRIMARY KEY,
+        added_at INTEGER NOT NULL
+      );
+
+      -- Exclusion temporaire ou définitive (until NULL) : lecture permise, écriture refusée.
+      CREATE TABLE forum_bans (
+        pid TEXT PRIMARY KEY,
+        until INTEGER,
+        reason TEXT,
+        by_pid TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+
+      -- Séance d'une watch party communautaire, portée par un sujet (catégorie watch-parties) : date de début, salon de
+      -- visionnage associé par l'auteur quand il l'ouvre (room_id), inscriptions des membres.
+      CREATE TABLE forum_events (
+        topic_id TEXT PRIMARY KEY REFERENCES forum_topics(id) ON DELETE CASCADE,
+        starts_at INTEGER NOT NULL,
+        room_id TEXT
+      );
+      CREATE INDEX forum_events_starts ON forum_events(starts_at);
+      CREATE TABLE forum_event_rsvps (
+        topic_id TEXT NOT NULL REFERENCES forum_events(topic_id) ON DELETE CASCADE,
+        pid TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (topic_id, pid)
+      );
+    `,
+  },
 ];
 
 /**

@@ -29,6 +29,7 @@ import {
 import { consumeLiveTicketNonce, isLiveEligible } from '../../user/social-v2-live-tickets.js';
 import { SocialV2Store } from '../../user/social-v2-store.js';
 import { SocialV3Store } from '../../user/social-v3-store.js';
+import { ForumStore } from '../../forum/store.js';
 import type { SqlDb } from '../../user/sql.js';
 import { UserStore } from '../../user/store.js';
 import { durableObjectSql } from './sql.js';
@@ -94,6 +95,7 @@ const SOCIAL_V3_METHODS = callableNames(SocialV3Store.prototype);
 const SOCIAL_EVENINGS_METHODS = callableNames(EveningStore.prototype);
 const ADMIN_METHODS = callableNames(AdminStore.prototype);
 const META_METHODS = callableNames(MetaStore.prototype);
+const FORUM_METHODS = callableNames(ForumStore.prototype);
 
 function dispatch(target: object, allowed: ReadonlySet<string>, method: string, args: unknown[]): unknown {
   if (!allowed.has(method)) throw new Error(`méthode inconnue : ${method}`);
@@ -115,6 +117,7 @@ export class UserStoreDO extends DurableObject {
   private readonly eveningStore: EveningStore;
   private readonly adminStore: AdminStore;
   private readonly metaStore: MetaStore;
+  private readonly forumStore: ForumStore;
   private readonly db: SqlDb;
   /** Rang d'ouverture des connexions de cette instance (départage, voir LiveAttachment). */
   private liveSeq = 0;
@@ -136,6 +139,7 @@ export class UserStoreDO extends DurableObject {
     this.eveningStore = new EveningStore(db);
     this.adminStore = new AdminStore(db);
     this.metaStore = new MetaStore(db);
+    this.forumStore = new ForumStore(db);
     // Réveil réveillé ou redémarré : des soirées à venir peuvent attendre un rappel (l'alarme survit, mais on la recale).
     void ctx.blockConcurrencyWhile(() => this.armEveningAlarm());
   }
@@ -163,6 +167,11 @@ export class UserStoreDO extends DurableObject {
   /** Appelle une méthode de SocialV3Store (partage multiple, liens publics, listes partagées). */
   socialV3(method: string, args: unknown[]): unknown {
     return dispatch(this.socialV3Store, SOCIAL_V3_METHODS, method, args);
+  }
+
+  /** Appelle une méthode de ForumStore (forum communautaire). */
+  forum(method: string, args: unknown[]): unknown {
+    return dispatch(this.forumStore, FORUM_METHODS, method, args);
   }
 
   /** Appelle une méthode d'EveningStore (soirées planifiées : soirées, séries, invitations, réponses, rappels). */
