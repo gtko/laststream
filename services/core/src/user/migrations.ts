@@ -1034,13 +1034,8 @@ export const MIGRATIONS: readonly Migration[] = [
         received_at TEXT NOT NULL
       );
 
-      -- Parrainage du service en ligne : 2 billets par compte (au lieu de 4), seulement sur un serveur qui a déjà des comptes
-      -- (une base neuve garde le défaut du code, réglable dans /admin). Les quotas restés à 4 passent à 2, sans descendre
-      -- sous le nombre de billets déjà utilisés ; un quota réglé à la main (autre que 4) est gardé.
-      UPDATE accounts SET invite_quota = MAX(2, (SELECT COUNT(*) FROM invites i WHERE i.inviter_id = accounts.id AND i.used_at IS NOT NULL))
-        WHERE invite_quota = 4;
-      INSERT INTO app_settings (key, value) SELECT 'invite_default_quota', '2' WHERE EXISTS (SELECT 1 FROM accounts)
-        ON CONFLICT(key) DO UPDATE SET value = '2' WHERE value = '4';
+      -- Les quotas de billets ne sont pas touchés ici : la règle « 2 billets » est propre au service en ligne et se règle
+      -- dans /admin (un serveur auto-hébergé garde ses réglages).
     `,
   },
 ];

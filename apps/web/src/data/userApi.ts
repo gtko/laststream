@@ -201,6 +201,9 @@ export interface BillingDto {
 export const billing = () => call<BillingDto>('/billing');
 export const billingCheckout = () => call<{ url: string }>('/billing/checkout', { method: 'POST', body: {} });
 export const billingPortal = () => call<{ url: string }>('/billing/portal', { method: 'POST', body: {} });
+/** Résilie (fin de période payée) ou reprend l'abonnement de soutien, sans passer par le portail Stripe. */
+export const billingCancel = () => call<{ cancelAtPeriodEnd: boolean; paidUntil: string | null }>('/billing/cancel', { method: 'POST', body: {} });
+export const billingResume = () => call<{ cancelAtPeriodEnd: boolean; paidUntil: string | null }>('/billing/resume', { method: 'POST', body: {} });
 
 // ---- Profils ----
 export const listProfiles = () => call<{ profiles: ProfileDto[] }>('/profiles');
