@@ -1033,10 +1033,9 @@ export const MIGRATIONS: readonly Migration[] = [
         id TEXT PRIMARY KEY,
         received_at TEXT NOT NULL
       );
-
-      -- Les quotas de billets ne sont pas touchés ici : la règle « 2 billets » est propre au service en ligne et se règle
-      -- dans /admin (un serveur auto-hébergé garde ses réglages).
     `,
+    // Les quotas de billets ne sont pas touchés ici : la règle « 2 billets » est propre au service en ligne et se règle
+    // dans /admin (un serveur auto-hébergé garde ses réglages).
   },
 ];
 
