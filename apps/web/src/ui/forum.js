@@ -40,6 +40,7 @@ function errText(e) {
   if (code === 'topic_locked') return 'Ce sujet est verrouillé.';
   if (code === 'staff_only') return 'Seule l’équipe peut publier dans cette catégorie.';
   if (code === 'moderator_only' || code === 'owner_only' || code === 'forbidden') return 'Action réservée.';
+  if (code === 'forum_unavailable') return 'Le forum n’existe que sur le service en ligne Laststream.';
   if (code === 'kid_profile') return 'Le forum n’est pas disponible sur un profil enfant.';
   if (code === 'event_not_open') return 'Le salon s’ouvre 15 minutes avant le début de la séance (et jusqu’à 3 h après).';
   if (code === 'party_unavailable') return 'Les salons de visionnage ne sont pas disponibles sur ce serveur.';

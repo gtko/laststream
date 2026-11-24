@@ -85,6 +85,10 @@ beforeEach(async () => {
   rooms = new Map();
   app = await startApp({ extra: { party: fakeParty() } });
   cast = await castOf(app);
+  // Le forum n'existe que sur le service en ligne (Stripe configuré) ; accès libre pour tous pendant les tests.
+  vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fake');
+  vi.stubEnv('STRIPE_PRICE_ID', 'price_test');
+  vi.stubEnv('LASTADDON_BILLING_FREE_UNTIL', '2030-01-01T00:00:00.000Z');
 }, HOOK_TIMEOUT_MS);
 
 afterEach(async () => {
@@ -304,9 +308,18 @@ describe('forum : modération', () => {
 });
 
 describe('forum : accès abonné', () => {
+  it('serveur auto-hébergé (sans Stripe) : forum désactivé pour tous, propriétaire compris', async () => {
+    vi.stubEnv('STRIPE_SECRET_KEY', '');
+    vi.stubEnv('STRIPE_PRICE_ID', '');
+    for (const who of [cast.alice, cast.bob]) {
+      const res = await as<ErrorBody>(app, who, 'GET', '/user/forum');
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('forum_unavailable');
+    }
+    expect((await as<ErrorBody>(app, cast.bob, 'POST', '/user/forum/topics', { body: { categoryId: 'aide', title: 'Question', body: 'texte' } })).status).toBe(404);
+  });
+
   it('Stripe configuré : 402 pour un compte sans abonnement, le propriétaire passe', async () => {
-    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fake');
-    vi.stubEnv('STRIPE_PRICE_ID', 'price_test');
     vi.stubEnv('LASTADDON_BILLING_FREE_UNTIL', '');
     const blocked = await as<ErrorBody>(app, cast.bob, 'GET', '/user/forum');
     expect(blocked.status).toBe(402);

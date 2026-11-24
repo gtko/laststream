@@ -36,6 +36,8 @@ export const auth = {
   isOwner: false,
   /** Session verrouillée sur un profil invité au foyer (`lockedProfileId` de /user/me) : pas de sélecteur de profils. */
   locked: false,
+  /** Service en ligne (abonnement de soutien actif côté serveur) : seul cas où le forum communautaire existe. */
+  community: false,
   profiles: [] as Profile[],
   profile: null as Profile | null,
 };
@@ -56,6 +58,8 @@ export const kidSection = (id: string): boolean => !isKidProfile() || sectionAll
 export const isKidProfile = (): boolean => kidMaxAge() !== null;
 /** Le compte connecté est le propriétaire du serveur (role === 'owner'). */
 export const isOwner = (): boolean => auth.isOwner;
+/** Forum communautaire disponible : service en ligne seulement (désactivé sur un serveur auto-hébergé). */
+export const hasCommunity = (): boolean => auth.community && isServerMode() && !isKidProfile();
 /**
  * Profil principal du compte : seul à voir Sources, Serveur lastAddon et les clés. Hors mode serveur (repli local) : toujours ;
  * serveur ancien qui n'annonce rien : traité comme principal. Les profils secondaires et enfants n'ont que leurs préférences.
@@ -94,6 +98,7 @@ export const canAdmin = (): boolean => isServerMode() && auth.isOwner && !isKidP
 function useLocal(status: AuthStatus): AuthStatus {
   setUserStore(new LocalUserStore());
   store = null;
+  auth.community = false;
   setHiddenBackend(null);
   stopPresenceV2();
   auth.profile = null;
@@ -128,6 +133,7 @@ export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<Auth
     const me = await api.me(4000);
     const account = me.account;
     lockedId = me.lockedProfileId ?? null;
+    auth.community = me.subscription?.enabled === true;
     auth.username = account.username;
     auth.accountId = account.id;
     // Session verrouillée : jamais les droits de propriétaire du compte.
@@ -334,6 +340,7 @@ export async function adoptSession(s: { token: string; expiresAt: string; profil
     username = me.account.username;
     accountId = me.account.id;
     lockedId = me.lockedProfileId ?? s.profileId;
+    auth.community = me.subscription?.enabled === true;
   } catch {
     // Compte illisible : pseudo vide, et la config locale n'est pas reprise (claimLocalConfig ci-dessous).
   }

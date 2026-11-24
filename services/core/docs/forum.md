@@ -4,9 +4,11 @@ Le forum est intégré à l'app (`#/forum`, menu « Explorer » › Forum) et se
 
 ## Qui y a accès
 
-Chaque route ouvre une session (`sessionOf`) : sur le service en ligne, un compte sans abonnement de soutien reçoit
-`402 subscription_required`, comme pour le reste de l'app (voir [abonnement.md](abonnement.md)). Un serveur
-auto-hébergé sans Stripe ouvre le forum à tous ses comptes. Les invités du foyer d'un abonné y ont accès. Les profils
+Le forum n'existe que sur le service en ligne : sans abonnement de soutien configuré (`STRIPE_SECRET_KEY` et
+`STRIPE_PRICE_ID`, voir [abonnement.md](abonnement.md)), c'est-à-dire sur un serveur auto-hébergé, toutes les routes
+répondent `404 forum_unavailable` et l'app masque l'entrée Forum (elle lit `subscription.enabled` de `/user/me`).
+Chaque route ouvre une session (`sessionOf`) : un compte sans abonnement de soutien reçoit `402
+subscription_required`, comme pour le reste de l'app. Les invités du foyer d'un abonné y ont accès. Les profils
 enfants n'y ont pas accès. On écrit au nom d'un profil (son `Nom#TAG`).
 
 ## Catégories

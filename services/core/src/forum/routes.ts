@@ -1,5 +1,6 @@
 import type { AppDeps } from '../deps.js';
 import type { App, Ctx } from '../http/app-env.js';
+import { billingConfig } from '../billing/config.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import { createPartyRoom } from '../party/create-room.js';
 import { DEFAULT_MAX_PARTICIPANTS } from '../party/protocol.js';
@@ -28,15 +29,19 @@ import {
 
 /**
  * Routes du forum communautaire (`/user/forum`, LAST-1651). Chaque route agit au nom d'un profil non enfant (X-Profile-Id,
- * comme le social) et ouvre une session : sur le service en ligne, un compte sans abonnement de soutien reçoit donc 402
- * `subscription_required` avant toute lecture (voir billing/access.ts) ; un serveur auto-hébergé sans Stripe est ouvert à
- * tous ses comptes. Les routes `/forum/mod/*` et les actions de modération demandent le rôle `owner` ou `mod`.
+ * comme le social) et ouvre une session : un compte sans abonnement de soutien reçoit donc 402 `subscription_required`
+ * avant toute lecture (voir billing/access.ts). Le forum est réservé au service en ligne : sans Stripe (serveur
+ * auto-hébergé), il est désactivé (404 `forum_unavailable`). Les routes `/forum/mod/*` et les actions de modération demandent le rôle `owner` ou `mod`.
  */
 export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBackend): void {
   const forum = () => backend.forum();
 
-  /** Profil agissant, son rôle et son éventuelle exclusion. */
+  /**
+   * Profil agissant, son rôle et son éventuelle exclusion. Le forum n'existe que sur le service en ligne (abonnement de
+   * soutien configuré) : un serveur auto-hébergé, sans Stripe, répond 404 `forum_unavailable` à toutes les routes.
+   */
   const meOf = async (c: Ctx): Promise<ForumMe> => {
+    if (billingConfig() === undefined) throw new UserApiError(404, 'forum_unavailable');
     const actor = await actorOf(c, backend.users(), backend.socialV2(), deps.secret);
     return forum().me(actor.accountId, actor.pid, actor.lockedProfileId !== null, Date.now());
   };
