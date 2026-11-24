@@ -35,15 +35,38 @@ servir. L'app, elle, ne démarre pas sans accès.
    attend sa fin (`subscription_data.trial_end`).
 3. Stripe appelle `POST /billing/stripe/webhook`. La signature est vérifiée, chaque événement n'est traité qu'une fois
    (`billing_events`), et l'abonnement est toujours relu chez Stripe avant d'être enregistré (table `billing`).
-4. `POST /user/billing/portal` ouvre le portail client Stripe (carte, factures, résiliation).
+4. `POST /user/billing/portal` ouvre le portail client Stripe (carte, factures).
+
+## Résiliation
+
+- Dans l'app (Réglages, carte « Abonnement de soutien ») : « Résilier » puis « Confirmer la résiliation » appelle
+  `POST /user/billing/cancel` (`cancel_at_period_end` chez Stripe). Plus rien n'est prélevé, l'accès reste ouvert jusqu'à
+  la fin de la période payée, puis l'app affiche « Activer ton accès ». Les profils et la bibliothèque sont gardés.
+- Jusqu'à cette date, « Reprendre mon abonnement » (`POST /user/billing/resume`) annule la résiliation.
+- Le portail Stripe permet aussi de résilier (à activer dans ses réglages) ; le webhook garde l'état à jour.
+- Supprimer son compte arrête l'abonnement tout de suite chez Stripe. Si Stripe ne répond pas, la suppression est
+  refusée (`502`) plutôt que de laisser un abonnement payant sans compte.
+
+## Service en ligne seulement
+
+Tout ce qui touche à l'abonnement est inactif sur un serveur auto-hébergé, c'est-à-dire tant que `STRIPE_SECRET_KEY` et
+`STRIPE_PRICE_ID` ne sont pas définis :
+
+- aucun contrôle d'accès (`accessReason` répond `disabled`), aucune route Stripe (`/user/billing/*` répond
+  `404 billing_disabled`, sauf `GET /user/billing` qui répond `enabled: false`) ;
+- l'app n'affiche ni l'écran « Activer ton accès » ni la carte « Abonnement de soutien » ;
+- le parrainage reste celui du serveur (quota de billets réglé dans /admin), sans remise ni mois offerts.
+
+La règle « 2 billets par compte » du service en ligne se règle dans /admin (quota par défaut). La migration 36 ne touche
+plus aux quotas ; les serveurs mis à jour en v1.0.77 ont pu passer de 4 à 2 billets et peuvent remonter le réglage dans
+/admin.
 
 Événements à cocher sur le webhook : `checkout.session.completed`, `customer.subscription.created`,
 `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`.
 
 ## Parrainage
 
-- Chaque compte a **2 billets** (migration 36 : les quotas restés à 4 passent à 2 sur un serveur existant ; réglable
-  dans /admin).
+- Chaque compte a **2 billets** sur le service en ligne (quota par défaut réglé dans /admin).
 - Le **filleul** paie sa première année à moitié prix : coupon `STRIPE_REFERRAL_COUPON_ID` appliqué au Checkout tant
   qu'il n'a jamais payé. Créer ce coupon à **50 %, `duration=repeating`, `duration_in_months=12`** : un coupon `once`
   serait consommé par la facture à 0 € d'une période d'essai.
@@ -54,7 +77,7 @@ servir. L'app, elle, ne démarre pas sans accès.
 ## Mise en route (mode test d'abord)
 
 1. Stripe (mode test) : produit « Laststream en ligne », prix récurrent annuel 24 EUR, coupon filleul (ci-dessus),
-   portail client activé (résiliation et mise à jour de carte autorisées).
+   portail client activé (mise à jour de carte et factures ; résiliation en fin de période si voulue).
 2. Webhook vers `https://app.laststream.app/billing/stripe/webhook` avec les événements ci-dessus.
 3. Secrets du Worker : `wrangler secret put STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` ; variables : `STRIPE_PRICE_ID`,
    `STRIPE_REFERRAL_COUPON_ID`, et si voulu `LASTADDON_BILLING_FREE_UNTIL` (période offerte aux comptes existants).

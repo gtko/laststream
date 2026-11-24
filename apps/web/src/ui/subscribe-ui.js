@@ -1,8 +1,9 @@
 /* Abonnement de soutien (service en ligne) : écran « Activer ton accès » quand le compte n'a plus accès (402), et carte
- * « Abonnement de soutien » des réglages. Le paiement passe par Stripe Checkout ; la gestion (carte, factures, résiliation)
- * par le portail client Stripe. Un serveur auto-hébergé n'a pas d'abonnement : rien ne s'affiche. */
+ * « Abonnement de soutien » des réglages. Le paiement passe par Stripe Checkout ; la résiliation et la reprise se font
+ * dans la carte ; carte bancaire et factures dans le portail client Stripe. Un serveur auto-hébergé n'a pas d'abonnement
+ * (GET /user/billing répond enabled: false) : rien de tout cela ne s'affiche. */
 import { isAndroidApp } from '../data/config';
-import { billing as readBilling, billingCheckout, billingPortal, UserApiError } from '../data/userApi';
+import { billing as readBilling, billingCancel, billingCheckout, billingPortal, billingResume, UserApiError } from '../data/userApi';
 import { connectShell, isShellEnvironment, openExternal } from '../player/shell';
 import { brand } from './fragments.js';
 import { card, rowHTML } from './settings-ui.js';
@@ -41,7 +42,8 @@ function openStripe(url) {
 function errorText(err) {
   if (err instanceof UserApiError) {
     if (err.code === 'already_subscribed') return 'Ton abonnement est déjà actif.';
-    if (err.code === 'manage_in_portal') return 'Ton abonnement est résilié mais encore en cours : réactive-le depuis « Gérer mon abonnement ».';
+    if (err.code === 'manage_in_portal') return 'Ton abonnement est résilié mais encore en cours : réactive-le depuis les réglages (« Reprendre mon abonnement »).';
+    if (err.code === 'not_subscribed') return 'Aucun abonnement en cours sur ce compte.';
     if (err.code === 'billing_unavailable' || err.code === 'network') return 'Le paiement est momentanément indisponible. Réessaie dans un instant.';
     if (err.code === 'profile_locked') return 'Seul le titulaire du compte peut gérer l’abonnement.';
   }
@@ -58,7 +60,7 @@ function factsHTML() {
   return '<ul class="sub-facts">' +
     '<li>Profils, bibliothèque et progression synchronisés sur tous tes écrans, pour tout ton foyer.</li>' +
     '<li>Laststream ne fournit ni n’installe aucune extension Stremio : tu ajoutes toi-même les sources que tu utilises.</li>' +
-    '<li>Le code est libre : tu peux aussi <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">installer Laststream sur ton propre serveur</a>, gratuitement.</li>' +
+    '<li>Le code est public : tu peux aussi <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">installer Laststream sur ton propre serveur</a>, gratuitement.</li>' +
     '</ul>';
 }
 
@@ -186,10 +188,37 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (t.closest('[data-bill-checkout]')) { void billingCheckout().then(({ url }) => openStripe(url), (err) => setCardMsg(errorText(err))); return; }
-  if (t.closest('[data-bill-portal]')) void openPortal(setCardMsg);
+  if (t.closest('[data-bill-portal]')) { void openPortal(setCardMsg); return; }
+  if (t.closest('[data-bill-cancel]')) { cardConfirm = true; void refreshBillingCard(); return; }
+  if (t.closest('[data-bill-keep]')) { cardConfirm = false; void refreshBillingCard(); return; }
+  if (t.closest('[data-bill-cancel-yes]')) { void changeCancel(true); return; }
+  if (t.closest('[data-bill-resume]')) void changeCancel(false);
 });
 
 // ---------- Réglages : carte « Abonnement de soutien » ----------
+
+/** Vrai pendant la confirmation de la résiliation (deuxième clic). */
+let cardConfirm = false;
+let cardBusy = false;
+
+/** Résilie (fin de période) ou reprend l'abonnement, puis relit la carte. */
+async function changeCancel(cancel) {
+  if (cardBusy) return;
+  cardBusy = true;
+  setCardMsg(cancel ? 'Résiliation…' : 'Reprise de l’abonnement…');
+  try {
+    const r = await (cancel ? billingCancel() : billingResume());
+    cardConfirm = false;
+    await refreshBillingCard();
+    setCardMsg(cancel
+      ? 'C’est résilié : plus aucun prélèvement. Ton accès reste ouvert jusqu’au ' + day(r.paidUntil) + '.'
+      : 'Ton abonnement reprend : il sera renouvelé le ' + day(r.paidUntil) + '.');
+  } catch (err) {
+    setCardMsg(errorText(err));
+  } finally {
+    cardBusy = false;
+  }
+}
 
 function setCardMsg(msg) {
   const m = document.querySelector('[data-bill-msg]');
@@ -200,8 +229,8 @@ function setCardMsg(msg) {
 function statusText(b) {
   if (b.reason === 'owner') return 'Compte propriétaire du serveur : accès sans abonnement.';
   if (b.reason === 'paid' && b.subscribed) {
-    if (b.status === 'trialing' && b.paidUntil) return 'Abonnement actif. Prochain prélèvement le ' + day(b.paidUntil) + '.';
     if (b.cancelAtPeriodEnd) return 'Abonnement résilié : ton accès reste ouvert jusqu’au ' + day(b.paidUntil) + '.';
+    if (b.status === 'trialing' && b.paidUntil) return 'Abonnement actif. Prochain prélèvement le ' + day(b.paidUntil) + '.';
     if (b.status === 'past_due') return 'Le dernier paiement a échoué : mets à jour ta carte pour garder ton accès.';
     return 'Abonnement actif, renouvelé le ' + day(b.paidUntil) + '.';
   }
@@ -215,14 +244,24 @@ function billingCardBody(b) {
   const manage = b.canManage !== false;
   const buttons = [];
   if (manage && !b.subscribed && b.reason !== 'owner') buttons.push('<button type="button" class="btn btn-primary btn-sm" data-bill-checkout>S’abonner · ' + esc(money(p.amount, p.currency)) + ' par ' + per(p.interval) + '</button>');
-  if (manage && b.hasCustomer) buttons.push('<button type="button" class="btn btn-ghost btn-sm" data-bill-portal>Gérer mon abonnement</button>');
+  if (manage && b.hasCustomer) buttons.push('<button type="button" class="btn btn-ghost btn-sm" data-bill-portal>Carte et factures</button>');
+  const active = manage && b.subscribed && b.reason === 'paid';
+  let cancelRow = '';
+  if (active && b.cancelAtPeriodEnd) {
+    cancelRow = rowHTML('Résiliation', 'Plus aucun prélèvement. Tu peux changer d’avis jusqu’au ' + day(b.paidUntil) + '.', () => '<button type="button" class="btn btn-primary btn-sm" data-bill-resume>Reprendre mon abonnement</button>');
+  } else if (active && cardConfirm) {
+    cancelRow = rowHTML('Résilier ?', 'Plus rien ne sera prélevé. Ton accès reste ouvert jusqu’au ' + day(b.paidUntil) + ', puis l’app te proposera de te réabonner. Tes profils et ta bibliothèque sont gardés.',
+      () => '<button type="button" class="btn btn-ghost btn-sm sub-danger" data-bill-cancel-yes>Confirmer la résiliation</button><button type="button" class="btn btn-ghost btn-sm" data-bill-keep>Garder mon abonnement</button>');
+  } else if (active) {
+    cancelRow = rowHTML('Résiliation', 'Sans engagement : tu arrêtes quand tu veux, l’accès reste ouvert jusqu’à la fin de la période payée.', () => '<button type="button" class="btn btn-ghost btn-sm" data-bill-cancel>Résilier</button>');
+  }
   const r = b.referral;
   const referral = r && r.rewardMonths > 0
     ? rowHTML('Parrainage', 'Chaque ami qui s’abonne avec un de tes billets t’offre ' + r.rewardMonths + ' mois, et paie sa première année à moitié prix.', () => '<span class="set-val">' + (r.earnedMonths > 0 ? r.earnedMonths + ' mois gagnés' : 'Aucun mois gagné') + '</span>')
     : '';
-  return rowHTML('État', statusText(b), () => buttons.join('')) + referral +
+  return rowHTML('État', statusText(b), () => buttons.join('')) + cancelRow + referral +
     '<p class="set-hint" data-bill-msg role="status"></p>' +
-    '<p class="set-hint">L’abonnement de soutien couvre tout ton foyer. Laststream ne fournit aucune extension Stremio : tes sources restent les tiennes. Le code est libre sur <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">GitHub</a>.</p>';
+    '<p class="set-hint">L’abonnement de soutien couvre tout ton foyer. Laststream ne fournit aucune extension Stremio : tes sources restent les tiennes. Le code est public sur <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">GitHub</a>.</p>';
 }
 
 /** Emplacement de la carte (rempli par refreshBillingCard ; vide sur un serveur sans abonnement). */

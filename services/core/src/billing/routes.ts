@@ -69,17 +69,7 @@ async function syncSubscription(stripe: StripeClient, users: UserRepo, subscript
   let accountId = fromMeta !== undefined && (await users.billingAccountExists(fromMeta)) ? fromMeta : undefined;
   accountId ??= await users.accountOfBillingCustomer(sub.customer);
   if (accountId === undefined) return undefined;
-  await users.applyBillingSubscription(
-    accountId,
-    {
-      customerId: sub.customer,
-      subscriptionId: sub.id,
-      status: sub.status,
-      paidUntil: iso(periodEnd(sub)),
-      cancelAtPeriodEnd: sub.cancel_at_period_end === true,
-    },
-    nowIso(),
-  );
+  await applyStripeSubscription(users, accountId, sub);
   return accountId;
 }
 
@@ -245,6 +235,33 @@ export function registerBillingUserRoutes(router: App, deps: AppDeps, backend: U
     }
   });
 
+  /**
+   * Résiliation (`cancel: true`) ou reprise (`cancel: false`) depuis l'app, sans passer par le portail Stripe. La
+   * résiliation prend effet à la fin de la période payée : l'accès reste ouvert jusque-là, plus rien n'est prélevé.
+   */
+  const setCancel = (cancel: boolean) => async (c: Ctx) => {
+    const config = billingConfig();
+    if (config === undefined) throw new UserApiError(404, 'billing_disabled');
+    const users = db();
+    const session = await sessionOf(users, c);
+    assertNotLocked(session);
+    const accountId = session.account.id;
+    const state = await users.billingOf(accountId);
+    if (!isRunning(state) || state.subscriptionId === null) throw new UserApiError(409, 'not_subscribed');
+    if (state.cancelAtPeriodEnd === cancel) return sendJson(c, { cancelAtPeriodEnd: cancel, paidUntil: state.paidUntil });
+    try {
+      const sub = await stripeOf(deps, config).post<StripeSubscription>(`/subscriptions/${encodeURIComponent(state.subscriptionId)}`, {
+        cancel_at_period_end: cancel,
+      });
+      await applyStripeSubscription(users, accountId, sub);
+      return sendJson(c, { cancelAtPeriodEnd: sub.cancel_at_period_end === true, paidUntil: iso(periodEnd(sub)) });
+    } catch (err) {
+      return stripeFailure(err);
+    }
+  };
+  router.post('/billing/cancel', setCancel(true));
+  router.post('/billing/resume', setCancel(false));
+
   /** Ouvre le portail client Stripe (carte, factures, résiliation). */
   router.post('/billing/portal', async (c) => {
     const config = billingConfig();
@@ -265,6 +282,40 @@ export function registerBillingUserRoutes(router: App, deps: AppDeps, backend: U
       return stripeFailure(err);
     }
   });
+}
+
+/** Enregistre la réponse de Stripe à une modification d'abonnement (même forme que syncSubscription). */
+async function applyStripeSubscription(users: UserRepo, accountId: string, sub: StripeSubscription): Promise<void> {
+  await users.applyBillingSubscription(
+    accountId,
+    {
+      customerId: sub.customer,
+      subscriptionId: sub.id,
+      status: sub.status,
+      paidUntil: iso(periodEnd(sub)),
+      cancelAtPeriodEnd: sub.cancel_at_period_end === true,
+    },
+    nowIso(),
+  );
+}
+
+/**
+ * Suppression d'un compte sur le service en ligne : son abonnement Stripe est arrêté tout de suite (plus aucun
+ * prélèvement). Sans abonnement en cours, ou sur un serveur auto-hébergé, ne fait rien. Lève 502 si Stripe ne répond
+ * pas : le compte n'est alors pas supprimé, pour ne jamais laisser un abonnement payant sans compte.
+ */
+export async function cancelBillingForDeletion(deps: AppDeps, users: UserRepo, accountId: string): Promise<void> {
+  const config = billingConfig();
+  if (config === undefined) return;
+  const state = await users.billingOf(accountId);
+  if (state.subscriptionId === null || state.status === null || state.status === 'canceled' || state.status === 'incomplete_expired') return;
+  try {
+    await stripeOf(deps, config).del(`/subscriptions/${encodeURIComponent(state.subscriptionId)}`);
+  } catch (err) {
+    // Déjà supprimé chez Stripe : rien à arrêter.
+    if (err instanceof StripeError && err.status === 404) return;
+    stripeFailure(err);
+  }
 }
 
 /** Chemin du webhook Stripe (à déclarer dans le tableau de bord Stripe). */

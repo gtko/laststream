@@ -24,7 +24,7 @@ import {
 import { continueWatching, normalizeProgress } from './progress.js';
 import { assertNotLocked, assertProfileAccess, assertUnlocked, nowIso, profileOf, SESSION_TTL_MS, scopeOf, sessionOf } from './session.js';
 import { registerHouseholdRoutes } from './household-routes.js';
-import { registerBillingUserRoutes, sessionSubscription } from '../billing/routes.js';
+import { cancelBillingForDeletion, registerBillingUserRoutes, sessionSubscription } from '../billing/routes.js';
 import { countryCode } from './title-starts.js';
 import { parseTvSources, TV_SOURCES_PURPOSE } from './tv-sources.js';
 import { registerSocialRoutes } from './social-routes.js';
@@ -372,7 +372,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     return sendEmpty(c, 204);
   });
 
-  /** Supprime le compte et toutes ses données. Le mot de passe est exigé. */
+  /** Supprime le compte et toutes ses données (et arrête son abonnement de soutien). Le mot de passe est exigé. */
   router.delete('/account', async (c) => {
     const users = db();
     const session = await sessionOf(users, c);
@@ -382,6 +382,8 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     if (record === undefined || !(await verifySecret(body.password, record.passwordHash))) {
       throw new UserApiError(403, 'invalid_password');
     }
+    // Service en ligne : l'abonnement s'arrête avec le compte (sinon Stripe continuerait de prélever).
+    await cancelBillingForDeletion(deps, users, session.account.id);
     await users.deleteAccount(session.account.id);
     return sendEmpty(c, 204);
   });

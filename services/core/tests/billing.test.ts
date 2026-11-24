@@ -3,7 +3,7 @@ import { accessReason, EMPTY_BILLING, isAccessExempt } from '../src/billing/acce
 import { encodeForm, hmacHex, verifyStripeSignature } from '../src/billing/stripe.js';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { bootstrapOwner, inviteAndRegister, type Member } from './social-harness.js';
-import { request } from './user-harness.js';
+import { PASSWORD, request } from './user-harness.js';
 
 /** Abonnement de soutien : contrôle d'accès, Stripe Checkout, webhook, parrainage (moitié prix du filleul, 6 mois au parrain). */
 
@@ -30,6 +30,7 @@ interface Call {
 function fakeStripe() {
   const calls: Call[] = [];
   const subs = new Map<string, FakeSub>();
+  const state = { failDelete: false };
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
@@ -43,6 +44,9 @@ function fakeStripe() {
     if (sub !== null) {
       const found = subs.get(sub[1] ?? '');
       if (found === undefined) return json({ error: { code: 'resource_missing' } }, 404);
+      if (method === 'DELETE' && state.failDelete) return json({ error: { type: 'api_error' } }, 500);
+      if (method === 'DELETE') found.status = 'canceled';
+      if (method === 'POST' && form.has('cancel_at_period_end')) found.cancel_at_period_end = form.get('cancel_at_period_end') === 'true';
       if (method === 'POST' && form.has('trial_end')) {
         found.trial_end = Number(form.get('trial_end'));
         found.current_period_end = found.trial_end;
@@ -52,7 +56,7 @@ function fakeStripe() {
     }
     return json({ error: { code: 'unexpected' } }, 500);
   }) as typeof fetch;
-  return { calls, subs, fetchImpl };
+  return { calls, subs, state, fetchImpl };
 }
 
 let app: RunningApp;
@@ -265,30 +269,59 @@ describe('parrainage', () => {
   });
 });
 
-describe('migration 36 : 2 billets de parrainage sur un serveur existant', () => {
-  it('quotas restés à 4 → 2 (jamais sous les billets utilisés), défaut du serveur à 2 ; base neuve inchangée', async () => {
+describe('résiliation depuis l app', () => {
+  it('résilier puis reprendre : fin de période, accès gardé, état relu chez Stripe', async () => {
+    enableBilling();
+    await subscribe(bob, 1);
+    const cancel = await request<{ cancelAtPeriodEnd: boolean; paidUntil: string }>(app, 'POST', '/user/billing/cancel', { token: bob.token, body: {} });
+    expect(cancel.status).toBe(200);
+    expect(cancel.body.cancelAtPeriodEnd).toBe(true);
+    expect(stripe.calls.some((c) => c.method === 'POST' && c.path === '/v1/subscriptions/sub_1' && c.form.get('cancel_at_period_end') === 'true')).toBe(true);
+    const after = await request<{ cancelAtPeriodEnd: boolean; access: boolean }>(app, 'GET', '/user/billing', { token: bob.token });
+    expect(after.body).toMatchObject({ cancelAtPeriodEnd: true, access: true });
+    expect((await request(app, 'GET', '/user/profiles', { token: bob.token })).status).toBe(200);
+    const resume = await request<{ cancelAtPeriodEnd: boolean }>(app, 'POST', '/user/billing/resume', { token: bob.token, body: {} });
+    expect(resume.body.cancelAtPeriodEnd).toBe(false);
+    expect((await request<{ cancelAtPeriodEnd: boolean }>(app, 'GET', '/user/billing', { token: bob.token })).body.cancelAtPeriodEnd).toBe(false);
+  });
+
+  it('sans abonnement : 409 ; serveur auto-hébergé : 404', async () => {
+    expect((await request(app, 'POST', '/user/billing/cancel', { token: bob.token, body: {} })).status).toBe(404);
+    enableBilling();
+    const res = await request<{ error: string }>(app, 'POST', '/user/billing/cancel', { token: owner.token, body: {} });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('not_subscribed');
+  });
+
+  it('supprimer son compte arrête l abonnement chez Stripe', async () => {
+    enableBilling();
+    await subscribe(bob, 1);
+    const res = await request(app, 'DELETE', '/user/account', { token: bob.token, body: { password: PASSWORD } });
+    expect(res.status).toBe(204);
+    expect(stripe.calls.some((c) => c.method === 'DELETE' && c.path === '/v1/subscriptions/sub_1')).toBe(true);
+    expect(stripe.subs.get('sub_1')?.status).toBe('canceled');
+  });
+
+  it('suppression du compte refusée si Stripe ne répond pas (aucun abonnement orphelin)', async () => {
+    enableBilling();
+    await subscribe(bob, 1);
+    stripe.state.failDelete = true;
+    const res = await request(app, 'DELETE', '/user/account', { token: bob.token, body: { password: PASSWORD } });
+    expect(res.status).toBe(502);
+    expect((await request(app, 'GET', '/user/me', { token: bob.token })).status).toBe(200);
+  });
+});
+
+describe('migration 36', () => {
+  it('ne touche pas aux quotas de billets (règle propre au service en ligne, réglée dans /admin)', async () => {
     const { DatabaseSync } = await import('node:sqlite');
     const { wrapSqlite } = await import('../src/platform/node/user-db.js');
     const { MIGRATIONS, migrate } = await import('../src/user/migrations.js');
     const db = wrapSqlite(new DatabaseSync(':memory:'));
     migrate(db, MIGRATIONS.filter((m) => m.version < 36));
-    const add = (id: string, quota: number) =>
-      db.prepare('INSERT INTO accounts (id, username, password_hash, is_owner, created_at, invite_quota) VALUES (?, ?, ?, 0, ?, ?)').run(id, id, 'x', '2026-01-01', quota);
-    add('a', 4);
-    add('b', 4);
-    add('c', 10);
-    for (const [n, user] of [['1', 'x1'], ['2', 'x2'], ['3', 'x3']] as const) {
-      add(user, 4);
-      db.prepare('INSERT INTO invites (id, code, inviter_id, created_at, used_by, used_at) VALUES (?, ?, ?, ?, ?, ?)').run(`i${n}`, `C${n}`, 'b', '2026-01-01', user, '2026-01-02');
-    }
+    db.prepare('INSERT INTO accounts (id, username, password_hash, is_owner, created_at, invite_quota) VALUES (?, ?, ?, 0, ?, ?)').run('a', 'a', 'x', '2026-01-01', 4);
     migrate(db);
-    const quota = (id: string) => Number(db.prepare('SELECT invite_quota AS q FROM accounts WHERE id = ?').get(id)?.q);
-    expect(quota('a')).toBe(2);
-    expect(quota('b')).toBe(3);
-    expect(quota('c')).toBe(10);
-    expect(db.prepare("SELECT value FROM app_settings WHERE key = 'invite_default_quota'").get()?.value).toBe('2');
-    const fresh = wrapSqlite(new DatabaseSync(':memory:'));
-    migrate(fresh);
-    expect(fresh.prepare("SELECT value FROM app_settings WHERE key = 'invite_default_quota'").get()).toBeUndefined();
+    expect(Number(db.prepare('SELECT invite_quota AS q FROM accounts WHERE id = ?').get('a')?.q)).toBe(4);
+    expect(db.prepare("SELECT value FROM app_settings WHERE key = 'invite_default_quota'").get()).toBeUndefined();
   });
 });

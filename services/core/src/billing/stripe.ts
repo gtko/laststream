@@ -41,10 +41,11 @@ export function encodeForm(params: Record<string, FormValue>): string {
 export interface StripeClient {
   post<T>(path: string, params: Record<string, FormValue>, idempotencyKey?: string): Promise<T>;
   get<T>(path: string): Promise<T>;
+  del<T>(path: string): Promise<T>;
 }
 
 export function createStripeClient(secretKey: string, fetchImpl: typeof fetch = fetch): StripeClient {
-  async function call<T>(method: 'GET' | 'POST', path: string, body?: string, idempotencyKey?: string): Promise<T> {
+  async function call<T>(method: 'GET' | 'POST' | 'DELETE', path: string, body?: string, idempotencyKey?: string): Promise<T> {
     const headers: Record<string, string> = {
       authorization: `Bearer ${secretKey}`,
       'stripe-version': STRIPE_API_VERSION,
@@ -64,6 +65,7 @@ export function createStripeClient(secretKey: string, fetchImpl: typeof fetch = 
   return {
     post: (path, params, idempotencyKey) => call('POST', path, encodeForm(params), idempotencyKey),
     get: (path) => call('GET', path),
+    del: (path) => call('DELETE', path),
   };
 }
 
