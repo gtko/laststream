@@ -49,6 +49,24 @@ titre du sujet et le rattache ; un salon terminé est remplacé. Sans salons (se
 - L'équipe épingle, verrouille, masque, déplace un sujet ; masque ou rétablit un message ; classe des signalements ;
   exclut un membre (1, 7, 30 jours ou sans limite). Un exclu lit le forum mais n'écrit plus.
 
+## Feedback de l'app
+
+Le bouton « Envoyer un feedback » de l'app (menu du profil, lecteur, lien « Signaler » d'une erreur interceptée, LAST-1654)
+publie par `POST /user/forum/feedback {kind, code?, title?, message, version?, platform?, sentryEventId?}`, au nom du profil
+et avec les mêmes règles que l'écriture ordinaire (exclusion, limites de débit) :
+
+- `kind: 'bug'` va dans « Remontée de bugs », `kind: 'idea'` dans « Idées et demandes ».
+- Un bug avec `code` (empreinte de l'erreur, ex. `player:lecture-impossible:http-503`) rejoint le dernier sujet ouvert
+  (visible, non verrouillé) de même empreinte en réponse « Moi aussi » ; sinon un sujet est ouvert. Verrouiller ou masquer
+  le sujet (bug corrigé) fait ouvrir un sujet neuf au signalement suivant.
+- Le texte est composé par le serveur : titre de l'erreur, message, version et type d'appareil. Le détail technique part
+  vers Sentry, jamais sur le forum ; seule la référence de l'événement Sentry est gardée (table `forum_feedback`,
+  migration 38).
+- `GET /forum/topics/:id` rend `feedback: { reporters }` (profils distincts) sur ces sujets, plus `sentryEventIds` (20
+  plus récentes) pour l'équipe.
+
+Réponse : 201 `{ topic, grouped, reporters }`.
+
 ## Prévu ensuite
 
 Lien des sujets et des séances avec les fiches de films, anti-spoiler selon la progression, votes sur les idées avec statut, temps

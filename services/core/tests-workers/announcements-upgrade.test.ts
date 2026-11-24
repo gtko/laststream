@@ -19,8 +19,8 @@ function tablesOfMigration(version: number): string[] {
     [...m.sql.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1] as string),
   );
 }
-/** Tables des migrations 30 (session TV du compte), 32 (clés de services), 33 (coups de cœur), 34 (soirées planifiées), 36 (abonnement de soutien) et 37 (forum), retirées pour revenir à la version 23. */
-const TABLES_OF_MIGRATIONS_30_32_33_34 = [30, 32, 33, 34, 36, 37].flatMap((version) => tablesOfMigration(version));
+/** Tables des migrations 30 (session TV du compte), 32 (clés de services), 33 (coups de cœur), 34 (soirées planifiées), 36 (abonnement de soutien), 37 (forum) et 38 (feedbacks), retirées pour revenir à la version 23. */
+const TABLES_OF_MIGRATIONS_30_32_33_34 = [30, 32, 33, 34, 36, 38, 37].flatMap((version) => tablesOfMigration(version));
 
 /**
  * Base de production : schéma des migrations 1 à 23 (social v3), puis code actuel au démarrage du Durable Object. Les
@@ -86,7 +86,7 @@ describe('base migrée jusqu’à 23 (social v3), puis code actuel : annonces so
     const stub = workerEnv.USER_STORE.getByName(USER_STORE_NAME);
     await rollBackTo23(stub);
     await restartWithCurrentCode(stub);
-    expect(await versionsApplied(stub)).toEqual(Array.from({ length: 37 }, (_, i) => i + 1));
+    expect(await versionsApplied(stub)).toEqual(Array.from({ length: 38 }, (_, i) => i + 1));
 
     // Diagnostic direct de la méthode RPC : son erreur réelle (message) apparaît ici si elle échoue.
     const backend = createDurableObjectUserBackend(workerEnv.USER_STORE, USER_STORE_NAME);

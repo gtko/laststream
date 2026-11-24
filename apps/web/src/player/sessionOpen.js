@@ -37,6 +37,7 @@ import * as playerState from './playerState';
 export async function initSession(request, views, view, opts = {}) {
   if (isDemo()) throw new Error(DEMO_BLOCKED_MSG); // mode démo : jamais de session de lecture
   ensureUI();
+  S.ui.syncFeedback();
   S.ui.closeMark(false);
   resetMini();
   if (S.P) await teardown(true);

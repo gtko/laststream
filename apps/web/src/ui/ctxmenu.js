@@ -12,7 +12,7 @@ import { fetchFull } from './ficheModel.js';
 import { getDetail } from './catalog.js';
 import { isFuture } from './dates.js';
 import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
-import { toast } from './dom.js';
+import { toast, toastError } from './dom.js';
 import { downloadsAllowed, ficheDownloadMenuItems, startDownload } from './downloadBtn.js';
 import { platformAvailability } from '../downloads/service';
 import { nextToWatch, partyKind } from './fiche.js';
@@ -171,7 +171,7 @@ async function toggleSeriesWatched(key) {
     await markSeries(m, on);
   } catch (err) {
     console.error('[laststream] série ' + key + ' : ' + (on ? 'marquage' : 'retrait') + ' impossible', err);
-    toast('Impossible de marquer la série : ' + reasonOf(err));
+    toastError('Impossible de marquer la série : ' + reasonOf(err), err, 'vus');
   }
 }
 

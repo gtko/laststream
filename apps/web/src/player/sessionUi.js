@@ -10,7 +10,8 @@ import { createMessageBubble } from './messageBubble';
 import { openConversation, openSidebar } from '../ui/socialSidebar.js';
 import { mountPartyPanel, setPartyPanelDocked, togglePartyPanel } from '../ui/partypanel.js';
 import { getState as getSocialState, sendMessage as sendSocialMessage, subscribe as subscribeSocial } from '../data/socialStore';
-import { onAction, onKey, panelData, playEpisode, seekTo, sendSegment, togglePlay } from './sessionActions.js';
+import { onAction, onKey, panelData, playEpisode, playerFeedbackContext, seekTo, sendSegment, togglePlay } from './sessionActions.js';
+import { setFeedbackContext } from '../data/feedback';
 import { closePlayer } from './sessionClose.js';
 import { failover, retryOnLibvlc } from './sessionFailover.js';
 import { externalAfterError } from './externalScreen.js';
@@ -29,6 +30,7 @@ import { toast as pageToast } from '../ui/dom.js';
 
 export function ensureUI() {
   if (S.ui) return;
+  setFeedbackContext('lecteur', playerFeedbackContext); // état du lecteur joint au feedback (LAST-1654), null hors lecture
   S.ui = createPlayerUI({
     action: (act, data) => { onAction(act, data); nudgeTick(); },
     seekTo: (t) => seekTo(t),

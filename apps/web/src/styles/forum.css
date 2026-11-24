@@ -240,3 +240,9 @@
   .fo-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fo-stat-n { font-size: 22px; }
 }
+
+/* Sujet alimenté par le bouton feedback de l'app (LAST-1654). */
+.fo-fbpanel { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.03); }
+.fo-fbpanel-t { margin: 0; font-weight: 600; color: var(--soft); }
+.fo-fbpanel-refs { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.fo-fbpanel-refs code { font-family: ui-monospace, Menlo, Consolas, monospace; user-select: all; }

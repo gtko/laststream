@@ -8,7 +8,7 @@ import { buttonState, errorMessage, formatBytes, gauge } from '../downloads/view
 import { playBest } from '../player/sessionLoader.js';
 import { elKey, runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { saveSeasonToDevice, saveToDevice } from './deviceSave.js';
-import { detailEl, toast } from './dom.js';
+import { detailEl, toast, toastError } from './dom.js';
 import { esc, names } from './util.js';
 import { pushLayer } from './backStack.js';
 
@@ -410,7 +410,7 @@ async function removeWithUndo(item, onChange) {
   if (wasActive) m.pause(item.id);
   const timer = setTimeout(() => {
     pendingRemoval.delete(item.id);
-    m.remove(item.id).catch(() => toast('La suppression a échoué'));
+    m.remove(item.id).catch((e) => toastError('La suppression a échoué', e, 'telechargements'));
   }, UNDO_MS);
   const restore = () => {
     if (wasActive) m.resume(item.id);
