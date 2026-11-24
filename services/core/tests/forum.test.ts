@@ -424,3 +424,81 @@ describe('forum : accueil vivant et watch parties', () => {
     expect(rooms.size).toBe(1);
   });
 });
+
+describe('forum : feedbacks envoyés depuis l’app (LAST-1654)', () => {
+  const EVENT_A = 'a'.repeat(32);
+  const EVENT_B = 'b'.repeat(32);
+  interface FeedbackRes {
+    topic: Topic;
+    grouped: boolean;
+    reporters: number;
+  }
+  const bug = (who: Persona, extra: Record<string, unknown> = {}) =>
+    as<FeedbackRes>(app, who, 'POST', '/user/forum/feedback', {
+      body: {
+        kind: 'bug',
+        code: 'player:lecture-impossible:http-503',
+        title: 'Lecture impossible · HTTP 503',
+        message: 'Ça coupe au démarrage.',
+        version: '1.0.79',
+        platform: 'windows',
+        ...extra,
+      },
+    });
+
+  it('un bug de même empreinte est regroupé dans le même sujet, compteur de membres', async () => {
+    const first = await bug(cast.bob, { sentryEventId: EVENT_A });
+    expect(first.status).toBe(201);
+    expect(first.body).toMatchObject({ grouped: false, reporters: 1 });
+    expect(first.body.topic).toMatchObject({ categoryId: 'bugs', title: 'Lecture impossible · HTTP 503' });
+    vi.setSystemTime(new Date(Date.parse(NOW) + 1000));
+    const second = await bug(cast.carol, { message: '', sentryEventId: EVENT_B });
+    expect(second.body).toMatchObject({ grouped: true, reporters: 2 });
+    expect(second.body.topic.id).toBe(first.body.topic.id);
+    const detail = await read(cast.carol, first.body.topic.id);
+    expect(detail.posts[0]?.body).toBe('**Erreur :** Lecture impossible · HTTP 503\n\nÇa coupe au démarrage.\n\n_Envoyé depuis l’app · version 1.0.79 · Windows_');
+    expect(detail.posts[1]?.body).toBe('**Moi aussi.**\n\n_Envoyé depuis l’app · version 1.0.79 · Windows_');
+    expect((detail as TopicDetail & { feedback?: unknown }).feedback).toEqual({ reporters: 2 });
+    // L'équipe voit les références Sentry, les plus récentes d'abord.
+    const staff = await read(cast.alice, first.body.topic.id);
+    expect((staff as TopicDetail & { feedback?: unknown }).feedback).toEqual({ reporters: 2, sentryEventIds: [EVENT_B, EVENT_A] });
+  });
+
+  it('une autre empreinte, ou un bug sans empreinte, ouvre un nouveau sujet', async () => {
+    const a = await bug(cast.bob);
+    const b = await bug(cast.bob, { code: 'player:lecture-impossible:http-404', title: 'Lecture impossible · HTTP 404' });
+    const c = await bug(cast.bob, { code: undefined, title: undefined, message: 'Le menu clignote\net disparaît.' });
+    expect(new Set([a.body.topic.id, b.body.topic.id, c.body.topic.id]).size).toBe(3);
+    expect(c.body.topic.title).toBe('Le menu clignote');
+  });
+
+  it('un sujet verrouillé par l’équipe (bug corrigé) n’est plus alimenté', async () => {
+    const first = await bug(cast.bob);
+    expect((await as(app, cast.alice, 'PATCH', `/user/forum/topics/${first.body.topic.id}`, { body: { locked: true } })).status).toBe(200);
+    const again = await bug(cast.carol);
+    expect(again.body.grouped).toBe(false);
+    expect(again.body.topic.id).not.toBe(first.body.topic.id);
+  });
+
+  it('une idée part dans « Idées et demandes », jamais regroupée ; message obligatoire', async () => {
+    const idea = await as<FeedbackRes>(app, cast.bob, 'POST', '/user/forum/feedback', {
+      body: { kind: 'idea', code: 'x', message: 'Trier ma liste par date d’ajout' },
+    });
+    expect(idea.status).toBe(201);
+    expect(idea.body.topic).toMatchObject({ categoryId: 'idees', title: 'Trier ma liste par date d’ajout' });
+    const empty = await as<ErrorBody>(app, cast.bob, 'POST', '/user/forum/feedback', { body: { kind: 'idea', message: '  ' } });
+    expect(empty.status).toBe(400);
+  });
+
+  it('champs refusés : référence Sentry mal formée, empreinte invalide', async () => {
+    expect((await bug(cast.bob, { sentryEventId: 'pas-un-id' })).status).toBe(400);
+    expect((await bug(cast.bob, { code: 'Avec Espaces' })).status).toBe(400);
+  });
+
+  it('serveur auto-hébergé (sans Stripe) : 404 forum_unavailable', async () => {
+    vi.stubEnv('STRIPE_SECRET_KEY', '');
+    vi.stubEnv('STRIPE_PRICE_ID', '');
+    const res = await bug(cast.bob);
+    expect(res.status).toBe(404);
+  });
+});

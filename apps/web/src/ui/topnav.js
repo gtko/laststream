@@ -1,6 +1,7 @@
 /* Barre du haut (accueil adulte et enfant) : menu « Explorer », menu du profil, clavier, défilement.
  * Le rendu est fonctionnel : les appelants passent les indicateurs (enfant, amis, propriétaire, serveur). */
 import { hasCommunity, isKidProfile, isProfileLocked, signOut } from '../data/auth';
+import { feedbackAvailable } from '../data/feedback';
 import { userStore } from '../data/userStore';
 import { avatarAttrs } from './avatar-art.js';
 import { ICON } from './icons.js';
@@ -73,6 +74,8 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
     kid ? '' : menuLink('#/stats', ' data-go', 'stats', 'Statistiques'),
     kid ? '' : menuLink('#/settings', ' data-go', 'gear', 'Réglages'),
     owner && !kid ? menuLink('#/admin', ' data-go', 'shield', 'Administration') : '',
+    // Feedback (LAST-1654) : seulement s'il a une destination (Sentry ou forum), jamais pour un profil enfant.
+    !kid && feedbackAvailable() ? '<button type="button" class="nav-pop-item" data-nav-feedback>' + ICON.feedback + '<span>Envoyer un feedback</span></button>' : '',
     server && !isProfileLocked() ? '<button type="button" class="nav-pop-item" data-nav-switch>' + ICON.switch + '<span>Changer de profil</span></button>' : '',
     server && !kid ? '<button type="button" class="nav-pop-item" data-nav-logout>' + ICON.logout + '<span>Se déconnecter</span></button>' : '',
   ].join('');
@@ -144,6 +147,14 @@ async function onClick(e) {
     e.preventDefault();
     closeAll();
     void import('./auth-ui.js').then((m) => (isKidProfile() ? m.leaveKidProfile() : m.openPicker()), () => toast('Impossible de charger cet écran, vérifiez la connexion.'));
+    return;
+  }
+  const fb = t.closest('[data-nav-feedback]');
+  if (fb) {
+    e.preventDefault();
+    const trigger = fb.closest(TOP_DROP)?.querySelector('[data-drop-btn]') || null;
+    closeAll();
+    void import('./feedback.js').then((m) => m.openFeedback({ error: null, opener: trigger }), () => toast('Impossible de charger cet écran, vérifiez la connexion.'));
     return;
   }
   const lo = t.closest('[data-nav-logout]');

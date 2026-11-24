@@ -8,7 +8,7 @@ import { auth, onAuthChange } from '../data/auth';
 import * as store from '../data/socialStore';
 import { validateHandle } from '../data/socialV2Api';
 import { partyBridge } from '../party/bridge';
-import { toast } from './dom.js';
+import { toast, toastError } from './dom.js';
 import { copyInvite, refreshInvites, shareInvite, usableInvite } from './invites.js';
 import { createFriendCard } from './socialCard.js';
 import { activityHTML } from './socialActivity.js';
@@ -744,8 +744,8 @@ function watchWith(f) {
   }
   try {
     watchHandler(f);
-  } catch {
-    toast('Impossible de lancer la lecture.');
+  } catch (e) {
+    toastError('Impossible de lancer la lecture.', e, 'amis');
   }
 }
 

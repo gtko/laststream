@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { feedbackAvailable, noteError } from '../data/feedback';
 
 
 let toastTimer = null;
@@ -26,4 +27,15 @@ export function toast(msg, opts) {
   toastEl.classList.add('is-on');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove('is-on'), o.ms || 2400);
+}
+
+/**
+ * Message d'une erreur interceptée (try/catch) : l'erreur est notée pour le feedback (LAST-1654) et le message gagne un
+ * bouton « Signaler » qui ouvre la fenêtre avec l'erreur jointe. `where` : écran ou module (« social », « listes »…).
+ */
+export function toastError(msg, err, where = 'app', opts) {
+  const detail = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  const noted = noteError({ where, title: msg, message: detail, error: err });
+  if (!feedbackAvailable()) { toast(msg, opts); return; }
+  toast(msg, { ms: 6000, ...opts, action: { label: 'Signaler', run: () => { void import('./feedback.js').then((m) => m.openFeedback({ error: noted })); } } });
 }

@@ -5,6 +5,7 @@
 import { esc } from '../ui/util.js';
 import { setOpenState } from '../ui/disclosure.js';
 import { LI } from './icons.js';
+import { feedbackAvailable, noteError } from '../data/feedback';
 import { clampTooltip } from './thumbs';
 import { episodesHtml, head, infoHtml, settingsHtml, tracksHtml } from './panels.js';
 import { bindEpisodeFold } from './epfold.js';
@@ -45,11 +46,12 @@ function skeleton() {
       '<button type="button" class="btn btn-ghost lp-cancel" data-act="close">Annuler</button></div></div>' +
     '<div class="lp-cast" role="status" hidden><div class="lp-cast-in">' + LI.cast + '<p class="lp-cast-t"></p><p class="lp-cast-time"></p><div class="lp-cast-actions">' +
       '<button type="button" class="btn btn-ghost" data-act="cast-toggle">Pause</button><button type="button" class="btn btn-primary" data-act="cast-here">Reprendre ici</button></div></div></div>' +
-    '<div class="lp-error" role="alert" hidden><p class="lp-err-title"></p><p class="lp-err-msg"></p><div class="lp-err-actions"></div></div>' +
+    '<div class="lp-error" role="alert" hidden><p class="lp-err-title"></p><p class="lp-err-msg"></p><div class="lp-err-actions"></div>' +
+      '<div class="lp-err-report" hidden><button type="button" data-act="report-error">' + LI.feedback + 'Signaler ce problème</button><p>Le détail de l’erreur sera joint au message.</p></div></div>' +
     '<div class="lp-top">' +
       btn('close', LI.back, 'Retour (Échap)', ' data-role="back"', 'lp-close') +
       '<div class="lp-heading"><p class="lp-title"></p><p class="lp-sub"></p></div>' +
-      '<div class="lp-top-r">' + btn('party', LI.people, 'Watch party', ' data-role="party" hidden') + btn('minimize', LI.mini, 'Réduire le lecteur (I)', ' data-role="mini" hidden') + btn('info', LI.info, 'Infos') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('cast', LI.cast, 'Caster', ' data-role="cast" hidden') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
+      '<div class="lp-top-r">' + btn('party', LI.people, 'Watch party', ' data-role="party" hidden') + btn('minimize', LI.mini, 'Réduire le lecteur (I)', ' data-role="mini" hidden') + btn('feedback', LI.feedback, 'Signaler un problème', ' data-role="feedback" hidden') + btn('info', LI.info, 'Infos') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('cast', LI.cast, 'Caster', ' data-role="cast" hidden') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
     '</div>' +
     '<div class="lp-center">' +
       btn('back10', LI.back10, 'Reculer de 10 s', '', 'lp-big') + btn('toggle-play', LI.play, 'Lecture / pause (Espace)', ' data-role="bigplay"', 'lp-big lp-huge') + btn('fwd10', LI.fwd10, 'Avancer de 10 s', '', 'lp-big') +
@@ -450,6 +452,8 @@ export function createPlayerUI(h) {
     isOpen: () => !root.hidden,
     wake,
     focusFirst() { const c = q('[data-role="play"]'); if (c) c.focus({ preventScroll: true }); },
+    /** Bouton « Signaler un problème » : visible seulement si le feedback a une destination (Sentry ou forum). */
+    syncFeedback() { q('[data-role="feedback"]').hidden = !feedbackAvailable(); },
     setHeading(title, sub) { q('.lp-title').textContent = title || ''; q('.lp-sub').textContent = sub || ''; mini.setTitle(title, sub); },
     /** Mini-lecteur : vignette en bas à droite (ou barre mobile) à la place du plein écran. */
     setMini(on) {
@@ -519,6 +523,9 @@ export function createPlayerUI(h) {
       q('.lp-err-title').textContent = title;
       q('.lp-err-msg').textContent = msg || '';
       q('.lp-err-actions').innerHTML = actions.map((a, i) => '<button type="button" class="btn ' + (i === 0 ? 'btn-primary' : 'btn-ghost') + '" data-act="' + esc(a.act) + '">' + esc(a.label) + '</button>').join('');
+      // Erreur interceptée : notée pour le feedback (LAST-1654), avec un lien « Signaler ce problème » s'il a une destination.
+      noteError({ where: 'player', title, message: msg || '' });
+      q('.lp-err-report').hidden = !feedbackAvailable();
       root.classList.add('is-ui');
       const f = q('.lp-err-actions button');
       if (f) f.focus({ preventScroll: true });

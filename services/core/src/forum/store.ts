@@ -126,7 +126,34 @@ export interface ForumTopicDetail extends ForumTopicSummary {
   posts: ForumPostView[];
   /** Il reste des messages après cette page (`?after=` le createdAt du dernier). */
   more: boolean;
+  /**
+   * Sujet alimenté par le bouton feedback de l'app : nombre de profils distincts qui l'ont signalé, et pour l'équipe
+   * seulement les références des événements Sentry (les plus récentes d'abord, 20 au plus).
+   */
+  feedback?: ForumFeedbackInfo;
 }
+
+export interface ForumFeedbackInfo {
+  reporters: number;
+  sentryEventIds?: string[];
+}
+
+/** Feedback de l'app à publier : texte déjà composé et nettoyé par la route. */
+export interface ForumFeedbackInput {
+  kind: 'bug' | 'idea';
+  /** Empreinte de l'erreur : '' (idée, bug sans erreur) ne regroupe jamais. */
+  signature: string;
+  title: string;
+  /** Premier message d'un nouveau sujet. */
+  body: string;
+  /** Réponse ajoutée à un sujet existant de même empreinte. */
+  replyBody: string;
+  sentryEventId?: string;
+}
+
+/** Catégorie d'un feedback selon son type. */
+const FEEDBACK_CATEGORY = { bug: 'bugs', idea: 'idees' } as const;
+const FEEDBACK_REFS_SHOWN = 20;
 
 export interface ForumMe {
   pid: string;
@@ -399,7 +426,57 @@ export class ForumStore {
         .all(id, ATTENDEES_SHOWN)
         .map((r) => authorOf(r, 'au_'));
     }
+    const feedback = this.feedbackInfo(id, isStaff(me.role));
+    if (feedback !== undefined) detail.feedback = feedback;
     return detail;
+  }
+
+  private feedbackInfo(topicId: string, staff: boolean): ForumFeedbackInfo | undefined {
+    const count = Number(this.db.prepare('SELECT COUNT(DISTINCT pid) AS n FROM forum_feedback WHERE topic_id = ?').get(topicId)?.n ?? 0);
+    if (count === 0) return undefined;
+    const info: ForumFeedbackInfo = { reporters: count };
+    if (staff) {
+      info.sentryEventIds = this.db
+        .prepare('SELECT sentry_event_id AS e FROM forum_feedback WHERE topic_id = ? AND sentry_event_id IS NOT NULL ORDER BY created_at DESC LIMIT ?')
+        .all(topicId, FEEDBACK_REFS_SHOWN)
+        .map((r) => String(r.e));
+    }
+    return info;
+  }
+
+  /**
+   * Publie un feedback de l'app (LAST-1654). Un bug dont l'empreinte a déjà un sujet ouvert (visible, non verrouillé) y est
+   * ajouté en réponse ; sinon un sujet est ouvert dans « Remontée de bugs » (bug) ou « Idées et demandes » (idée). Un sujet
+   * verrouillé ou masqué par l'équipe (bug corrigé, doublon) n'est plus alimenté : le signalement suivant en ouvre un neuf.
+   * Mêmes règles que l'écriture ordinaire (exclusion, limites de débit).
+   */
+  feedback(me: ForumMe, input: ForumFeedbackInput, now: number): ForumWrite<{ topic: ForumTopicSummary; grouped: boolean; reporters: number }> {
+    const existing =
+      input.signature === ''
+        ? undefined
+        : this.db
+            .prepare(
+              `SELECT f.topic_id AS id FROM forum_feedback f JOIN forum_topics t ON t.id = f.topic_id
+               WHERE f.signature = ? AND t.hidden = 0 AND t.locked = 0 ORDER BY f.created_at DESC LIMIT 1`,
+            )
+            .get(input.signature);
+    let topic: ForumTopicSummary;
+    let grouped = false;
+    if (existing !== undefined) {
+      const replied = this.reply(me, String(existing.id), input.replyBody, now);
+      if (replied.result !== 'ok') return replied;
+      topic = replied.topic;
+      grouped = true;
+    } else {
+      const created = this.createTopic(me, FEEDBACK_CATEGORY[input.kind], input.title, input.body, now);
+      if (created.result !== 'ok') return created;
+      topic = created.topic;
+    }
+    this.db
+      .prepare('INSERT INTO forum_feedback (topic_id, signature, pid, sentry_event_id, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(topic.id, input.signature, me.pid, input.sentryEventId ?? null, now);
+    const reporters = this.feedbackInfo(topic.id, false)?.reporters ?? 1;
+    return { result: 'ok', topic, grouped, reporters };
   }
 
   private rsvped(topicId: string, pid: string): boolean {

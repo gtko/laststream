@@ -18,6 +18,7 @@ import './styles/social.css';
 import './styles/friendRail.css';
 import './styles/ensemble.css';
 import './styles/evenings.css';
+import './styles/feedback.css';
 import './styles/homeSocial.css';
 import './styles/friendLibrary.css';
 import './styles/chat.css';

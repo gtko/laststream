@@ -900,6 +900,24 @@ function staffBar(topic, cats, reload) {
   return bar;
 }
 
+/**
+ * Sujet alimenté par le bouton feedback de l'app (LAST-1654) : nombre de membres concernés ; pour l'équipe, références des
+ * événements Sentry (le détail technique, privé, est là-bas), à copier pour la recherche Sentry.
+ */
+function feedbackPanel(fb) {
+  const box = h('div', 'fo-fbpanel');
+  box.append(h('p', 'fo-fbpanel-t', '🐞 Signalé depuis l’app par ' + plural(fb.reporters, 'membre', 'membres')));
+  if (fb.sentryEventIds && fb.sentryEventIds.length) {
+    const refs = h('p', 'fo-dim fo-fbpanel-refs', 'Équipe · références Sentry : ');
+    fb.sentryEventIds.slice(0, 5).forEach((id, i) => {
+      if (i) refs.append(document.createTextNode(', '));
+      refs.append(h('code', '', id));
+    });
+    box.append(refs);
+  }
+  return box;
+}
+
 async function showTopic(seq, id) {
   const body = shell('Forum');
   body.append(h('p', 'row-msg', 'Chargement…'));
@@ -926,6 +944,7 @@ async function showTopic(seq, id) {
   body.append(head);
   const reload = () => { if (seq === renderSeq) void showTopic(++renderSeq, id); };
   if (topic.event) body.append(eventPanel(topic, data.me, reload));
+  if (topic.feedback) body.append(feedbackPanel(topic.feedback));
   if (staff()) body.append(staffBar(topic, data.categories, reload));
   const notice = banNotice();
   if (notice) body.append(notice);

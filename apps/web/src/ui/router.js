@@ -5,7 +5,7 @@ import { listIdFrom, shareCodeFrom } from './shareModel.js';
 import { joinRouteOf } from '../party/join';
 import { canAdmin, hasCommunity, isKidProfile, kidSection } from '../data/auth';
 import { browseAllowed, showBrowse } from './registry.js';
-import { app, detailEl, toast } from './dom.js';
+import { app, detailEl, toastError } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
 import { ensembleTabOf } from './ensembleTabs.js';
 import { ficheHash, parseFicheHash } from './ficheRoute.js';
@@ -65,7 +65,7 @@ function open(load, run) {
   load().then((m) => { if (token === navToken && m) run(m); }, () => { if (token === navToken) showLoadError(); });
 }
 /** Barre des amis par-dessus la page en cours : le Social est chargé au besoin. */
-const openSidebar = () => { void ensureSocial().then(() => import('./socialSidebar.js')).then((m) => m.openSidebar()).catch(() => toast('Impossible de charger les amis.')); };
+const openSidebar = () => { void ensureSocial().then(() => import('./socialSidebar.js')).then((m) => m.openSidebar()).catch((e) => toastError('Impossible de charger les amis.', e, 'amis')); };
 const teardownDownloads = () => loaded.downloads?.teardownDownloads();
 const teardownPartyJoin = () => loaded.partyjoin?.teardownPartyJoin();
 const teardownForum = () => loaded.forum?.teardownForum();

@@ -36,6 +36,7 @@ import { AUDIO_MODE_LABEL, playView } from './sessionPlay.js';
 import { catchUp, openReactHere, shareHere, toggleCinemaMenu } from './sessionSocial.js';
 import { S, activeLangPrefs, audioPreference, AUTOPIP_KEY, AUTOSYNC_MIN, AUTOSYNC_TARGET, headingFor, langPrefsOf, miniState, nextRef, originalLangOf, storeGet, storeSet, THUMBS_KEY } from './sessionState.js';
 import { cancelAddonThumb, thumbSourceOf } from './sessionThumbs.js';
+import { recentError } from '../data/feedback';
 import { refreshUI, saveProgress } from './sessionTick.js';
 import { allSubtitleTracks, clearSecondary, effectiveSubMode, ensureExternalSubs, finishAutoSync, forceTranscoding, saveSync, selectSecondary, selectSubtitle, startAutoSync, stopAutoSync, trackContext, transcodeAction } from './sessionTracks.js';
 import { canMinimize, expandPlayer, leavePlayer, minimizePlayer, rememberVolume } from './sessionUi.js';
@@ -221,6 +222,7 @@ export function onAction(act, data) {
   if (act === 'leave') { leavePlayer(); return; }
   if (act === 'expand') { expandPlayer(); return; }
   if (act === 'party') { togglePartyPanel(); return; }
+  if (act === 'feedback' || act === 'report-error') { openPlayerFeedback(act === 'report-error'); return; }
   if (act === 'react') { toggleOpen(S.ui.isReactOpen, openReactHere, () => S.ui.closeReact(true)); return; }
   if (act === 'cinema') { toggleCinemaMenu(); return; }
   if (act === 'share') { shareHere(); return; }
@@ -458,6 +460,8 @@ export function onKey(e) {
   if (!S.P || S.ui.root.hidden) return;
   // Saisie d'une réaction ou d'une réponse dans une bulle : aucun raccourci du lecteur (Échap est géré par chaque champ).
   if (e.target instanceof Element && (e.target.closest('.lp-react') || e.target.closest('.lp-notemenu') || e.target.closest('.lp-bubble') || e.target.closest('.lp-mk') || e.target.closest('.lp-mk-h'))) return;
+  // Fenêtre par-dessus le lecteur (feedback…) : elle garde le clavier (Espace et flèches dans le champ de saisie).
+  if (document.querySelector('.sh-veil')) return;
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
   // Salon d'attente ouvert par-dessus le lecteur : aucun raccourci de lecture.
@@ -514,4 +518,38 @@ export function onKey(e) {
       break;
     default: break;
   }
+}
+
+// ---------- Feedback (LAST-1654) ----------
+
+/** Ouvre la fenêtre de feedback par-dessus le lecteur, lecture en pause. `fromError` : joint l'erreur affichée. */
+function openPlayerFeedback(fromError) {
+  if (!S.P) return;
+  const opener = document.activeElement;
+  if (S.P.engine && !fromError) S.P.engine.pause();
+  void import('../ui/feedback.js').then((m) => m.openFeedback({ player: true, error: fromError ? recentError() : undefined, opener }));
+}
+
+/**
+ * État du lecteur joint au feedback (Sentry seulement) : titre, épisode, position, moteur, source (qualité, langues, taille,
+ * fichier), pistes et tampon. Jamais l'adresse du flux ni la configuration d'un addon.
+ */
+export function playerFeedbackContext() {
+  const p = S.P;
+  if (!p) return null;
+  const out = { Titre: p.meta.title || '', Clé: p.req.key || '' };
+  if (p.cur && p.cur.season) out['Épisode'] = 'S' + p.cur.season + 'E' + p.cur.episode;
+  if (p.engine) {
+    const st = p.engine.state();
+    out.Position = Math.round(st.time) + ' s / ' + Math.round(st.duration) + ' s';
+    out['Tampon'] = Math.max(0, Math.round((st.cacheTime || 0) - st.time)) + ' s';
+    out.Lecture = st.buffering ? 'chargement' : st.paused ? 'pause' : 'en cours';
+    out.Vitesse = st.rate || 1;
+  }
+  out.Tentatives = p.attempts || 0;
+  if (p.view) for (const [k, v] of panelData('info').rows || []) if (v) out[k] = v;
+  out.Langues = p.view ? p.view.langs.map((l) => l.label).join('/') : '';
+  out['Pistes audio'] = p.probeTracks.audio.map((a) => a.label).join(', ').slice(0, 200);
+  out['Sous-titres'] = p.subs.selectedId ? String(p.subs.selectedId) + (p.subs.offset ? ' (décalage ' + p.subs.offset + ' s)' : '') : 'aucun';
+  return out;
 }
