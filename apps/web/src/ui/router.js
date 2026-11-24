@@ -46,6 +46,7 @@ const lazy = {
   addonFiche: lazyView('addonFiche', () => import('./addonFiche.js')),
   hubs: lazyView('hubs', () => import('./hubs.js')),
   settings: lazyView('settings', () => import('./settings.js')),
+  forum: lazyView('forum', () => import('./forum.js')),
 };
 /** Navigation en cours : un module qui arrive après une autre navigation n'affiche plus rien. */
 let navToken = 0;
@@ -67,6 +68,7 @@ function open(load, run) {
 const openSidebar = () => { void ensureSocial().then(() => import('./socialSidebar.js')).then((m) => m.openSidebar()).catch(() => toast('Impossible de charger les amis.')); };
 const teardownDownloads = () => loaded.downloads?.teardownDownloads();
 const teardownPartyJoin = () => loaded.partyjoin?.teardownPartyJoin();
+const teardownForum = () => loaded.forum?.teardownForum();
 
 /** Page d'addon ouverte (catalogue ou fiche) : son `destroy()` est appelé en la quittant (voir teardownAddonView). */
 let addonView = null;
@@ -111,6 +113,7 @@ export function showView(r) {
   else if (r.kind === 'partyjoin') open(lazy.partyjoin, (m) => m.showPartyJoin(r.id, r.token));
   else if (r.kind === 'settings') open(lazy.settings, (m) => m.showSettings());
   else if (r.kind === 'admin') open(lazy.admin, (m) => m.showAdmin());
+  else if (r.kind === 'forum') open(lazy.forum, (m) => m.showForum(r.view, r.id));
   else if (r.kind === 'browse') { if (r.id === 'ai') open(lazy.recs, (m) => m.showAiBrowse()); else showBrowse(r.id); }
   else if (r.kind === 'search') open(lazy.search, (m) => m.showSearch());
   else if (r.kind === 'calendar') showCalendar();
@@ -139,7 +142,7 @@ export function parseRoute() {
     return null;
   }
   // Profil enfant : ni réglages ni TV en direct, ni amis ni salons publics (un salon privé s'ouvre par son lien).
-  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'ensemble' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover' || r.kind === 'downloads' || r.kind === 'hub')) return null;
+  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'ensemble' || r.kind === 'forum' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover' || r.kind === 'downloads' || r.kind === 'hub')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   // Pages d'addon (catalogue, fiche) : refusées sur le profil enfant, comme le navigateur.
   if (r && (r.kind === 'addonCatalog' || r.kind === 'addonFiche') && isKidProfile()) return null;
@@ -192,6 +195,11 @@ function parseRouteRaw() {
   if (h === '#/settings') return { kind: 'settings' };
   if (h === '#/downloads') return { kind: 'downloads' };
   if (h === '#/admin') return { kind: 'admin' };
+  // Forum communautaire (LAST-1651) : accueil, catégorie, sujet, nouveau sujet, modération.
+  if (h === '#/forum') return { kind: 'forum', view: 'home', id: '' };
+  if (h === '#/forum/mod') return { kind: 'forum', view: 'mod', id: '' };
+  r = /^#\/forum\/(c|t|new)(?:\/([A-Za-z0-9_-]{1,40}))?$/.exec(h);
+  if (r && (r[1] === 'new' || r[2])) return { kind: 'forum', view: r[1] === 'c' ? 'cat' : r[1] === 't' ? 'topic' : 'new', id: r[2] || '' };
   r = /^#\/browse\/([a-z-]{1,20})$/.exec(h);
   if (r) return { kind: 'browse', id: r[1] };
   if (h === '#/search') return { kind: 'search' };
@@ -226,6 +234,7 @@ export function route() {
   }
   teardownDownloads(); // téléchargements : abonnement de la vue quittée libéré (la vue suivante se réabonne)
   teardownAddonView(); // page d'addon quittée : défilement et chargements arrêtés
+  teardownForum(); // forum quitté : un chargement en cours n'affiche plus rien
   if (r) {
     stopHomeLive(); // accueil masqué par la vue ouverte : pas de resynchronisation ni d'écouteurs d'accueil pendant ce temps
     if (!state.inDetail) {

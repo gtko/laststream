@@ -1,5 +1,5 @@
 import type { DurableObjectNamespace, DurableObjectStub } from '@cloudflare/workers-types';
-import type { AdminRepo, MetaRepo, SkipRepo, SocialEveningsRepo, SocialRepo, SocialV2Repo, SocialV3Repo, UserBackend, UserRepo } from '../../user/repo.js';
+import type { AdminRepo, ForumRepo, MetaRepo, SkipRepo, SocialEveningsRepo, SocialRepo, SocialV2Repo, SocialV3Repo, UserBackend, UserRepo } from '../../user/repo.js';
 import type { UserStoreDO } from './user-store-do.js';
 
 /** Nom du Durable Object global des données utilisateur. */
@@ -8,7 +8,7 @@ export const USER_STORE_NAME = 'users';
 /** Dépôt dont chaque méthode est un appel RPC vers le Durable Object (`kind` : store visé). */
 function remoteRepo<R>(
   stub: () => DurableObjectStub<UserStoreDO>,
-  kind: 'user' | 'skip' | 'social' | 'socialV2' | 'socialV3' | 'socialEvenings' | 'admin' | 'meta',
+  kind: 'user' | 'skip' | 'social' | 'socialV2' | 'socialV3' | 'socialEvenings' | 'admin' | 'meta' | 'forum',
 ): R {
   const cache = new Map<string, unknown>();
   return new Proxy({} as R & object, {
@@ -19,7 +19,9 @@ function remoteRepo<R>(
       if (call === undefined) {
         // async/await : l'erreur du DO est portée par cette Promise (une RpcPromise rejetée non attendue serait « non gérée »).
         call = async (...args: unknown[]): Promise<unknown> =>
-          await (kind === 'user'
+          await (kind === 'forum'
+            ? stub().forum(name, args)
+            : kind === 'user'
             ? stub().user(name, args)
             : kind === 'skip'
               ? stub().skip(name, args)
@@ -55,6 +57,7 @@ export function createDurableObjectUserBackend(
   const socialEvenings = remoteRepo<SocialEveningsRepo>(stub, 'socialEvenings');
   const admin = remoteRepo<AdminRepo>(stub, 'admin');
   const meta = remoteRepo<MetaRepo>(stub, 'meta');
+  const forum = remoteRepo<ForumRepo>(stub, 'forum');
   return {
     users: () => users,
     skips: () => skips,
@@ -64,6 +67,7 @@ export function createDurableObjectUserBackend(
     socialEvenings: () => socialEvenings,
     admin: () => admin,
     meta: () => meta,
+    forum: () => forum,
     close: () => undefined,
   };
 }

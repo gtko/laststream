@@ -1,0 +1,148 @@
+/* Forum communautaire (LAST-1651) : accueil, catégories, sujets, messages, éditeur Markdown et modération. */
+.fo-body { padding: 104px var(--gutter) 96px; display: flex; flex-direction: column; gap: 22px; max-width: 980px; }
+.fo-h1 { margin: 0; font-family: var(--ff-title); font-weight: 800; font-size: clamp(24px, 3.2vw, 34px); line-height: 1.15; overflow-wrap: anywhere; }
+.fo-h2 { margin: 0 0 10px; font-family: var(--ff-title); font-weight: 800; font-size: 18px; }
+.fo-lede { margin: 6px 0 0; color: var(--soft); font-size: 15px; line-height: 1.5; max-width: 60ch; }
+.fo-dim { color: var(--dim); font-size: 13px; }
+.fo-empty { margin: 0; color: var(--dim); }
+.fo-msg { margin: 0; }
+.fo-link { color: var(--text); font-weight: 600; text-decoration: none; }
+.fo-link:hover { color: var(--accent); }
+.fo-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); }
+.fo-crumbs a { color: var(--soft); text-decoration: none; }
+.fo-crumbs a:hover { color: var(--accent); }
+.fo-crumbs [aria-current] { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+.fo-notice { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-2); color: var(--soft); font-size: 14px; }
+.fo-pill { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 800; }
+
+/* Accueil */
+.fo-hero { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; padding: 22px; border-radius: 20px;
+  background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%), var(--surface); border: 1px solid var(--line); }
+.fo-hero-acts, .fo-cathead { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.fo-cathead { justify-content: space-between; align-items: flex-end; }
+.fo-modbtn { display: inline-flex; align-items: center; }
+.fo-search { display: flex; }
+.fo-search-in { flex: 1; min-width: 0; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; }
+.fo-search-in:focus-visible { border-color: var(--accent); outline: 0; }
+.fo-cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.fo-cat { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-start; padding: 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); color: var(--text); text-decoration: none; transition: border-color 0.15s, transform 0.15s; }
+.fo-cat:hover, .fo-cat:focus-visible { border-color: var(--accent); transform: translateY(-1px); }
+.fo-cat-ic { flex: none; width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; background: var(--bg); }
+.fo-cat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.fo-cat-name { font-family: var(--ff-title); font-weight: 800; font-size: 16px; }
+.fo-cat-desc { color: var(--soft); font-size: 13px; line-height: 1.45; }
+.fo-cat-meta { flex: 1 1 100%; display: flex; gap: 10px; padding-left: 58px; font-size: 13px; color: var(--soft); }
+
+/* Liste des sujets */
+.fo-topics { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fo-topic { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.fo-topic.is-pinned { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.fo-topic.is-hidden { opacity: 0.6; }
+.fo-topic-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.fo-topic-t { color: var(--text); font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
+.fo-topic-t:hover { color: var(--accent); }
+.fo-topic-sub { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--soft); }
+.fo-flag { margin-right: 6px; font-size: 13px; }
+.fo-topic-stats { flex: none; display: flex; align-items: center; gap: 14px; }
+.fo-replies { min-width: 34px; height: 26px; padding: 0 8px; border-radius: 8px; display: grid; place-items: center; background: var(--bg); font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; }
+.fo-last { display: flex; align-items: center; gap: 6px; }
+.fo-more { align-self: center; }
+
+/* Sujet et messages */
+.fo-topichead { display: flex; flex-direction: column; gap: 6px; }
+.fo-staffbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border-radius: 12px; border: 1px dashed var(--line-2); }
+.fo-posts { display: flex; flex-direction: column; gap: 12px; }
+.fo-post { display: flex; gap: 14px; padding: 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); scroll-margin-top: 90px; }
+.fo-post.is-hidden { border-style: dashed; }
+.fo-post:target { border-color: var(--accent); }
+.fo-post-side { flex: none; }
+.fo-post-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.fo-post-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fo-post-name { font-weight: 800; }
+.fo-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; }
+.fo-badge.is-owner { background: var(--accent); color: var(--on-accent); }
+.fo-badge.is-mod { background: #2c7a5b; color: #fff; }
+.fo-post-body { min-width: 0; }
+.fo-gone { margin: 0; color: var(--dim); font-style: italic; }
+.fo-post-acts { display: flex; flex-wrap: wrap; gap: 4px; }
+.fo-act { padding: 5px 10px; border-radius: 8px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.fo-act:hover { background: var(--bg); color: var(--text); }
+.fo-act:disabled { cursor: default; opacity: 0.6; }
+.fo-act.is-danger:hover { color: #ff7a7a; }
+.fo-act.is-mod { color: #5fd3a5; }
+.fo-reacts { position: relative; display: flex; flex-wrap: wrap; gap: 6px; }
+.fo-react { height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.fo-react.is-mine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--bg)); }
+.fo-react-add { color: var(--muted); }
+.fo-palette { position: absolute; z-index: 5; bottom: calc(100% + 6px); left: 0; display: flex; gap: 2px; padding: 6px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-2); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45); }
+.fo-palette[hidden] { display: none; }
+.fo-pal { width: 34px; height: 34px; border-radius: 8px; border: 0; background: none; font-size: 18px; cursor: pointer; }
+.fo-pal:hover { background: var(--bg); }
+
+/* Rendu Markdown */
+.fm { font-size: 15px; line-height: 1.6; color: var(--text); overflow-wrap: anywhere; }
+.fm > :first-child { margin-top: 0; }
+.fm > :last-child { margin-bottom: 0; }
+.fm p { margin: 0 0 10px; }
+.fm-h { margin: 14px 0 8px; font-family: var(--ff-title); }
+.fm-quote { margin: 0 0 10px; padding: 8px 14px; border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; background: var(--bg); color: var(--soft); }
+.fm-list { margin: 0 0 10px; padding-left: 22px; }
+.fm-code { padding: 1px 6px; border-radius: 6px; background: var(--bg); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+.fm-pre { margin: 0 0 10px; padding: 12px 14px; border-radius: 10px; background: var(--bg); overflow-x: auto; font-size: 13px; line-height: 1.5; }
+.fm-pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
+.fm-link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.fm-mention { color: var(--accent); font-weight: 700; }
+.fm-spoiler { padding: 0 4px; border-radius: 4px; background: var(--line-2); color: transparent; cursor: pointer; filter: blur(3px); transition: filter 0.2s, color 0.2s; }
+.fm-spoiler * { color: transparent; }
+.fm-spoiler.is-shown { color: inherit; filter: none; cursor: auto; background: var(--bg); }
+.fm-spoiler.is-shown * { color: inherit; }
+
+/* Éditeur */
+.fo-reply { display: flex; flex-direction: column; }
+.fo-compose { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.fo-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.fo-tool { min-width: 34px; height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid transparent; background: var(--bg); color: var(--soft); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.fo-tool:hover { color: var(--text); border-color: var(--line-2); }
+.fo-tool-prev { margin-left: auto; }
+.fo-tool-prev[aria-pressed="true"] { color: var(--accent); }
+.fo-ta { width: 100%; min-height: 140px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; font-size: 15px; line-height: 1.5; resize: vertical; box-sizing: border-box; }
+.fo-ta:focus-visible, .fo-input:focus-visible, .fo-select:focus-visible { border-color: var(--accent); outline: 0; }
+.fo-ta-sm { min-height: 70px; width: 100%; box-sizing: border-box; }
+.fo-preview { min-height: 140px; padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--line-2); }
+.fo-compose-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.fo-count { margin-right: auto; color: var(--dim); font-size: 12px; }
+.fo-err { margin: 0; color: #ff7a7a; font-size: 13px; }
+.fo-err:empty { display: none; }
+
+/* Nouveau sujet */
+.fo-newform { display: flex; flex-direction: column; gap: 14px; }
+.fo-field { display: flex; flex-direction: column; gap: 6px; }
+.fo-lab { font-family: var(--ff-title); font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+.fo-input, .fo-select { height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; box-sizing: border-box; }
+.fo-select-sm { height: 32px; font-size: 13px; }
+.fo-hint { margin: -6px 0 0; color: var(--soft); font-size: 13px; }
+.fo-hint:empty { display: none; }
+
+/* Modération */
+.fo-modsec { display: flex; flex-direction: column; gap: 10px; }
+.fo-report { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.fo-report-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fo-report-detail { margin: 0; color: var(--soft); font-size: 13px; font-style: italic; }
+.fo-report-body { padding: 10px 12px; border-radius: 10px; background: var(--bg); max-height: 220px; overflow: auto; }
+.fo-plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fo-person { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.fo-person-n { font-weight: 700; }
+.fo-person .fo-act { margin-left: auto; }
+.fo-addmod { display: flex; flex-wrap: wrap; gap: 8px; }
+.fo-addmod .fo-input { flex: 1 1 220px; min-width: 0; }
+.fo-radios { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.fo-radio { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+
+@media (max-width: 720px) {
+  .fo-body { padding: 84px 16px 96px; gap: 18px; }
+  .fo-hero { padding: 16px; }
+  .fo-topic { flex-wrap: wrap; }
+  .fo-topic-stats { width: 100%; justify-content: space-between; padding-left: 48px; }
+  .fo-post { padding: 12px; gap: 10px; }
+  .fo-post-side .cv-av { width: 32px !important; height: 32px !important; }
+}

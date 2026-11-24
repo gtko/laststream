@@ -38,7 +38,8 @@ function exploreMenuHTML(idSuffix, current, social) {
     '<li>' + menuLink('#/library', ' data-libnav', 'list', 'Ma liste') + '</li>' +
     '<li>' + menuLink('#/collections', ' data-go', 'grid', 'Collections') + '</li>' +
     '<li>' + menuLink('#/discover', ' data-go', 'compass', 'Découvrir') + '</li>' +
-    '<li>' + menuLink('#/calendar', ' data-calnav', 'calendar', 'Calendrier') + '</li></ul>';
+    '<li>' + menuLink('#/calendar', ' data-calnav', 'calendar', 'Calendrier') + '</li>' +
+    (social ? '<li>' + menuLink('#/forum', ' data-go' + currentAttrs('forum', current), 'forum', 'Forum') + '</li>' : '') + '</ul>';
   return '<div class="nav-drop" data-drop>' +
     '<button type="button" class="nav-drop-btn" data-drop-btn aria-expanded="false" aria-controls="nav-explore' + idSuffix + '">Explorer' + ICON.chev + '</button>' +
     '<div class="nav-pop nav-pop-explore" id="nav-explore' + idSuffix + '" hidden>' + main + compact + '</div></div>';

@@ -35,6 +35,7 @@ import { registerSocialV2NoteRoutes } from './social-v2-notes-routes.js';
 import { registerSocialV2ProfileRoutes } from './social-v2-profile-routes.js';
 import { registerSocialV2Routes } from './social-v2-routes.js';
 import { registerSocialV3Routes } from './social-v3-routes.js';
+import { registerForumRoutes } from '../forum/routes.js';
 import { registerDebridLinkRoutes } from './debrid-links.js';
 import type { UserBackend, UserRepo } from './repo.js';
 import { importStremioLibrary, StremioImportError } from './stremio.js';
@@ -872,6 +873,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   registerSocialV3Routes(router, deps, backend);
   registerSocialV2ActivityRoutes(router, deps, backend);
   registerSocialEveningRoutes(router, deps, backend);
+  registerForumRoutes(router, deps, backend);
   registerDebridLinkRoutes(router, deps, backend);
   registerHouseholdRoutes(router, deps, backend);
   registerBillingUserRoutes(router, deps, backend);
