@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.78 – 2026-11-24
+
+- Résiliation de l'abonnement dans l'app ; rien de l'abonnement en auto-hébergé (LAST-1650) (#58) — @gtko
+
 ## v1.0.77 – 2026-11-23
 
 - Abonnement de soutien à 24 €/an pour le service en ligne (LAST-1650) (#57) — @gtko
