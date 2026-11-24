@@ -43,6 +43,14 @@ export interface ForumTopic {
   pinned: boolean;
   locked: boolean;
   hidden: boolean;
+  event?: ForumEvent;
+}
+/** Séance d'une watch party (catégorie watch-parties). */
+export interface ForumEvent {
+  startsAt: number;
+  roomId: string | null;
+  going: number;
+  mine?: boolean;
 }
 export interface ForumPost {
   id: string;
@@ -56,12 +64,21 @@ export interface ForumPost {
   reported: boolean;
 }
 export interface ForumTopicDetail extends ForumTopic {
+  attendees?: ForumAuthor[];
   posts: ForumPost[];
   more: boolean;
+}
+interface ForumPulse {
+  stats: { topics: number; posts: number; members: number; postsToday: number };
+  recent: (ForumTopic & { excerpt: string })[];
+  trending: (ForumTopic & { heat: number })[];
+  activeMembers: { author: ForumAuthor; posts: number }[];
+  events: ForumTopic[];
 }
 export interface ForumHome {
   me: ForumMe;
   categories: ForumCategory[];
+  pulse: ForumPulse;
   openReports?: number;
 }
 export interface ForumReport {
@@ -96,7 +113,11 @@ export const topics = (categoryId: string, before?: number) =>
   forum<{ topics: ForumTopic[]; more: boolean }>('GET', '/categories/' + enc(categoryId) + '/topics' + (before ? '?before=' + before : ''));
 export const search = (q: string) => forum<{ topics: ForumTopic[] }>('GET', '/search?q=' + enc(q));
 export const topic = (id: string, after?: number) => forum<{ topic: ForumTopicDetail }>('GET', '/topics/' + enc(id) + (after ? '?after=' + after : ''));
-export const createTopic = (categoryId: string, title: string, body: string) => forum<{ topic: ForumTopic }>('POST', '/topics', { categoryId, title, body });
+export const createTopic = (categoryId: string, title: string, body: string, startsAt?: number) =>
+  forum<{ topic: ForumTopic }>('POST', '/topics', startsAt === undefined ? { categoryId, title, body } : { categoryId, title, body, startsAt });
+export const rsvp = (topicId: string, on: boolean) => forum<{ event: ForumEvent }>('PUT', '/topics/' + enc(topicId) + '/rsvp', { on });
+/** Ouvre (ou retrouve) le salon de visionnage d'une séance : auteur du sujet ou équipe. */
+export const openEvent = (topicId: string) => forum<{ roomId: string }>('POST', '/topics/' + enc(topicId) + '/open');
 export const reply = (topicId: string, body: string) => forum<{ post: ForumPost; topic: ForumTopic }>('POST', '/topics/' + enc(topicId) + '/posts', { body });
 export const editPost = (postId: string, body: string) => forum<{ post: ForumPost }>('PATCH', '/posts/' + enc(postId), { body });
 export const deletePost = (postId: string) => forum<{ topicRemoved: boolean }>('DELETE', '/posts/' + enc(postId));

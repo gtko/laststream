@@ -5,6 +5,9 @@
 import '../styles/convwin.css';
 import '../styles/forum.css';
 import * as api from '../data/forumApi';
+import { auth } from '../data/auth';
+import { defaultStart, parseLocal } from '../data/eveningForm';
+import { listParties } from '../data/socialApi';
 import { detailEl, toast } from './dom.js';
 import { topBar } from './fragments.js';
 import { go } from './router.js';
@@ -38,6 +41,10 @@ function errText(e) {
   if (code === 'staff_only') return 'Seule l’équipe peut publier dans cette catégorie.';
   if (code === 'moderator_only' || code === 'owner_only' || code === 'forbidden') return 'Action réservée.';
   if (code === 'kid_profile') return 'Le forum n’est pas disponible sur un profil enfant.';
+  if (code === 'event_not_open') return 'Le salon s’ouvre 15 minutes avant le début de la séance (et jusqu’à 3 h après).';
+  if (code === 'party_unavailable') return 'Les salons de visionnage ne sont pas disponibles sur ce serveur.';
+  if (code === 'too_many_rooms') return 'Tu as déjà trop de salons ouverts : ferme-en un d’abord.';
+  if (e && e.issues && e.issues.includes('startsAt:invalid')) return 'Choisis une date de séance entre 5 minutes et 90 jours à partir de maintenant.';
   if (e && e.status === 429) return 'Doucement : réessaie dans ' + Math.max(1, Math.ceil((e.retryAfterSec || 60) / 60)) + ' min.';
   if (e && e.status === 404) return 'Introuvable : le sujet a peut-être été retiré.';
   if (e && e.status === 400) return 'Texte invalide : vérifie la longueur du titre (3 à 120 caractères) et du message.';
@@ -182,6 +189,98 @@ function composer({ placeholder, submitLabel, initial = '', onSubmit, onCancel, 
   };
 }
 
+// ---------- Watch parties ----------
+
+const EVENT_CAT = 'watch-parties';
+const MIN = 60_000;
+const OPEN_LEAD = 15 * MIN;
+const OPEN_GRACE = 3 * 60 * MIN;
+const reduceMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
+
+/** « dans 2 h », « en cours », « terminée ». */
+function untilText(ms, now = Date.now()) {
+  const d = ms - now;
+  if (d <= 0) return d > -OPEN_GRACE ? 'en cours' : 'terminée';
+  const min = Math.ceil(d / MIN);
+  if (min < 60) return 'dans ' + min + ' min';
+  const hrs = Math.round(min / 60);
+  if (hrs < 24) return 'dans ' + hrs + ' h';
+  return 'dans ' + plural(Math.round(hrs / 24), 'jour', 'jours');
+}
+const whenText = (ms) => new Date(ms).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+const timeText = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+function dateChip(ms, big = false) {
+  const d = new Date(ms);
+  const chip = h('span', 'fo-ev-date' + (big ? ' is-big' : ''), null, { 'aria-hidden': 'true' });
+  chip.append(h('span', 'fo-ev-day', String(d.getDate())), h('span', 'fo-ev-mon', d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')));
+  return chip;
+}
+
+/** Bouton « Je participe » / « Inscrit » ; `after(event)` reçoit la séance à jour. */
+function rsvpButton(topic, after) {
+  const ev = topic.event;
+  const b = h('button', 'btn ' + (ev.mine ? 'btn-ghost fo-going' : 'btn-primary'), ev.mine ? 'Inscrit' : 'Je participe', { type: 'button', 'aria-pressed': String(!!ev.mine) });
+  if (banned() || Date.now() > ev.startsAt + OPEN_GRACE) b.disabled = true;
+  b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      const r = await api.rsvp(topic.id, !ev.mine);
+      topic.event = r.event;
+      homeCache = null;
+      toast(r.event.mine ? 'Inscrit : rendez-vous le ' + whenText(r.event.startsAt) + '.' : 'Inscription retirée.');
+      after(r.event);
+    } catch (e) {
+      toast(errText(e));
+      b.disabled = false;
+    }
+  });
+  return b;
+}
+
+function eventCard(t, now) {
+  const ev = t.event;
+  const card = h('article', 'fo-ev fo-rise');
+  const live = now >= ev.startsAt;
+  card.append(dateChip(ev.startsAt));
+  const main = h('div', 'fo-ev-main');
+  main.append(h('span', 'fo-ev-when' + (live ? ' is-live' : ''), (live ? 'En cours' : untilText(ev.startsAt, now)) + ' · ' + timeText(ev.startsAt)));
+  main.append(link('#/forum/t/' + encodeURIComponent(t.id), 'fo-ev-t', t.title));
+  main.append(h('span', 'fo-dim', plural(ev.going, 'inscrit', 'inscrits') + ' · proposée par ' + nameOf(t.author)));
+  const acts = h('div', 'fo-ev-acts');
+  const draw = () => {
+    acts.replaceChildren();
+    if (ev.roomId) acts.append(link('#/party/' + encodeURIComponent(ev.roomId), 'btn btn-primary', 'Rejoindre le salon'));
+    else acts.append(rsvpButton(t, (next) => { Object.assign(ev, next); main.lastChild.textContent = plural(ev.going, 'inscrit', 'inscrits') + ' · proposée par ' + nameOf(t.author); draw(); }));
+  };
+  draw();
+  card.append(main, acts);
+  return card;
+}
+
+/** Salons publics ouverts en ce moment (tout Laststream) ; la section reste cachée sans salon ou si le serveur n'en a pas. */
+async function liveRoomsInto(section, seq) {
+  const pid = auth.profile && auth.profile.id;
+  if (!pid) return;
+  let rooms;
+  try {
+    rooms = (await listParties(pid, { limit: 8 })).rooms || [];
+  } catch {
+    return;
+  }
+  if (seq !== renderSeq || !rooms.length) return;
+  const row = h('div', 'fo-live');
+  for (const r of rooms) {
+    const n = Number(r.participants) || 0;
+    const a = link('#/party/' + encodeURIComponent(r.id), 'fo-live-card fo-rise');
+    a.append(h('span', 'fo-live-tag', 'En direct'), h('span', 'fo-live-t', r.title), h('span', 'fo-dim', 'Salon de ' + r.host + ' · ' + plural(n, 'spectateur', 'spectateurs')));
+    row.append(a);
+  }
+  section.replaceChildren(sectionHead('Watch parties en direct', 'Rejoins un salon public et regarde en même temps que les autres.'), row);
+  section.hidden = false;
+}
+
 // ---------- Accueil ----------
 
 function categoryCard(c) {
@@ -190,7 +289,7 @@ function categoryCard(c) {
   const main = h('span', 'fo-cat-main');
   main.append(h('span', 'fo-cat-name', c.name), h('span', 'fo-cat-desc', c.description));
   const meta = h('span', 'fo-cat-meta');
-  meta.append(h('span', null, c.topicCount + (c.topicCount > 1 ? ' sujets' : ' sujet')));
+  meta.append(h('span', null, plural(c.topicCount, 'sujet', 'sujets')));
   if (c.lastPostAt) meta.append(h('span', 'fo-dim', 'actif il y a ' + ago(c.lastPostAt)));
   a.append(main, meta);
   return a;
@@ -198,7 +297,7 @@ function categoryCard(c) {
 
 function topicRow(t, cats) {
   const li = h('li', 'fo-topic' + (t.pinned ? ' is-pinned' : '') + (t.hidden ? ' is-hidden' : ''));
-  li.append(av(t.author, 36));
+  li.append(t.event ? dateChip(t.event.startsAt) : av(t.author, 36));
   const main = h('div', 'fo-topic-main');
   const title = link('#/forum/t/' + encodeURIComponent(t.id), 'fo-topic-t');
   if (t.pinned) title.append(h('span', 'fo-flag', '📌', { title: 'Épinglé', 'aria-label': 'Épinglé' }));
@@ -207,6 +306,7 @@ function topicRow(t, cats) {
   title.append(document.createTextNode(t.title));
   const sub = h('div', 'fo-topic-sub');
   sub.append(h('span', null, nameOf(t.author)));
+  if (t.event) sub.append(h('span', 'fo-dim', '· ' + whenText(t.event.startsAt) + ' · ' + plural(t.event.going, 'inscrit', 'inscrits')));
   if (cats) {
     const cat = cats.find((c) => c.id === t.categoryId);
     if (cat) sub.append(h('span', 'fo-dim', '· ' + cat.icon + ' ' + cat.name));
@@ -221,8 +321,145 @@ function topicRow(t, cats) {
   return li;
 }
 
+function sectionHead(title, lede, action) {
+  const head = h('div', 'fo-sechead');
+  const t = h('div');
+  t.append(h('h2', 'fo-h2', title));
+  if (lede) t.append(h('p', 'fo-dim fo-seclede', lede));
+  head.append(t);
+  if (action) head.append(action);
+  return head;
+}
+
+/** Compteur animé (ou direct si l'utilisateur limite les animations). */
+function countUp(el, to) {
+  const fmt = (n) => n.toLocaleString('fr-FR');
+  if (reduceMotion() || to < 10) { el.textContent = fmt(to); return; }
+  const start = performance.now();
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / 700);
+    el.textContent = fmt(Math.round(to * (1 - Math.pow(1 - k, 3))));
+    if (k < 1 && el.isConnected) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function statsEl(stats) {
+  const dl = h('dl', 'fo-stats');
+  for (const [label, n] of [['Sujets', stats.topics], ['Messages', stats.posts], ['Membres qui écrivent', stats.members], ['Messages aujourd’hui', stats.postsToday]]) {
+    const box = h('div', 'fo-stat');
+    const dd = h('dd', 'fo-stat-n', '0');
+    box.append(h('dt', 'fo-stat-l', label), dd);
+    dl.append(box);
+    countUp(dd, n);
+  }
+  return dl;
+}
+
+function feedItem(t, cats, i) {
+  const li = h('li', 'fo-feed-item fo-rise', null, { style: '--i:' + i });
+  li.append(av(t.lastPoster, 38));
+  const main = h('div', 'fo-feed-main');
+  const who = h('p', 'fo-feed-who');
+  who.append(h('strong', null, nameOf(t.lastPoster)), document.createTextNode(t.replyCount ? ' a répondu' : ' a ouvert le sujet'), h('span', 'fo-dim', ' · il y a ' + ago(t.lastPostAt)));
+  main.append(who, link('#/forum/t/' + encodeURIComponent(t.id), 'fo-feed-t', t.title));
+  if (t.excerpt) main.append(h('p', 'fo-feed-ex', t.excerpt));
+  const meta = h('div', 'fo-feed-meta');
+  const cat = cats.find((c) => c.id === t.categoryId);
+  if (cat) meta.append(link('#/forum/c/' + encodeURIComponent(cat.id), 'fo-tag', cat.icon + ' ' + cat.name));
+  meta.append(h('span', 'fo-dim', plural(t.replyCount, 'réponse', 'réponses')));
+  main.append(meta);
+  li.append(main);
+  return li;
+}
+
+function trendingEl(list) {
+  const ol = h('ol', 'fo-trend');
+  const max = Math.max(1, ...list.map((t) => t.heat));
+  list.forEach((t, i) => {
+    const li = h('li', 'fo-trend-item fo-rise', null, { style: '--i:' + i });
+    li.append(h('span', 'fo-trend-rank', String(i + 1), { 'aria-hidden': 'true' }));
+    const main = h('div', 'fo-trend-main');
+    main.append(link('#/forum/t/' + encodeURIComponent(t.id), 'fo-trend-t', t.title));
+    const bar = h('span', 'fo-heat', null, { 'aria-hidden': 'true' });
+    bar.append(h('span', 'fo-heat-in', null, { style: 'width:' + Math.round((t.heat / max) * 100) + '%' }));
+    main.append(bar, h('span', 'fo-dim', plural(t.heat, 'message', 'messages') + ' cette semaine'));
+    li.append(main);
+    ol.append(li);
+  });
+  return ol;
+}
+
+function membersEl(list) {
+  const ul = h('ul', 'fo-members');
+  list.forEach((m, i) => {
+    const li = h('li', 'fo-member fo-rise', null, { style: '--i:' + i });
+    li.append(av(m.author, 32));
+    const main = h('div', 'fo-member-main');
+    const name = h('span', 'fo-member-name', nameOf(m.author));
+    const badge = roleBadge(m.author);
+    if (badge) name.append(badge);
+    main.append(name, h('span', 'fo-dim', plural(m.posts, 'message', 'messages') + ' ce mois-ci'));
+    li.append(main);
+    ul.append(li);
+  });
+  return ul;
+}
+
+/** Sections vivantes de l'accueil (séances, discussions, tendances, membres), reconstruites à chaque rafraîchissement. */
+function pulseInto(box, data) {
+  const { pulse, categories } = data;
+  const now = Date.now();
+  box.replaceChildren();
+  const events = h('section', 'fo-sec', null, { 'aria-label': 'Prochaines watch parties' });
+  const propose = banned() ? null : link('#/forum/new/' + EVENT_CAT, 'btn btn-ghost', 'Proposer une séance');
+  events.append(sectionHead('Prochaines watch parties', 'Une date, un film, et tout le monde lance la lecture en même temps.', propose));
+  if (pulse.events.length) {
+    const row = h('div', 'fo-evs');
+    pulse.events.forEach((t) => row.append(eventCard(t, now)));
+    events.append(row);
+  } else {
+    events.append(h('p', 'fo-empty fo-evempty', 'Aucune séance de prévue. Propose la première : choisis une date, les membres s’inscrivent et le salon s’ouvre 15 minutes avant.'));
+  }
+  box.append(events);
+
+  const grid = h('div', 'fo-grid');
+  const feed = h('section', 'fo-sec fo-feed', null, { 'aria-label': 'Dernières discussions' });
+  feed.append(sectionHead('Dernières discussions', null, banned() ? null : link('#/forum/new', 'btn btn-ghost', 'Nouveau sujet')));
+  if (pulse.recent.length) {
+    const ul = h('ul', 'fo-feed-list');
+    pulse.recent.forEach((t, i) => ul.append(feedItem(t, categories, i)));
+    feed.append(ul);
+  } else {
+    feed.append(h('p', 'fo-empty', 'Le forum attend son premier sujet. Une question, un bug, une idée : lance-toi !'));
+  }
+  const aside = h('aside', 'fo-aside');
+  if (pulse.trending.length) {
+    const sec = h('section', 'fo-sec fo-card', null, { 'aria-label': 'En vue cette semaine' });
+    sec.append(h('h2', 'fo-h2', 'En vue cette semaine'), trendingEl(pulse.trending));
+    aside.append(sec);
+  }
+  if (pulse.activeMembers.length) {
+    const sec = h('section', 'fo-sec fo-card', null, { 'aria-label': 'Membres actifs' });
+    sec.append(h('h2', 'fo-h2', 'Membres actifs'), membersEl(pulse.activeMembers));
+    aside.append(sec);
+  }
+  grid.append(feed);
+  if (aside.childNodes.length) grid.append(aside);
+  box.append(grid);
+}
+
+/** Rafraîchissement de l'accueil toutes les 60 s tant qu'il est affiché et visible. */
+let pulseTimer = null;
+function stopPulse() {
+  if (pulseTimer) clearInterval(pulseTimer);
+  pulseTimer = null;
+}
+
 async function showHome(seq) {
-  const body = shell('Forum');
+  stopPulse();
+  const body = shell('Communauté');
+  body.classList.add('is-wide');
   body.append(h('p', 'row-msg', 'Chargement…'));
   let data;
   try {
@@ -237,29 +474,31 @@ async function showHome(seq) {
   body.replaceChildren();
   const head = h('header', 'fo-hero');
   const ht = h('div', 'fo-hero-t');
-  ht.append(h('h1', 'fo-h1', 'Communauté'), h('p', 'fo-lede', 'Entraide, bugs, idées, guides et cinéma : l’espace des membres qui font vivre Laststream.'));
+  ht.append(h('p', 'fo-eyebrow', 'Forum des membres'), h('h1', 'fo-h1', 'Communauté'), h('p', 'fo-lede', 'Entraide, bugs, idées, guides, cinéma et watch parties : l’espace des membres qui font vivre Laststream.'));
   const acts = h('div', 'fo-hero-acts');
-  if (!banned()) acts.append(link('#/forum/new', 'btn btn-primary', 'Nouveau sujet'));
+  if (!banned()) acts.append(link('#/forum/new', 'btn btn-primary', 'Nouveau sujet'), link('#/forum/new/' + EVENT_CAT, 'btn btn-ghost', 'Proposer une watch party'));
   if (staff()) {
     const mod = link('#/forum/mod', 'btn btn-ghost fo-modbtn', 'Modération');
     if (data.openReports) mod.append(h('span', 'fo-pill', String(data.openReports), { 'aria-label': data.openReports + ' signalements' }));
     acts.append(mod);
   }
-  head.append(ht, acts);
+  ht.append(acts);
+  head.append(ht, statsEl(data.pulse.stats));
   body.append(head);
   const notice = banNotice();
   if (notice) body.append(notice);
 
   const form = h('form', 'fo-search', null, { role: 'search' });
-  const input = h('input', 'fo-search-in', null, { type: 'search', placeholder: 'Rechercher dans le forum', 'aria-label': 'Rechercher dans le forum', minlength: 2, maxlength: 100 });
+  const input = h('input', 'fo-search-in', null, { type: 'search', placeholder: 'Rechercher un sujet, un message…', 'aria-label': 'Rechercher dans le forum', minlength: 2, maxlength: 100 });
   form.append(input);
   const results = h('section', 'fo-results', null, { hidden: '', 'aria-live': 'polite' });
+  const home = h('div', 'fo-home');
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const q = input.value.trim();
-    if (q.length < 2) { results.hidden = true; cats.hidden = false; return; }
+    if (q.length < 2) { results.hidden = true; home.hidden = false; return; }
     results.hidden = false;
-    cats.hidden = true;
+    home.hidden = true;
     results.replaceChildren(h('p', 'row-msg', 'Recherche…'));
     try {
       const r = await api.search(q);
@@ -271,12 +510,33 @@ async function showHome(seq) {
       results.replaceChildren(h('p', 'row-msg', errText(x)));
     }
   });
-  input.addEventListener('input', () => { if (!input.value.trim()) { results.hidden = true; cats.hidden = false; } });
-  body.append(form, results);
+  input.addEventListener('input', () => { if (!input.value.trim()) { results.hidden = true; home.hidden = false; } });
+  body.append(form, results, home);
 
-  const cats = h('div', 'fo-cats');
-  data.categories.forEach((c) => cats.append(categoryCard(c)));
-  body.append(cats);
+  const live = h('section', 'fo-sec', null, { hidden: '', 'aria-label': 'Watch parties en direct' });
+  const pulseBox = h('div', 'fo-pulse');
+  const cats = h('section', 'fo-sec', null, { 'aria-label': 'Catégories' });
+  cats.append(sectionHead('Catégories', null));
+  const catGrid = h('div', 'fo-cats');
+  data.categories.forEach((c) => catGrid.append(categoryCard(c)));
+  cats.append(catGrid);
+  home.append(live, pulseBox, cats);
+  pulseInto(pulseBox, data);
+  void liveRoomsInto(live, seq);
+
+  pulseTimer = setInterval(async () => {
+    if (seq !== renderSeq) { stopPulse(); return; }
+    if (document.hidden || !home.isConnected) return;
+    try {
+      const fresh = await api.home();
+      if (seq !== renderSeq) return;
+      homeCache = fresh;
+      pulseInto(pulseBox, fresh);
+      void liveRoomsInto(live, seq);
+    } catch {
+      /* hors ligne : on garde l'affichage */
+    }
+  }, 60_000);
 }
 
 // ---------- Catégorie ----------
@@ -361,8 +621,21 @@ async function showNew(seq, catId) {
     bugs: 'Indique ton appareil (Android, Windows, TV…), la version de Laststream et les étapes pour reproduire le problème.',
     extensions: 'Pas de lien vers du contenu piraté : ces messages sont retirés.',
     films: 'Pense à masquer les révélations avec ||spoiler||.',
+    [EVENT_CAT]: 'Dis ce que vous regarderez et comment le trouver. Les membres s’inscrivent, et tu ouvres le salon à partir de 15 minutes avant le début.',
   };
-  const refreshHint = () => { hint.textContent = hints[select.value] || ''; };
+  const start = defaultStart(Date.now());
+  const when = h('fieldset', 'fo-when');
+  const dateIn = h('input', 'fo-input', null, { type: 'date', value: start.date, 'aria-label': 'Date de la séance' });
+  const timeIn = h('input', 'fo-input', null, { type: 'time', value: start.time, step: 300, 'aria-label': 'Heure de la séance' });
+  const dLab = h('label', 'fo-field');
+  dLab.append(h('span', 'fo-lab', 'Date'), dateIn);
+  const tLab = h('label', 'fo-field');
+  tLab.append(h('span', 'fo-lab', 'Heure'), timeIn);
+  when.append(h('legend', 'fo-lab', 'Séance'), dLab, tLab);
+  const refreshHint = () => {
+    hint.textContent = hints[select.value] || '';
+    when.hidden = select.value !== EVENT_CAT;
+  };
   select.addEventListener('change', refreshHint);
   refreshHint();
   const titleLab = h('label', 'fo-field');
@@ -374,8 +647,13 @@ async function showNew(seq, catId) {
     onCancel: () => history.back(),
     async onSubmit(text) {
       if (title.value.trim().length < 3) throw new Error('Le titre doit faire au moins 3 caractères.');
+      let startsAt;
+      if (select.value === EVENT_CAT) {
+        startsAt = parseLocal(dateIn.value, timeIn.value);
+        if (!Number.isFinite(startsAt) || startsAt < Date.now() + 5 * MIN) throw new Error('Choisis une date et une heure à venir pour la séance.');
+      }
       try {
-        const r = await api.createTopic(select.value, title.value, text);
+        const r = await api.createTopic(select.value, title.value, text, startsAt);
         homeCache = null;
         go('#/forum/t/' + encodeURIComponent(r.topic.id));
       } catch (e) {
@@ -383,7 +661,7 @@ async function showNew(seq, catId) {
       }
     },
   });
-  form.append(catLab, hint, titleLab, comp.el);
+  form.append(catLab, hint, when, titleLab, comp.el);
   body.append(form);
   title.focus({ preventScroll: true });
 }
@@ -646,6 +924,7 @@ async function showTopic(seq, id) {
   head.append(title, h('p', 'fo-dim', (topic.replyCount + 1) + (topic.replyCount ? ' messages' : ' message') + ' · ouvert par ' + nameOf(topic.author) + ' ' + (ago(topic.createdAt) === 'à l’instant' ? 'à l’instant' : 'il y a ' + ago(topic.createdAt))));
   body.append(head);
   const reload = () => { if (seq === renderSeq) void showTopic(++renderSeq, id); };
+  if (topic.event) body.append(eventPanel(topic, data.me, reload));
   if (staff()) body.append(staffBar(topic, data.categories, reload));
   const notice = banNotice();
   if (notice) body.append(notice);
@@ -702,6 +981,48 @@ async function showTopic(seq, id) {
   const wrapReply = h('section', 'fo-reply', null, { 'aria-label': 'Répondre' });
   wrapReply.append(h('h2', 'fo-h2', 'Répondre'), comp.el);
   body.append(wrapReply);
+}
+
+/** Carte de séance d'un sujet de watch party : date, compte à rebours, inscrits, inscription, ouverture du salon. */
+function eventPanel(topic, me, reload) {
+  const ev = topic.event;
+  const now = Date.now();
+  const sec = h('section', 'fo-evpanel', null, { 'aria-label': 'Séance de watch party' });
+  sec.append(dateChip(ev.startsAt, true));
+  const main = h('div', 'fo-evpanel-main');
+  const live = now >= ev.startsAt && now <= ev.startsAt + OPEN_GRACE;
+  main.append(h('span', 'fo-ev-when' + (live ? ' is-live' : ''), live ? 'En cours' : untilText(ev.startsAt, now)));
+  main.append(h('h2', 'fo-h2 fo-evpanel-t', 'Séance du ' + whenText(ev.startsAt)));
+  const who = h('div', 'fo-attendees');
+  const stack = h('span', 'fo-stack', null, { 'aria-hidden': 'true' });
+  (topic.attendees || []).slice(0, 8).forEach((a) => stack.append(av(a, 28)));
+  who.append(stack, h('span', 'fo-dim', plural(ev.going, 'inscrit', 'inscrits')));
+  main.append(who);
+  const acts = h('div', 'fo-ev-acts');
+  if (ev.roomId) acts.append(link('#/party/' + encodeURIComponent(ev.roomId), 'btn btn-primary', 'Rejoindre le salon'));
+  acts.append(rsvpButton(topic, () => reload()));
+  const host = topic.author.pid === me.pid || me.role !== 'member';
+  if (host && !ev.roomId && !banned() && now <= ev.startsAt + OPEN_GRACE) {
+    const open = h('button', 'btn btn-primary', 'Ouvrir le salon', { type: 'button' });
+    const tooEarly = now < ev.startsAt - OPEN_LEAD;
+    if (tooEarly) open.disabled = true;
+    open.addEventListener('click', async () => {
+      open.disabled = true;
+      try {
+        const r = await api.openEvent(topic.id);
+        homeCache = null;
+        go('#/party/' + encodeURIComponent(r.roomId));
+      } catch (e) {
+        toast(errText(e));
+        open.disabled = false;
+      }
+    });
+    acts.append(open);
+    if (tooEarly) main.append(h('p', 'fo-dim', 'Tu pourras ouvrir le salon à partir de ' + timeText(ev.startsAt - OPEN_LEAD) + ' le jour J. Chaque participant lance ensuite sa propre source.'));
+  }
+  main.append(acts);
+  sec.append(main);
+  return sec;
 }
 
 // ---------- Modération ----------
@@ -826,6 +1147,7 @@ async function showMod(seq) {
 let current = { view: 'home' };
 
 function route() {
+  stopPulse();
   const seq = ++renderSeq;
   const v = current;
   if (v.view === 'cat') return showCategory(seq, v.id);
@@ -843,5 +1165,6 @@ export function showForum(view = 'home', id = '') {
 
 /** Page quittée : un chargement en cours n'affichera plus rien. */
 export function teardownForum() {
+  stopPulse();
   renderSeq++;
 }

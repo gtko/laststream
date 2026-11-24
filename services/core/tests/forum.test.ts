@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PartyBackend, PartyRoomStub } from '../src/party/backend.js';
+import type { RoomInfo, RoomMeta } from '../src/party/protocol.js';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { as, type Cast, castOf, HOOK_TIMEOUT_MS, type Persona } from './social-v2-harness.js';
 
@@ -19,6 +21,7 @@ interface Topic {
   locked: boolean;
   hidden: boolean;
   lastPoster: Author;
+  event?: { startsAt: number; roomId: string | null; going: number; mine?: boolean };
 }
 interface Post {
   id: string;
@@ -31,6 +34,7 @@ interface Post {
   editedAt?: number;
 }
 interface TopicDetail extends Topic {
+  attendees?: Author[];
   posts: Post[];
   more: boolean;
 }
@@ -38,6 +42,13 @@ interface Home {
   me: { pid: string; role: string; bannedUntil?: number | null };
   categories: { id: string; topicCount: number; postCount: number; staffOnly: boolean }[];
   openReports?: number;
+  pulse: {
+    stats: { topics: number; posts: number; members: number; postsToday: number };
+    recent: (Topic & { excerpt: string })[];
+    trending: (Topic & { heat: number })[];
+    activeMembers: { author: Author; posts: number }[];
+    events: Topic[];
+  };
 }
 interface ErrorBody {
   error: string;
@@ -47,11 +58,32 @@ const NOW = '2026-11-24T10:00:00.000Z';
 
 let app: RunningApp;
 let cast: Cast;
+let rooms: Map<string, RoomMeta>;
+
+/** Salons simulés : un salon existe de son `init` à son `close`. */
+function fakeParty(): PartyBackend {
+  return {
+    room: (id) =>
+      ({
+        init: (meta: RoomMeta) => {
+          if (rooms.has(meta.id)) return Promise.resolve('exists');
+          rooms.set(meta.id, meta);
+          return Promise.resolve('ok');
+        },
+        info: () => {
+          const meta = rooms.get(id);
+          return Promise.resolve(meta === undefined ? null : ({ id, title: meta.title, visibility: meta.visibility } as unknown as RoomInfo));
+        },
+        close: () => Promise.resolve(rooms.delete(id) ? 'ok' : 'not_found'),
+      }) as unknown as PartyRoomStub,
+  };
+}
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(NOW));
-  app = await startApp({});
+  rooms = new Map();
+  app = await startApp({ extra: { party: fakeParty() } });
   cast = await castOf(app);
 }, HOOK_TIMEOUT_MS);
 
@@ -61,7 +93,12 @@ afterEach(async () => {
   await app.close();
 });
 
-async function newTopic(who: Persona, categoryId = 'bugs', title = 'La lecture coupe sur Android', body = 'Bonjour,\n\nla vidéo **s’arrête** après 10 min.'): Promise<Topic> {
+async function newTopic(
+  who: Persona,
+  categoryId = 'bugs',
+  title = 'La lecture coupe sur Android',
+  body = 'Bonjour,\n\nla vidéo **s’arrête** après 10 min.',
+): Promise<Topic> {
   const res = await as<{ topic: Topic }>(app, who, 'POST', '/user/forum/topics', { body: { categoryId, title, body } });
   expect(res.status).toBe(201);
   return res.body.topic;
@@ -83,7 +120,17 @@ describe('forum : lecture et écriture', () => {
   it('accueil : catégories dans l’ordre, rôle du profil (propriétaire, membre)', async () => {
     const home = await as<Home>(app, cast.alice, 'GET', '/user/forum');
     expect(home.status).toBe(200);
-    expect(home.body.categories.map((c) => c.id)).toEqual(['annonces', 'bugs', 'idees', 'aide', 'guides', 'extensions', 'films', 'hors-sujet']);
+    expect(home.body.categories.map((c) => c.id)).toEqual([
+      'annonces',
+      'bugs',
+      'idees',
+      'aide',
+      'guides',
+      'extensions',
+      'films',
+      'watch-parties',
+      'hors-sujet',
+    ]);
     expect(home.body.me.role).toBe('owner');
     expect(home.body.openReports).toBe(0);
     const bob = await as<Home>(app, cast.bob, 'GET', '/user/forum');
@@ -160,7 +207,9 @@ describe('forum : lecture et écriture', () => {
     await as(app, cast.alice, 'PUT', `/user/forum/posts/${postId}/reactions`, { body: { emoji: '👍', on: true } });
     expect((await read(cast.bob, topic.id)).posts[0]?.reactions).toEqual([{ emoji: '👍', count: 2, mine: false }]);
     expect((await as(app, cast.carol, 'PUT', `/user/forum/posts/${postId}/reactions`, { body: { emoji: '💩', on: true } })).status).toBe(400);
-    const off = await as<{ reactions: Post['reactions'] }>(app, cast.carol, 'PUT', `/user/forum/posts/${postId}/reactions`, { body: { emoji: '👍', on: false } });
+    const off = await as<{ reactions: Post['reactions'] }>(app, cast.carol, 'PUT', `/user/forum/posts/${postId}/reactions`, {
+      body: { emoji: '👍', on: false },
+    });
     expect(off.body.reactions).toEqual([{ emoji: '👍', count: 1, mine: false }]);
   });
 
@@ -263,5 +312,102 @@ describe('forum : accès abonné', () => {
     expect(blocked.status).toBe(402);
     expect(blocked.body.error).toBe('subscription_required');
     expect((await as(app, cast.alice, 'GET', '/user/forum')).status).toBe(200);
+  });
+});
+
+describe('forum : accueil vivant et watch parties', () => {
+  const HOUR = 60 * 60 * 1000;
+  const at = (offsetMs: number): void => {
+    vi.setSystemTime(new Date(Date.parse(NOW) + offsetMs));
+  };
+
+  it('accueil : chiffres, dernières discussions avec extrait sans spoiler, sujets en vue, membres actifs', async () => {
+    const first = await newTopic(cast.bob, 'films', 'Fin de la saison 2', 'La fin ? ||le héros meurt|| et **quelle** scène.');
+    at(1000);
+    const second = await newTopic(cast.carol, 'aide', 'Profil enfant', 'Comment créer un profil enfant ?');
+    at(2000);
+    await reply(cast.carol, first.id, 'Je n’en reviens toujours pas.');
+    at(3000);
+    await reply(cast.alice, first.id, 'Ajoutez des balises spoiler, merci !');
+    const home = await as<Home>(app, cast.bob, 'GET', '/user/forum');
+    const pulse = home.body.pulse;
+    expect(pulse.stats).toEqual({ topics: 2, posts: 4, members: 3, postsToday: 4 });
+    expect(pulse.recent.map((t) => t.id)).toEqual([first.id, second.id]);
+    expect(pulse.recent[0]?.excerpt).toBe('Ajoutez des balises spoiler, merci !');
+    expect(pulse.trending.map((t) => [t.id, t.heat])).toEqual([
+      [first.id, 3],
+      [second.id, 1],
+    ]);
+    expect(pulse.activeMembers.map((m) => [m.author.pid, m.posts])).toEqual([
+      [cast.carol.pid, 2],
+      [cast.bob.pid, 1],
+      [cast.alice.pid, 1],
+    ]);
+    // L'extrait masque un spoiler et retire le Markdown.
+    at(4000);
+    await reply(cast.bob, second.id, '||secret|| et **gras**');
+    const again = await as<Home>(app, cast.bob, 'GET', '/user/forum');
+    expect(again.body.pulse.recent[0]?.excerpt).toBe('[spoiler] et gras');
+  });
+
+  it('séance : date obligatoire dans la catégorie, refusée ailleurs, auteur inscrit', async () => {
+    const post = (categoryId: string, startsAt?: number) =>
+      as<ErrorBody>(app, cast.bob, 'POST', '/user/forum/topics', {
+        body: { categoryId, title: 'Soirée Ghibli', body: 'On regarde Totoro ensemble.', ...(startsAt ? { startsAt } : {}) },
+      });
+    expect((await post('watch-parties')).status).toBe(400);
+    expect((await post('films', Date.parse(NOW) + 2 * HOUR)).status).toBe(400);
+    expect((await post('watch-parties', Date.parse(NOW) + 60_000)).status).toBe(400);
+    expect((await post('watch-parties', Date.parse(NOW) + 100 * 24 * HOUR)).status).toBe(400);
+    const created = await as<{ topic: Topic }>(app, cast.bob, 'POST', '/user/forum/topics', {
+      body: { categoryId: 'watch-parties', title: 'Soirée Ghibli', body: 'On regarde Totoro ensemble.', startsAt: Date.parse(NOW) + 2 * HOUR },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.topic.event).toEqual({ startsAt: Date.parse(NOW) + 2 * HOUR, roomId: null, going: 1 });
+    const detail = await read(cast.carol, created.body.topic.id);
+    expect(detail.event?.mine).toBe(false);
+    expect(detail.attendees?.map((a) => a.pid)).toEqual([cast.bob.pid]);
+  });
+
+  it('inscription, désinscription, accueil des prochaines séances', async () => {
+    const created = await as<{ topic: Topic }>(app, cast.bob, 'POST', '/user/forum/topics', {
+      body: { categoryId: 'watch-parties', title: 'Marathon Alien', body: 'Les quatre films, pause pizza.', startsAt: Date.parse(NOW) + 3 * HOUR },
+    });
+    const id = created.body.topic.id;
+    const on = await as<{ event: { going: number; mine: boolean } }>(app, cast.carol, 'PUT', `/user/forum/topics/${id}/rsvp`, { body: { on: true } });
+    expect(on.status).toBe(200);
+    expect(on.body.event).toMatchObject({ going: 2, mine: true });
+    const home = await as<Home>(app, cast.carol, 'GET', '/user/forum');
+    expect(home.body.pulse.events.map((t) => [t.id, t.event?.going, t.event?.mine])).toEqual([[id, 2, true]]);
+    const off = await as<{ event: { going: number; mine: boolean } }>(app, cast.carol, 'PUT', `/user/forum/topics/${id}/rsvp`, { body: { on: false } });
+    expect(off.body.event).toMatchObject({ going: 1, mine: false });
+    expect((await as(app, cast.carol, 'PUT', `/user/forum/topics/${(await newTopic(cast.bob)).id}/rsvp`, { body: { on: true } })).status).toBe(404);
+    // Passé de plus de 3 h : la séance quitte l'accueil et n'accepte plus d'inscription.
+    at(7 * HOUR);
+    expect((await as<Home>(app, cast.carol, 'GET', '/user/forum')).body.pulse.events).toEqual([]);
+    expect((await as<ErrorBody>(app, cast.carol, 'PUT', `/user/forum/topics/${id}/rsvp`, { body: { on: true } })).status).toBe(409);
+  });
+
+  it('salon : ouvert par l’auteur dans la fenêtre, public, idempotent, remplacé une fois terminé', async () => {
+    const created = await as<{ topic: Topic }>(app, cast.bob, 'POST', '/user/forum/topics', {
+      body: { categoryId: 'watch-parties', title: 'Soirée Ghibli', body: 'On regarde Totoro ensemble.', startsAt: Date.parse(NOW) + 2 * HOUR },
+    });
+    const id = created.body.topic.id;
+    const early = await as<ErrorBody>(app, cast.bob, 'POST', `/user/forum/topics/${id}/open`);
+    expect(early.status).toBe(409);
+    expect(early.body.error).toBe('event_not_open');
+    at(2 * HOUR - 10 * 60_000);
+    expect((await as<ErrorBody>(app, cast.carol, 'POST', `/user/forum/topics/${id}/open`)).status).toBe(403);
+    const opened = await as<{ roomId: string }>(app, cast.bob, 'POST', `/user/forum/topics/${id}/open`);
+    expect(opened.status).toBe(200);
+    const roomId = opened.body.roomId;
+    expect(rooms.get(roomId)).toMatchObject({ title: 'Soirée Ghibli', visibility: 'public' });
+    expect((await read(cast.carol, id)).event?.roomId).toBe(roomId);
+    expect((await as<{ roomId: string }>(app, cast.bob, 'POST', `/user/forum/topics/${id}/open`)).body.roomId).toBe(roomId);
+    rooms.delete(roomId);
+    const reopened = await as<{ roomId: string }>(app, cast.bob, 'POST', `/user/forum/topics/${id}/open`);
+    expect(reopened.status).toBe(200);
+    expect(reopened.body.roomId).not.toBe(roomId);
+    expect(rooms.size).toBe(1);
   });
 });

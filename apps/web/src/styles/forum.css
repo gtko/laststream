@@ -146,3 +146,97 @@
   .fo-post { padding: 12px; gap: 10px; }
   .fo-post-side .cv-av { width: 32px !important; height: 32px !important; }
 }
+
+/* Accueil vivant (chiffres, séances, discussions, tendances, membres) */
+.fo-body.is-wide { max-width: 1200px; }
+.fo-eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.fo-hero { align-items: stretch; }
+.fo-hero-t { flex: 1 1 380px; display: flex; flex-direction: column; gap: 14px; }
+.fo-stats { flex: 1 1 360px; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-content: end; }
+.fo-stat { padding: 14px; border-radius: 14px; background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--line); display: flex; flex-direction: column-reverse; gap: 2px; }
+.fo-stat-n { margin: 0; font-family: var(--ff-title); font-weight: 800; font-size: 26px; font-variant-numeric: tabular-nums; }
+.fo-stat-l { color: var(--soft); font-size: 13px; }
+.fo-home, .fo-pulse { display: flex; flex-direction: column; gap: 28px; }
+.fo-home[hidden], .fo-sec[hidden] { display: none; }
+.fo-sec { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.fo-sechead { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; justify-content: space-between; }
+.fo-sechead .fo-h2 { margin: 0; }
+.fo-seclede { margin: 4px 0 0; }
+.fo-card { padding: 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+
+.fo-rise { animation: fo-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes fo-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fo-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .fo-rise, .fo-live-tag::before, .fo-ev-when.is-live::before { animation: none; } }
+
+.fo-live { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 260px); gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+.fo-live-card { scroll-snap-align: start; display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); color: var(--text); text-decoration: none; transition: border-color 0.15s, transform 0.15s; }
+.fo-live-card:hover, .fo-live-card:focus-visible { border-color: var(--accent); transform: translateY(-2px); }
+.fo-live-tag, .fo-ev-when { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.fo-live-tag::before, .fo-ev-when.is-live::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: fo-pulse 1.6s infinite; }
+.fo-live-t { font-weight: 800; overflow-wrap: anywhere; }
+
+.fo-evs { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.fo-ev { display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: flex-start; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.fo-ev-date { flex: none; width: 52px; height: 56px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 16%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.fo-ev-date.is-big { width: 72px; height: 78px; border-radius: 16px; }
+.fo-ev-day { font-family: var(--ff-title); font-weight: 800; font-size: 22px; line-height: 1; }
+.fo-ev-date.is-big .fo-ev-day { font-size: 30px; }
+.fo-ev-mon { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--soft); }
+.fo-ev-main { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.fo-ev-t { color: var(--text); font-weight: 800; text-decoration: none; overflow-wrap: anywhere; }
+.fo-ev-t:hover { color: var(--accent); }
+.fo-ev-acts { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+.fo-going::before { content: '✓ '; }
+.fo-evempty { padding: 16px; border-radius: 16px; border: 1px dashed var(--line-2); }
+
+.fo-grid { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.fo-feed { flex: 999 1 520px; }
+.fo-aside { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.fo-feed-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.fo-feed-item { display: flex; gap: 12px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); transition: border-color 0.15s; }
+.fo-feed-item:hover { border-color: var(--line-2); }
+.fo-feed-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.fo-feed-who { margin: 0; font-size: 13px; color: var(--soft); }
+.fo-feed-who strong { color: var(--text); }
+.fo-feed-t { color: var(--text); font-weight: 800; font-size: 16px; text-decoration: none; overflow-wrap: anywhere; }
+.fo-feed-t:hover { color: var(--accent); }
+.fo-feed-ex { margin: 0; color: var(--soft); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fo-feed-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 2px; }
+.fo-tag { padding: 3px 10px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--soft); font-size: 12px; font-weight: 700; text-decoration: none; }
+.fo-tag:hover { color: var(--text); border-color: var(--line-2); }
+
+.fo-trend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.fo-trend-item { display: flex; gap: 12px; align-items: flex-start; }
+.fo-trend-rank { flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--bg); font-weight: 800; font-size: 13px; color: var(--accent); }
+.fo-trend-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.fo-trend-t { color: var(--text); font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
+.fo-trend-t:hover { color: var(--accent); }
+.fo-heat { height: 4px; border-radius: 4px; background: var(--bg); overflow: hidden; }
+.fo-heat-in { display: block; height: 100%; border-radius: 4px; background: var(--accent); transform-origin: left; animation: fo-grow 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes fo-grow { from { transform: scaleX(0); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .fo-heat-in { animation: none; } }
+
+.fo-members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.fo-member { display: flex; align-items: center; gap: 10px; }
+.fo-member-main { min-width: 0; display: flex; flex-direction: column; }
+.fo-member-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 700; }
+
+/* Séance dans un sujet et formulaire */
+.fo-evpanel { display: flex; flex-wrap: wrap; gap: 16px; padding: 18px; border-radius: 18px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%), var(--surface); }
+.fo-evpanel-main { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.fo-evpanel-t { margin: 0; }
+.fo-evpanel-main .fo-dim { margin: 0; }
+.fo-attendees { display: flex; align-items: center; gap: 10px; }
+.fo-stack { display: flex; }
+.fo-stack > * + * { margin-left: -8px; }
+.fo-stack > * { box-shadow: 0 0 0 2px var(--surface); }
+.fo-when { margin: 0; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.fo-when[hidden] { display: none; }
+.fo-when legend { flex: 1 1 100%; margin-bottom: 4px; }
+.fo-when .fo-field { flex: 1 1 160px; }
+@media (max-width: 640px) {
+  .fo-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fo-stat-n { font-size: 22px; }
+}

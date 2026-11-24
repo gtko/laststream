@@ -30,6 +30,25 @@ const POSTS_PER_10_MIN = 20;
 const REPORTS_PER_HOUR = 20;
 const HOUR_MS = 60 * 60 * 1000;
 const TEN_MIN_MS = 10 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** Catégorie des watch parties communautaires : chaque sujet y porte une séance (date de début, inscriptions, salon). */
+export const EVENT_CATEGORY = 'watch-parties';
+/** Une séance se programme de 5 minutes à 90 jours à l'avance. */
+const EVENT_MIN_LEAD_MS = 5 * 60 * 1000;
+const EVENT_MAX_AHEAD_MS = 90 * DAY_MS;
+/** Le salon s'ouvre de 15 minutes avant le début à 3 heures après ; la séance reste à l'affiche 3 heures après son début. */
+const EVENT_OPEN_LEAD_MS = 15 * 60 * 1000;
+const EVENT_OPEN_GRACE_MS = 3 * HOUR_MS;
+const ATTENDEES_SHOWN = 12;
+/** Accueil vivant : nombre d'éléments par bloc et fenêtres d'activité. */
+const PULSE_RECENT = 8;
+const PULSE_TRENDING = 5;
+const PULSE_MEMBERS = 8;
+const PULSE_EVENTS = 6;
+const TRENDING_WINDOW_MS = 7 * DAY_MS;
+const MEMBERS_WINDOW_MS = 30 * DAY_MS;
+const EXCERPT_MAX = 160;
 
 export interface ForumAuthor {
   pid: string;
@@ -63,6 +82,26 @@ export interface ForumTopicSummary {
   pinned: boolean;
   locked: boolean;
   hidden: boolean;
+  /** Séance de watch party (sujets de la catégorie watch-parties). */
+  event?: ForumEvent;
+}
+
+export interface ForumEvent {
+  startsAt: number;
+  /** Salon de visionnage ouvert pour la séance, null tant qu'il ne l'est pas. */
+  roomId: string | null;
+  going: number;
+  /** Le profil qui lit est inscrit (absent dans les listes qui ne le calculent pas). */
+  mine?: boolean;
+}
+
+/** Accueil vivant du forum : chiffres, dernières discussions, sujets en vue, membres actifs, prochaines séances. */
+export interface ForumPulse {
+  stats: { topics: number; posts: number; members: number; postsToday: number };
+  recent: (ForumTopicSummary & { excerpt: string })[];
+  trending: (ForumTopicSummary & { heat: number })[];
+  activeMembers: { author: ForumAuthor; posts: number }[];
+  events: ForumTopicSummary[];
 }
 
 export interface ForumPostView {
@@ -82,6 +121,8 @@ export interface ForumPostView {
 }
 
 export interface ForumTopicDetail extends ForumTopicSummary {
+  /** Inscrits à la séance (12 premiers), pour un sujet de watch party. */
+  attendees?: ForumAuthor[];
   posts: ForumPostView[];
   /** Il reste des messages après cette page (`?after=` le createdAt du dernier). */
   more: boolean;
@@ -115,7 +156,9 @@ export interface ForumBanView {
   createdAt: number;
 }
 
-type Refusal = { result: 'not_found' | 'forbidden' | 'locked' | 'banned' | 'staff_only' } | { result: 'rate_limited'; retryAfterSec: number };
+type Refusal =
+  | { result: 'not_found' | 'forbidden' | 'locked' | 'banned' | 'staff_only' | 'invalid_event' | 'event_not_open' }
+  | { result: 'rate_limited'; retryAfterSec: number };
 
 export type ForumWrite<T extends object = object> = ({ result: 'ok' } & T) | Refusal;
 
@@ -169,9 +212,14 @@ function authorOf(row: SqlRow, prefix: string): ForumAuthor {
   return author;
 }
 
-const TOPIC_SELECT = `
-  SELECT t.*, ${authorCols('t.author_pid', 'au_')}, ${authorCols('t.last_post_pid', 'lp_')}
-  FROM forum_topics t ${authorJoin('t.author_pid', 'au_')} ${authorJoin('t.last_post_pid', 'lp_')}`;
+/** Sujet, ses deux auteurs et sa séance éventuelle ; `extra` ajoute des colonnes calculées (sans paramètre). */
+const topicSelect = (extra = ''): string => `
+  SELECT t.*, ${authorCols('t.author_pid', 'au_')}, ${authorCols('t.last_post_pid', 'lp_')},
+    ev.starts_at AS ev_starts_at, ev.room_id AS ev_room_id,
+    (SELECT COUNT(*) FROM forum_event_rsvps r WHERE r.topic_id = t.id) AS ev_going${extra}
+  FROM forum_topics t ${authorJoin('t.author_pid', 'au_')} ${authorJoin('t.last_post_pid', 'lp_')}
+  LEFT JOIN forum_events ev ON ev.topic_id = t.id`;
+const TOPIC_SELECT = topicSelect();
 
 function topicOf(row: SqlRow): ForumTopicSummary {
   return {
@@ -186,7 +234,38 @@ function topicOf(row: SqlRow): ForumTopicSummary {
     pinned: Number(row.pinned) === 1,
     locked: Number(row.locked) === 1,
     hidden: Number(row.hidden) === 1,
+    ...(row.ev_starts_at === null || row.ev_starts_at === undefined
+      ? {}
+      : {
+          event: {
+            startsAt: Number(row.ev_starts_at),
+            roomId: row.ev_room_id === null || row.ev_room_id === undefined ? null : String(row.ev_room_id),
+            going: Number(row.ev_going ?? 0),
+          },
+        }),
   };
+}
+
+/**
+ * Extrait en texte brut d'un message (accueil) : spoilers remplacés, marques Markdown retirées, espaces resserrés, coupé à
+ * 160 caractères. Le client l'affiche comme texte, jamais comme HTML.
+ */
+export function excerptOf(body: string): string {
+  const plain = body
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\|\|[\s\S]*?\|\|/g, '[spoiler]')
+    .replace(/^>.*$/gm, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_~`#>]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const chars = [...plain];
+  return chars.length > EXCERPT_MAX
+    ? `${chars
+        .slice(0, EXCERPT_MAX - 1)
+        .join('')
+        .trimEnd()}…`
+    : plain;
 }
 
 /** Message et son auteur ; le premier paramètre est le pid du lecteur (« signalé par moi »). */
@@ -304,10 +383,87 @@ export class ForumStore {
     const rows = this.db
       .prepare(`${POST_SELECT} WHERE fp.topic_id = ? AND fp.created_at > ? ORDER BY fp.created_at, fp.id LIMIT ?`)
       .all(me.pid, id, after ?? -1, limit + 1);
-    return {
+    const detail: ForumTopicDetail = {
       ...topic,
       posts: this.postsOf(rows.slice(0, limit), me, topic.locked),
       more: rows.length > limit,
+    };
+    if (topic.event !== undefined) {
+      topic.event.mine = this.rsvped(id, me.pid);
+      detail.event = topic.event;
+      detail.attendees = this.db
+        .prepare(
+          `SELECT ${authorCols('r.pid', 'au_')} FROM forum_event_rsvps r ${authorJoin('r.pid', 'au_')}
+           WHERE r.topic_id = ? ORDER BY r.created_at LIMIT ?`,
+        )
+        .all(id, ATTENDEES_SHOWN)
+        .map((r) => authorOf(r, 'au_'));
+    }
+    return detail;
+  }
+
+  private rsvped(topicId: string, pid: string): boolean {
+    return this.db.prepare('SELECT 1 FROM forum_event_rsvps WHERE topic_id = ? AND pid = ?').get(topicId, pid) !== undefined;
+  }
+
+  /**
+   * Accueil vivant : chiffres du forum (sujets et messages visibles, membres ayant écrit, messages des dernières 24 h),
+   * 8 dernières discussions avec un extrait du dernier message, 5 sujets les plus actifs sur 7 jours, 8 membres les plus
+   * actifs sur 30 jours et les 6 prochaines séances de watch party (déjà commencées depuis moins de 3 h comprises).
+   * Seuls les sujets et messages visibles comptent, quel que soit le rôle du lecteur.
+   */
+  pulse(me: ForumMe, now: number): ForumPulse {
+    const counts = this.db
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM forum_topics WHERE hidden = 0) AS topics,
+           (SELECT COUNT(*) FROM forum_posts p JOIN forum_topics t ON t.id = p.topic_id WHERE p.hidden = '' AND t.hidden = 0) AS posts,
+           (SELECT COUNT(DISTINCT p.author_pid) FROM forum_posts p WHERE p.hidden = '') AS members,
+           (SELECT COUNT(*) FROM forum_posts p JOIN forum_topics t ON t.id = p.topic_id
+              WHERE p.hidden = '' AND t.hidden = 0 AND p.created_at > ?) AS posts_today`,
+      )
+      .get(now - DAY_MS);
+    const recent = this.db
+      .prepare(
+        `${topicSelect(`, (SELECT p.body FROM forum_posts p WHERE p.topic_id = t.id AND p.hidden = '' ORDER BY p.created_at DESC LIMIT 1) AS last_body`)}
+         WHERE t.hidden = 0 ORDER BY t.last_post_at DESC LIMIT ?`,
+      )
+      .all(PULSE_RECENT)
+      .map((row) => ({ ...topicOf(row), excerpt: excerptOf(String(row.last_body ?? '')) }));
+    const trending = this.db
+      .prepare(
+        `${topicSelect(', h.heat AS heat')}
+         JOIN (SELECT topic_id, COUNT(*) AS heat FROM forum_posts WHERE hidden = '' AND created_at > ? GROUP BY topic_id) h ON h.topic_id = t.id
+         WHERE t.hidden = 0 ORDER BY h.heat DESC, t.last_post_at DESC LIMIT ?`,
+      )
+      .all(now - TRENDING_WINDOW_MS, PULSE_TRENDING)
+      .map((row) => ({ ...topicOf(row), heat: Number(row.heat) }));
+    const activeMembers = this.db
+      .prepare(
+        `SELECT q.n, ${authorCols('q.author_pid', 'au_')}
+         FROM (SELECT author_pid, COUNT(*) AS n FROM forum_posts WHERE hidden = '' AND created_at > ? GROUP BY author_pid ORDER BY n DESC LIMIT ?) q
+         ${authorJoin('q.author_pid', 'au_')}
+         ORDER BY q.n DESC`,
+      )
+      .all(now - MEMBERS_WINDOW_MS, PULSE_MEMBERS)
+      .map((row) => ({ author: authorOf(row, 'au_'), posts: Number(row.n) }))
+      .filter((m) => m.author.handle !== undefined);
+    const events = this.db
+      .prepare(`${TOPIC_SELECT} WHERE t.hidden = 0 AND ev.starts_at > ? ORDER BY ev.starts_at LIMIT ?`)
+      .all(now - EVENT_OPEN_GRACE_MS, PULSE_EVENTS)
+      .map(topicOf);
+    for (const topic of events) if (topic.event !== undefined) topic.event.mine = this.rsvped(topic.id, me.pid);
+    return {
+      stats: {
+        topics: Number(counts?.topics ?? 0),
+        posts: Number(counts?.posts ?? 0),
+        members: Number(counts?.members ?? 0),
+        postsToday: Number(counts?.posts_today ?? 0),
+      },
+      recent,
+      trending,
+      activeMembers,
+      events,
     };
   }
 
@@ -368,13 +524,27 @@ export class ForumStore {
     return retryAfterSec === undefined ? undefined : { result: 'rate_limited', retryAfterSec };
   }
 
-  /** Ouvre un sujet et son premier message. 5 sujets par heure (les modérateurs ne sont pas limités). */
-  createTopic(me: ForumMe, categoryId: string, title: string, body: string, now: number): ForumWrite<{ topic: ForumTopicSummary; postId: string }> {
+  /**
+   * Ouvre un sujet et son premier message. 5 sujets par heure (les modérateurs ne sont pas limités). Dans la catégorie des
+   * watch parties, `startsAt` (de 5 min à 90 jours à l'avance) est obligatoire et l'auteur est inscrit à sa séance ; ailleurs
+   * il est refusé (`invalid_event`).
+   */
+  createTopic(
+    me: ForumMe,
+    categoryId: string,
+    title: string,
+    body: string,
+    now: number,
+    startsAt?: number,
+  ): ForumWrite<{ topic: ForumTopicSummary; postId: string }> {
     const gate = this.writeGate(me);
     if (gate !== undefined) return gate;
     const category = this.categoryExists(categoryId);
     if (category === undefined) return { result: 'not_found' };
     if (category.staffOnly && !isStaff(me.role)) return { result: 'staff_only' };
+    const isEvent = categoryId === EVENT_CATEGORY;
+    if (isEvent !== (startsAt !== undefined)) return { result: 'invalid_event' };
+    if (startsAt !== undefined && (startsAt < now + EVENT_MIN_LEAD_MS || startsAt > now + EVENT_MAX_AHEAD_MS)) return { result: 'invalid_event' };
     return this.db.transaction(() => {
       if (!isStaff(me.role)) {
         const limited = this.rate('forumTopic', me.pid, TOPICS_PER_HOUR, HOUR_MS, now);
@@ -386,6 +556,10 @@ export class ForumStore {
         .prepare('INSERT INTO forum_topics (id, category_id, author_pid, title, created_at, last_post_at, last_post_pid) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(id, categoryId, me.pid, title, now, now, me.pid);
       this.db.prepare('INSERT INTO forum_posts (id, topic_id, author_pid, body, created_at) VALUES (?, ?, ?, ?, ?)').run(postId, id, me.pid, body, now);
+      if (startsAt !== undefined) {
+        this.db.prepare('INSERT INTO forum_events (topic_id, starts_at) VALUES (?, ?)').run(id, startsAt);
+        this.db.prepare('INSERT INTO forum_event_rsvps (topic_id, pid, created_at) VALUES (?, ?, ?)').run(id, me.pid, now);
+      }
       const row = this.topicRow(id);
       if (row === undefined) throw new Error('sujet introuvable après création');
       return { result: 'ok' as const, topic: topicOf(row), postId };
@@ -542,6 +716,58 @@ export class ForumStore {
     const row = this.db.prepare('SELECT a.is_owner FROM profiles p JOIN accounts a ON a.id = p.account_id WHERE p.pid = ?').get(pid);
     if (Number(row?.is_owner ?? 0) === 1) return 'owner';
     return this.db.prepare('SELECT 1 FROM forum_moderators WHERE pid = ?').get(pid) !== undefined ? 'mod' : 'member';
+  }
+
+  // ---- Watch parties ----
+
+  /** Séance d'un sujet visible pour ce lecteur, ou undefined. */
+  private eventOf(topicId: string, me: ForumMe): { topic: ForumTopicSummary; event: ForumEvent } | undefined {
+    const row = this.topicRow(topicId);
+    if (row === undefined) return undefined;
+    const topic = topicOf(row);
+    if ((topic.hidden && !isStaff(me.role)) || topic.event === undefined) return undefined;
+    return { topic, event: topic.event };
+  }
+
+  /** S'inscrit à une séance ou se désinscrit. Fermé 3 h après le début (`event_not_open`). Les exclus ne s'inscrivent plus. */
+  rsvp(me: ForumMe, topicId: string, on: boolean, now: number): ForumWrite<{ event: ForumEvent }> {
+    const gate = this.writeGate(me);
+    if (gate !== undefined) return gate;
+    const found = this.eventOf(topicId, me);
+    if (found === undefined) return { result: 'not_found' };
+    if (now > found.event.startsAt + EVENT_OPEN_GRACE_MS) return { result: 'event_not_open' };
+    if (on) this.db.prepare('INSERT OR IGNORE INTO forum_event_rsvps (topic_id, pid, created_at) VALUES (?, ?, ?)').run(topicId, me.pid, now);
+    else this.db.prepare('DELETE FROM forum_event_rsvps WHERE topic_id = ? AND pid = ?').run(topicId, me.pid);
+    const after = this.eventOf(topicId, me);
+    if (after === undefined) return { result: 'not_found' };
+    return { result: 'ok', event: { ...after.event, mine: on } };
+  }
+
+  /**
+   * Vérifie qu'un profil peut ouvrir le salon d'une séance : auteur du sujet ou équipe, de 15 min avant le début à 3 h après.
+   * Rend le titre du sujet et le salon déjà rattaché (null sinon).
+   */
+  eventOpening(me: ForumMe, topicId: string, now: number): ForumWrite<{ title: string; roomId: string | null }> {
+    const gate = this.writeGate(me);
+    if (gate !== undefined) return gate;
+    const found = this.eventOf(topicId, me);
+    if (found === undefined) return { result: 'not_found' };
+    if (found.topic.author.pid !== me.pid && !isStaff(me.role)) return { result: 'forbidden' };
+    if (found.event.roomId !== null) return { result: 'ok', title: found.topic.title, roomId: found.event.roomId };
+    if (now < found.event.startsAt - EVENT_OPEN_LEAD_MS || now > found.event.startsAt + EVENT_OPEN_GRACE_MS) return { result: 'event_not_open' };
+    return { result: 'ok', title: found.topic.title, roomId: null };
+  }
+
+  /** Rattache un salon à une séance ; le premier rattachement gagne. Rend le salon effectif (undefined : séance disparue). */
+  attachRoom(topicId: string, roomId: string): string | undefined {
+    this.db.prepare('UPDATE forum_events SET room_id = ? WHERE topic_id = ? AND room_id IS NULL').run(roomId, topicId);
+    const row = this.db.prepare('SELECT room_id FROM forum_events WHERE topic_id = ?').get(topicId);
+    return row === undefined || row.room_id === null ? undefined : String(row.room_id);
+  }
+
+  /** Détache un salon terminé de sa séance (pour en rouvrir un). */
+  detachRoom(topicId: string, roomId: string): void {
+    this.db.prepare('UPDATE forum_events SET room_id = NULL WHERE topic_id = ? AND room_id = ?').run(topicId, roomId);
   }
 
   // ---- Modération (rôles owner et mod ; les routes vérifient le rôle) ----

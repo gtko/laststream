@@ -32,7 +32,11 @@ export const topicCreateSchema = z.strictObject({
   categoryId: ID,
   title: z.string().max(1000),
   body: z.string().max(BODY_MAX * 4),
+  /** Début de la séance (ms epoch), obligatoire dans la catégorie des watch parties et refusé ailleurs. */
+  startsAt: z.number().int().positive().optional(),
 });
+
+export const rsvpSchema = z.strictObject({ on: z.boolean() });
 
 export const postSchema = z.strictObject({
   body: z.string().max(BODY_MAX * 4),

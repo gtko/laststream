@@ -1,7 +1,11 @@
 import type { AppDeps } from '../deps.js';
 import type { App, Ctx } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
+import { createPartyRoom } from '../party/create-room.js';
+import { DEFAULT_MAX_PARTICIPANTS } from '../party/protocol.js';
+import { platform } from '../platform/index.js';
 import type { UserBackend } from '../user/repo.js';
+import { sessionOf } from '../user/session.js';
 import { parseHandle } from '../user/social-handles.js';
 import { actorOf, pidParam } from '../user/social-v2-routes.js';
 import { parseWith, UserApiError } from '../user/validation.js';
@@ -14,6 +18,7 @@ import {
   postSchema,
   reactionSchema,
   reportSchema,
+  rsvpSchema,
   searchQuery,
   topicCreateSchema,
   topicModSchema,
@@ -56,6 +61,10 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
         throw new UserApiError(403, 'forum_banned');
       case 'staff_only':
         throw new UserApiError(403, 'staff_only');
+      case 'invalid_event':
+        throw new UserApiError(400, 'invalid_body', ['startsAt:invalid']);
+      case 'event_not_open':
+        throw new UserApiError(409, 'event_not_open');
       case 'rate_limited':
         throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
     }
@@ -67,12 +76,16 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
     return cleaned;
   };
 
-  /** Accueil du forum : profil (rôle, exclusion), catégories, et pour l'équipe le nombre de messages signalés. */
+  /**
+   * Accueil du forum : profil (rôle, exclusion), catégories, activité (`pulse` : chiffres, dernières discussions, sujets en
+   * vue, membres actifs, prochaines watch parties), et pour l'équipe le nombre de messages signalés.
+   */
   router.get('/forum', async (c) => {
     const me = await meOf(c);
     const body: Record<string, unknown> = {
       me,
       categories: await forum().categories(),
+      pulse: await forum().pulse(me, Date.now()),
     };
     if (isStaff(me.role)) body.openReports = await forum().openReportCount();
     return sendJson(c, body);
@@ -98,8 +111,68 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
   router.post('/forum/topics', async (c) => {
     const me = await meOf(c);
     const input = parseWith(topicCreateSchema, c.get('body'));
-    const outcome = ok(await forum().createTopic(me, input.categoryId, text(input.title, 'title'), text(input.body, 'body'), Date.now()), 'category_not_found');
+    const outcome = ok(
+      await forum().createTopic(me, input.categoryId, text(input.title, 'title'), text(input.body, 'body'), Date.now(), input.startsAt),
+      'category_not_found',
+    );
     return sendJson(c, { topic: outcome.topic }, 201);
+  });
+
+  /** S'inscrit à la séance d'une watch party (`on`), ou se désinscrit. `{ event }`. */
+  router.put('/forum/topics/:id/rsvp', async (c) => {
+    const me = await meOf(c);
+    const input = parseWith(rsvpSchema, c.get('body'));
+    const outcome = ok(await forum().rsvp(me, String(c.req.param('id')), input.on, Date.now()), 'event_not_found');
+    return sendJson(c, { event: outcome.event });
+  });
+
+  /**
+   * Ouvre le salon de visionnage d'une séance (auteur du sujet ou équipe), de 15 min avant le début à 3 h après : salon
+   * public au titre du sujet, sans titre imposé (chacun lance ce qu'annonce le sujet), rattaché au sujet. Idempotent tant
+   * que le salon vit ; un salon terminé est remplacé. `{ roomId }`. 403 `forbidden`, 409 `event_not_open`,
+   * 429 `too_many_rooms`, 501 `party_unavailable` sans salons (serveur Node).
+   */
+  router.post('/forum/topics/:id/open', async (c) => {
+    const me = await meOf(c);
+    const id = String(c.req.param('id'));
+    const now = Date.now();
+    const opening = ok(await forum().eventOpening(me, id, now), 'event_not_found');
+    const party = deps.party ?? platform().createPartyBackend?.();
+    if (party === undefined) throw new UserApiError(501, 'party_unavailable');
+    if (opening.roomId !== null) {
+      if ((await party.room(opening.roomId).info()) !== null) return sendJson(c, { roomId: opening.roomId });
+      await forum().detachRoom(id, opening.roomId);
+      // Salon terminé : la fenêtre d'ouverture s'applique de nouveau.
+      ok(await forum().eventOpening(me, id, now), 'event_not_found');
+    }
+    const session = await sessionOf(backend.users(), c);
+    const profile = await backend.users().findProfile(session.account.id, c.req.header('x-profile-id') ?? '');
+    if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
+    const created = await createPartyRoom(
+      backend,
+      party,
+      { account: session.account, profile },
+      {
+        visibility: 'public',
+        title: opening.title,
+        poster: null,
+        language: null,
+        media: { type: 'movie' },
+        fingerprint: null,
+        maxParticipants: DEFAULT_MAX_PARTICIPANTS,
+      },
+    );
+    const effective = await forum().attachRoom(id, created.id);
+    if (effective !== created.id) {
+      // Ouverture concurrente : le premier salon rattaché gagne, celui-ci est fermé.
+      await party
+        .room(created.id)
+        .close(session.account.id)
+        .catch(() => undefined);
+      await backend.social().deletePartyRoom(created.id);
+      if (effective === undefined) throw new UserApiError(404, 'event_not_found');
+    }
+    return sendJson(c, { roomId: effective });
   });
 
   /** Sujet et une page de messages (`?after=` createdAt du dernier message reçu). */

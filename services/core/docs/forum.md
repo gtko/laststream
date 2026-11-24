@@ -12,7 +12,21 @@ enfants n'y ont pas accès. On écrit au nom d'un profil (son `Nom#TAG`).
 ## Catégories
 
 Fixées par la migration 37 : Annonces (équipe seulement), Remontée de bugs, Idées et demandes, Entraide, Guides et
-astuces, Extensions Stremio et sources, Films et séries, Hors-sujet.
+astuces, Extensions Stremio et sources, Films et séries, Watch parties, Hors-sujet.
+
+## Accueil
+
+`GET /user/forum` rend aussi `pulse` : chiffres (sujets, messages, membres qui écrivent, messages des dernières 24 h),
+8 dernières discussions avec un extrait en texte brut du dernier message (spoilers remplacés), 5 sujets les plus actifs
+sur 7 jours, 8 membres les plus actifs sur 30 jours et les 6 prochaines séances. L'app y ajoute les salons publics en
+direct (`GET /party`) et rafraîchit l'accueil toutes les minutes tant qu'il est affiché.
+
+## Watch parties
+
+Un sujet de la catégorie Watch parties porte une séance (`startsAt`, de 5 min à 90 jours à l'avance, obligatoire là et
+refusé ailleurs) ; son auteur y est inscrit. `PUT /forum/topics/:id/rsvp {on}` inscrit ou désinscrit (fermé 3 h après
+le début). `POST /forum/topics/:id/open` (auteur ou équipe, de T-15 min à T+3 h) ouvre un salon de visionnage public au
+titre du sujet et le rattache ; un salon terminé est remplacé. Sans salons (serveur Node) : 501 `party_unavailable`.
 
 ## Écrire
 
@@ -35,5 +49,5 @@ astuces, Extensions Stremio et sources, Films et séries, Hors-sujet.
 
 ## Prévu ensuite
 
-Lien des sujets avec les fiches de films, anti-spoiler selon la progression, votes sur les idées avec statut, temps
+Lien des sujets et des séances avec les fiches de films, anti-spoiler selon la progression, votes sur les idées avec statut, temps
 réel (nouvelles réponses en direct), notifications de mention et de réponse.

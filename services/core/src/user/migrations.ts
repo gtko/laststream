@@ -1064,7 +1064,8 @@ export const MIGRATIONS: readonly Migration[] = [
         ('guides', 'Guides et astuces', 'Tutoriels de la communauté, réglages, bonnes pratiques.', '📘', 4, 0),
         ('extensions', 'Extensions Stremio et sources', 'Extensions, catalogues, listes TV : configuration et retours. Pas de lien vers du contenu piraté.', '🧩', 5, 0),
         ('films', 'Films et séries', 'Coups de cœur, critiques, discussions (pense aux balises spoiler).', '🎬', 6, 0),
-        ('hors-sujet', 'Hors-sujet', 'Tout le reste, dans la bonne humeur.', '☕', 7, 0);
+        ('watch-parties', 'Watch parties', 'Propose une séance à date fixe : les membres s''inscrivent et regardent ensemble en lecture synchronisée.', '🍿', 7, 0),
+        ('hors-sujet', 'Hors-sujet', 'Tout le reste, dans la bonne humeur.', '☕', 8, 0);
 
       -- Sujet : titre et métadonnées ; son premier message (forum_posts) porte le texte. Horodatages en ms epoch.
       -- hidden : masqué par un modérateur, ou par son auteur s'il n'avait pas de réponse.
@@ -1131,6 +1132,21 @@ export const MIGRATIONS: readonly Migration[] = [
         reason TEXT,
         by_pid TEXT NOT NULL,
         created_at INTEGER NOT NULL
+      );
+
+      -- Séance d'une watch party communautaire, portée par un sujet (catégorie watch-parties) : date de début, salon de
+      -- visionnage associé par l'auteur quand il l'ouvre (room_id), inscriptions des membres.
+      CREATE TABLE forum_events (
+        topic_id TEXT PRIMARY KEY REFERENCES forum_topics(id) ON DELETE CASCADE,
+        starts_at INTEGER NOT NULL,
+        room_id TEXT
+      );
+      CREATE INDEX forum_events_starts ON forum_events(starts_at);
+      CREATE TABLE forum_event_rsvps (
+        topic_id TEXT NOT NULL REFERENCES forum_events(topic_id) ON DELETE CASCADE,
+        pid TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (topic_id, pid)
       );
     `,
   },
