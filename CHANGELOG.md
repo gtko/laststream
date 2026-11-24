@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.79 – 2026-11-24
+
+- Forum communautaire réservé aux abonnés (LAST-1651) (#59) — @gtko
+
 ## v1.0.78 – 2026-11-24
 
 - Résiliation de l'abonnement dans l'app ; rien de l'abonnement en auto-hébergé (LAST-1650) (#58) — @gtko
