@@ -353,8 +353,8 @@ describe('forum : accueil vivant et watch parties', () => {
     ]);
     expect(pulse.activeMembers.map((m) => [m.author.pid, m.posts])).toEqual([
       [cast.carol.pid, 2],
-      [cast.bob.pid, 1],
       [cast.alice.pid, 1],
+      [cast.bob.pid, 1],
     ]);
     // L'extrait masque un spoiler et retire le Markdown.
     at(4000);

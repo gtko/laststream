@@ -441,9 +441,9 @@ export class ForumStore {
     const activeMembers = this.db
       .prepare(
         `SELECT q.n, ${authorCols('q.author_pid', 'au_')}
-         FROM (SELECT author_pid, COUNT(*) AS n FROM forum_posts WHERE hidden = '' AND created_at > ? GROUP BY author_pid ORDER BY n DESC LIMIT ?) q
+         FROM (SELECT author_pid, COUNT(*) AS n, MAX(created_at) AS last FROM forum_posts WHERE hidden = '' AND created_at > ? GROUP BY author_pid ORDER BY n DESC, last DESC LIMIT ?) q
          ${authorJoin('q.author_pid', 'au_')}
-         ORDER BY q.n DESC`,
+         ORDER BY q.n DESC, q.last DESC`,
       )
       .all(now - MEMBERS_WINDOW_MS, PULSE_MEMBERS)
       .map((row) => ({ author: authorOf(row, 'au_'), posts: Number(row.n) }))
