@@ -2,7 +2,9 @@
  * « Signaler » d'une erreur interceptée. Feuille basse sur mobile, modale centrée sur ordinateur, panneau à droite dans le
  * lecteur. Ouverte depuis une erreur : type « Bug », erreur et contexte déjà remplis. Le détail technique part vers Sentry
  * (privé) ; le forum (service en ligne) reçoit un sujet public regroupé par empreinte d'erreur. */
-import { collectContext, contextRows, feedbackAvailable, forumAvailable, recentError, sendFeedback, sentryActive } from '../data/feedback';
+import { feedbackAvailable, forumAvailable, recentError, sentryActive } from '../data/feedback';
+import { collectContext, contextRows, sendFeedback } from '../data/feedbackSend';
+import '../styles/feedback.css';
 import { openSheet } from './sheet.js';
 import { esc } from './util.js';
 
@@ -136,7 +138,7 @@ export function openFeedback(o = {}) {
     }
   });
 
-  /** @param {import('../data/feedback').FeedbackResult} res */
+  /** @param {import('../data/feedbackSend').FeedbackResult} res */
   function done(res) {
     const lines = ['<p class="fb-thanks">Merci, c’est envoyé.</p>'];
     if (res.forum) {

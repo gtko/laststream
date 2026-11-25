@@ -36,12 +36,3 @@
   .sh-veil:has(> .fb-side) { align-items: flex-start; justify-content: flex-end; padding: 96px clamp(20px, 3vw, 40px) 0 0; background: rgba(0, 0, 0, 0.35); }
   .sh.fb-side { width: min(420px, calc(100vw - 48px)); max-height: calc(100dvh - 140px); background: rgba(20, 18, 27, 0.97); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6); }
 }
-
-/* Lien « Signaler ce problème » sous l'erreur du lecteur. */
-.lp-err-report { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 4px; }
-.lp-err-report[hidden] { display: none; }
-.lp-err-report button { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 0; border-radius: 10px; background: none; color: var(--soft); font: inherit; font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-.lp-err-report button:hover { color: #fff; }
-.lp-err-report button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-.lp-err-report svg { width: 18px; height: 18px; color: var(--accent); }
-.lp-err-report p { margin: 0; font-size: 12.5px; color: var(--dim); }

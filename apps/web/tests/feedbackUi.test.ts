@@ -11,6 +11,12 @@ vi.mock('../src/data/feedback', async (importOriginal) => {
     feedbackAvailable: () => state.available,
     forumAvailable: () => state.forum,
     sentryActive: () => state.sentry,
+  };
+});
+vi.mock('../src/data/feedbackSend', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/data/feedbackSend')>();
+  return {
+    ...real,
     sendFeedback: (input: Record<string, unknown>) => {
       state.sent.push(input);
       return Promise.resolve({ sentry: true, forum: input.forum ? { topicId: 'T9', grouped: true, reporters: 4 } : null });

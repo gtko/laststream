@@ -2,11 +2,12 @@
  * Actif seulement si VITE_SENTRY_DSN est défini au build (`.env.production`), jamais en développement ni en tests.
  * Pas de traces de performance, pas de Session Replay, pas de données personnelles. Chaque événement et fil d'Ariane
  * passe par le filtre de confidentialité de ./scrub. Compte : identifiant seulement, jamais pseudo ni e-mail. */
-import { breadcrumbsIntegration, init, type BrowserOptions } from '@sentry/browser';
+import { breadcrumbsIntegration, captureException, captureFeedback, init, type BrowserOptions } from '@sentry/browser';
 import { auth, isKidProfile } from '../data/auth';
+import { setFeedbackScrub, setFeedbackSentry } from '../data/feedback';
 import { isAndroidApp } from '../data/config';
 import { isShellEnvironment } from '../player/shell';
-import { scrubBreadcrumb, scrubEvent } from './scrub';
+import { scrubBreadcrumb, scrubEvent, scrubText } from './scrub';
 
 export type SentryEnvironment = 'web' | 'windows' | 'android';
 
@@ -57,10 +58,12 @@ const release = (): string | undefined =>
 
 /** Démarre Sentry si un DSN est fourni au build. Sans effet en développement, dans les tests ou sans DSN. */
 export function initSentry(): void {
+  setFeedbackScrub((text) => scrubText(text));
   const dsn: string | undefined = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn || import.meta.env.DEV || import.meta.env.MODE === 'test') return;
   try {
     init(buildSentryOptions(dsn, resolveEnvironment(), release()));
+    setFeedbackSentry({ captureException, captureFeedback });
   } catch {
     // La supervision ne doit jamais empêcher l'application de démarrer.
   }

@@ -1,26 +1,12 @@
 // Feedback de l'app (LAST-1654) : empreinte des erreurs, contexte joint, envoi vers Sentry et vers le forum.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { scrubText } from '../src/observability/scrub';
 
 const sentry = vi.hoisted(() => ({
   active: true,
   exceptions: [] as { err: unknown; hint: Record<string, unknown> }[],
   feedbacks: [] as { params: Record<string, unknown>; hint: Record<string, unknown> }[],
 }));
-vi.mock('@sentry/browser', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@sentry/browser')>();
-  return {
-    ...real,
-    getClient: () => (sentry.active ? {} : undefined),
-    captureException: (err: unknown, hint: Record<string, unknown>) => {
-      sentry.exceptions.push({ err, hint });
-      return 'e'.repeat(32);
-    },
-    captureFeedback: (params: Record<string, unknown>, hint: Record<string, unknown>) => {
-      sentry.feedbacks.push({ params, hint });
-      return 'f'.repeat(32);
-    },
-  };
-});
 const forum = vi.hoisted(() => ({ calls: [] as Record<string, unknown>[], fail: '' }));
 vi.mock('../src/data/forumApi', () => ({
   sendForumFeedback: (input: Record<string, unknown>) => {
@@ -35,10 +21,26 @@ vi.mock('../src/data/auth', async (importOriginal) => {
   const real = await importOriginal<typeof import('../src/data/auth')>();
   return { ...real, hasCommunity: () => community.on };
 });
-const fb = await import('../src/data/feedback');
+const fb = { ...(await import('../src/data/feedback')), ...(await import('../src/data/feedbackSend')) };
+
+const api = {
+  captureException: (err: unknown, hint: Record<string, unknown>) => {
+    sentry.exceptions.push({ err, hint });
+    return 'e'.repeat(32);
+  },
+  captureFeedback: (params: Record<string, unknown>, hint: Record<string, unknown>) => {
+    sentry.feedbacks.push({ params, hint });
+    return 'f'.repeat(32);
+  },
+} as unknown as import('../src/data/feedback').SentryApi;
+fb.setFeedbackScrub((text) => scrubText(text));
+const setSentry = (on: boolean) => {
+  sentry.active = on;
+  fb.setFeedbackSentry(on ? api : null);
+};
 
 beforeEach(() => {
-  sentry.active = true;
+  setSentry(true);
   sentry.exceptions = [];
   sentry.feedbacks = [];
   forum.calls = [];
@@ -127,14 +129,14 @@ describe('envoi', () => {
   });
 
   it('auto-hébergé sans Sentry : aucune destination, entrées masquées', async () => {
-    sentry.active = false;
+    setSentry(false);
     community.on = false;
     expect(fb.feedbackAvailable()).toBe(false);
     await expect(fb.sendFeedback({ kind: 'bug', message: 'x', forum: true })).rejects.toThrow('feedback_unavailable');
   });
 
   it('sans Sentry mais sur le service en ligne : forum seulement ; échec du forum remonté', async () => {
-    sentry.active = false;
+    setSentry(false);
     const ok = await fb.sendFeedback({ kind: 'bug', message: 'x', forum: true });
     expect(ok).toMatchObject({ sentry: false, forum: { topicId: 'T1' } });
     forum.fail = 'network';
