@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.80 – 2026-11-26
+
+- LAST-1654 Bouton « Envoyer un feedback » : Sentry avec le contexte complet, forum regroupé par erreur (#61) — @gtko
+
 ## v1.0.79 – 2026-11-24
 
 - Forum communautaire réservé aux abonnés (LAST-1651) (#59) — @gtko
