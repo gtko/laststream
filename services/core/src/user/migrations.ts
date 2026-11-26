@@ -1144,6 +1144,23 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 38,
+    name: 'forum : feedbacks envoyés depuis l’app, regroupés par empreinte d’erreur',
+    sql: `
+      -- Un feedback publié depuis l'app (LAST-1654) : le sujet qui l'a reçu, l'empreinte de l'erreur (vide pour une idée ou
+      -- un bug sans erreur) et la référence de l'événement Sentry (lue par l'équipe seulement).
+      CREATE TABLE forum_feedback (
+        topic_id TEXT NOT NULL REFERENCES forum_topics(id) ON DELETE CASCADE,
+        signature TEXT NOT NULL,
+        pid TEXT NOT NULL,
+        sentry_event_id TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX forum_feedback_signature ON forum_feedback(signature, created_at);
+      CREATE INDEX forum_feedback_topic ON forum_feedback(topic_id, created_at);
+    `,
+  },
 ];
 
 /**

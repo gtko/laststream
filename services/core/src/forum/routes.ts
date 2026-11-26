@@ -14,6 +14,7 @@ import { type ForumMe, type ForumWrite, isStaff } from './store.js';
 import {
   banSchema,
   cleanForumText,
+  feedbackSchema,
   moderatePostSchema,
   moderatorSchema,
   postSchema,
@@ -121,6 +122,40 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
       'category_not_found',
     );
     return sendJson(c, { topic: outcome.topic }, 201);
+  });
+
+  /**
+   * Feedback envoyé depuis l'app (LAST-1654) : bug ou idée publié au nom du profil. Un bug de même empreinte (`code`) qu'un
+   * sujet ouvert y est ajouté en réponse (« Moi aussi ») ; sinon un sujet est ouvert. Le détail technique est dans Sentry :
+   * le forum ne montre que le titre de l'erreur, le message, la version et le type d'appareil. 201 `{ topic, grouped,
+   * reporters }`.
+   */
+  router.post('/forum/feedback', async (c) => {
+    const me = await meOf(c);
+    const input = parseWith(feedbackSchema, c.get('body'));
+    const message = input.message.replace(/\r\n?/g, '\n').trim();
+    if (input.kind === 'idea' && message === '') throw new UserApiError(400, 'invalid_body', ['message:too_short']);
+    const footer = feedbackFooter(input.version, input.platform);
+    const errorTitle = input.title === undefined ? '' : input.title.replace(/\s+/g, ' ').trim();
+    const said = message === '' ? '_Pas de description._' : message;
+    const body = input.kind === 'bug' && errorTitle !== '' ? `**Erreur :** ${errorTitle}\n\n${said}\n\n${footer}` : `${said}\n\n${footer}`;
+    const replyBody = `**Moi aussi.**${message === '' ? '' : `\n\n${message}`}\n\n${footer}`;
+    const title = feedbackTitle(input.kind, errorTitle, message);
+    const outcome = ok(
+      await forum().feedback(
+        me,
+        {
+          kind: input.kind,
+          signature: input.kind === 'bug' && input.code !== undefined ? `bug:${input.code}` : '',
+          title: text(title, 'title'),
+          body: text(body, 'body'),
+          replyBody: text(replyBody, 'body'),
+          sentryEventId: input.sentryEventId,
+        },
+        Date.now(),
+      ),
+    );
+    return sendJson(c, { topic: outcome.topic, grouped: outcome.grouped, reporters: outcome.reporters }, 201);
   });
 
   /** S'inscrit à la séance d'une watch party (`on`), ou se désinscrit. `{ event }`. */
@@ -308,4 +343,23 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
     if (!(await forum().removeModerator(pid))) throw new UserApiError(404, 'moderator_not_found');
     return sendEmpty(c, 204);
   });
+}
+
+const PLATFORM_LABEL = { web: 'navigateur', windows: 'Windows', macos: 'macOS', linux: 'Linux', android: 'Android', tv: 'TV' } as const;
+
+/** Pied d'un feedback : origine, version et type d'appareil (rien d'autre n'est public). */
+function feedbackFooter(version: string | undefined, platform: keyof typeof PLATFORM_LABEL | undefined): string {
+  const parts = ['Envoyé depuis l’app'];
+  if (version !== undefined) parts.push(`version ${version}`);
+  if (platform !== undefined) parts.push(PLATFORM_LABEL[platform]);
+  return `_${parts.join(' · ')}_`;
+}
+
+/** Titre d'un nouveau sujet : titre de l'erreur, sinon début du message (première ligne, 100 caractères), sinon un titre neutre. */
+function feedbackTitle(kind: 'bug' | 'idea', errorTitle: string, message: string): string {
+  if (kind === 'bug' && errorTitle !== '') return [...errorTitle].slice(0, 120).join('');
+  const line = (message.split('\n')[0] ?? '').trim();
+  const chars = [...line];
+  if (chars.length >= 3) return chars.length > 100 ? `${chars.slice(0, 99).join('').trimEnd()}…` : line;
+  return kind === 'bug' ? 'Problème signalé depuis l’app' : 'Idée envoyée depuis l’app';
 }

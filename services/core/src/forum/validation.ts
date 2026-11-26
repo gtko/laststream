@@ -80,3 +80,28 @@ export const topicQuery = z.object({
   after: z.coerce.number().int().nonnegative().optional(),
 });
 export const searchQuery = z.object({ q: z.string().trim().min(2).max(100) });
+
+/**
+ * Feedback envoyé depuis l'app (LAST-1654). `code` : empreinte stable de l'erreur (ex. `player:lecture-impossible:http-503`),
+ * qui regroupe les signalements identiques dans un même sujet. Le détail technique part vers Sentry, jamais ici : seule la
+ * référence de l'événement (`sentryEventId`, 32 caractères hexadécimaux) est gardée, pour l'équipe.
+ */
+export const feedbackSchema = z.strictObject({
+  kind: z.enum(['bug', 'idea']),
+  code: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_.:-]{0,79}$/)
+    .optional(),
+  /** Titre de l'erreur (bug avec erreur) ; sinon le titre est tiré du message. */
+  title: z.string().max(400).optional(),
+  message: z.string().max(4000),
+  version: z
+    .string()
+    .regex(/^[0-9A-Za-z.+-]{1,32}$/)
+    .optional(),
+  platform: z.enum(['web', 'windows', 'macos', 'linux', 'android', 'tv']).optional(),
+  sentryEventId: z
+    .string()
+    .regex(/^[0-9a-f]{32}$/)
+    .optional(),
+});

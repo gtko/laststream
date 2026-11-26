@@ -1,0 +1,38 @@
+/* Fenêtre « Envoyer un feedback » (LAST-1654) : feuille (sheet.js) commune au menu du profil, au lecteur et aux erreurs. */
+.fb { display: flex; flex-direction: column; gap: 14px; margin: 0; }
+.fb-sub { margin: -6px 0 0; font-size: 13px; line-height: 1.45; color: var(--dim); }
+.fb-kinds { display: flex; gap: 6px; padding: 4px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.fb-kind { flex: 1; min-height: 40px; border: 0; border-radius: 9px; background: none; color: var(--dim); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.fb-kind[aria-checked="true"] { background: var(--line-2); color: #fff; }
+.fb-kind:focus-visible, .fb-reason:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.fb-reasons { display: flex; flex-wrap: wrap; gap: 8px; }
+.fb-reason { min-height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.04); color: var(--soft); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.fb-reason[aria-pressed="true"] { border-color: var(--accent); background: rgba(255, 90, 54, 0.16); color: #fff; }
+.fb-error { padding: 12px 14px; border-radius: 12px; background: var(--danger-bg); border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); font-size: 13px; line-height: 1.5; color: var(--danger-text); overflow-wrap: anywhere; }
+.fb-error strong { color: #fff; }
+.fb-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; opacity: 0.85; }
+.fb-lb { margin-bottom: -8px; font-size: 13px; font-weight: 700; color: var(--soft); }
+.fb-msg { box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px; resize: vertical; font: inherit; font-size: 15px; line-height: 1.45; color: var(--text); background: var(--bg); border: 1px solid var(--input-border); border-radius: 12px; color-scheme: dark; }
+.fb-msg:focus-visible { outline: var(--focus-ring-field); outline-offset: 1px; }
+.fb-ctx { padding: 10px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); font-size: 12.5px; color: var(--dim); }
+.fb-ctx summary { cursor: pointer; color: var(--soft); font-weight: 600; font-size: 13px; }
+.fb-ctx dl { margin: 8px 0 0; display: grid; gap: 3px; }
+.fb-ctx dl > div { display: grid; grid-template-columns: 110px 1fr; gap: 10px; }
+.fb-ctx dt { color: var(--dim); }
+.fb-ctx dd { margin: 0; color: var(--soft); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.fb-note { margin: -6px 0 0; font-size: 12px; color: var(--dim); }
+.fb-check { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: var(--soft); cursor: pointer; }
+.fb-check[hidden] { display: none; }
+.fb-check input { flex: none; width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--accent); }
+.fb-fail { margin: 0; font-size: 13px; color: var(--danger-text); }
+.fb-fail[hidden] { display: none; }
+.fb-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.fb-thanks { margin: 0; font-family: var(--ff-title); font-size: 18px; font-weight: 700; }
+@media (max-width: 767px) {
+  .fb-actions .btn { flex: 1; justify-content: center; }
+}
+/* Dans le lecteur (ordinateur) : panneau à droite, la vidéo reste visible derrière. */
+@media (min-width: 768px) {
+  .sh-veil:has(> .fb-side) { align-items: flex-start; justify-content: flex-end; padding: 96px clamp(20px, 3vw, 40px) 0 0; background: rgba(0, 0, 0, 0.35); }
+  .sh.fb-side { width: min(420px, calc(100vw - 48px)); max-height: calc(100dvh - 140px); background: rgba(20, 18, 27, 0.97); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6); }
+}

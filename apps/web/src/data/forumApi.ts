@@ -65,6 +65,8 @@ export interface ForumPost {
 }
 export interface ForumTopicDetail extends ForumTopic {
   attendees?: ForumAuthor[];
+  /** Sujet alimenté par le bouton feedback de l'app : membres concernés ; références Sentry pour l'équipe seulement. */
+  feedback?: { reporters: number; sentryEventIds?: string[] };
   posts: ForumPost[];
   more: boolean;
 }
@@ -122,6 +124,16 @@ export const reply = (topicId: string, body: string) => forum<{ post: ForumPost;
 export const editPost = (postId: string, body: string) => forum<{ post: ForumPost }>('PATCH', '/posts/' + enc(postId), { body });
 export const deletePost = (postId: string) => forum<{ topicRemoved: boolean }>('DELETE', '/posts/' + enc(postId));
 export const react = (postId: string, emoji: string, on: boolean) => forum<{ reactions: ForumPost['reactions'] }>('PUT', '/posts/' + enc(postId) + '/reactions', { emoji, on });
+/** Feedback de l'app (LAST-1654) : sujet ouvert, ou réponse dans le sujet de même empreinte (`grouped`). */
+export const sendForumFeedback = (input: {
+  kind: 'bug' | 'idea';
+  code?: string;
+  title?: string;
+  message: string;
+  version?: string;
+  platform?: string;
+  sentryEventId?: string;
+}) => forum<{ topic: ForumTopic; grouped: boolean; reporters: number }>('POST', '/feedback', JSON.parse(JSON.stringify(input)));
 export const report = (postId: string, reason: ReportReason, details?: string) =>
   forum<void>('POST', '/posts/' + enc(postId) + '/report', details ? { reason, details } : { reason });
 

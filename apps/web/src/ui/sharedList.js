@@ -3,7 +3,7 @@
 import '../styles/share.css';
 import * as store from '../data/socialStore';
 import { isKidProfile, isServerMode } from '../data/auth';
-import { detailEl, toast } from './dom.js';
+import { detailEl, toast, toastError } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { state } from './state.js';
@@ -44,7 +44,7 @@ function itemCard(it, d, mePid) {
   const rm = h('button', 'btn btn-ghost btn-sm', 'Retirer', { type: 'button', 'aria-label': 'Retirer ' + it.title + ' de la liste' });
   rm.addEventListener('click', async () => {
     rm.disabled = true;
-    try { await store.removeFromList(d.id, it.type, it.tmdbId); toast('Titre retiré de la liste'); } catch (e) { rm.disabled = false; toast(errText(e)); }
+    try { await store.removeFromList(d.id, it.type, it.tmdbId); toast('Titre retiré de la liste'); } catch (e) { rm.disabled = false; toastError(errText(e), e, 'listes'); }
   });
   body.append(rm);
   card.append(a, body);
@@ -115,7 +115,7 @@ function paint(root, d) {
   leave.addEventListener('click', async () => {
     if (!mePid) return;
     leave.disabled = true;
-    try { await store.updateList(d.id, { remove: [mePid] }); toast('Tu as quitté la liste'); location.hash = '#/'; } catch (e) { leave.disabled = false; toast(errText(e)); }
+    try { await store.updateList(d.id, { remove: [mePid] }); toast('Tu as quitté la liste'); location.hash = '#/'; } catch (e) { leave.disabled = false; toastError(errText(e), e, 'listes'); }
   });
   acts.append(ren, add, leave);
   t.append(acts);
