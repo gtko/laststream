@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.83 – 2026-11-27
+
+- LAST-1656 Classiques libres : films libres de droits partout, sans source (#63) — @gtko
+
 ## v1.0.82 – 2026-11-27
 
 - Données utilisateur : retire le TODO obsolète de l'adaptateur serveur (#44) — @gtko

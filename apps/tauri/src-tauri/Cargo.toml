@@ -1,6 +1,6 @@
 [package]
 name = "laststream-tauri"
-version = "1.0.82"
+version = "1.0.83"
 edition = "2021"
 description = "Laststream : app Tauri (macOS, Windows, Linux, Android)"
 publish = false
