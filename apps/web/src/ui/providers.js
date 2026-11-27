@@ -5,6 +5,7 @@ import { IMG } from './constants.js';
 import { detailEl } from './dom.js';
 import { state } from './state.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 // ---------- Où regarder (TMDB / JustWatch, France) ----------
 const providerPromises = new Map();
@@ -30,7 +31,7 @@ export function fetchProviders(type, id) {
 }
 
 export function providersHTML(pr) {
-  const groups = [['flatrate', 'Disponible sur :', 6], ['free', 'Gratuit', 4], ['rent', 'Location', 4], ['buy', 'Achat', 4]];
+  const groups = [['flatrate', t('Disponible sur :'), 6], ['free', t('Gratuit'), 4], ['rent', t('Location'), 4], ['buy', t('Achat'), 4]];
   const seen = new Set();
   const parts = [];
   groups.forEach(([k, label, max]) => {
@@ -40,10 +41,10 @@ export function providersHTML(pr) {
     parts.push('<div class="prov-g"><span class="prov-l">' + label + '</span><span class="prov-logos">' + list.map((x) =>
       '<img src="' + esc(x.logo) + '" alt="' + esc(x.name) + '" title="' + esc(x.name) + '" width="36" height="36" loading="lazy" decoding="async">').join('') + '</span></div>');
   });
-  if (!parts.length) return '<p class="prov-none">Pas disponible en streaming ' + getRegion().where + '</p>';
+  if (!parts.length) return '<p class="prov-none">' + t('Pas disponible en streaming {where}', { where: getRegion().where }) + '</p>';
   const inner = parts.join('');
   return pr.link
-    ? '<a class="prov" href="' + esc(pr.link) + '" target="_blank" rel="noopener noreferrer" aria-label="Où regarder ' + getRegion().where + ' (ouvre TMDB / JustWatch dans un nouvel onglet)">' + inner + '</a>'
+    ? '<a class="prov" href="' + esc(pr.link) + '" target="_blank" rel="noopener noreferrer" aria-label="' + t('Où regarder {where} (ouvre TMDB / JustWatch dans un nouvel onglet)', { where: getRegion().where }) + '">' + inner + '</a>'
     : '<div class="prov">' + inner + '</div>';
 }
 

@@ -16,6 +16,7 @@ import { seekTo } from './sessionActions.js';
 import { resolveMedia } from './sessionPlay.js';
 import { S, notesAllowed } from './sessionState.js';
 import { allSubtitleTracks } from './sessionTracks.js';
+import { t as tr } from '../i18n';
 
 
 /** Titre en cours de lecture, tel que le salon (watch party) le voit : identité, source choisie, moteur. Jamais de lien. */
@@ -207,7 +208,7 @@ export function postReact({ pos, kind, body, also = null }) {
     if (!partyReactLimit.ready()) return;
     if (partyBridge.client.sendReact(body, at)) {
       partyReactLimit.sent();
-      if (also && nt) sendSocialMessage(also, body, { ...nt.media, pos: at }).catch(() => S.ui.toast('Message non envoyé, réessaie plus tard', 3500));
+      if (also && nt) sendSocialMessage(also, body, { ...nt.media, pos: at }).catch(() => S.ui.toast(tr('Message non envoyé, réessaie plus tard'), 3500));
       if (nt) postQuietNote(p, nt, { ...nt.media, pos: at, kind, body });
       return;
     }
@@ -220,7 +221,7 @@ export function postReact({ pos, kind, body, also = null }) {
     putNotes(nt, [local]);
     S.ui.showNoteFlash(local);
   }
-  if (also) sendSocialMessage(also, body, { ...nt.media, pos: at }).catch(() => S.ui.toast('Message non envoyé, réessaie plus tard', 3500));
+  if (also) sendSocialMessage(also, body, { ...nt.media, pos: at }).catch(() => S.ui.toast(tr('Message non envoyé, réessaie plus tard'), 3500));
   postNote({ ...nt.media, pos: at, kind, body }).then(({ note }) => {
     if (p.notes !== nt) return;
     loadHeat(p);
@@ -231,7 +232,7 @@ export function postReact({ pos, kind, body, also = null }) {
   }, (err) => {
     if (p.notes !== nt) return;
     if (tmp) removeNote(nt, tmp);
-    S.ui.toast(err && err.status === 429 ? 'Trop de réactions : réessaie dans une minute' : 'Réaction non envoyée, réessaie plus tard', 3500);
+    S.ui.toast(err && err.status === 429 ? tr('Trop de réactions : réessaie dans une minute') : tr('Réaction non envoyée, réessaie plus tard'), 3500);
   });
 }
 
@@ -302,10 +303,10 @@ export function editReaction(id, kind, body) {
     loadHeat(p);
   }, (err) => {
     if (p.notes !== nt) return;
-    if (noteGone(err)) { removeNote(nt, id); loadHeat(p); S.ui.toast('Réaction introuvable', 3500); return; }
+    if (noteGone(err)) { removeNote(nt, id); loadHeat(p); S.ui.toast(tr('Réaction introuvable'), 3500); return; }
     // Retour arrière seulement si la note est encore la version optimiste : une modification plus récente n'est pas écrasée.
     if (nt.list.find((n) => n.id === id) === optimistic) putNotes(nt, [prev]);
-    S.ui.toast('Modification non enregistrée, réessaie plus tard', 3500);
+    S.ui.toast(tr('Modification non enregistrée, réessaie plus tard'), 3500);
   });
 }
 
@@ -320,9 +321,9 @@ export function deleteReaction(id) {
     if (p.notes === nt) loadHeat(p);
   }, (err) => {
     if (p.notes !== nt) return;
-    if (noteGone(err)) { loadHeat(p); S.ui.toast('Réaction introuvable', 3500); return; }
+    if (noteGone(err)) { loadHeat(p); S.ui.toast(tr('Réaction introuvable'), 3500); return; }
     putNotes(nt, [prev]);
-    S.ui.toast('Suppression non enregistrée, réessaie plus tard', 3500);
+    S.ui.toast(tr('Suppression non enregistrée, réessaie plus tard'), 3500);
   });
 }
 
@@ -519,8 +520,8 @@ function showMissed(p, since) {
   getMissed({ ...media, since }).then((sum) => {
     if (S.P !== p) return;
     if (sum.messages > 0 || sum.notes.length > 0) S.ui.showCinemaSummary(sum);
-    else S.ui.toast('Mode cinéma terminé, rien de manqué', 3000);
-  }).catch(() => { if (S.P === p) S.ui.toast('Mode cinéma terminé', 3000); });
+    else S.ui.toast(tr('Mode cinéma terminé, rien de manqué'), 3000);
+  }).catch(() => { if (S.P === p) S.ui.toast(tr('Mode cinéma terminé'), 3000); });
 }
 
 function cinemaModel() {
@@ -586,9 +587,9 @@ export function catchUp() {
   if (!S.P || !S.P.view || !chipPid) return;
   const st = S.P.engine.state();
   const peer = friendsWatching(getSocialState(), presenceMediaOf(S.P), Date.now(), st.duration, roomMembers()).find((x) => x.pid === chipPid);
-  if (!peer) { S.ui.toast('Cet ami ne regarde plus', 2500); return; }
+  if (!peer) { S.ui.toast(tr('Cet ami ne regarde plus'), 2500); return; }
   seekTo(peer.pos);
-  S.ui.toast('Calé sur ' + peer.name, 2000);
+  S.ui.toast(tr('Calé sur {name}', { name: peer.name }), 2000);
 }
 
 /** Bouton « Partager » : ouvre la fenêtre du lot Partage (F4) sur le titre, à la position courante. */

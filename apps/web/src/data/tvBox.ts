@@ -12,6 +12,7 @@ import { connectShell, isShellEnvironment } from '../player/shell';
 import { browserFetchHttp, capacitorHttp, capacitorNative, shellHttp, type HttpFn } from '../sources/debrid/http';
 import { isLanHost } from './lan';
 import { nationalEntry, normText } from './tvRank';
+import { t as tx } from '../i18n';
 
 export const FREEBOX_PLAYLIST_URL = 'http://mafreebox.freebox.fr/freeboxtv/playlist.m3u';
 /** Commande IPC de la coque (même signal de réponse que `native-http`). */
@@ -20,7 +21,7 @@ const MAX_PLAYLIST_BYTES = 20 * 1024 * 1024;
 const REFRESH_EVERY_MS = 24 * 3600 * 1000;
 
 export type QualityKey = 'hd' | 'auto' | 'standard' | 'low';
-export const QUALITY_LABELS: Record<QualityKey, string> = { hd: 'HD', auto: 'Auto', standard: 'Standard', low: 'Bas débit' };
+export const QUALITY_LABELS: Record<QualityKey, string> = { hd: 'HD', auto: tx('Auto'), standard: tx('Standard'), low: tx('Bas débit') };
 export const QUALITY_KEYS = Object.keys(QUALITY_LABELS) as QualityKey[];
 /** Ordre de repli quand la qualité demandée manque. */
 const FALLBACK: QualityKey[] = ['hd', 'auto', 'standard', 'low'];
@@ -201,7 +202,7 @@ export function mergeRemote(local: readonly BoxList[], remote: readonly BoxListW
     const old = byId.get(r.id);
     const same = old && old.url === r.url;
     return {
-      id: r.id, name: String(r.name || 'Playlist'), kind: r.kind === 'freebox' ? 'freebox' : 'url', url: r.url, guideUrl: String(r.guideUrl || ''),
+      id: r.id, name: String(r.name || tx('Playlist')), kind: r.kind === 'freebox' ? 'freebox' : 'url', url: r.url, guideUrl: String(r.guideUrl || ''),
       enabled: r.enabled !== false, at: same ? old.at : 0, channels: same ? old.channels : [], synced: true,
     };
   });
@@ -314,7 +315,7 @@ export function mergeBox(catalog: MergeableChannel[], box: readonly BoxChannel[]
 }
 
 /** Catégorie d'une chaîne de playlist dans la liste TV : « Box · Sport » (préfixée pour ne jamais se confondre avec une catégorie du catalogue). */
-export const boxCat = (group: string): string => (group ? `Box · ${group}` : 'Ma box');
+export const boxCat = (group: string): string => (group ? `${tx('Box ·')} ${group}` : tx('Ma box'));
 
 /** Chaînes de la box absentes du catalogue chargé, sous la forme d'une chaîne de la liste TV (badge « Box »). */
 export function boxOnlyChannels(box: readonly BoxChannel[], matched: ReadonlySet<string>, quality: QualityKey = 'hd'): Array<Record<string, unknown>> {
@@ -325,7 +326,7 @@ export function boxOnlyChannels(box: readonly BoxChannel[], matched: ReadonlySet
     if (!ref) return;
     const e = nationalEntry(b, 'FR');
     out.push({
-      id: b.id, name: b.name, logo: b.logo, group: b.group || 'Ma box', cat: boxCat(b.group), source: 'box', fast: false, url: ref.url, sig: null,
+      id: b.id, name: b.name, logo: b.logo, group: b.group || tx('Ma box'), cat: boxCat(b.group), source: 'box', fast: false, url: ref.url, sig: null,
       epgId: e ? `fr:${e.epg}` : '', tvgId: b.tvgId, flaky: false, lowRel: false, alternatives: [], num: b.num || null, box: ref, boxOnly: true,
     });
   });
@@ -343,9 +344,9 @@ export type BoxReach = boolean | null;
 
 export interface BoxAccess { ok: boolean; note: string }
 
-export const NOTE_WEB = 'Disponible dans l’app sur le réseau de ta box';
-export const NOTE_WEB_STREAM = 'Disponible dans l’app : ce flux n’est pas lisible dans un navigateur';
-export const NOTE_AWAY = 'Disponible à la maison';
+export const NOTE_WEB = tx('Disponible dans l’app sur le réseau de ta box');
+export const NOTE_WEB_STREAM = tx('Disponible dans l’app : ce flux n’est pas lisible dans un navigateur');
+export const NOTE_AWAY = tx('Disponible à la maison');
 
 /**
  * Une chaîne uniquement présente dans une playlist est-elle lisible ici ?
@@ -370,12 +371,12 @@ export class BoxError extends Error {
 }
 
 export const BOX_MESSAGES: Record<BoxErrorCode, string> = {
-  web_unavailable: 'Disponible dans les apps Windows et Android : un navigateur ne peut pas joindre ta box.',
-  unreachable: 'Adresse injoignable : vérifie la connexion (et le réseau de ta box pour une Freebox).',
-  not_m3u: 'Cette adresse ne renvoie pas une playlist M3U.',
-  too_large: 'Fichier trop volumineux (20 Mo maximum).',
-  empty: 'Aucune chaîne trouvée dans cette playlist.',
-  invalid_url: 'Adresse invalide : saisis une URL http(s).',
+  web_unavailable: tx('Disponible dans les apps Windows et Android : un navigateur ne peut pas joindre ta box.'),
+  unreachable: tx('Adresse injoignable : vérifie la connexion (et le réseau de ta box pour une Freebox).'),
+  not_m3u: tx('Cette adresse ne renvoie pas une playlist M3U.'),
+  too_large: tx('Fichier trop volumineux (20 Mo maximum).'),
+  empty: tx('Aucune chaîne trouvée dans cette playlist.'),
+  invalid_url: tx('Adresse invalide : saisis une URL http(s).'),
 };
 
 export interface BoxTransport {

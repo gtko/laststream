@@ -11,6 +11,7 @@ import { isSoonPlayable, playableBadge } from './soon.js';
 import { playDirect } from './sources-ui.js';
 import { moreButtonHTML, removeButtonHTML } from './tileActions.js';
 import { esc, fmtMin } from './util.js';
+import { t as tr } from '../i18n';
 
 const placeholder = (t) => !t || /^\s*(é|e)pisode\s*\d+\s*$/i.test(t);
 
@@ -35,15 +36,15 @@ export function continueCardHTML(p) {
   const restTxt = left ? 'reste ' + (left >= 60 ? fmtMin(left) : left + ' min') : '';
   const code = p.type === 'tv' && p.season != null ? 'S' + p.season + ' · É' + p.episode : '';
   const src = IMG('w780', p.backdrop) || IMG('w500', p.poster);
-  const info = next ? 'À suivre' + (code ? ' : ' + code : '') : (code || (left ? '' : 'Film'));
+  const info = next ? tr('À suivre') + (code ? ' : ' + code : '') : (code || (left ? '' : tr('Film')));
   return '<div role="button" tabindex="0" class="card tile tile-land cont-card" data-tile="' + esc(it.key) + '" data-resume="' + esc(it.key) + '" data-next="' + next + '"' +
     ' data-season="' + (p.season != null ? p.season : '') + '" data-episode="' + (p.episode != null ? p.episode : '') + '" data-variant="logo" data-sig="' + esc(sig) + '"' +
-    ' aria-label="' + esc('Reprendre ' + p.title + (code ? ', ' + code : '') + (rs ? ', reprise à ' + rs.label : '') + (left ? ', reste ' + left + ' min' : '')) + '">' +
+    ' aria-label="' + esc(tr('Reprendre {title}', { title: p.title }) + (code ? ', ' + code : '') + (rs ? tr(', reprise à {label}', { label: rs.label }) : '') + (left ? tr(', reste {left} min', { left }) : '')) + '">' +
     '<span class="card-media' + (src ? '' : ' no-img') + '">' +
     (src ? '<img class="cont-img" src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') +
     fallbackHTML({ name: p.title, type: p.type }) +
     '<span class="cont-shade" aria-hidden="true"></span>' +
-    '<span class="cont-new" aria-hidden="true" hidden>Nouveau</span>' +
+    '<span class="cont-new" aria-hidden="true" hidden>' + tr('Nouveau') + '</span>' +
     '<span class="cont-play" aria-hidden="true">' + ICON.play + '</span>' +
     '<span class="cont-info"><span class="cont-name">' + esc(p.title) + '</span>' +
     '<span class="cont-code">' + esc(info) + '</span>' +
@@ -105,7 +106,7 @@ async function hydrateCard(card) {
     }
     if (!ep || !card.isConnected) return;
     const code = 'S' + season + ' · É' + episode + (placeholder(ep.name) ? '' : ' · ' + ep.name);
-    card.querySelector('.cont-code').textContent = card.dataset.next ? 'À suivre : ' + code : code;
+    card.querySelector('.cont-code').textContent = card.dataset.next ? tr('À suivre : {code}', { code }) : code;
     // Épisode diffusé dans les 14 prochains jours : lisible, la lecture lance la recherche de sources (data-air).
     if (card.dataset.next && isSoonPlayable(ep.air_date)) {
       card.dataset.air = ep.air_date;

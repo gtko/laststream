@@ -3,6 +3,7 @@
  * réseau : la source (serveur ou repli local) est choisie par userStore, l'affichage par library.js.
  */
 
+import { t as tr } from '../i18n';
 /** Un titre vu. `watched` : 1 pour un film, nombre d'épisodes vus hors saison 0 pour une série. */
 export interface WatchedTitle {
   /** `movie:550` ou `tv:1399`. */
@@ -43,7 +44,7 @@ export function compareWatched(sort: WatchedSort): (a: WatchedSortable, b: Watch
 /** « 12/40 épisodes vus » ; sans total connu, « 12 épisodes vus » ; un film vu n'a pas de compteur. */
 export function watchedProgressLabel(watched: number, total: number): string {
   const n = Math.max(0, Math.floor(watched));
-  const unit = n > 1 ? 'épisodes vus' : 'épisode vu';
+  const unit = n > 1 ? tr('épisodes vus') : tr('épisode vu');
   if (total > 0) return Math.min(n, total) + '/' + total + ' ' + unit;
   return n + ' ' + unit;
 }

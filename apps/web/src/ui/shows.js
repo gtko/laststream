@@ -21,6 +21,7 @@ import { state } from './state.js';
 import { fallbackHTML } from './typo.js';
 import { ensureEpg, epgKey, favSnaps, getFavs, logoOf, normChannel, snapChannel, tv } from './tv.js';
 import { esc, fmtMin } from './util.js';
+import { t as tr } from '../i18n';
 
 const shortDate = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -28,14 +29,14 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 /** Libellé court de la prochaine diffusion : « En direct · TF1 », « Aujourd’hui 21:10 · TF1 ». */
 function airingLabel(a, now) {
   const chan = a.channel.name;
-  return isLiveNow(a, now) ? 'En direct · ' + chan : dayLabel(a.start, now) + ' ' + hhmm(a.start) + ' · ' + chan;
+  return isLiveNow(a, now) ? tr('En direct · {chan}', { chan }) : dayLabel(a.start, now) + ' ' + hhmm(a.start) + ' · ' + chan;
 }
 
 /** Ligne de sous-titre d'une carte d'émission. */
 function showSub(s, now) {
   if (s.airings.length) return airingLabel(s.airings[0], now);
-  if (s.next && s.next.date) return (s.platform ? s.platform + ' · ' : '') + 'épisode le ' + shortDate(s.next.date);
-  return s.platform || 'Émission';
+  if (s.next && s.next.date) return (s.platform ? s.platform + ' · ' : '') + tr('épisode le {date}', { date: shortDate(s.next.date) });
+  return s.platform || tr('Émission');
 }
 
 /** Image d'une émission du guide : seulement une adresse web (le guide peut en fournir de relatives ou vides). */
@@ -50,7 +51,7 @@ export function showCard(s, now) {
   return '<button type="button" class="card tile show-card" data-showopen="' + esc(s.id) + '" aria-label="' + esc(s.name + ', ' + sub) + '">' +
     '<span class="card-media' + (src ? '' : ' no-img') + '">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async"' + (s.epg ? ' style="object-fit:cover"' : '') + '>' : '') +
     fallbackHTML({ name: s.name, type: 'tv' }) +
-    (live ? '<span class="t-badge show-live" aria-hidden="true">En direct</span>' : '') + '</span>' +
+    (live ? '<span class="t-badge show-live" aria-hidden="true">' + tr('En direct') + '</span>' : '') + '</span>' +
     '<span class="card-title" aria-hidden="true">' + esc(s.name) + '</span><span class="card-meta" aria-hidden="true">' + esc(sub) + '</span></button>';
 }
 
@@ -65,8 +66,8 @@ async function renderShowsRow() {
   const items = shows.filter((s) => s.airings.length || (s.next && s.next.date >= today && s.next.date <= in14)).slice(0, 20);
   const fresh = document.getElementById('shows-slot');
   if (!fresh || !items.length) return;
-  fresh.innerHTML = '<section class="row-section" id="emissions" aria-labelledby="h-emissions"><h2 class="row-title" id="h-emissions">Émissions du moment ' +
-    '<a class="row-link" href="#/emissions" data-showsnav>Toutes les émissions</a></h2>' + '<div class="row" data-nav>' + items.map((s) => showCard(s, now)).join('') + '</div></section>';
+  fresh.innerHTML = '<section class="row-section" id="emissions" aria-labelledby="h-emissions"><h2 class="row-title" id="h-emissions">' + tr('Émissions du moment') + ' ' +
+    '<a class="row-link" href="#/emissions" data-showsnav>' + tr('Toutes les émissions') + '</a></h2>' + '<div class="row" data-nav>' + items.map((s) => showCard(s, now)).join('') + '</div></section>';
 }
 
 /**
@@ -86,7 +87,7 @@ export function tonightTile(a, known, now, epgIds = new Set(), play = false) {
   const dur = fmtMin(Math.round((a.stop - a.start) / 60));
   // Rangée des chaînes favorites : la carte lance toujours le direct de la chaîne (lecteur, favoris pour zapper).
   const attrs = play ? ' data-tvplay="' + esc(ch.playId) + '" data-tvctx="favs"' : known ? ' data-showopen="' + esc(known.id) + '"' : onGuide ? ' data-showopen="' + esc(epgId) + '"' : ch.playId ? ' data-showwatch="' + esc(ch.playId) + '"' : ' data-showsnav';
-  const label = [a.title, ch.name, hhmm(a.start)].join(', ') + (live ? ', en direct' : '');
+  const label = [a.title, ch.name, hhmm(a.start)].join(', ') + (live ? tr(', en direct') : '');
   const chan = '<span class="tn-chan">' + (ch.num ? '<b class="ch-num">' + esc(String(ch.num)) + '</b>' : '') +
     (ch.logo ? '<img class="tn-logo" src="' + esc(ch.logo) + '" alt="" loading="lazy" decoding="async">' : '<span class="tn-name">' + esc(ch.name) + '</span>') + '</span>';
   // Visuel du guide (ratio inconnu) : copie floutée en fond + image entière ; fond TMDB : plein cadre.
@@ -95,7 +96,7 @@ export function tonightTile(a, known, now, epgIds = new Set(), play = false) {
   const plate = !img && ch.logo ? '<span class="tn-plate"><img src="' + esc(ch.logo) + '" alt="" loading="lazy" decoding="async"></span>' : '';
   return '<button type="button" class="card tile tile-land show-card tonight-card' + (live ? ' is-live' : '') + (known ? '' : ' is-epg') + '"' + attrs + ' aria-label="' + esc(label) + '">' +
     '<span class="card-media' + (img ? '' : ' no-img') + '">' + media + plate + fallbackHTML({ name: a.title, type: 'tv' }) +
-    (live ? '<span class="t-badge show-live" aria-hidden="true">En direct</span><span class="progress" aria-hidden="true"><span style="width:' + progressPct(a, now) + '%"></span></span>' : '') + '</span>' +
+    (live ? '<span class="t-badge show-live" aria-hidden="true">' + tr('En direct') + '</span><span class="progress" aria-hidden="true"><span style="width:' + progressPct(a, now) + '%"></span></span>' : '') + '</span>' +
     '<span class="tn-body" aria-hidden="true"><span class="tn-when">' + chan + '<strong class="tn-time">' + hhmm(a.start) + '</strong>' +
     (dur ? '<span class="tn-dur">' + esc(dur) + '</span>' : '') + '</span>' +
     '<span class="tn-title">' + esc(a.title) + '</span>' + (a.category ? '<span class="tn-sub">' + esc(a.category) + '</span>' : '') + '</span></button>';
@@ -141,8 +142,8 @@ async function renderTonightRow() {
   if (favs.length) {
     // Le lecteur ouvert depuis une carte rend le focus à celle-ci à sa fermeture : on la retrouve après le nouveau rendu.
     const openedId = tv.opener && fresh.contains(tv.opener) ? tv.opener.dataset.tvplay : '';
-    fresh.innerHTML = '<section class="row-section" id="ce-soir" aria-labelledby="h-ce-soir"><h2 class="row-title" id="h-ce-soir">Tes chaînes favorites' +
-      ' <a class="row-link" href="#/tv-live" data-tvlive>Guide TV</a></h2>' + '<div class="row" data-nav>' +
+    fresh.innerHTML = '<section class="row-section" id="ce-soir" aria-labelledby="h-ce-soir"><h2 class="row-title" id="h-ce-soir">' + tr('Tes chaînes favorites') +
+      ' <a class="row-link" href="#/tv-live" data-tvlive>' + tr('Guide TV') + '</a></h2>' + '<div class="row" data-nav>' +
       favs.map((a) => tonightTile(a, matchKnown(a.title, tmdbShows), now, epgIds, true)).join('') + '</div></section>';
     if (openedId) tv.opener = Array.from(fresh.querySelectorAll('[data-tvplay]')).find((el) => el.dataset.tvplay === openedId) || null;
     return;
@@ -153,9 +154,9 @@ async function renderTonightRow() {
   const prime = primeTime(guide.programs, guide.channelOf, date);
   if (prime.length < 3) return;
   // Sans favori : la sélection du soir, avec une invitation à en choisir (étoile du guide TV).
-  fresh.innerHTML = '<section class="row-section" id="ce-soir" aria-labelledby="h-ce-soir"><h2 class="row-title" id="h-ce-soir">' + (late ? 'Demain soir à la TV' : 'Ce soir à la TV') +
-    ' <a class="row-link" href="#/tv-live" data-tvlive>Guide TV</a></h2>' +
-    '<p class="row-hint">' + (getFavs().length ? 'Le guide ne donne pas encore de programme pour tes chaînes favorites : voici la sélection du soir.' : 'Mets des chaînes en favori (étoile du guide TV) pour voir ici ce qui passe dessus.') + '</p>' + '<div class="row" data-nav>' +
+  fresh.innerHTML = '<section class="row-section" id="ce-soir" aria-labelledby="h-ce-soir"><h2 class="row-title" id="h-ce-soir">' + (late ? tr('Demain soir à la TV') : tr('Ce soir à la TV')) +
+    ' <a class="row-link" href="#/tv-live" data-tvlive>' + tr('Guide TV') + '</a></h2>' +
+    '<p class="row-hint">' + (getFavs().length ? tr('Le guide ne donne pas encore de programme pour tes chaînes favorites : voici la sélection du soir.') : tr('Mets des chaînes en favori (étoile du guide TV) pour voir ici ce qui passe dessus.')) + '</p>' + '<div class="row" data-nav>' +
     prime.slice(0, 16).map((a) => tonightTile(a, matchKnown(a.title, tmdbShows), now, epgIds)).join('') + '</div></section>';
 }
 
@@ -176,7 +177,7 @@ export function renderTvRows() {
 // ---------- Page « Émissions TV » (style « Vitrine ») ----------
 const DAY_SEC = 86400;
 /** Onglets de genre possibles (identifiant TMDB → libellé) ; seuls ceux présents parmi les émissions s'affichent. */
-const SHOW_TABS = [[10764, 'Téléréalité'], [10767, 'Talk-shows'], [35, 'Divertissement'], [10763, 'Magazines et actu'], [99, 'Documentaires'], [10751, 'Famille']];
+const SHOW_TABS = [[10764, tr('Téléréalité')], [10767, tr('Talk-shows')], [35, tr('Divertissement')], [10763, tr('Magazines et actu')], [99, tr('Documentaires')], [10751, tr('Famille')]];
 /** Onglet d'une émission du guide sans fiche TMDB, d'après sa catégorie au guide (texte XMLTV, FR ou EN), sans accents. */
 const EPG_TABS = [[/telerealite|realite|reality|dating/, 10764], [/talk/, 10767], [/divertissement|jeux?|game|varietes?/, 35], [/magazine|actu|news/, 10763], [/documentaire/, 99]];
 const epgGenres = (cat) => {
@@ -233,14 +234,14 @@ export function heroHTML(h, now) {
   const live = !!a && isLiveNow(a, now);
   const dur = a ? fmtMin(Math.round((a.stop - a.start) / 60)) : '';
   const when = a
-    ? (h.tonight && !live ? 'Ce soir ' + hhmm(a.start) + ' · ' + a.channel.name : airingLabel(a, now)) + (dur ? ' · ' + dur : '')
+    ? (h.tonight && !live ? tr('Ce soir {start} · {name}', { start: hhmm(a.start), name: a.channel.name }) : airingLabel(a, now)) + (dur ? ' · ' + dur : '')
     : showSub(s, now);
-  const kicker = h.tonight ? 'L’émission de la soirée' : 'À la une';
+  const kicker = h.tonight ? tr('L’émission de la soirée') : tr('À la une');
   const watch = live && a.channel.playId;
-  const fiche = '<button type="button" class="btn ' + (watch ? 'btn-ghost' : 'btn-primary') + ' btn-pill" data-showopen="' + esc(s.id) + '"><span>Voir la fiche</span></button>';
+  const fiche = '<button type="button" class="btn ' + (watch ? 'btn-ghost' : 'btn-primary') + ' btn-pill" data-showopen="' + esc(s.id) + '"><span>' + tr('Voir la fiche') + '</span></button>';
   const action = watch
-    ? '<button type="button" class="btn btn-primary btn-pill" data-showwatch="' + esc(a.channel.playId) + '">' + ICON.play + '<span>Regarder en direct</span></button>'
-    : followBtn('tv:' + s.id, 'btn btn-ghost btn-pill', '', 'Me prévenir');
+    ? '<button type="button" class="btn btn-primary btn-pill" data-showwatch="' + esc(a.channel.playId) + '">' + ICON.play + '<span>' + tr('Regarder en direct') + '</span></button>'
+    : followBtn('tv:' + s.id, 'btn btn-ghost btn-pill', '', tr('Me prévenir'));
   return '<section class="sv-hero" aria-labelledby="svc-title">' +
     '<div class="sv-hero-bg"><img src="' + esc(IMG('w1280', s.backdrop)) + '" alt="" decoding="async" fetchpriority="high"></div>' +
     '<div class="sv-hero-info"><p class="sv-kicker">' + esc(kicker) + '</p>' +
@@ -258,9 +259,9 @@ function weekTile(s, now) {
   return '<button type="button" class="sv-tile" data-showopen="' + esc(s.id) + '" aria-label="' + esc(s.name + ', ' + sub) + '">' +
     '<span class="sv-tile-media' + (src ? '' : ' no-img') + '">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') +
     fallbackHTML({ name: s.name, type: 'tv' }) +
-    (live ? '<span class="t-badge show-live" aria-hidden="true">En direct</span>' : '') + '</span>' +
+    (live ? '<span class="t-badge show-live" aria-hidden="true">' + tr('En direct') + '</span>' : '') + '</span>' +
     '<span class="sv-tile-shade" aria-hidden="true"></span>' +
-    '<span class="sv-tile-text" aria-hidden="true"><span class="sv-tile-kicker">' + esc(genreName(s) || 'Émission') + '</span>' +
+    '<span class="sv-tile-text" aria-hidden="true"><span class="sv-tile-kicker">' + esc(genreName(s) || tr('Émission')) + '</span>' +
     '<span class="sv-tile-title">' + esc(s.name) + '</span><span class="sv-tile-sub">' + esc(sub) + '</span></span></button>';
 }
 
@@ -273,9 +274,9 @@ function topItem(s, n) {
     fallbackHTML({ name: s.name, type: 'tv' }) + '</span></button>';
 }
 
-const MORE_LABEL = 'Voir plus d’émissions';
+const MORE_LABEL = tr('Voir plus d’émissions');
 /** « 124 émissions », « 1 émission ». */
-const countLabel = (n) => n + (n > 1 ? ' émissions' : ' émission');
+const countLabel = (n) => n + (n > 1 ? ' ' + tr('émissions') : ' ' + tr('émission'));
 /** « Voir plus » en cours (module) : tant que le chargement dure, un clic (y compris sur une zone redessinée) ne relance rien. */
 let moreLoading = false;
 
@@ -293,20 +294,20 @@ function zoneHTML(shows, genre, now, more) {
   const grid = (id, items, empty) => '<div class="lib-grid" id="' + id + '" data-nav>' + (items.length ? items.map((s) => showCard(s, now)).join('') : '<p class="row-msg">' + empty + '</p>') + '</div>';
   const count = ' <span class="shows-count" id="sv-stream-count">' + esc(countLabel(stream.length)) + '</span>';
   const moreBtn = more ? '<div class="shows-more"><button type="button" class="btn btn-ghost btn-pill" id="sv-more">' + esc(MORE_LABEL) + '</button></div>' : '';
-  return (week.length ? '<section class="sv-sec" aria-labelledby="sv-h-week">' + head('sv-h-week', 'Les incontournables de la semaine') +
+  return (week.length ? '<section class="sv-sec" aria-labelledby="sv-h-week">' + head('sv-h-week', tr('Les incontournables de la semaine')) +
     '<div class="sv-grid" data-nav>' + week.map((s) => weekTile(s, now)).join('') + '</div></section>' : '') +
-    (top.length ? '<section class="sv-sec" aria-labelledby="sv-h-top">' + head('sv-h-top', 'Top 10 des émissions') +
+    (top.length ? '<section class="sv-sec" aria-labelledby="sv-h-top">' + head('sv-h-top', tr('Top 10 des émissions')) +
       '<div class="sv-top" data-nav>' + top.map((s, i) => topItem(s, i + 1)).join('') + '</div></section>' : '') +
-    '<section class="sv-sec" aria-labelledby="sv-h-tv">' + head('sv-h-tv', 'À la télé') +
-    grid('sv-tv-grid', onTv, 'Aucune de ces émissions n’est annoncée au guide TV pour le moment.') + '</section>' +
-    '<section class="sv-sec" aria-labelledby="sv-h-stream">' + head('sv-h-stream', 'Toutes les émissions', count) +
-    grid('sv-stream-grid', stream, 'Rien d’autre pour le moment.') + moreBtn + '</section>';
+    '<section class="sv-sec" aria-labelledby="sv-h-tv">' + head('sv-h-tv', tr('À la télé')) +
+    grid('sv-tv-grid', onTv, tr('Aucune de ces émissions n’est annoncée au guide TV pour le moment.')) + '</section>' +
+    '<section class="sv-sec" aria-labelledby="sv-h-stream">' + head('sv-h-stream', tr('Toutes les émissions'), count) +
+    grid('sv-stream-grid', stream, tr('Rien d’autre pour le moment.')) + moreBtn + '</section>';
 }
 
 /** Onglets de genre (boutons à état `aria-pressed`) : « Tout » puis les genres présents. */
 function tabsHTML(tabs, genre) {
-  return '<div class="sv-tabs" role="group" aria-label="Filtrer par genre" data-nav>' +
-    [['all', 'Tout'], ...tabs].map(([id, label]) => '<button type="button" class="sv-tab" data-genre="' + id + '" aria-pressed="' +
+  return '<div class="sv-tabs" role="group" aria-label="' + tr('Filtrer par genre') + '" data-nav>' +
+    [['all', tr('Tout')], ...tabs].map(([id, label]) => '<button type="button" class="sv-tab" data-genre="' + id + '" aria-pressed="' +
       (String(genre) === String(id)) + '">' + esc(label) + '</button>').join('') + '</div>';
 }
 
@@ -315,11 +316,11 @@ export async function showShowsPage() {
   moreLoading = false; // une page quittée pendant « Voir plus » ne doit pas bloquer la suivante
   const token = state.token;
   state.kind = 'shows';
-  document.title = 'Émissions TV · Laststream';
+  document.title = tr('Émissions TV · Laststream');
   detailEl.innerHTML = topBar(false) + '<article class="svc-page is-loading" aria-busy="true" tabindex="-1"><header class="svc-head"><span class="sk sk-title"></span></header></article>';
   let data;
   try { data = await loadShows(); } catch (_) {
-    if (token === state.token) detailEl.innerHTML = svcError('Les émissions n’ont pas pu être chargées.');
+    if (token === state.token) detailEl.innerHTML = svcError(tr('Les émissions n’ont pas pu être chargées.'));
     return;
   }
   if (token !== state.token) return;
@@ -330,8 +331,8 @@ export async function showShowsPage() {
   let more = data.hasMore;
   const head = hero ? heroHTML(hero, now)
     : '<header class="svc-head svc-head-plain"><div class="svc-head-t">' +
-      '<h1 class="svc-title" id="svc-title" tabindex="-1">Émissions TV</h1>' +
-      '<p class="svc-eyebrow">Divertissement, jeux, talk-shows et téléréalité : quand et où les regarder</p></div></header>';
+      '<h1 class="svc-title" id="svc-title" tabindex="-1">' + tr('Émissions TV') + '</h1>' +
+      '<p class="svc-eyebrow">' + tr('Divertissement, jeux, talk-shows et téléréalité : quand et où les regarder') + '</p></div></header>';
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page shows-page" aria-labelledby="svc-title">' + head + (tabs.length ? tabsHTML(tabs, genre) : '') +
     '<div class="sv-zone" id="sv-zone">' + zoneHTML(data.shows, genre, now, more) + '</div></article>';
@@ -344,7 +345,7 @@ export async function showShowsPage() {
       const btn = zone.querySelector('#sv-more');
       if (!btn) return;
       btn.disabled = busy;
-      if (busy) { btn.setAttribute('aria-busy', 'true'); btn.textContent = 'Chargement…'; } else { btn.removeAttribute('aria-busy'); btn.textContent = MORE_LABEL; }
+      if (busy) { btn.setAttribute('aria-busy', 'true'); btn.textContent = tr('Chargement…'); } else { btn.removeAttribute('aria-busy'); btn.textContent = MORE_LABEL; }
     };
     bar.addEventListener('click', (e) => {
       const b = e.target instanceof Element ? e.target.closest('[data-genre]') : null;
@@ -401,25 +402,25 @@ const weekSlot = (sec) => capital(new Date(sec * 1000).toLocaleDateString('fr-FR
 
 /** Jour d'une diffusion, en grand : « Ce soir » (à partir de 18 h), « Aujourd’hui », « Demain », « Mardi 27 ». */
 export function dayWord(sec, now) {
-  if (localDate(sec) === localDate(now)) return new Date(sec * 1000).getHours() >= 18 ? 'Ce soir' : 'Aujourd’hui';
-  if (localDate(sec) === localDate(now + 86400)) return 'Demain';
+  if (localDate(sec) === localDate(now)) return new Date(sec * 1000).getHours() >= 18 ? tr('Ce soir') : tr('Aujourd’hui');
+  if (localDate(sec) === localDate(now + 86400)) return tr('Demain');
   return capital(new Date(sec * 1000).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric' }));
 }
 
 /** Délai avant une diffusion : « Dans 14 min », « Dans 2 h 14 min ». */
 function inText(sec, now) {
   const m = Math.round((sec - now) / 60);
-  if (m < 1) return 'Dans moins d’une minute';
-  if (m < 60) return 'Dans ' + m + ' min';
-  return 'Dans ' + Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' min';
+  if (m < 1) return tr('Dans moins d’une minute');
+  if (m < 60) return tr('Dans {m} min', { m });
+  return tr('Dans {v} h {v2} min', { v: Math.floor(m / 60), v2: String(m % 60).padStart(2, '0') });
 }
 
 /** Lignes « où regarder » : replay (gratuit ou avec publicité), streaming (abonnement) ; à défaut la plateforme connue. */
 function whereLines(pr, platform) {
   const out = [];
-  if (pr && pr.flatrate[0]) out.push('Streaming sur <strong>' + esc(pr.flatrate[0].name) + '</strong>');
-  if (pr && pr.free[0]) out.push('Replay sur <strong>' + esc(pr.free[0].name) + '</strong>');
-  if (!out.length && platform) out.push('Streaming sur <strong>' + esc(platform) + '</strong>');
+  if (pr && pr.flatrate[0]) out.push(tr('Streaming sur <strong>{name}</strong>', { name: esc(pr.flatrate[0].name) }));
+  if (pr && pr.free[0]) out.push(tr('Replay sur <strong>{name}</strong>', { name: esc(pr.free[0].name) }));
+  if (!out.length && platform) out.push(tr('Streaming sur <strong>{platform}</strong>', { platform: esc(platform) }));
   return out;
 }
 
@@ -430,20 +431,20 @@ function whereLines(pr, platform) {
 export function nextCardInner(d, airings, platform, pr, now) {
   const a = airings[0];
   if (!a && !(d.next && d.next.date)) {
-    return platform ? '<p class="sf-next-k">Disponible sur</p><p class="sf-next-big">' + esc(platform) + '</p>' : '';
+    return platform ? '<p class="sf-next-k">' + tr('Disponible sur') + '</p><p class="sf-next-big">' + esc(platform) + '</p>' : '';
   }
   let head;
   if (a) {
     const ch = a.channel;
     const sub = [ch.name, ch.num ? 'canal ' + ch.num : '', fmtMin(Math.round((a.stop - a.start) / 60))].filter(Boolean).join(' · ');
-    head = '<p class="sf-next-k">Prochaine diffusion</p>' +
+    head = '<p class="sf-next-k">' + tr('Prochaine diffusion') + '</p>' +
       '<p class="sf-next-big">' + esc(dayWord(a.start, now)) + ' ' + hhmm(a.start) + '</p>' +
       '<p class="sf-next-sub">' + esc(sub) + '</p>' +
       (isLiveNow(a, now)
-        ? '<p class="sf-next-acc">En direct jusqu’à ' + hhmm(a.stop) + '</p><span class="sf-bar" aria-hidden="true"><span style="width:' + progressPct(a, now) + '%"></span></span>'
+        ? '<p class="sf-next-acc">' + tr('En direct jusqu’à {stop}', { stop: hhmm(a.stop) }) + '</p><span class="sf-bar" aria-hidden="true"><span style="width:' + progressPct(a, now) + '%"></span></span>'
         : '<p class="sf-next-acc">' + esc(inText(a.start, now)) + '</p>');
   } else {
-    head = '<p class="sf-next-k">Nouvel épisode</p>' +
+    head = '<p class="sf-next-k">' + tr('Nouvel épisode') + '</p>' +
       '<p class="sf-next-big">' + esc(shortDate(d.next.date)) + '</p>' +
       (d.next.season ? '<p class="sf-next-sub">S' + esc(String(d.next.season)) + ' · É' + esc(String(d.next.episode)) + '</p>' : '');
   }
@@ -457,17 +458,17 @@ function airingRow(a, now, hasPlay) {
   const live = isLiveNow(a, now);
   const ch = a.channel;
   return '<li class="sf-air' + (live ? ' is-live' : '') + '">' +
-    '<span class="sf-air-when">' + (live ? '<strong>En direct</strong> jusqu’à ' + hhmm(a.stop) : '<strong>' + esc(dayWord(a.start, now)) + '</strong> ' + hhmm(a.start)) + '</span>' +
+    '<span class="sf-air-when">' + (live ? tr('<strong>En direct</strong> jusqu’à {stop}', { stop: hhmm(a.stop) }) : '<strong>' + esc(dayWord(a.start, now)) + '</strong> ' + hhmm(a.start)) + '</span>' +
     '<span class="sf-air-main"><span class="sf-air-title">' + esc(a.title) + '</span>' +
     '<span class="sf-air-chan">' + (ch.num ? '<b class="ch-num">' + esc(String(ch.num)) + '</b>' : '') + esc(ch.name) + '</span></span>' +
     (live ? '<span class="progress sf-air-prog" aria-hidden="true"><span style="width:' + progressPct(a, now) + '%"></span></span>' : '') +
-    (live && hasPlay && ch.playId ? '<button type="button" class="btn btn-primary btn-sm" data-showwatch="' + esc(ch.playId) + '">' + ICON.play + '<span>Regarder</span></button>' : '') +
+    (live && hasPlay && ch.playId ? '<button type="button" class="btn btn-primary btn-sm" data-showwatch="' + esc(ch.playId) + '">' + ICON.play + '<span>' + tr('Regarder') + '</span></button>' : '') +
     '</li>';
 }
 
 /** Épisodes précédents : grille de vignettes 16:9 ; chaque carte est un bouton qui lance la recherche de sources de l'épisode. */
 function pastHTML(list, d) {
-  if (!list.length) return '<p class="row-msg">Aucun épisode précédent trouvé.</p>';
+  if (!list.length) return '<p class="row-msg">' + tr('Aucun épisode précédent trouvé.') + '</p>';
   // Parties d'une même émission (« Émission 3 (1) » / « (2) ») détectées sur toute la liste, avant de couper à 8.
   const parts = episodeParts(list);
   return '<div class="sf-eps" data-nav>' + list.slice(0, 8).map((e, i) => {
@@ -482,7 +483,7 @@ function pastHTML(list, d) {
       (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') + (own ? '' : '<span class="sf-ep-fb" aria-hidden="true">' + esc('É' + e.episode) + '</span>') +
       (dur ? '<span class="sf-ep-dur">' + esc(dur) + '</span>' : '') + '</span>' +
       '<span class="sf-ep-code">' + esc(code + ' · ' + shortDay(e.date)) + '</span>' +
-      '<span class="sf-ep-title">' + esc(title || 'Épisode ' + e.episode) + '</span></button>';
+      '<span class="sf-ep-title">' + esc(title || tr('Épisode {episode}', { episode: e.episode })) + '</span></button>';
   }).join('') + '</div>';
 }
 
@@ -523,18 +524,18 @@ async function showGuideShow(id) {
   try {
     s = (await loadShows()).shows.find((x) => x.epg && x.id === id);
   } catch (_) {
-    if (token === state.token) detailEl.innerHTML = svcError('Cette émission n’a pas pu être chargée.');
+    if (token === state.token) detailEl.innerHTML = svcError(tr('Cette émission n’a pas pu être chargée.'));
     return;
   }
   if (token !== state.token) return;
-  if (!s) { detailEl.innerHTML = svcError('Cette émission n’est plus au programme.'); return; }
+  if (!s) { detailEl.innerHTML = svcError(tr('Cette émission n’est plus au programme.')); return; }
   const now = nowSec();
   const first = s.airings[0];
   const live = s.airings.find((a) => isLiveNow(a, now));
   const liveCh = live && live.channel.playId ? live.channel : null;
-  const kicker = 'Émission TV' + (s.category ? ' · ' + s.category : '');
+  const kicker = tr('Émission TV') + (s.category ? ' · ' + s.category : '');
   const meta = (first ? [first.channel.name, weekSlot(first.start)] : []).filter(Boolean).map((t) => '<li>' + esc(t) + '</li>').join('');
-  const actions = liveCh ? '<button type="button" class="btn btn-primary btn-pill" data-showwatch="' + esc(liveCh.playId) + '">' + ICON.play + '<span>Regarder en direct</span></button>' : '';
+  const actions = liveCh ? '<button type="button" class="btn btn-primary btn-pill" data-showwatch="' + esc(liveCh.playId) + '">' + ICON.play + '<span>' + tr('Regarder en direct') + '</span></button>' : '';
   const nextHTML = nextCardInner({ next: null }, s.airings, '', null, now);
   const hero = '<section class="sf-hero">' + ficheHeroShell(null, { backdrop: guideImg(s.icon) }) +
     '<div class="sf-hero-in"><div class="sf-info"><p class="sf-kicker">' + esc(kicker) + '</p>' +
@@ -542,12 +543,12 @@ async function showGuideShow(id) {
     (meta ? '<ul class="sf-meta">' + meta + '</ul>' : '') +
     (s.overview ? '<p class="sf-syn">' + esc(s.overview) + '</p>' : '') +
     (actions ? '<div class="sf-actions" data-nav>' + actions + '</div>' : '') + '</div>' +
-    '<aside class="sf-next" id="show-next" aria-label="Prochaine diffusion"' + (nextHTML ? '' : ' hidden') + '>' + nextHTML + '</aside></div></section>';
-  const body = '<div class="sf-body"><section class="sf-sec sf-airs" aria-labelledby="sf-h-airs"><h2 class="sf-h" id="sf-h-airs">Prochaines diffusions</h2>' +
+    '<aside class="sf-next" id="show-next" aria-label="' + tr('Prochaine diffusion') + '"' + (nextHTML ? '' : ' hidden') + '>' + nextHTML + '</aside></div></section>';
+  const body = '<div class="sf-body"><section class="sf-sec sf-airs" aria-labelledby="sf-h-airs"><h2 class="sf-h" id="sf-h-airs">' + tr('Prochaines diffusions') + '</h2>' +
     '<ul class="sf-airs-list" data-nav>' + s.airings.slice(0, 12).map((a) => airingRow(a, now, true)).join('') + '</ul></section></div>';
   detailEl.innerHTML = topBar(true) +
     '<article class="fiche show-fiche" aria-labelledby="f-title" data-key="' + esc('tv:' + id) + '" data-name="' + esc(s.name) + '">' + hero + body + '</article>';
-  document.title = s.name + ' · Laststream';
+  document.title = tr('{name} · Laststream', { name: s.name });
   state.ficheName = s.name;
   const h1 = detailEl.querySelector('#f-title');
   if (h1) h1.focus({ preventScroll: true });
@@ -567,7 +568,7 @@ export async function showShow(id) {
   try {
     [d, guide] = await Promise.all([showDetail(id), loadGuide().catch(() => null)]);
   } catch (_) {
-    if (token === state.token) detailEl.innerHTML = svcError('Cette émission n’a pas pu être chargée.');
+    if (token === state.token) detailEl.innerHTML = svcError(tr('Cette émission n’a pas pu être chargée.'));
     return;
   }
   if (token !== state.token) return;
@@ -586,10 +587,10 @@ export async function showShow(id) {
   const liveCh = liveNow && hasPlay && airings[0].channel.playId ? airings[0].channel : null;
   const last = d.last && d.last.date && d.last.date <= today ? d.last : null;
   const actions = (liveCh
-    ? '<button type="button" class="btn btn-primary btn-pill" data-showwatch="' + esc(liveCh.playId) + '">' + ICON.play + '<span>Regarder en direct</span></button>'
-    : last ? '<button type="button" class="btn btn-primary btn-pill" data-showep="' + last.season + ':' + last.episode + '">' + ICON.play + '<span>Revoir le dernier épisode</span></button>' : '') +
-    followBtn(key, 'btn btn-ghost btn-pill', '', 'Me prévenir') +
-    '<a class="btn btn-ghost btn-pill" href="#/tv/' + id + '" data-open="' + esc(key) + '"><span>Fiche série</span></a>';
+    ? '<button type="button" class="btn btn-primary btn-pill" data-showwatch="' + esc(liveCh.playId) + '">' + ICON.play + '<span>' + tr('Regarder en direct') + '</span></button>'
+    : last ? '<button type="button" class="btn btn-primary btn-pill" data-showep="' + last.season + ':' + last.episode + '">' + ICON.play + '<span>' + tr('Revoir le dernier épisode') + '</span></button>' : '') +
+    followBtn(key, 'btn btn-ghost btn-pill', '', tr('Me prévenir')) +
+    '<a class="btn btn-ghost btn-pill" href="#/tv/' + id + '" data-open="' + esc(key) + '"><span>' + tr('Fiche série') + '</span></a>';
 
   const first = d.cast[0];
   const presenter = first && /host|présent|animat/i.test(first.role) ? first.name : '';
@@ -597,9 +598,9 @@ export async function showShow(id) {
     d.networks.length ? d.networks.slice(0, 3).join(' · ') : (airings.length ? airings[0].channel.name : ''),
     airings.length ? weekSlot(airings[0].start) : '',
     STATUS_FR[d.status] || d.status,
-    presenter ? 'Présenté par ' + presenter : '',
+    presenter ? tr('Présenté par {presenter}', { presenter }) : '',
   ].filter(Boolean).map((t) => '<li>' + esc(t) + '</li>').join('');
-  const kicker = 'Émission TV' + (d.genres.length ? ' · ' + d.genres.slice(0, 2).join(' · ') : '');
+  const kicker = tr('Émission TV') + (d.genres.length ? ' · ' + d.genres.slice(0, 2).join(' · ') : '');
   const nextHTML = nextCardInner(d, airings, platform, null, now);
 
   const hero = '<section class="sf-hero">' + ficheHeroShell({ backdropPath: d.backdrop }, null) +
@@ -608,25 +609,25 @@ export async function showShow(id) {
     (meta ? '<ul class="sf-meta">' + meta + '</ul>' : '') +
     (d.overview ? '<p class="sf-syn">' + esc(d.overview) + '</p>' : '') +
     '<div class="sf-actions" data-nav>' + actions + '</div></div>' +
-    '<aside class="sf-next" id="show-next" aria-label="Prochaine diffusion"' + (nextHTML ? '' : ' hidden') + '>' + nextHTML + '</aside></div></section>';
+    '<aside class="sf-next" id="show-next" aria-label="' + tr('Prochaine diffusion') + '"' + (nextHTML ? '' : ' hidden') + '>' + nextHTML + '</aside></div></section>';
 
   const airsHTML = airings.length
     ? '<ul class="sf-airs-list" data-nav>' + airings.slice(0, 12).map((a) => airingRow(a, now, hasPlay)).join('') + '</ul>'
-    : '<p class="row-msg">Aucune diffusion annoncée au guide TV pour le moment' + (platform ? ' : cette émission est sur ' + esc(platform) + '.' : '.') + '</p>';
+    : '<p class="row-msg">' + tr('Aucune diffusion annoncée au guide TV pour le moment') + (platform ? ' ' + tr(': cette émission est sur {platform}.', { platform: esc(platform) }) : '.') + '</p>';
   const body = '<div class="sf-body">' +
     '<div class="sf-cols">' +
-    '<section class="sf-col sf-airs" aria-labelledby="sf-h-airs"><h2 class="sf-h" id="sf-h-airs">Prochaines diffusions</h2>' + airsHTML + '</section>' +
-    '<section class="sf-col sf-past" aria-labelledby="sf-h-past"><h2 class="sf-h" id="sf-h-past">Derniers épisodes</h2>' +
+    '<section class="sf-col sf-airs" aria-labelledby="sf-h-airs"><h2 class="sf-h" id="sf-h-airs">' + tr('Prochaines diffusions') + '</h2>' + airsHTML + '</section>' +
+    '<section class="sf-col sf-past" aria-labelledby="sf-h-past"><h2 class="sf-h" id="sf-h-past">' + tr('Derniers épisodes') + '</h2>' +
     '<div id="show-past"><div class="sf-eps" aria-hidden="true"><span class="sk sf-sk-ep"></span><span class="sk sf-sk-ep"></span><span class="sk sf-sk-ep"></span></div></div></section>' +
     '</div>' +
-    (d.cast.length ? '<section class="sf-sec" aria-labelledby="sf-h-cast"><h2 class="sf-h" id="sf-h-cast">Présentation</h2>' + castHTML(d.cast) + '</section>' : '') +
-    '<section class="sf-sec" aria-labelledby="sf-h-where"><h2 class="sf-h" id="sf-h-where">Où regarder</h2>' +
+    (d.cast.length ? '<section class="sf-sec" aria-labelledby="sf-h-cast"><h2 class="sf-h" id="sf-h-cast">' + tr('Présentation') + '</h2>' + castHTML(d.cast) + '</section>' : '') +
+    '<section class="sf-sec" aria-labelledby="sf-h-where"><h2 class="sf-h" id="sf-h-where">' + tr('Où regarder') + '</h2>' +
     '<div class="f-prov" id="show-where"><span class="sk sk-line"></span></div></section>' +
     '</div>';
 
   detailEl.innerHTML = topBar(true) +
     '<article class="fiche show-fiche" aria-labelledby="f-title" data-key="' + esc(key) + '" data-name="' + esc(d.name) + '">' + hero + body + '</article>';
-  document.title = d.name + ' · Laststream';
+  document.title = tr('{name} · Laststream', { name: d.name });
   const h1 = detailEl.querySelector('#f-title');
   if (h1) h1.focus({ preventScroll: true });
   pastEpisodes(d, today).then((list) => {
@@ -634,7 +635,7 @@ export async function showShow(id) {
     if (box && token === state.token) box.innerHTML = pastHTML(list, d);
   }).catch(() => {
     const box = detailEl.querySelector('#show-past');
-    if (box && token === state.token) box.innerHTML = '<p class="row-msg">Les épisodes n’ont pas pu être chargés.</p>';
+    if (box && token === state.token) box.innerHTML = '<p class="row-msg">' + tr('Les épisodes n’ont pas pu être chargés.') + '</p>';
   });
   fetchProviders('tv', id).then((pr) => {
     if (token !== state.token) return;
@@ -648,7 +649,7 @@ export async function showShow(id) {
     }
   }).catch(() => {
     const where = detailEl.querySelector('#show-where');
-    if (where) where.innerHTML = '<p class="row-msg">Disponibilités indisponibles.</p>';
+    if (where) where.innerHTML = '<p class="row-msg">' + tr('Disponibilités indisponibles.') + '</p>';
   });
 }
 

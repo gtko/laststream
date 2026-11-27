@@ -7,6 +7,7 @@ import { isPlayerFull, leavePlayer } from '../player/sessionLoader.js';
 import { hasLayers } from './backStack.js';
 import { goBack } from './router.js';
 import { state } from './state.js';
+import { t } from '../i18n';
 
 /**
  * @param {{ layers: boolean, player: boolean, inDetail: boolean, canGoBack: boolean }} s  `player` : lecteur film/série affiché en
@@ -23,7 +24,7 @@ export function androidBackAction(s) {
 
 export function startAndroidBack() {
   try {
-    if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('App')) return;
+    if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable(t('App'))) return;
   } catch (_) { return; }
   void App.addListener('backButton', (e) => {
     const a = androidBackAction({ layers: hasLayers(), player: isPlayerFull(), inDetail: !!state.inDetail, canGoBack: !!(e && e.canGoBack) });

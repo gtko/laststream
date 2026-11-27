@@ -1,6 +1,7 @@
 import type {
   AccountList, AdminAccount, GroupStats, Inbox, InboxItem, LiveFeedEntry, Metrics, PurgeJob, Range, ReferralNode, ServiceStatus, StatusReport,
 } from './adminApi';
+import { t as tr } from '../i18n';
 
 /* Fonctions pures de la console d'administration : accès, métriques, pagination, purge, parrainage, formats. */
 
@@ -37,15 +38,15 @@ export function fmtAgo(v: unknown, now = Date.now()): string {
   const t = toMs(v);
   if (!Number.isFinite(t)) return 'jamais';
   const s = Math.max(0, Math.round((now - t) / 1000));
-  if (s < 60) return 'à l’instant';
-  if (s < 3600) return 'il y a ' + Math.floor(s / 60) + ' min';
+  if (s < 60) return tr('à l’instant');
+  if (s < 3600) return tr('il y a {v} min', { v: Math.floor(s / 60) });
   if (s < 86_400) return 'il y a ' + Math.floor(s / 3600) + ' h';
   return 'il y a ' + Math.floor(s / 86_400) + ' j';
 }
 
 // ---- Métriques ----
 const GROUP_LABEL: Record<string, string> = {
-  stream: 'Flux', play: 'Lecture', lt_tmdb: 'Catalogue TMDB', lt: 'Catalogue', user: 'Comptes', party: 'Watch parties', ui: 'Interface', other: 'Autres',
+  stream: tr('Flux'), play: tr('Lecture'), lt_tmdb: tr('Catalogue TMDB'), lt: tr('Catalogue'), user: tr('Comptes'), party: tr('Watch parties'), ui: tr('Interface'), other: tr('Autres'),
 };
 export const STATUS_KEYS = ['2xx', '3xx', '4xx', '5xx'] as const;
 const emptyStats = (): GroupStats => ({ requests: 0, status: { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 }, p50: 0, p95: 0, avgMs: 0 });
@@ -106,7 +107,7 @@ export function upstreamRows(m: Pick<Metrics, 'upstreams'>) {
     .sort((a, b) => b.failures - a.failures || b.calls - a.calls);
 }
 
-const ALLDEBRID_LABEL: Record<string, string> = { unlock: 'Déblocage de lien', magnet: 'Magnets', other: 'Autres appels' };
+const ALLDEBRID_LABEL: Record<string, string> = { unlock: tr('Déblocage de lien'), magnet: tr('Magnets'), other: tr('Autres appels') };
 export function alldebridRows(m: Pick<Metrics, 'alldebrid'>) {
   return Object.entries(m.alldebrid ?? {}).map(([id, v]) => {
     const errors = Object.entries(v.errors ?? {}).map(([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n);
@@ -140,10 +141,10 @@ export class CursorPager {
 export interface PurgeView { state: 'running' | 'done' | 'failed'; pct: number | null; label: string }
 /** Progression d'une purge : pourcentage si le nombre de clés est connu, sinon indéterminé (null). */
 export function purgeView(job: Pick<PurgeJob, 'status' | 'deleted' | 'error'>, keys?: number): PurgeView {
-  if (job.status === 'done') return { state: 'done', pct: 100, label: 'Terminé : ' + fmtInt(job.deleted) + ' clé(s) supprimée(s).' };
-  if (job.status === 'failed') return { state: 'failed', pct: null, label: 'Échec' + (job.error ? ' : ' + job.error : '.') + ' (' + fmtInt(job.deleted) + ' supprimée(s))' };
+  if (job.status === 'done') return { state: 'done', pct: 100, label: tr('Terminé : {deleted} clé(s) supprimée(s).', { deleted: fmtInt(job.deleted) }) };
+  if (job.status === 'failed') return { state: 'failed', pct: null, label: tr('Échec{v} ({deleted} supprimée(s))', { v: (job.error ? ' : ' + job.error : '.'), deleted: fmtInt(job.deleted) }) };
   const pct = keys && keys > 0 ? Math.min(99, Math.round((job.deleted / keys) * 100)) : null;
-  return { state: 'running', pct, label: 'Purge en cours : ' + fmtInt(job.deleted) + ' clé(s) supprimée(s)' + (pct !== null ? ' (' + pct + ' %)' : '') + '…' };
+  return { state: 'running', pct, label: tr('Purge en cours : {deleted} clé(s) supprimée(s){v}…', { deleted: fmtInt(job.deleted), v: (pct !== null ? ' (' + pct + ' %)' : '') }) };
 }
 /** Les listes de purges peuvent arriver nues ou enveloppées. */
 export function purgeList(raw: unknown): PurgeJob[] {
@@ -195,8 +196,8 @@ export async function scanAccounts(page: (cursor: string | null) => Promise<Acco
 
 // ---- Export CSV des comptes ----
 const CSV_HEADERS = [
-  'Identifiant', 'Pseudo', 'Statut', 'Créé le', 'Dernière activité', 'Suspendu le', 'Parrain',
-  'Profils', 'Bibliothèque', 'Quota d’invitations', 'Invitations utilisées', 'Sessions', 'En ligne',
+  tr('Identifiant'), tr('Pseudo'), tr('Statut'), tr('Créé le'), tr('Dernière activité'), tr('Suspendu le'), tr('Parrain'),
+  tr('Profils'), tr('Bibliothèque'), tr('Quota d’invitations'), tr('Invitations utilisées'), tr('Sessions'), tr('En ligne'),
 ];
 
 /** Neutralise une cellule qu'un tableur lirait comme une formule (=, +, -, @, tabulation, retour chariot) en la préfixant d'une apostrophe. */
@@ -228,10 +229,10 @@ export function formatCountdown(ms: number): string {
 }
 
 // ---- Centre de contrôle : libellés d'état ----
-const SERVICE_STATUS_LABEL: Record<ServiceStatus, string> = { ok: 'Opérationnel', degraded: 'Dégradé', down: 'En panne', unknown: 'Inconnu' };
+const SERVICE_STATUS_LABEL: Record<ServiceStatus, string> = { ok: tr('Opérationnel'), degraded: tr('Dégradé'), down: tr('En panne'), unknown: tr('Inconnu') };
 /** Libellé français d'un état de service ; une valeur inconnue donne « Inconnu ». */
 export function serviceStatusLabel(status: string | null | undefined): string {
-  return typeof status === 'string' && Object.hasOwn(SERVICE_STATUS_LABEL, status) ? SERVICE_STATUS_LABEL[status as ServiceStatus] : 'Inconnu';
+  return typeof status === 'string' && Object.hasOwn(SERVICE_STATUS_LABEL, status) ? SERVICE_STATUS_LABEL[status as ServiceStatus] : tr('Inconnu');
 }
 
 // ---- Centre de contrôle : santé des services, variations, « En direct », « À traiter » ----
@@ -244,7 +245,7 @@ const serviceTone = (status: string | null | undefined): Tone =>
 /** Services de la santé, dans l'ordre de la maquette (identifiants du rapport serveur). */
 const HEALTH_IDS = ['api', 'accounts', 'kv', 'upstream', 'cron'] as const;
 const HEALTH_NAME: Record<(typeof HEALTH_IDS)[number], string> = {
-  api: 'API Worker', accounts: 'Base comptes', kv: 'Cache KV', upstream: 'Addons amont', cron: 'Cron TV',
+  api: tr('API Worker'), accounts: tr('Base comptes'), kv: tr('Cache KV'), upstream: tr('Addons amont'), cron: tr('Cron TV'),
 };
 
 export interface HealthTile { id: string; name: string; value: string; sub: string; statusLabel: string; tone: Tone }
@@ -312,9 +313,9 @@ export function feedRows(feed: LiveFeedEntry[] | null | undefined, max = 8): Fee
 
 /** Sévérités de « À traiter », de la plus grave à la moins grave. */
 const INBOX_SEVERITY = [
-  { id: 'critical', label: 'Critique' },
-  { id: 'warn', label: 'À surveiller' },
-  { id: 'info', label: 'Pour information' },
+  { id: 'critical', label: tr('Critique') },
+  { id: 'warn', label: tr('À surveiller') },
+  { id: 'info', label: tr('Pour information') },
 ] as const;
 export type InboxSeverity = (typeof INBOX_SEVERITY)[number]['id'];
 

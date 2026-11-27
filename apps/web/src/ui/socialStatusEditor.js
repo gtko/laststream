@@ -6,6 +6,7 @@ import * as store from '../data/socialStore';
 import { toast } from './dom.js';
 import { customStatusText, socialErrorMessage } from './socialFmt.js';
 import { EMOJIS, EXPIRIES, STATUS_TEXT_MAX, charCount, customStatusOf } from './socialProfileModel.js';
+import { t } from '../i18n';
 
 const FOCUSABLE = 'input:not([disabled]), button:not([disabled])';
 
@@ -49,26 +50,26 @@ export function openStatusEditor(host, opener = document.activeElement) {
 
   const input = h('input', {
     id: 'ss-se-text', class: 'ss-input ss-se-input', maxlength: String(STATUS_TEXT_MAX), autocomplete: 'off',
-    placeholder: 'Un mot sur ce que tu fais', 'aria-describedby': 'ss-se-count',
+    placeholder: t('Un mot sur ce que tu fais'), 'aria-describedby': 'ss-se-count',
   });
   input.value = d.statusText;
   const count = h('span', { id: 'ss-se-count', class: 'ss-hint ss-se-count' });
   const err = h('p', { class: 'ss-se-err', role: 'alert', hidden: true });
   // Les contrôles sont créés une fois et mis à jour sur place : recréer un bouton qui a le focus le ferait tomber sur <body>.
   const emojiBtn = h('button', {
-    type: 'button', class: 'ss-se-emoji', 'aria-label': 'Choisir un emoji', 'aria-expanded': 'false', 'aria-controls': 'ss-se-pop',
+    type: 'button', class: 'ss-se-emoji', 'aria-label': t('Choisir un emoji'), 'aria-expanded': 'false', 'aria-controls': 'ss-se-pop',
     on: { click: () => setEmojiOpen(!emojiOpen) },
   });
-  const emojiPop = h('div', { id: 'ss-se-pop', class: 'ss-se-pop', role: 'group', 'aria-label': 'Emojis', hidden: true },
+  const emojiPop = h('div', { id: 'ss-se-pop', class: 'ss-se-pop', role: 'group', 'aria-label': t('Emojis'), hidden: true },
     ...EMOJIS.map((e) => h('button', { type: 'button', class: 'ss-se-e', text: e, on: { click: () => pick(e) } })),
-    h('button', { type: 'button', class: 'ss-se-e ss-se-e--none', text: 'Aucun', on: { click: () => pick('') } }));
+    h('button', { type: 'button', class: 'ss-se-e ss-se-e--none', text: t('Aucun'), on: { click: () => pick('') } }));
   const emojiZone = h('span', { class: 'ss-se-emoji-wrap' }, emojiBtn, emojiPop);
   const chips = EXPIRIES.map(([v, text]) => h('button', { type: 'button', class: 'ss-se-chip', text, on: { click: () => { d.expiry = v; touched = true; paint(); } } }));
   const keepHint = h('span', { class: 'ss-hint', hidden: true });
   const expiryZone = h('div', { class: 'ss-se-chips', role: 'group', 'aria-labelledby': 'ss-se-exp' }, ...chips, keepHint);
-  const clearBtn = h('button', { type: 'button', class: 'ss-btn2 ss-se-clear', text: 'Effacer le statut', on: { click: () => save(true) } });
-  const okBtn = h('button', { type: 'submit', class: 'ss-btn2 ss-pri', text: 'Enregistrer' });
-  const cancelBtn = h('button', { type: 'button', class: 'ss-btn2 ss-sec', text: 'Annuler', on: { click: () => close() } });
+  const clearBtn = h('button', { type: 'button', class: 'ss-btn2 ss-se-clear', text: t('Effacer le statut'), on: { click: () => save(true) } });
+  const okBtn = h('button', { type: 'submit', class: 'ss-btn2 ss-pri', text: t('Enregistrer') });
+  const cancelBtn = h('button', { type: 'button', class: 'ss-btn2 ss-sec', text: t('Annuler'), on: { click: () => close() } });
 
   const showError = (msg) => { err.textContent = msg; err.hidden = !msg; };
 
@@ -91,7 +92,7 @@ export function openStatusEditor(host, opener = document.activeElement) {
       chips[i].setAttribute('aria-pressed', String(d.expiry === v));
     });
     keepHint.hidden = !(d.expiry === 'keep' && d.expiresAt);
-    if (!keepHint.hidden) keepHint.textContent = 'Efface le ' + new Date(d.expiresAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    if (!keepHint.hidden) keepHint.textContent = t('Efface le {v}', { v: new Date(d.expiresAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) });
   }
 
   function pick(e) {
@@ -114,22 +115,22 @@ export function openStatusEditor(host, opener = document.activeElement) {
     paint();
     try {
       await store.saveProfile({ customStatus: after });
-      toast(after === null ? 'Statut effacé' : 'Statut enregistré');
+      toast(after === null ? t('Statut effacé') : t('Statut enregistré'));
       close();
     } catch (e) {
       busy = false;
-      showError('Statut non enregistré : ' + socialErrorMessage(e));
+      showError(t('Statut non enregistré : {e}', { e: socialErrorMessage(e) }));
       paint();
     }
   }
 
   const form = h('form', { class: 'ss-dlg ss-se', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ss-se-t', novalidate: true, on: { submit: (e) => { e.preventDefault(); save(); } } },
-    h('h3', { class: 'ss-dlg-t', id: 'ss-se-t', text: 'Mon statut' }),
+    h('h3', { class: 'ss-dlg-t', id: 'ss-se-t', text: t('Mon statut') }),
     h('div', { class: 'ss-se-field' },
-      h('label', { class: 'ss-se-lb', for: 'ss-se-text', text: 'Statut personnalisé' }),
+      h('label', { class: 'ss-se-lb', for: 'ss-se-text', text: t('Statut personnalisé') }),
       h('div', { class: 'ss-se-row' }, emojiZone, input),
       count),
-    h('div', { class: 'ss-se-field' }, h('span', { class: 'ss-se-lb', id: 'ss-se-exp', text: 'Effacer automatiquement' }), expiryZone),
+    h('div', { class: 'ss-se-field' }, h('span', { class: 'ss-se-lb', id: 'ss-se-exp', text: t('Effacer automatiquement') }), expiryZone),
     err,
     h('div', { class: 'ss-dlg-acts' }, clearBtn, h('span', { class: 'ss-se-sp' }), cancelBtn, okBtn));
 

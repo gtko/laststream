@@ -2,6 +2,7 @@
  * plex.ts) produit des `MigrationItem` ; le moteur (runner.ts) les résout en titres TMDB et les écrit sur le profil, un par un,
  * avec un journal qui permet de reprendre après une coupure. Aucun module de ce dossier n'envoie d'identifiant de source au serveur. */
 
+import { t as tr } from '../../i18n';
 export type MigrationSource = 'stremio' | 'stremio-file' | 'nuvio' | 'simkl' | 'plex';
 
 /** Ce que l'élément devient dans Laststream. */
@@ -80,20 +81,20 @@ export interface ItemResult {
 }
 
 export const ACTION_LABEL: Record<MigrationAction, string> = {
-  library: 'Bibliothèque',
-  list: 'Listes',
-  watched: 'Vus',
-  progress: 'Progression',
+  library: tr('Bibliothèque'),
+  list: tr('Listes'),
+  watched: tr('Vus'),
+  progress: tr('Progression'),
 };
 
 export const LIST_NAME: Record<MigrationList, string> = {
-  favorites: 'Favoris',
-  watchlist: 'À voir',
+  favorites: tr('Favoris'),
+  watchlist: tr('À voir'),
 };
 
 export const SOURCE_LABEL: Record<MigrationSource, string> = {
   stremio: 'Stremio',
-  'stremio-file': 'Stremio (fichier)',
+  'stremio-file': tr('Stremio (fichier)'),
   nuvio: 'Nuvio',
   simkl: 'Simkl',
   plex: 'Plex',

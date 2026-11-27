@@ -2,6 +2,7 @@
 import { REDUCE } from './constants.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
+import { t } from '../i18n';
 
 // ---------- Rangées horizontales : glisser, molette, flèches ----------
 const ROW_SEL = '.row,.cast-row,.vid-row';
@@ -50,8 +51,8 @@ function decorateRows() {
     r.parentNode.insertBefore(wrap, r);
     wrap.appendChild(r);
     wrap.insertAdjacentHTML('beforeend',
-      '<button type="button" class="row-arrow prev" tabindex="-1" aria-label="Faire défiler vers la gauche" hidden>' + ICON.chev + '</button>' +
-      '<button type="button" class="row-arrow next" tabindex="-1" aria-label="Faire défiler vers la droite" hidden>' + ICON.chev + '</button>');
+      '<button type="button" class="row-arrow prev" tabindex="-1" aria-label="' + t('Faire défiler vers la gauche') + '" hidden>' + ICON.chev + '</button>' +
+      '<button type="button" class="row-arrow next" tabindex="-1" aria-label="' + t('Faire défiler vers la droite') + '" hidden>' + ICON.chev + '</button>');
     r.addEventListener('scroll', () => updateArrows(wrap), { passive: true });
     wrap.addEventListener('mouseenter', () => updateArrows(wrap));
     updateArrows(wrap);

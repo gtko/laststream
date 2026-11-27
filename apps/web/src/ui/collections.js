@@ -18,6 +18,7 @@ import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { palette } from './typo.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const GIF_DELAY_MS = 150;
 const HUB_PREVIEW = 12; // tuiles par catégorie dans la vue « Toutes »
@@ -172,13 +173,13 @@ function hubBodyHTML(cat, st) {
   const groups = searchCatalog(cat, { category: st.category, query: q });
   const count = groups.reduce((n, g) => n + g.folders.length, 0);
   if (!count) {
-    return '<p class="row-msg" role="status">Aucune collection ne correspond à « ' + esc(q) + ' ».</p>';
+    return '<p class="row-msg" role="status">' + tr('Aucune collection ne correspond à « {q} ».', { q: esc(q) }) + '</p>';
   }
   const preview = st.category === 'all' && !q;
   const sections = groups.map((g) => {
     const shown = preview ? g.folders.slice(0, HUB_PREVIEW) : g.folders;
     const more = preview && g.folders.length > shown.length
-      ? '<button type="button" class="row-link ct-more" data-hubcat="' + esc(g.category.id) + '">Voir les ' + g.folders.length + '</button>' : '';
+      ? '<button type="button" class="row-link ct-more" data-hubcat="' + esc(g.category.id) + '">' + tr('Voir les {length}', { length: g.folders.length }) + '</button>' : '';
     return '<section class="ct-sec" aria-labelledby="hc-' + esc(g.category.id) + '">' +
       '<h2 class="row-title" id="hc-' + esc(g.category.id) + '">' + esc(g.category.title) + '<span class="ct-n">' + g.folders.length + '</span>' + more + '</h2>' +
       '<div class="ct-grid" data-nav>' + shown.map((f) => folderTile(f)).join('') + '</div></section>';
@@ -188,18 +189,18 @@ function hubBodyHTML(cat, st) {
 
 function hubPillsHTML(cat, category) {
   const pill = (id, label) => '<button type="button" class="pill" data-hubcat="' + esc(id) + '" aria-pressed="' + String(category === id) + '">' + esc(label) + '</button>';
-  return pill('all', 'Toutes') + cat.categories.map((c) => pill(c.id, c.title)).join('');
+  return pill('all', tr('Toutes')) + cat.categories.map((c) => pill(c.id, c.title)).join('');
 }
 
 /** Rend le hub dans `root` (pastilles, recherche instantanée, grilles) et branche ses événements. */
 export function renderHub(root, cat, initial) {
   const st = { category: initial && cat.categories.some((c) => c.id === initial) ? initial : 'all', query: '' };
   root.innerHTML =
-    '<div class="ct-tools"><label class="ct-search"><span class="sr-only">Rechercher une collection</span>' +
-    '<input type="search" id="hub-q" placeholder="Rechercher une collection, un studio, un acteur…" autocomplete="off" spellcheck="false" enterkeyhint="search"></label>' +
-    '<div class="pills ct-pills" role="group" aria-label="Catégories de collections" data-nav id="hub-pills"></div></div>' +
+    '<div class="ct-tools"><label class="ct-search"><span class="sr-only">' + tr('Rechercher une collection') + '</span>' +
+    '<input type="search" id="hub-q" placeholder="' + tr('Rechercher une collection, un studio, un acteur…') + '" autocomplete="off" spellcheck="false" enterkeyhint="search"></label>' +
+    '<div class="pills ct-pills" role="group" aria-label="' + tr('Catégories de collections') + '" data-nav id="hub-pills"></div></div>' +
     '<div id="hub-body"></div>' +
-    '<p class="ct-credit">' + esc(CREDIT) + '. Données : TMDb.</p>';
+    '<p class="ct-credit">' + esc(CREDIT) + tr('. Données : TMDb.') + '</p>';
   const pills = root.querySelector('#hub-pills');
   const body = root.querySelector('#hub-body');
   const input = root.querySelector('#hub-q');
@@ -230,18 +231,18 @@ export async function showCollections(initialCat) {
   teardownFiche();
   const token = state.token;
   state.kind = 'collections';
-  document.title = 'Collections · Laststream';
+  document.title = tr('Collections · Laststream');
   detailEl.innerHTML = topBar(false) + '<article class="svc-page ct-page is-loading" aria-busy="true" tabindex="-1"><header class="svc-head svc-head-plain"><span class="sk sk-title"></span></header></article>';
   let cat;
   try { cat = await loadCatalog(); } catch (_) {
-    if (token === state.token) detailEl.innerHTML = svcError('Les collections n’ont pas pu être chargées.');
+    if (token === state.token) detailEl.innerHTML = svcError(tr('Les collections n’ont pas pu être chargées.'));
     return;
   }
   if (token !== state.token) return;
   catalogRef = cat;
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page ct-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
-    '<p class="svc-eyebrow">Parcourir</p><h1 class="svc-title" id="svc-title" tabindex="-1">Collections</h1></div></header>' +
+    '<p class="svc-eyebrow">' + tr('Parcourir') + '</p><h1 class="svc-title" id="svc-title" tabindex="-1">' + tr('Collections') + '</h1></div></header>' +
     '<div class="ct-hub" id="ct-hub"></div></article>';
   renderHub(detailEl.querySelector('#ct-hub'), cat, initialCat);
   const h1 = detailEl.querySelector('#svc-title');
@@ -250,7 +251,7 @@ export async function showCollections(initialCat) {
 
 // ---------- Grille de titres d'un dossier (page dossier et Découvrir) ----------
 
-export const SORTS = [['default', 'Sélection'], ['popularity', 'Popularité'], ['rating', 'Note'], ['recent', 'Récents']];
+export const SORTS = [['default', tr('Sélection')], ['popularity', tr('Popularité')], ['rating', tr('Note')], ['recent', tr('Récents')]];
 
 export function pillsHTML(attr, items, current, label) {
   return '<div class="pills" role="group" aria-label="' + esc(label) + '" data-nav>' +
@@ -286,7 +287,7 @@ export function startFolderGrid(o) {
   });
   list.ready.then(() => {
     if (token === state.token && !o.host.querySelector('[data-tile]')) {
-      o.host.insertAdjacentHTML('beforeend', '<p class="row-msg" role="status">Rien à voir ici pour le moment.</p>');
+      o.host.insertAdjacentHTML('beforeend', '<p class="row-msg" role="status">' + tr('Rien à voir ici pour le moment.') + '</p>');
     }
   });
   return list;
@@ -303,7 +304,7 @@ export async function showCollection(id) {
   detailEl.innerHTML = topBar(false) + '<article class="svc-page ct-page is-loading" aria-busy="true" tabindex="-1"><header class="svc-head svc-head-plain"><span class="sk sk-title"></span></header></article>';
   let cat;
   try { cat = await loadCatalog(); } catch (_) {
-    if (token === state.token) detailEl.innerHTML = svcError('Les collections n’ont pas pu être chargées.');
+    if (token === state.token) detailEl.innerHTML = svcError(tr('Les collections n’ont pas pu être chargées.'));
     return;
   }
   if (token !== state.token) return;
@@ -315,12 +316,12 @@ export async function showCollection(id) {
     try { folder = await generatedFolder(id); } catch (_) { folder = null; }
     if (token !== state.token) return;
   }
-  if (!folder) { detailEl.innerHTML = svcError('Collection introuvable.'); return; }
+  if (!folder) { detailEl.innerHTML = svcError(tr('Collection introuvable.')); return; }
   const category = generated ? null : cat.catOf.get(id);
   const slug = serviceSlug(folder);
   const hasMovie = usableSources(folder, 'movie').length > 0;
   const hasTv = usableSources(folder, 'tv').length > 0;
-  document.title = folder.title + ' · Laststream';
+  document.title = tr('{title} · Laststream', { title: folder.title });
   const bg = folder.hero || folder.cover || '';
   const hist = { sort: 'default', media: 'all' };
   detailEl.innerHTML = topBar(false) +
@@ -329,12 +330,12 @@ export async function showCollection(id) {
     (bg ? '<img class="cf-bg" src="' + esc(bg) + '" alt="" decoding="async" referrerpolicy="no-referrer">' : '') +
     '<span class="cf-shade" aria-hidden="true"></span>' +
     '<div class="cf-in">' +
-    (generated ? '<p class="svc-eyebrow"><a href="#/" data-go>En vedette</a></p>' : '') +
+    (generated ? '<p class="svc-eyebrow"><a href="#/" data-go>' + tr('En vedette') + '</a></p>' : '') +
     (category ? '<p class="svc-eyebrow"><a href="#/collections/' + esc(category.id) + '" data-go>' + esc(category.title) + '</a></p>' : '') +
     (folder.logo ? '<img class="cf-logo" src="' + esc(folder.logo) + '" alt="" referrerpolicy="no-referrer">' : '') +
     '<h1 class="svc-title cf-title' + (folder.logo ? ' sr-only' : '') + '" id="svc-title" tabindex="-1">' + esc(folder.title) + '</h1>' +
     '<p class="cf-count" id="cf-count" role="status" aria-live="polite"></p>' +
-    (slug ? '<a class="btn btn-ghost cf-svc" href="#/service/' + esc(slug) + '" data-go>Nouveautés et genres sur ' + esc(folder.title) + '</a>' : '') +
+    (slug ? '<a class="btn btn-ghost cf-svc" href="#/service/' + esc(slug) + '" data-go>' + tr('Nouveautés et genres sur {title}', { title: esc(folder.title) }) + '</a>' : '') +
     '</div></header>' +
     '<div class="cf-tools" id="cf-tools"></div>' +
     '<div class="lib-grid" id="cf-grid" data-nav></div></article>';
@@ -349,14 +350,14 @@ export async function showCollection(id) {
   const grid = detailEl.querySelector('#cf-grid');
   const count = detailEl.querySelector('#cf-count');
   const paintTools = () => {
-    tools.innerHTML = (hasMovie && hasTv ? pillsHTML('cfmedia', [['all', 'Tout'], ['movie', 'Films'], ['tv', 'Séries']], hist.media, 'Type de titre') : '') +
-      pillsHTML('cfsort', SORTS, hist.sort, 'Trier par');
+    tools.innerHTML = (hasMovie && hasTv ? pillsHTML('cfmedia', [['all', tr('Tout')], ['movie', tr('Films')], ['tv', tr('Séries')]], hist.media, tr('Type de titre')) : '') +
+      pillsHTML('cfsort', SORTS, hist.sort, tr('Trier par'));
   };
   const run = () => {
     count.textContent = '';
     startFolderGrid({
       host: grid, folder, sort: hist.sort, media: hist.media, key: location.hash + '|' + hist.sort + '|' + hist.media,
-      onCount: (n, done, total) => { count.textContent = done ? nTitres(n) : (total > n ? 'Environ ' + nTitres(total) : nTitres(n) + ' et plus'); },
+      onCount: (n, done, total) => { count.textContent = done ? nTitres(n) : (total > n ? tr('Environ {total}', { total: nTitres(total) }) : tr('{n} et plus', { n: nTitres(n) })); },
     });
   };
   tools.addEventListener('click', (e) => {
@@ -380,7 +381,7 @@ const rowSection = (id, title, inner, link) =>
   '<section class="row-section" id="' + id + '" aria-labelledby="h-' + id + '"><h2 class="row-title" id="h-' + id + '">' + esc(title) + (link || '') + '</h2>' + inner + '</section>';
 const rowLink = (href, label) => ' <a class="row-link" href="' + esc(href) + '" data-go>' + esc(label) + '</a>';
 
-const GEN_KICKER = { cast: 'Acteur', crew: 'Réalisateur', keyword: 'Thème', classic: 'Classique', decade: 'Décennie' };
+const GEN_KICKER = { cast: tr('Acteur'), crew: tr('Réalisateur'), keyword: tr('Thème'), classic: tr('Classique'), decade: tr('Décennie') };
 const genImg = (cls, url) => '<img class="gt-img ' + cls + '" src="' + esc(url) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">';
 
 /**
@@ -425,7 +426,7 @@ export async function renderFeatured(now = new Date()) {
     }
     const slot = document.getElementById('feat-slot');
     if (!slot || !tiles.length || state.status !== 'ready') return false;
-    slot.innerHTML = rowSection('vedette', 'En vedette', '<div class="row ct-row ct-row-xl" data-nav>' + tiles.join('') + '</div>');
+    slot.innerHTML = rowSection('vedette', tr('En vedette'), '<div class="row ct-row ct-row-xl" data-nav>' + tiles.join('') + '</div>');
     if (picks.length) rememberFeaturedCollections(picks, now);
     return true;
   } catch (_) { return false; }
@@ -441,16 +442,16 @@ export async function renderHomeCollections(now) {
     if (!svcSlot || state.status !== 'ready') return false;
     const svcs = serviceFolders(cat);
     if (svcs.length) {
-      const all = '<a class="ct ct-m ct-all" href="#/collections" data-go aria-label="Toutes les collections"><span class="ct-media"><span class="ct-all-in"><b>Toutes les collections</b><i aria-hidden="true">→</i></span></span></a>';
-      svcSlot.innerHTML = rowSection('services', 'Services de streaming',
+      const all = '<a class="ct ct-m ct-all" href="#/collections" data-go aria-label="' + tr('Toutes les collections') + '"><span class="ct-media"><span class="ct-all-in">' + tr('<b>Toutes les collections</b>') + '<i aria-hidden="true">→</i></span></span></a>';
+      svcSlot.innerHTML = rowSection('services', tr('Services de streaming'),
         '<div class="row ct-row" data-nav>' + svcs.map((f) => folderTile(f)).join('') + all + '</div>',
-        rowLink('#/collections/' + SERVICES_CATEGORY, 'Tout voir') + rowLink('#/services', 'Nouveautés par service'));
+        rowLink('#/collections/' + SERVICES_CATEGORY, tr('Tout voir')) + rowLink('#/services', tr('Nouveautés par service')));
     }
     const colSlot = document.getElementById('col-slot');
     if (colSlot) {
       colSlot.innerHTML = rotatingRows(cat, now).map((r) => rowSection('col-' + r.category.id, r.category.title,
         '<div class="row ct-row" data-nav>' + r.folders.map((f) => folderTile(f)).join('') + '</div>',
-        rowLink('#/collections/' + r.category.id, 'Tout voir'))).join('');
+        rowLink('#/collections/' + r.category.id, tr('Tout voir')))).join('');
     }
     return svcs.length > 0;
   } catch (_) { return false; }

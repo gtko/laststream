@@ -17,9 +17,10 @@ import { ago, clock, episodeCode, livePos, shortName, watchLine } from './social
 import { state } from './state.js';
 import { joinErrorMessage } from './socialChat.js';
 import { esc, rewriteKeepingFocus } from './util.js';
+import { t as tr } from '../i18n';
 
-const LANGS = [['', 'Toutes'], ['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['vo', 'VO']];
-const KINDS = [['', 'Tout'], ['movie', 'Films'], ['series', 'Séries']];
+const LANGS = [['', tr('Toutes')], ['fr', tr('Français')], ['en', tr('Anglais')], ['es', tr('Espagnol')], ['de', tr('Allemand')], ['it', tr('Italien')], ['vo', 'VO']];
+const KINDS = [['', tr('Tout')], ['movie', tr('Films')], ['series', tr('Séries')]];
 let filter = { language: '', kind: '' };
 let cursor = null;
 let rooms = [];
@@ -56,7 +57,7 @@ const message = (text) => '<p class="row-msg" role="status">' + esc(text) + '</p
 /** Action « Créer une watch party » : point d'entrée unique (la fenêtre de proposition avec recherche la remplacera, ODY-173). */
 export function openCreateParty() {
   try { location.hash = '#/discover'; } catch (_) { /* adresse inchangée */ }
-  toast('Choisis un titre, puis clique sur Watch party sur sa fiche.');
+  toast(tr('Choisis un titre, puis clique sur Watch party sur sa fiche.'));
 }
 
 // ---------- Liste des salons publics ----------
@@ -71,7 +72,7 @@ export const hostFriend = (host, friends) => friends.find((f) => !f.muted && (no
 
 const openedText = (r) => {
   const t = ago(Date.parse(r.createdAt));
-  return t ? ' · ouvert ' + (t.startsWith('à') ? t : 'il y a ' + t) : '';
+  return t ? ' ' + tr('· ouvert') + ' ' + (t.startsWith('à') ? t : 'il y a ' + t) : '';
 };
 
 const posterHTML = (poster) => '<span class="wp-poster' + (poster ? '' : ' no-img') + '">' + (poster ? '<img src="' + esc(IMG('w185', poster)) + '" alt="" loading="lazy" decoding="async">' : '') + '</span>';
@@ -84,13 +85,13 @@ function roomCardHTML(r, friend, cta) {
   const full = nb >= max;
   const pct = max > 0 ? Math.min(100, Math.round((nb / max) * 100)) : 0;
   const w = friend && friend.watching;
-  const live = friend ? '<span class="wp-live"><i aria-hidden="true"></i>En direct' + (w ? '<span data-clk="r:' + esc(r.id) + '"></span>' : '') + '</span>' : '';
+  const live = friend ? '<span class="wp-live"><i aria-hidden="true">' + tr('</i>En direct') + (w ? '<span data-clk="r:' + esc(r.id) + '"></span>' : '') + '</span>' : '';
   return '<li class="wp-card' + (friend ? ' wp-card-friend' : '') + '" data-room="' + esc(r.id) + '">' + posterHTML(r.poster) +
-    '<div class="wp-info">' + (friend ? '<span class="wp-pastille">Ton ami est dedans</span>' + live : '') + '<strong class="wp-t">' + esc(r.title) + esc(epSuffix(w)) + '</strong>' +
-    '<span class="wp-chips"><span class="wp-chip">' + (r.mediaType === 'series' ? 'Série' : 'Film') + '</span>' + (r.language ? '<span class="wp-chip">' + esc(langName(r.language)) + '</span>' : '') + '</span>' +
-    '<span class="wp-m">' + (friend ? '<span class="wp-av" aria-hidden="true">' + esc(initialsOf(r.host)) + '</span>' : '') + '<span class="wp-host">Hôte : ' + esc(r.host) + openedText(r) + '</span></span>' +
-    '<span class="wp-gauge"><span class="wp-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></span><span class="wp-n">' + nb + '/' + max + ' participant' + (nb > 1 ? 's' : '') + '</span></span>' +
-    (full ? '<button type="button" class="btn btn-ghost wp-join" disabled>Complet</button>'
+    '<div class="wp-info">' + (friend ? '<span class="wp-pastille">' + tr('Ton ami est dedans') + '</span>' + live : '') + '<strong class="wp-t">' + esc(r.title) + esc(epSuffix(w)) + '</strong>' +
+    '<span class="wp-chips"><span class="wp-chip">' + (r.mediaType === 'series' ? tr('Série') : tr('Film')) + '</span>' + (r.language ? '<span class="wp-chip">' + esc(langName(r.language)) + '</span>' : '') + '</span>' +
+    '<span class="wp-m">' + (friend ? '<span class="wp-av" aria-hidden="true">' + esc(initialsOf(r.host)) + '</span>' : '') + '<span class="wp-host">' + tr('Hôte : {host}', { host: esc(r.host) }) + openedText(r) + '</span></span>' +
+    '<span class="wp-gauge"><span class="wp-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></span><span class="wp-n">' + nb + tr('/{max} participant', { max }) + (nb > 1 ? 's' : '') + '</span></span>' +
+    (full ? '<button type="button" class="btn btn-ghost wp-join" disabled>' + tr('Complet') + '</button>'
       : '<a class="btn btn-primary wp-join" href="#/party/' + encodeURIComponent(r.id) + '" data-go>' + cta + '</a>') + '</div></li>';
 }
 
@@ -101,23 +102,23 @@ function knockCardHTML(f) {
   const sent = knocked.has(f.pid);
   const busy = pending.has(f.pid);
   return '<li class="wp-card wp-card-friend wp-card-private" data-friend="' + esc(f.pid) + '">' + posterHTML(w.poster) +
-    '<div class="wp-info"><span class="wp-pastille">Regarde en ce moment</span><span class="wp-live"><i aria-hidden="true"></i>En direct · <span data-clk="f:' + esc(f.pid) + '"></span></span>' +
+    '<div class="wp-info"><span class="wp-pastille">' + tr('Regarde en ce moment') + '</span><span class="wp-live"><i aria-hidden="true">' + tr('</i>En direct ·') + ' <span data-clk="f:' + esc(f.pid) + '"></span></span>' +
     '<strong class="wp-t">' + esc(w.title) + esc(epSuffix(w)) + '</strong>' +
     '<span class="wp-m"><span class="wp-av" aria-hidden="true">' + esc(initialsOf(name)) + '</span><span class="wp-host">' + esc(name) + ' · ' + esc(watchLine(w)) + '</span></span>' +
-    '<button type="button" class="btn btn-ghost wp-join" data-ens-knock="' + esc(f.pid) + '"' + (sent || busy ? ' disabled' : '') + ' aria-label="Demander à rejoindre ' + esc(name) + '">' + (sent ? 'Demande envoyée' : busy ? 'Envoi…' : 'Demander à rejoindre') + '</button></div></li>';
+    '<button type="button" class="btn btn-ghost wp-join" data-ens-knock="' + esc(f.pid) + '"' + (sent || busy ? ' disabled' : '') + ' aria-label="' + tr('Demander à rejoindre {name}', { name: esc(name) }) + '">' + (sent ? tr('Demande envoyée') : busy ? tr('Envoi…') : tr('Demander à rejoindre')) + '</button></div></li>';
 }
 
-const CREATE_BTN = '<button type="button" class="btn btn-primary" data-wp-create>' + ICON.plus + 'Créer une watch party</button>';
+const CREATE_BTN = '<button type="button" class="btn btn-primary" data-wp-create>' + ICON.plus + tr('Créer une watch party') + '</button>';
 
 function emptyHTML() {
   const active = [filter.language && langName(filter.language), filter.kind && (KINDS.find(([k]) => k === filter.kind) || [])[1]].filter(Boolean);
   if (active.length) {
-    return '<div class="wp-empty-box"><span class="wp-empty-ico">' + ICON.party + '</span><h2>Aucun salon en ' + esc(active.join(' · ')) + ' pour le moment</h2>' +
-      '<div class="wp-empty-acts"><button type="button" class="btn btn-ghost" data-wp-clear>Voir tous les salons</button>' + CREATE_BTN + '</div></div>';
+    return '<div class="wp-empty-box"><span class="wp-empty-ico">' + ICON.party + '</span><h2>' + tr('Aucun salon en {v} pour le moment', { v: esc(active.join(' · ')) }) + '</h2>' +
+      '<div class="wp-empty-acts"><button type="button" class="btn btn-ghost" data-wp-clear>' + tr('Voir tous les salons') + '</button>' + CREATE_BTN + '</div></div>';
   }
-  return '<div class="wp-empty-box"><span class="wp-empty-ico">' + ICON.party + '</span><h2>Aucun salon ouvert pour le moment</h2>' +
-    '<p>Lance la tienne : choisis un titre, invite tes amis ou ouvre-la au public. Chacun lit avec sa propre source, vos lectures restent calées ensemble.</p>' +
-    '<div class="wp-empty-acts">' + CREATE_BTN + '<a class="btn btn-ghost" href="#/friends" data-go>Voir mes amis</a></div></div>';
+  return '<div class="wp-empty-box"><span class="wp-empty-ico">' + ICON.party + '</span><h2>' + tr('Aucun salon ouvert pour le moment') + '</h2>' +
+    '<p>' + tr('Lance la tienne : choisis un titre, invite tes amis ou ouvre-la au public. Chacun lit avec sa propre source, vos lectures restent calées ensemble.') + '</p>' +
+    '<div class="wp-empty-acts">' + CREATE_BTN + '<a class="btn btn-ghost" href="#/friends" data-go>' + tr('Voir mes amis') + '</a></div></div>';
 }
 
 function syncFilters() {
@@ -131,10 +132,10 @@ function paintRooms() {
   const err = paneErr;
   const count = detailEl.querySelector('#wp-count');
   const shown = rooms.filter((r) => !filter.kind || r.mediaType === filter.kind);
-  if (count) count.textContent = err || (loading && !rooms.length) ? '' : shown.length + ' salon' + (shown.length > 1 ? 's' : '') + ' ouvert' + (shown.length > 1 ? 's' : '');
-  if (err) { setHtml(slot, '<p class="row-msg" role="alert">' + esc(err) + ' <button type="button" class="link-btn" data-wp-reload>Réessayer</button></p>'); return; }
+  if (count) count.textContent = err || (loading && !rooms.length) ? '' : tr('{length} salon{v} ouvert', { length: shown.length, v: (shown.length > 1 ? 's' : '') }) + (shown.length > 1 ? 's' : '');
+  if (err) { setHtml(slot, '<p class="row-msg" role="alert">' + esc(err) + ' <button type="button" class="link-btn" data-wp-reload>' + tr('Réessayer') + '</button></p>'); return; }
   if (loading && !rooms.length) {
-    setHtml(slot, '<p class="row-msg" role="status">Chargement…</p><ul class="wp-list wp-skel" aria-hidden="true"><li class="wp-card"></li><li class="wp-card"></li><li class="wp-card"></li></ul>');
+    setHtml(slot, '<p class="row-msg" role="status">' + tr('Chargement…') + '</p><ul class="wp-list wp-skel" aria-hidden="true"><li class="wp-card"></li><li class="wp-card"></li><li class="wp-card"></li></ul>');
     return;
   }
   const friends = paneMode === 'now' ? allFriends() : [];
@@ -142,13 +143,13 @@ function paintRooms() {
   const pub = mine.length ? shown.filter((r) => !mine.includes(r)) : shown;
   const taken = new Set(rooms.map((r) => hostFriend(r.host, friends)).filter(Boolean).map((f) => f.pid));
   const knock = friends.filter((f) => !f.muted && f.watching && f.status !== 'offline' && f.status !== 'dnd' && !taken.has(f.pid) && (!filter.kind || f.watching.type === filter.kind));
-  const cta = paneMode === 'public' ? 'Entrer' : 'Rejoindre';
-  const more = cursor ? '<div class="wp-more"><button type="button" class="btn btn-ghost" data-wp-more>Charger plus</button></div>' : '';
+  const cta = paneMode === 'public' ? tr('Entrer') : tr('Rejoindre');
+  const more = cursor ? '<div class="wp-more"><button type="button" class="btn btn-ghost" data-wp-more>' + tr('Charger plus') + '</button></div>' : '';
   const nbFriends = mine.length + knock.length;
-  setHtml(slot, (mine.length ? '<section class="soc-sec wp-friends" aria-labelledby="wp-h-friends"><h2 class="row-title" id="wp-h-friends">En direct chez tes amis<em>' + mine.length + '</em></h2><ul class="wp-list">' +
+  setHtml(slot, (mine.length ? '<section class="soc-sec wp-friends" aria-labelledby="wp-h-friends"><h2 class="row-title" id="wp-h-friends">' + tr('En direct chez tes amis<em>{length}</em>', { length: mine.length }) + '</h2><ul class="wp-list">' +
       mine.map((r) => roomCardHTML(r, hostFriend(r.host, friends), cta)).join('') + '</ul></section>' : '') +
-    (knock.length ? '<section class="soc-sec wp-watching" aria-labelledby="wp-h-watching"><h2 class="row-title" id="wp-h-watching">Regardent en ce moment<em>' + knock.length + '</em></h2><ul class="wp-list">' + knock.map(knockCardHTML).join('') + '</ul></section>' : '') +
-    (pub.length ? '<section class="soc-sec" aria-labelledby="wp-h-public"><h2 class="row-title" id="wp-h-public">Salons publics<em>' + pub.length + '</em></h2><ul class="wp-list">' + pub.map((r) => roomCardHTML(r, null, cta)).join('') + '</ul></section>' : '') +
+    (knock.length ? '<section class="soc-sec wp-watching" aria-labelledby="wp-h-watching"><h2 class="row-title" id="wp-h-watching">' + tr('Regardent en ce moment<em>{length}</em>', { length: knock.length }) + '</h2><ul class="wp-list">' + knock.map(knockCardHTML).join('') + '</ul></section>' : '') +
+    (pub.length ? '<section class="soc-sec" aria-labelledby="wp-h-public"><h2 class="row-title" id="wp-h-public">' + tr('Salons publics<em>{length}</em>', { length: pub.length }) + '</h2><ul class="wp-list">' + pub.map((r) => roomCardHTML(r, null, cta)).join('') + '</ul></section>' : '') +
     (shown.length || nbFriends ? '' : emptyHTML()) + more);
   paintClocks();
 }
@@ -211,14 +212,14 @@ export function mountPartiesPane(host, mode = 'now') {
     // La présence des amis redessine « En direct chez tes amis » sans nouvelle requête ; setHtml ignore les émissions sans effet.
     subscribe(() => { if (state.kind === 'ensemble' && !loading && detailEl.querySelector('#wp-list')) paintRooms(); });
   }
-  const intro = '<p class="wp-intro">Chacun lit avec sa propre source : la watch party cale vos lectures l’une sur l’autre, aucun flux vidéo n’est partagé.</p>';
-  const bar = '<div class="wp-filters"><div class="wp-pills" role="group" aria-label="Langue">' +
+  const intro = '<p class="wp-intro">' + tr('Chacun lit avec sa propre source : la watch party cale vos lectures l’une sur l’autre, aucun flux vidéo n’est partagé.') + '</p>';
+  const bar = '<div class="wp-filters"><div class="wp-pills" role="group" aria-label="' + tr('Langue') + '">' +
     LANGS.map(([c, l]) => '<button type="button" class="pill" data-wp-lang="' + c + '" aria-pressed="' + (c === filter.language) + '">' + esc(l) + '</button>').join('') + '</div>' +
-    '<div class="wp-seg" role="group" aria-label="Type">' + KINDS.map(([k, l]) => '<button type="button" class="wp-seg-btn" data-wp-kind="' + k + '" aria-pressed="' + (k === filter.kind) + '">' + esc(l) + '</button>').join('') + '</div>' +
+    '<div class="wp-seg" role="group" aria-label="' + tr('Type') + '">' + KINDS.map(([k, l]) => '<button type="button" class="wp-seg-btn" data-wp-kind="' + k + '" aria-pressed="' + (k === filter.kind) + '">' + esc(l) + '</button>').join('') + '</div>' +
     '<span class="wp-count" id="wp-count" aria-live="polite"></span>' +
-    '<button type="button" class="wp-refresh" data-wp-reload aria-label="Actualiser la liste" title="Actualiser la liste">' + REFRESH + '</button></div>';
-  // eslint-disable-next-line no-restricted-syntax -- gabarit statique, libellés échappés par esc
-  host.innerHTML = '<div class="soc-body wp-pane">' + intro + bar + '<div id="wp-list">' + message('Chargement…') + '</div></div>';
+    '<button type="button" class="wp-refresh" data-wp-reload aria-label="' + tr('Actualiser la liste') + '" title="' + tr('Actualiser la liste') + '">' + REFRESH + '</button></div>';
+  // eslint-disable-next-line laststream/no-html-sink -- gabarit statique, libellés échappés par esc
+  host.innerHTML = '<div class="soc-body wp-pane">' + intro + bar + '<div id="wp-list">' + message(tr('Chargement…')) + '</div></div>';
   loadRooms(false);
 }
 
@@ -233,7 +234,7 @@ async function knockFriend(btn) {
     await requestJoin(pid);
     if (gen !== mountGen) return;
     knocked.add(pid);
-    toast('Demande envoyée : tu seras prévenu si on t’ouvre la porte.');
+    toast(tr('Demande envoyée : tu seras prévenu si on t’ouvre la porte.'));
   } catch (err) {
     if (gen !== mountGen) return;
     toast(joinErrorMessage(err));
@@ -253,32 +254,32 @@ function roomPageHTML(room, note) {
   const ep = room.media.type === 'series' && room.media.season != null ? ' · S' + room.media.season + ':É' + room.media.episode : '';
   return '<div class="wp-card wp-big"><span class="wp-poster' + (room.poster ? '' : ' no-img') + '">' + (room.poster ? '<img src="' + esc(IMG('w342', room.poster)) + '" alt="">' : '') + '</span>' +
     '<div class="wp-info"><strong class="wp-t">' + esc(room.title) + esc(ep) + '</strong>' +
-    '<span class="wp-m">' + (room.visibility === 'public' ? 'Salon public' : 'Salon privé') + (room.language ? ' · ' + esc(langName(room.language)) : '') + '</span>' +
-    '<span class="wp-m">Hôte : ' + esc(room.host) + ' · ' + count + '/' + room.maxParticipants + ' participant' + (count > 1 ? 's' : '') + '</span>' +
-    '<p class="tv-form-msg" data-wp-msg role="status">' + esc(note || (blocked ? 'Ce salon public n’est pas accessible depuis un profil enfant.' : '')) + '</p>' +
-    '<div class="tv-form-actions"><button type="button" class="btn btn-primary" data-wp-join="' + esc(room.id) + '"' + (blocked ? ' disabled' : '') + '>Rejoindre le salon</button>' +
-    '<a class="btn btn-ghost" href="#/" data-go>Accueil</a></div>' +
-    '<p class="tv-form-note">Ta lecture utilise ta propre source (ton débrideur) : aucun lien n’est échangé. Elle se cale sur celle de l’hôte.</p></div></div>';
+    '<span class="wp-m">' + (room.visibility === 'public' ? tr('Salon public') : tr('Salon privé')) + (room.language ? ' · ' + esc(langName(room.language)) : '') + '</span>' +
+    '<span class="wp-m">' + tr('Hôte : {host} · {count}/{maxParticipants} participant', { host: esc(room.host), count, maxParticipants: room.maxParticipants }) + (count > 1 ? 's' : '') + '</span>' +
+    '<p class="tv-form-msg" data-wp-msg role="status">' + esc(note || (blocked ? tr('Ce salon public n’est pas accessible depuis un profil enfant.') : '')) + '</p>' +
+    '<div class="tv-form-actions"><button type="button" class="btn btn-primary" data-wp-join="' + esc(room.id) + '"' + (blocked ? ' disabled' : '') + '>' + tr('Rejoindre le salon') + '</button>' +
+    '<a class="btn btn-ghost" href="#/" data-go>' + tr('Accueil') + '</a></div>' +
+    '<p class="tv-form-note">' + tr('Ta lecture utilise ta propre source (ton débrideur) : aucun lien n’est échangé. Elle se cale sur celle de l’hôte.') + '</p></div></div>';
 }
 
 export async function showParty(id) {
   teardownFiche();
   state.kind = 'party';
-  document.title = 'Watch party · Laststream';
+  document.title = tr('Watch party · Laststream');
   if (!isServerMode()) {
-    detailEl.innerHTML = shell('Watch party', 'Invitation', message('Ce lien est réservé aux comptes Laststream. Demande à l’hôte un lien d’invitation.') +
-      '<div class="tv-form-actions"><button type="button" class="btn btn-primary" data-wp-login>Se connecter</button></div>');
+    detailEl.innerHTML = shell(tr('Watch party'), tr('Invitation'), message(tr('Ce lien est réservé aux comptes Laststream. Demande à l’hôte un lien d’invitation.')) +
+      '<div class="tv-form-actions"><button type="button" class="btn btn-primary" data-wp-login>' + tr('Se connecter') + '</button></div>');
     return;
   }
-  detailEl.innerHTML = shell('Watch party', 'Invitation', message('Recherche du salon…'));
+  detailEl.innerHTML = shell(tr('Watch party'), tr('Invitation'), message(tr('Recherche du salon…')));
   const token = state.token;
   try {
     const { room } = await getParty(id);
     if (state.kind !== 'party' || state.token !== token || !detailEl.isConnected) return;
-    detailEl.innerHTML = shell('Watch party', 'Invitation', roomPageHTML(room));
+    detailEl.innerHTML = shell(tr('Watch party'), tr('Invitation'), roomPageHTML(room));
   } catch (err) {
     if (state.kind !== 'party') return;
-    detailEl.innerHTML = shell('Watch party', 'Invitation', message(socialErrorText(err)) + '<div class="tv-form-actions"><a class="btn btn-ghost" href="#/ensemble" data-go>Salons ouverts</a></div>');
+    detailEl.innerHTML = shell(tr('Watch party'), tr('Invitation'), message(socialErrorText(err)) + '<div class="tv-form-actions"><a class="btn btn-ghost" href="#/ensemble" data-go>' + tr('Salons ouverts') + '</a></div>');
   }
 }
 
@@ -286,7 +287,7 @@ export async function showParty(id) {
 async function joinFromPage(id, btn) {
   const msg = detailEl.querySelector('[data-wp-msg]');
   btn.disabled = true;
-  if (msg) msg.textContent = 'Connexion au salon…';
+  if (msg) msg.textContent = tr('Connexion au salon…');
   try {
     await partyBridge.joinAndPlay(id, userStore.currentProfile().id);
     // Lancement terminé ou annulé (retour arrière) : le bouton redevient utilisable pour le retour sur cette page.
@@ -295,7 +296,7 @@ async function joinFromPage(id, btn) {
   } catch (err) {
     btn.disabled = false;
     partyBridge.leave();
-    const text = err && err.code === 'media_unsupported' ? 'Ce salon ne peut pas être lu depuis cette application.' : socialErrorText(err);
+    const text = err && err.code === 'media_unsupported' ? tr('Ce salon ne peut pas être lu depuis cette application.') : socialErrorText(err);
     if (msg) msg.textContent = text;
     else toast(text);
   }

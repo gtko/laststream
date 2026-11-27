@@ -1,4 +1,5 @@
 import type { Cue } from './subs';
+import { t as tr } from '../i18n';
 
 /* Synchronisation des sous-titres : calage décalage + vitesse, suggestion PAL (25 / 23,976 i/s), recherche automatique
  * du décalage par corrélation avec l'activité de parole de la piste audio. Fonctions pures, testées. */
@@ -31,7 +32,7 @@ export interface RateChoice {
 
 const FILM = 24000 / 1001; // 23,976 i/s
 export const RATE_CHOICES: readonly RateChoice[] = [
-  { id: 'none', ratio: 1, label: 'Aucune' },
+  { id: 'none', ratio: 1, label: tr('Aucune') },
   { id: 'pal-down', ratio: 25 / FILM, label: '25 → 23,976 i/s' },
   { id: 'pal-up', ratio: FILM / 25, label: '23,976 → 25 i/s' },
 ];

@@ -1,12 +1,13 @@
 /* Onglets de la page Ensemble (#/ensemble[/<onglet>]) : identifiants d'adresse et libellés. Module léger, partagé par le routeur et la page. */
 
+import { t } from '../i18n';
 /** [identifiant dans l'adresse, libellé]. Le premier est la vue par défaut (#/ensemble). */
 export const ENSEMBLE_TABS = [
-  ['maintenant', 'Maintenant'],
-  ['ce-soir', 'Ce soir'],
-  ['a-venir', 'À venir'],
-  ['salons-publics', 'Salons publics'],
-  ['passees', 'Passées'],
+  ['maintenant', t('Maintenant')],
+  ['ce-soir', t('Ce soir')],
+  ['a-venir', t('À venir')],
+  ['salons-publics', t('Salons publics')],
+  ['passees', t('Passées')],
 ];
 
 /** Identifiant d'onglet valide, ou chaîne vide. */

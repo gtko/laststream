@@ -9,6 +9,7 @@ import { marginProps, mpvMargins, sameMargins, ZERO_MARGINS } from './mini';
 import { isFull } from './playerState';
 import { PageHole } from './minihole.js';
 import { getBufferLevel, hlsBuffer, mpvBufferProps } from './bufferLevel';
+import { t as tr } from '../i18n';
 
 class Emitter {
   constructor() { this.ls = new Map(); }
@@ -214,7 +215,7 @@ export class HtmlEngine extends Emitter {
     if (!this.hls || !this.hls.subtitleTracks) return [];
     return this.hls.subtitleTracks.map((t, i) => {
       const lang = trackLang(t.lang, t.name);
-      return { id: 'h' + i, title: t.name || '', lang, codec: 'webvtt', forced: !!t.forced, origin: 'embedded', renderable: true, engineId: i, selected: i === this.hlsSubIndex, label: (lang ? langName(lang) : t.name || 'Sous-titres') + (t.forced ? ' (forcés)' : '') };
+      return { id: 'h' + i, title: t.name || '', lang, codec: 'webvtt', forced: !!t.forced, origin: 'embedded', renderable: true, engineId: i, selected: i === this.hlsSubIndex, label: (lang ? langName(lang) : t.name || tr('Sous-titres')) + (t.forced ? ' ' + tr('(forcés)') : '') };
     });
   }
 

@@ -6,6 +6,7 @@ import { dayDiff, fmtShort, todayStr } from './dates.js';
 import { ICON } from './icons.js';
 import { esc } from './util.js';
 import './epStill.js'; // repli des vignettes cassées (voir epStill.js)
+import { t as tr } from '../i18n';
 
 const IMG = (size, p) => (p ? 'https://image.tmdb.org/t/p/' + size + p : '');
 
@@ -15,24 +16,24 @@ export const isPlaceholderTitle = (t) => !t || /^\s*(é|e)pisode\s*\d+\s*$/i.tes
 export function countdownText(iso, time) {
   const n = dayDiff(iso);
   if (!Number.isFinite(n) || n < 0) return '';
-  if (n === 0) return time || 'Ce soir';
-  if (n === 1) return 'Demain';
-  if (n < 61) return 'Dans ' + n + ' jours';
-  return 'Dans ' + Math.round(n / 30) + ' mois';
+  if (n === 0) return time || tr('Ce soir');
+  if (n === 1) return tr('Demain');
+  if (n < 61) return tr('Dans {n} jours', { n });
+  return tr('Dans {v} mois', { v: Math.round(n / 30) });
 }
 
 /** Pastille de la carte : compte à rebours, ou « Sorti » une fois la date passée (vide sans date valide). */
 export function soonBadgeText(iso, time) {
   const t = countdownText(iso, time);
   if (t) return t;
-  return dayDiff(iso) < 0 ? 'Sorti' : '';
+  return dayDiff(iso) < 0 ? tr('Sorti') : '';
 }
 
 /** Diffusion dans les 14 prochains jours : l'épisode peut déjà être en ligne (lisible). Sans date ou plus loin : false. */
 export const isSoonPlayable = (iso) => playableSoon(iso, todayStr());
 
 /** Badge d'un épisode lisible avant sa diffusion TV. */
-export const playableBadge = (iso) => 'Diffusion TV le ' + fmtShort(iso) + ' · déjà en ligne ?';
+export const playableBadge = (iso) => tr('Diffusion TV le {iso} · déjà en ligne ?', { iso: fmtShort(iso) });
 
 /**
  * Contenu de la carte. `o` : airDate, season, episode, epTitle, still (chemin), backdrop (chemin), poster (chemin),
@@ -69,8 +70,8 @@ export function soonInnerHTML(o) {
 /** Bouton « Me prévenir » : suit la série (si elle ne l'est pas déjà). */
 export function soonBell(tvKey) {
   const on = userStore.isFollowing(tvKey);
-  return '<button type="button" class="soon-bell' + (on ? ' is-on' : '') + '" data-follow="' + esc(tvKey) + '" data-off-label="Me prévenir" aria-pressed="' + on + '" aria-label="' + (on ? 'Suivi (ne plus suivre)' : 'Me prévenir de la sortie') + '">' +
-    (on ? ICON.bellOn : ICON.bell) + '<span>' + (on ? 'Suivi' : 'Me prévenir') + '</span></button>';
+  return '<button type="button" class="soon-bell' + (on ? ' is-on' : '') + '" data-follow="' + esc(tvKey) + '" data-off-label="Me prévenir" aria-pressed="' + on + '" aria-label="' + (on ? tr('Suivi (ne plus suivre)') : tr('Me prévenir de la sortie')) + '">' +
+    (on ? ICON.bellOn : ICON.bell) + '<span>' + (on ? tr('Suivi') : tr('Me prévenir')) + '</span></button>';
 }
 
 /**
@@ -78,7 +79,7 @@ export function soonBell(tvKey) {
  * sources de cet épisode ; sinon (au-delà, ce soir, sans date) un clic ouvre la fiche de la série sur cet épisode.
  */
 export function soonItemHTML(o, tvKey) {
-  const base = (o.name || '') + ', S' + o.season + ' épisode ' + o.episode + ', ';
+  const base = (o.name || '') + tr(', S{season} épisode {episode},', { season: o.season, episode: o.episode }) + ' ';
   if (!isSoonPlayable(o.airDate)) {
     return '<div class="soon-item"><button type="button" class="soon-card" data-open="' + esc(tvKey) + '" data-open-season="' + esc(o.season) + '" data-open-episode="' + esc(o.episode) + '" aria-label="' + esc(base + soonBadgeText(o.airDate)) + '">' + soonInnerHTML(o) + '</button>' + soonBell(tvKey) + '</div>';
   }

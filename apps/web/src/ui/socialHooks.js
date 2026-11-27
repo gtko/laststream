@@ -3,6 +3,7 @@
 // en gardant ces signatures ; les autres lots les appellent sans connaître leur module.
 // Propriétaires : F2 openProfileEditor · F3 openConversation / renderConversationList · F4 openShareDialog
 // · F6 inviteToParty / openPartyLobby.
+import { t } from '../i18n';
 
 const impl = {
   /** F2 — ouvre l'édition du profil social (page desktop, plein écran mobile). */
@@ -23,7 +24,7 @@ const impl = {
 
 /** Un lot enregistre son implémentation au démarrage de son module : registerSocialHook('openShareDialog', fn). */
 export function registerSocialHook(name, fn) {
-  if (!(name in impl)) throw new Error(`Hook social inconnu : ${name}`);
+  if (!(name in impl)) throw new Error(`${t('Hook social inconnu :')} ${name}`);
   impl[name] = fn;
 }
 
@@ -42,7 +43,7 @@ export const ensureSocial = () => (loader && !ready ? loader() : Promise.resolve
 /** Message court affiché quand le Social n'a pas pu être chargé (branché sur le toast de l'application par main.js). */
 let notify = () => undefined;
 export function setSocialNotifier(fn) { notify = fn; }
-const SOCIAL_FAIL = 'Impossible de charger cette fonction, vérifiez la connexion.';
+const SOCIAL_FAIL = t('Impossible de charger cette fonction, vérifiez la connexion.');
 const call = (name, a) => {
   if (ready) return impl[name](...a);
   void ensureSocial().then(() => impl[name](...a)).catch(() => notify(SOCIAL_FAIL));

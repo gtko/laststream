@@ -15,6 +15,7 @@ import { topBar } from './fragments.js';
 import { SET_ICON } from './settings-ui.js';
 import { state } from './state.js';
 import { esc } from './util.js';
+import { t as tr, tn } from '../i18n';
 
 const PAGE = 60;
 /** Vue mémorisée pendant la session (filtre, tri, recherche) ; la sélection, elle, repart de zéro à chaque ouverture. */
@@ -23,8 +24,7 @@ const selected = new Set();
 /** Liste filtrée et triée affichée, pour « Tout sélectionner (filtre courant) ». */
 let current = [];
 
-const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
-const kindOf = (key) => (key.startsWith('tv:') ? 'Série' : 'Film');
+const kindOf = (key) => (key.startsWith('tv:') ? tr('Série') : tr('Film'));
 const yearOf = (key) => {
   const it = state.byKey.get(key);
   return it && it.year ? it.year : '';
@@ -42,7 +42,7 @@ function tileHTML(h) {
     (h.poster ? '<img src="' + esc(IMG('w342', h.poster)) + '" alt="" loading="lazy" decoding="async">' : '') +
     '<span class="hid-kind">' + kind + '</span><span class="hid-check">' + ICON.check + '</span></span>' +
     '<span class="hid-t" aria-hidden="true">' + t + '</span></button>' +
-    '<button type="button" class="hid-x" data-hid-unhide="' + k + '" aria-label="Réafficher « ' + t + ' »" title="Réafficher">' + SET_ICON.eye + '</button>' +
+    '<button type="button" class="hid-x" data-hid-unhide="' + k + '" aria-label="' + tr('Réafficher « {t} »', { t }) + '" title="' + tr('Réafficher') + '">' + SET_ICON.eye + '</button>' +
     '</div>';
 }
 
@@ -58,7 +58,7 @@ function updateBar() {
   if (!bar) return;
   bar.hidden = selected.size === 0;
   const bulk = bar.querySelector('[data-hid-bulk]');
-  if (bulk) bulk.textContent = 'Réafficher (' + selected.size + ')';
+  if (bulk) bulk.textContent = tr('Réafficher ({size})', { size: selected.size });
 }
 
 /** Compteurs des puces, résumé, bouton d'effacement de la recherche et état des puces de tri et de type. */
@@ -70,8 +70,8 @@ function paintControls(all) {
   const summary = detailEl.querySelector('#hid-summary');
   if (summary) {
     summary.textContent = current.length === all.length
-      ? plural(all.length, 'titre masqué', 'titres masqués')
-      : current.length + ' sur ' + plural(all.length, 'titre masqué', 'titres masqués');
+      ? tn(all.length, '{n} titre masqué', '{n} titres masqués')
+      : current.length + ' sur ' + tn(all.length, '{n} titre masqué', '{n} titres masqués');
   }
   const clear = detailEl.querySelector('[data-hid-qclear]');
   if (clear) clear.hidden = !view.query;
@@ -87,12 +87,12 @@ function renderGrid() {
   stopInfinite();
   grid.innerHTML = '';
   if (!all.length) {
-    grid.innerHTML = '<div class="hid-empty"><strong>Aucun titre masqué</strong>' +
-      '<span>« Ne plus proposer » (fiche d’un titre, menu contextuel) le retire de l’accueil ; il apparaît alors ici.</span></div>';
+    grid.innerHTML = '<div class="hid-empty">' + tr('<strong>Aucun titre masqué</strong>') +
+      '<span>' + tr('« Ne plus proposer » (fiche d’un titre, menu contextuel) le retire de l’accueil ; il apparaît alors ici.') + '</span></div>';
     return;
   }
   if (!current.length) {
-    grid.innerHTML = '<p class="row-msg">Aucun titre masqué ne correspond à ces filtres.</p>';
+    grid.innerHTML = '<p class="row-msg">' + tr('Aucun titre masqué ne correspond à ces filtres.') + '</p>';
     return;
   }
   const list = current;
@@ -113,9 +113,9 @@ function reveal(keys) {
   const removed = unhideTitles(keys);
   updateBar();
   if (!removed.length) return;
-  toast(plural(removed.length, 'titre réaffiché', 'titres réaffichés'), {
+  toast(tn(removed.length, '{n} titre réaffiché', '{n} titres réaffichés'), {
     ms: 6000,
-    action: { label: 'Annuler', run: () => { if (!restoreHidden(removed)) toast('Liste pleine : impossible d’annuler'); } },
+    action: { label: tr('Annuler'), run: () => { if (!restoreHidden(removed)) toast(tr('Liste pleine : impossible d’annuler')); } },
   });
 }
 
@@ -186,32 +186,32 @@ export function showHidden() {
   if (isKidProfile()) return; // profil enfant : pas de titres masqués (le routeur refuse déjà la route)
   teardownFiche();
   state.kind = 'hidden';
-  document.title = 'Titres masqués · Laststream';
+  document.title = tr('Titres masqués · Laststream');
   selected.clear();
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page search-page hid-page" aria-labelledby="hid-title">' +
-    '<header class="search-head"><p class="svc-eyebrow">Accueil et recommandations</p>' +
-    '<h1 class="search-title" id="hid-title" tabindex="-1">Titres masqués</h1>' +
-    '<p class="hid-intro">Ces titres ne sont plus proposés sur l’accueil. Sélectionne-les pour les réafficher en une fois, ou survole une affiche pour la réafficher seule.</p>' +
+    '<header class="search-head"><p class="svc-eyebrow">' + tr('Accueil et recommandations') + '</p>' +
+    '<h1 class="search-title" id="hid-title" tabindex="-1">' + tr('Titres masqués') + '</h1>' +
+    '<p class="hid-intro">' + tr('Ces titres ne sont plus proposés sur l’accueil. Sélectionne-les pour les réafficher en une fois, ou survole une affiche pour la réafficher seule.') + '</p>' +
     '<p class="hid-summary" id="hid-summary" aria-live="polite"></p>' +
-    '<div class="search-form" role="search"><div class="search-bar"><label class="sr-only" for="hid-q">Rechercher parmi les titres masqués</label>' +
+    '<div class="search-form" role="search"><div class="search-bar"><label class="sr-only" for="hid-q">' + tr('Rechercher parmi les titres masqués') + '</label>' +
     '<span class="search-ico" aria-hidden="true">' + ICON.search + '</span>' +
-    '<input id="hid-q" class="search-input" type="search" name="q" autocomplete="off" placeholder="Rechercher un titre masqué…" value="' + esc(view.query) + '">' +
-    '<button type="button" class="search-clear" data-hid-qclear aria-label="Effacer la recherche" hidden>' + ICON.close + '</button></div></div>' +
-    '<div class="hid-tools"><div class="pills" data-nav role="group" aria-label="Type">' +
-    '<button type="button" class="pill" data-hid-type="all">Tout <span class="srch-n" data-hid-count="all">0</span></button>' +
-    '<button type="button" class="pill" data-hid-type="movie">Films <span class="srch-n" data-hid-count="movie">0</span></button>' +
-    '<button type="button" class="pill" data-hid-type="tv">Séries <span class="srch-n" data-hid-count="tv">0</span></button></div>' +
-    '<div class="pills" data-nav role="group" aria-label="Trier">' +
-    '<button type="button" class="pill" data-hid-sort="recent">Masqués récemment</button>' +
-    '<button type="button" class="pill" data-hid-sort="title">Titre A→Z</button>' +
-    '<button type="button" class="pill" data-hid-sort="year">Année</button></div></div>' +
+    '<input id="hid-q" class="search-input" type="search" name="q" autocomplete="off" placeholder="' + tr('Rechercher un titre masqué…') + '" value="' + esc(view.query) + '">' +
+    '<button type="button" class="search-clear" data-hid-qclear aria-label="' + tr('Effacer la recherche') + '" hidden>' + ICON.close + '</button></div></div>' +
+    '<div class="hid-tools"><div class="pills" data-nav role="group" aria-label="' + tr('Type') + '">' +
+    '<button type="button" class="pill" data-hid-type="all">' + tr('Tout') + ' <span class="srch-n" data-hid-count="all">0</span></button>' +
+    '<button type="button" class="pill" data-hid-type="movie">' + tr('Films') + ' <span class="srch-n" data-hid-count="movie">0</span></button>' +
+    '<button type="button" class="pill" data-hid-type="tv">' + tr('Séries') + ' <span class="srch-n" data-hid-count="tv">0</span></button></div>' +
+    '<div class="pills" data-nav role="group" aria-label="' + tr('Trier') + '">' +
+    '<button type="button" class="pill" data-hid-sort="recent">' + tr('Masqués récemment') + '</button>' +
+    '<button type="button" class="pill" data-hid-sort="title">' + tr('Titre A→Z') + '</button>' +
+    '<button type="button" class="pill" data-hid-sort="year">' + tr('Année') + '</button></div></div>' +
     '</header>' +
     '<div class="hid-grid" id="hid-grid" data-nav></div>' +
-    '<div class="hid-bar" id="hid-bar" role="toolbar" aria-label="Actions sur la sélection" data-nav hidden>' +
-    '<button type="button" class="btn btn-primary btn-sm" data-hid-bulk>Réafficher (0)</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-hid-all>Tout sélectionner (filtre courant)</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-hid-clear>Annuler</button></div>' +
+    '<div class="hid-bar" id="hid-bar" role="toolbar" aria-label="' + tr('Actions sur la sélection') + '" data-nav hidden>' +
+    '<button type="button" class="btn btn-primary btn-sm" data-hid-bulk>' + tr('Réafficher (0)') + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-hid-all>' + tr('Tout sélectionner (filtre courant)') + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-hid-clear>' + tr('Annuler') + '</button></div>' +
     '</article>';
   const h1 = detailEl.querySelector('#hid-title');
   if (h1) h1.focus({ preventScroll: true });

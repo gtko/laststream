@@ -11,6 +11,7 @@ import { continueSection } from './home.js';
 import { brand } from './fragments.js';
 import { topActionsHTML } from './topnav.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 /** Héros : premier titre jeunesse autorisé qui a une bande-annonce. */
 async function pickKidHero(pool) {
@@ -24,7 +25,7 @@ export async function loadKidsHome() {
   const ctx = makeCtx(getRegion().code, kidMaxAge());
   const ids = ['famille', 'dessins', 'nouveautes'].filter((id) => kidSection(rowById(id).section));
   const settled = await Promise.allSettled(ids.map((id) => resolveHomeRow(rowById(id), 1, ctx)));
-  if (ids.length && settled.every((s) => s.status === 'rejected')) throw new Error('catalogue indisponible');
+  if (ids.length && settled.every((s) => s.status === 'rejected')) throw new Error(t('catalogue indisponible'));
   const pool = [];
   settled.forEach((s) => { if (s.status === 'fulfilled' && s.value) s.value.items.slice(0, 4).forEach((it) => pool.push(it)); });
   const hero = await pickKidHero(pool);
@@ -33,19 +34,19 @@ export async function loadKidsHome() {
 
 // ---------- Vue ----------
 export function headerKids() {
-  const links = [['dessins', 'Dessins animés'], ['famille', 'Films'], ['jeunesse-series', 'Séries']].filter(([id]) => kidSection(id === 'jeunesse-series' ? 'series' : id))
+  const links = [['dessins', t('Dessins animés')], ['famille', t('Films')], ['jeunesse-series', t('Séries')]].filter(([id]) => kidSection(id === 'jeunesse-series' ? 'series' : id))
     .map(([id, label]) => '<a href="#' + id + '" data-scroll="' + id + '">' + label + '</a>').join('');
-  return '<header class="topbar">' + brand() + '<nav class="nav" aria-label="Principale">' +
-    '<a href="#/" data-noop class="is-current" aria-current="page">Accueil</a>' + links +
-    (kidSection('tv') ? '<a href="#/tv-live" data-tvlive>TV jeunesse</a>' : '') +
-    '<a href="#/library" data-libnav>Mes favoris</a></nav>' +
+  return '<header class="topbar">' + brand() + '<nav class="nav" aria-label="' + t('Principale') + '">' +
+    '<a href="#/" data-noop class="is-current" aria-current="page">' + t('Accueil') + '</a>' + links +
+    (kidSection('tv') ? '<a href="#/tv-live" data-tvlive>' + t('TV jeunesse') + '</a>' : '') +
+    '<a href="#/library" data-libnav>' + t('Mes favoris') + '</a></nav>' +
     topActionsHTML({ kid: true, server: isServerMode() }) + '</header>';
 }
 
 export function viewKids(d) {
   const name = userStore.currentProfile().name;
-  return '<main id="main" class="page-a page-kids">' + headerKids() + heroA(d.hero, 'Pour toi, ' + name) +
-    '<div class="rows"><h1 class="kid-hello">Salut ' + esc(name) + ' !</h1>' +
+  return '<main id="main" class="page-a page-kids">' + headerKids() + heroA(d.hero, t('Pour toi, {name}', { name })) +
+    '<div class="rows"><h1 class="kid-hello">' + t('Salut {name} !', { name: esc(name) }) + '</h1>' +
     '<div id="cont-slot">' + continueSection() + '</div>' + '<div id="lib-slot"></div>' +
     '<div id="reg-slot"></div><div id="live-slot"></div></div></main>';
 }

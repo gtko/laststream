@@ -1,5 +1,6 @@
 import { trackLang, audioTrackLabel, codecLabel, langName, type AudioTrack, type SubtitleTrack } from './tracks';
 import { setShellServerAddress } from './server';
+import { t as tr } from '../i18n';
 
 /* Coque Windows : détection du transport et conversion des données mpv.
  *
@@ -271,7 +272,7 @@ export function mpvSubtitleTracks(list: readonly MpvTrack[]): SubtitleTrack[] {
     const codec = (t.codec ?? '').toLowerCase();
     return {
       id: String(t.id), title: t.title || '', lang, codec, forced: !!t.forced, origin: 'embedded', renderable: true, engineId: t.id, selected: !!t.selected,
-      label: (lang ? langName(lang) : t.title || 'Sous-titres') + (t.forced ? ' (forcés)' : '') + (codec ? ' · ' + codecLabel(codec) : '') + (IMAGE.has(codec) ? '' : ''),
+      label: (lang ? langName(lang) : t.title || tr('Sous-titres')) + (t.forced ? ' ' + tr('(forcés)') : '') + (codec ? ' · ' + codecLabel(codec) : '') + (IMAGE.has(codec) ? '' : ''),
     };
   });
 }

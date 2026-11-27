@@ -11,6 +11,7 @@ import { userStore } from './userStore';
 import type { WatchedTitle } from './watchedHistory';
 import type { Folder, Source, SourceFilters } from './collections/engine';
 import { pad2 } from './format';
+import { t as tr } from '../i18n';
 
 type GenKind = 'cast' | 'crew' | 'keyword' | 'classic' | 'decade';
 
@@ -108,38 +109,38 @@ const PERSON_PARAMS: Record<string, string> = { append_to_response: 'movie_credi
 
 /** Mots-clés TMDB (identifiant, libellé), chacun vérifié sur themoviedb.org/keyword/<id>. */
 const THEMES: ReadonlyArray<readonly [number, string]> = [
-  [10051, 'Braquages'],
-  [4379, 'Voyage dans le temps'],
-  [4565, 'Dystopie'],
-  [10714, 'Tueurs en série'],
-  [9672, 'Histoires vraies'],
-  [12377, 'Zombies'],
-  [9882, 'Espace'],
-  [9748, 'Vengeance'],
-  [7312, 'Road movies'],
-  [310, 'Intelligence artificielle'],
-  [9715, 'Super-héros'],
-  [6075, 'Sport'],
-  [1299, 'Monstres'],
-  [33722, 'Affaires criminelles'],
+  [10051, tr('Braquages')],
+  [4379, tr('Voyage dans le temps')],
+  [4565, tr('Dystopie')],
+  [10714, tr('Tueurs en série')],
+  [9672, tr('Histoires vraies')],
+  [12377, tr('Zombies')],
+  [9882, tr('Espace')],
+  [9748, tr('Vengeance')],
+  [7312, tr('Road movies')],
+  [310, tr('Intelligence artificielle')],
+  [9715, tr('Super-héros')],
+  [6075, tr('Sport')],
+  [1299, tr('Monstres')],
+  [33722, tr('Affaires criminelles')],
 ];
 
 /** Genres de films TMDB (identifiant, libellé des classiques). */
 const CLASSIC_GENRES: ReadonlyArray<readonly [number, string]> = [
-  [28, 'Classiques de l’action'],
-  [12, 'Classiques de l’aventure'],
-  [16, 'Classiques de l’animation'],
-  [35, 'Classiques de la comédie'],
-  [80, 'Classiques du polar'],
-  [18, 'Classiques du drame'],
-  [14, 'Classiques du fantastique'],
-  [27, 'Classiques de l’horreur'],
-  [9648, 'Classiques du mystère'],
-  [10749, 'Classiques romantiques'],
-  [878, 'Classiques de science-fiction'],
-  [53, 'Classiques du thriller'],
-  [10752, 'Classiques de guerre'],
-  [37, 'Classiques du western'],
+  [28, tr('Classiques de l’action')],
+  [12, tr('Classiques de l’aventure')],
+  [16, tr('Classiques de l’animation')],
+  [35, tr('Classiques de la comédie')],
+  [80, tr('Classiques du polar')],
+  [18, tr('Classiques du drame')],
+  [14, tr('Classiques du fantastique')],
+  [27, tr('Classiques de l’horreur')],
+  [9648, tr('Classiques du mystère')],
+  [10749, tr('Classiques romantiques')],
+  [878, tr('Classiques de science-fiction')],
+  [53, tr('Classiques du thriller')],
+  [10752, tr('Classiques de guerre')],
+  [37, tr('Classiques du western')],
 ];
 
 /** Débuts de décennie proposés chaque jour. */
@@ -372,25 +373,25 @@ function personTile(kind: 'cast' | 'crew', json: unknown, today: string, banned:
   const visuals = visualsOf(personFilms(json, kind, today, banned).filter((f) => f.votes >= MIN_VOTES_PERSON));
   if (!visuals) return null;
   const female = num(json.gender) === 1;
-  const kicker = kind === 'cast' ? (female ? 'Actrice' : 'Acteur') : female ? 'Réalisatrice' : 'Réalisateur';
+  const kicker = kind === 'cast' ? (female ? tr('Actrice') : tr('Acteur')) : female ? tr('Réalisatrice') : tr('Réalisateur');
   return { id: `gen-${kind}-${id}`, kind, title: name, kicker, portrait: `${IMG}h632${profile}`, ...visuals };
 }
 
 function themeTile(id: number, label: string, json: unknown, today: string, banned: ReadonlySet<GenreKey>): GenTile | null {
   const visuals = visualsOf(filmsIn(json, today, banned));
-  return visuals ? { id: `gen-kw-${id}`, kind: 'keyword', title: label, kicker: 'Thème', ...visuals } : null;
+  return visuals ? { id: `gen-kw-${id}`, kind: 'keyword', title: label, kicker: tr('Thème'), ...visuals } : null;
 }
 
 function classicTile(genre: number, label: string, json: unknown, today: string, banned: ReadonlySet<GenreKey>): GenTile | null {
   const visuals = visualsOf(filmsIn(json, today, banned));
-  return visuals ? { id: `gen-classic-${genre}`, kind: 'classic', title: label, kicker: 'Classique', ...visuals } : null;
+  return visuals ? { id: `gen-classic-${genre}`, kind: 'classic', title: label, kicker: tr('Classique'), ...visuals } : null;
 }
 
-const decadeTitle = (y: number): string => `Les années ${y < 2000 ? y % 100 : y}`;
+const decadeTitle = (y: number): string => `${tr('Les années')} ${y < 2000 ? y % 100 : y}`;
 
 function decadeTile(year: number, json: unknown, today: string, banned: ReadonlySet<GenreKey>): GenTile | null {
   const visuals = visualsOf(filmsIn(json, today, banned));
-  return visuals ? { id: `gen-decade-${year}`, kind: 'decade', title: decadeTitle(year), kicker: 'Décennie', ...visuals } : null;
+  return visuals ? { id: `gen-decade-${year}`, kind: 'decade', title: decadeTitle(year), kicker: tr('Décennie'), ...visuals } : null;
 }
 
 const themeQuery = (id: number): Record<string, string> => ({
@@ -583,8 +584,8 @@ export async function generatedFolder(id: string, fetch: Fetch = tmdb): Promise<
         id,
         name,
         [
-          { kind: 'DISCOVER', media: 'movie', name: 'Films populaires', sort: 'popularity.desc', filters },
-          { kind: 'DISCOVER', media: 'movie', name: 'Les mieux notés', sort: 'vote_average.desc', filters: { ...filters, voteCountGte: 200 } },
+          { kind: 'DISCOVER', media: 'movie', name: tr('Films populaires'), sort: 'popularity.desc', filters },
+          { kind: 'DISCOVER', media: 'movie', name: tr('Les mieux notés'), sort: 'vote_average.desc', filters: { ...filters, voteCountGte: 200 } },
         ],
         personFilms(json, kind, today, banned)[0]?.backdrop,
       );
@@ -598,8 +599,8 @@ export async function generatedFolder(id: string, fetch: Fetch = tmdb): Promise<
         id,
         theme[1],
         [
-          { kind: 'DISCOVER', media: 'movie', name: 'Films', sort: 'popularity.desc', filters },
-          { kind: 'DISCOVER', media: 'tv', name: 'Séries', sort: 'popularity.desc', filters },
+          { kind: 'DISCOVER', media: 'movie', name: tr('Films'), sort: 'popularity.desc', filters },
+          { kind: 'DISCOVER', media: 'tv', name: tr('Séries'), sort: 'popularity.desc', filters },
         ],
         backdrop,
       );
@@ -615,7 +616,7 @@ export async function generatedFolder(id: string, fetch: Fetch = tmdb): Promise<
           {
             kind: 'DISCOVER',
             media: 'movie',
-            name: 'Les mieux notés',
+            name: tr('Les mieux notés'),
             sort: 'vote_average.desc',
             filters: { withGenres: String(n), releaseDateLte: '1995-12-31', voteCountGte: 1000 },
           },
@@ -632,7 +633,7 @@ export async function generatedFolder(id: string, fetch: Fetch = tmdb): Promise<
           {
             kind: 'DISCOVER',
             media: 'movie',
-            name: 'Films populaires',
+            name: tr('Films populaires'),
             sort: 'popularity.desc',
             filters: { releaseDateGte: `${n}-01-01`, releaseDateLte: `${n + 9}-12-31`, voteCountGte: 500 },
           },

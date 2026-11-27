@@ -8,11 +8,12 @@ import { topBar } from './fragments.js';
 import { infiniteList } from './infinite.js';
 import { fallbackHTML } from './typo.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 /** Pages lues au plus pour un catalogue (défilement infini). */
 const ADDON_PAGES_MAX = 100;
 
-const SORTS = [['default', 'Ordre de l’addon'], ['name', 'Nom (A à Z)'], ['year-desc', 'Année (récentes d’abord)'], ['year-asc', 'Année (anciennes d’abord)']];
+const SORTS = [['default', t('Ordre de l’addon')], ['name', t('Nom (A à Z)')], ['year-desc', t('Année (récentes d’abord)')], ['year-asc', t('Année (anciennes d’abord)')]];
 
 const select = (id, label, options) =>
   '<label class="dc-field" for="' + id + '"><span>' + esc(label) + '</span><select id="' + id + '">' +
@@ -34,8 +35,8 @@ export function addonCardHTML(it, seq = 0) {
 }
 
 const notice = (msg, action = '') => '<div class="state" role="status"><p>' + esc(msg) + '</p>' + action + '</div>';
-const RETRY = '<button type="button" class="btn btn-ghost" data-ad-retry>Réessayer</button>';
-const SETTINGS = '<div class="f-actions"><a class="btn btn-ghost" href="#/settings" data-go>Ouvrir les réglages</a></div>';
+const RETRY = '<button type="button" class="btn btn-ghost" data-ad-retry>' + t('Réessayer') + '</button>';
+const SETTINGS = '<div class="f-actions"><a class="btn btn-ghost" href="#/settings" data-go>' + t('Ouvrir les réglages') + '</a></div>';
 
 /**
  * Affiche le catalogue `{ addonKey, type, catId }` dans `root`. Renvoie `{ destroy }` : à appeler quand la page est quittée
@@ -45,16 +46,16 @@ export function showAddonCatalog(root, { addonKey, type, catId }) {
   const entry = readAddonCatalogs()[addonKey];
   const cat = entry ? entry.catalogs.find((c) => c.type === type && c.id === catId) : undefined;
   const display = cat ? catalogDisplay(cat) : 'hidden';
-  const title = entry && cat ? cat.name + ' · ' + entry.name : 'Catalogue';
-  document.title = title + ' · Laststream';
+  const title = entry && cat ? cat.name + ' · ' + entry.name : t('Catalogue');
+  document.title = t('{title} · Laststream', { title });
 
   if (isKidProfile()) {
-    root.innerHTML = topBar(false) + '<article class="svc-page ct-page" tabindex="-1"><div class="state" role="status"><p>Ce catalogue n’est pas disponible sur ce profil.</p></div></article>';
+    root.innerHTML = topBar(false) + '<article class="svc-page ct-page" tabindex="-1"><div class="state" role="status"><p>' + t('Ce catalogue n’est pas disponible sur ce profil.') + '</p></div></article>';
     return { destroy() {} };
   }
   const available = !!entry && !!cat && display !== 'hidden';
   if (!available) {
-    root.innerHTML = topBar(false) + '<article class="svc-page ct-page" tabindex="-1">' + notice('Ce catalogue n’est plus activé.', SETTINGS) + '</article>';
+    root.innerHTML = topBar(false) + '<article class="svc-page ct-page" tabindex="-1">' + notice(t('Ce catalogue n’est plus activé.'), SETTINGS) + '</article>';
     return { destroy() {} };
   }
 
@@ -64,18 +65,18 @@ export function showAddonCatalog(root, { addonKey, type, catId }) {
   const genreOptions = genreExtra?.options?.length ? genreExtra.options : null;
 
   const searchHTML = hasSearch
-    ? '<form class="ad-search" id="ad-search" role="search"><label class="dc-field" for="ad-q"><span>Rechercher dans ce catalogue</span>' +
+    ? '<form class="ad-search" id="ad-search" role="search"><label class="dc-field" for="ad-q"><span>' + t('Rechercher dans ce catalogue') + '</span>' +
       '<input class="search-input" id="ad-q" type="search" autocomplete="off" enterkeyhint="search" maxlength="100"></label>' +
-      '<button type="submit" class="btn btn-ghost">Rechercher</button></form>'
+      '<button type="submit" class="btn btn-ghost">' + t('Rechercher') + '</button></form>'
     : '';
   const genreHTML = !searchOnly && genreOptions
-    ? select('ad-genre', 'Genre', (genreExtra.isRequired ? [] : [['', 'Tous']]).concat(genreOptions.map((g) => [g, g])))
+    ? select('ad-genre', t('Genre'), (genreExtra.isRequired ? [] : [['', t('Tous')]]).concat(genreOptions.map((g) => [g, g])))
     : '';
-  const sortHTML = searchOnly ? '' : select('ad-sort', 'Trier par', SORTS);
+  const sortHTML = searchOnly ? '' : select('ad-sort', t('Trier par'), SORTS);
 
   root.innerHTML = topBar(false) +
     '<article class="svc-page ct-page" aria-labelledby="svc-title">' +
-    '<header class="svc-head svc-head-plain"><div class="svc-head-t"><p class="svc-eyebrow">Catalogue d’addon</p>' +
+    '<header class="svc-head svc-head-plain"><div class="svc-head-t"><p class="svc-eyebrow">' + t('Catalogue d’addon') + '</p>' +
     '<h1 class="svc-title" id="svc-title" tabindex="-1">' + esc(title) + '</h1></div></header>' +
     '<div class="dc-form">' + searchHTML + (genreHTML || sortHTML ? '<div class="dc-fields">' + genreHTML + sortHTML + '</div>' : '') + '</div>' +
     '<p class="cf-count" id="ad-count" role="status" aria-live="polite"></p>' +
@@ -125,7 +126,7 @@ export function showAddonCatalog(root, { addonKey, type, catId }) {
     countEl.textContent = '';
     const q = qInput ? qInput.value.trim() : '';
     if (searchOnly && !q) {
-      status.innerHTML = '<p class="row-msg" role="status">Saisis un titre pour lancer la recherche.</p>';
+      status.innerHTML = '<p class="row-msg" role="status">' + t('Saisis un titre pour lancer la recherche.') + '</p>';
       return;
     }
     const base = { genre: genreSel ? genreSel.value : undefined, search: q || undefined };
@@ -161,14 +162,14 @@ export function showAddonCatalog(root, { addonKey, type, catId }) {
       if (!alive()) return;
       if (firstError) {
         list.destroy();
-        status.innerHTML = notice('Ce catalogue n’a pas pu être chargé.', RETRY);
+        status.innerHTML = notice(t('Ce catalogue n’a pas pu être chargé.'), RETRY);
         const retry = status.querySelector('[data-ad-retry]');
         if (retry) retry.addEventListener('click', start);
         return;
       }
       if (!grid.querySelector('.card')) {
         list.destroy();
-        status.innerHTML = '<p class="row-msg">Aucun titre</p>';
+        status.innerHTML = '<p class="row-msg">' + t('Aucun titre') + '</p>';
       }
     });
   };

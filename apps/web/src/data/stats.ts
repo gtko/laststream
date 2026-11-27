@@ -7,6 +7,7 @@
  */
 import { pad2 } from './format';
 import type { WatchedTitle } from './watchedHistory';
+import { t as tr } from '../i18n';
 
 /** Titres détaillés au plus par calcul : le reste est estimé (appels TMDB limités). */
 export const DETAIL_LIMIT = 50;
@@ -18,8 +19,8 @@ const DEFAULT_MOVIE_MIN = 110;
 const DEFAULT_EPISODE_MIN = 45;
 const DAY_MS = 864e5;
 
-export const WEEKDAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'] as const;
-export const DAYPARTS = ['Matin', 'Après-midi', 'Soirée', 'Nuit'] as const;
+export const WEEKDAYS = [tr('Lundi'), tr('Mardi'), tr('Mercredi'), tr('Jeudi'), tr('Vendredi'), tr('Samedi'), tr('Dimanche')] as const;
+export const DAYPARTS = [tr('Matin'), tr('Après-midi'), tr('Soirée'), tr('Nuit')] as const;
 
 type PersonRole = 'cast' | 'director' | 'creator';
 interface PersonRef {
@@ -76,7 +77,7 @@ export function metaFromTmdb(type: 'movie' | 'tv', key: string, raw: TmdbTitleRa
   const date = String(raw.release_date || raw.first_air_date || '');
   return {
     key,
-    name: raw.title || raw.name || raw.original_title || raw.original_name || 'Sans titre',
+    name: raw.title || raw.name || raw.original_title || raw.original_name || tr('Sans titre'),
     year: Number(date.slice(0, 4)) || 0,
     runtime: isTv ? 0 : Number(raw.runtime) || 0,
     episodeRuntime: isTv ? Number(raw.episode_run_time?.[0]) || 0 : 0,

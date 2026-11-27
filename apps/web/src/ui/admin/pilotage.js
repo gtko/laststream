@@ -11,10 +11,11 @@ import { lineChart, sparkline } from '../admin-charts.js';
 import { confirmDialog } from '../admin-dialog.js';
 import { esc } from '../util.js';
 import { admCard, adminErr, attempt, empty, loaded, sectionHead } from './common.js';
+import { t as tx } from '../../i18n';
 
 const TODO_PREVIEW = 4;
 const RANGES = [['1h', '1 h'], ['24h', '24 h'], ['7d', '7 j']];
-const RANGE_NAME = { '1h': '1 heure', '24h': '24 heures', '7d': '7 jours' };
+const RANGE_NAME = { '1h': tx('1 heure'), '24h': tx('24 heures'), '7d': tx('7 jours') };
 /** Marque d'un item de « À traiter » selon sa nature (pastille à gauche). */
 const KIND_MARK = { report: '!', provider: '~', errors5xx: '5xx', quota: '+', cron: 'TV', purge: 'C' };
 const SEV_CLASS = { critical: 'is-critical', warn: 'is-warn', info: 'is-info' };
@@ -62,7 +63,7 @@ function loadOverview(ctx, quiet) {
 const pill = (v, l) => '<button type="button" class="pill" data-adm-dashrange="' + v + '" data-adm-focus="dashrange:' + v + '" aria-pressed="' + (dashRange === v) + '">' + l + '</button>';
 
 function healthHTML(d) {
-  return '<section class="adm-health-wrap" aria-label="Santé des services">' + loaded(d, (report) =>
+  return '<section class="adm-health-wrap" aria-label="' + tx('Santé des services') + '">' + loaded(d, (report) =>
     '<ul class="adm-health">' + healthTiles(report).map((t) =>
       '<li class="adm-health-t is-' + t.tone + '">' +
       '<div class="adm-health-h"><span class="adm-health-n"><i class="adm-dot" aria-hidden="true"></i>' + esc(t.name) + '</span>' +
@@ -76,16 +77,16 @@ function todoItemHTML(i) {
   const at = i.at ? ' · ' + fmtAgo(i.at) : '';
   return '<li class="adm-todo"><span class="adm-todo-k ' + (SEV_CLASS[inboxSeverity(i)] || '') + '" aria-hidden="true">' + esc(KIND_MARK[i.kind] || '•') + '</span>' +
     '<div class="adm-todo-b"><span class="adm-todo-t">' + esc(i.title) + '</span><span class="adm-todo-s">' + esc(i.detail) + esc(at) + '</span></div>' +
-    '<div class="adm-todo-a"><button type="button" class="btn btn-ghost btn-sm" data-adm-inbox-seen="' + k + '">Marquer vu</button>' +
-    '<button type="button" class="btn btn-primary btn-sm" data-adm-inbox-act="' + k + '">' + esc(i.action && i.action.label ? i.action.label : 'Ouvrir') + '</button></div></li>';
+    '<div class="adm-todo-a"><button type="button" class="btn btn-ghost btn-sm" data-adm-inbox-seen="' + k + '">' + tx('Marquer vu') + '</button>' +
+    '<button type="button" class="btn btn-primary btn-sm" data-adm-inbox-act="' + k + '">' + esc(i.action && i.action.label ? i.action.label : tx('Ouvrir')) + '</button></div></li>';
 }
 
 /** Liste groupée par sévérité ; `limit` borne le nombre d'items affichés (aperçu du tableau de bord). */
 function inboxHTML(inb, limit = Infinity) {
   const items = Array.isArray(inb.items) ? inb.items : [];
   if (!items.length) {
-    return '<div class="adm-inbox-empty" role="status"><p class="adm-inbox-empty-t">Rien à traiter.</p>' +
-      '<p class="adm-dim">Les signalements, alertes et quotas apparaîtront ici.</p></div>';
+    return '<div class="adm-inbox-empty" role="status"><p class="adm-inbox-empty-t">' + tx('Rien à traiter.') + '</p>' +
+      '<p class="adm-dim">' + tx('Les signalements, alertes et quotas apparaîtront ici.') + '</p></div>';
   }
   let left = limit;
   const groups = inboxGroups(items).map((g) => {
@@ -97,31 +98,31 @@ function inboxHTML(inb, limit = Infinity) {
   const more = items.length - shownCount;
   return groups.map((g) => '<div class="adm-todo-g"><h4 class="adm-todo-gt">' + esc(g.label) + ' · ' + fmtInt(g.items.length) + '</h4>' +
     '<ul class="adm-todo-list">' + g.shown.map(todoItemHTML).join('') + '</ul></div>').join('') +
-    (more > 0 ? '<p class="adm-dim adm-todo-more">' + fmtInt(more) + ' autre(s) élément(s) dans « À traiter ».</p>' : '');
+    (more > 0 ? '<p class="adm-dim adm-todo-more">' + tx('{more} autre(s) élément(s) dans « À traiter ».', { more: fmtInt(more) }) + '</p>' : '');
 }
 
 function todoCardHTML(d) {
-  const count = d && d.status === 'ready' ? fmtInt(d.value.total) + ' élément(s)' : '';
-  return admCard('À traiter', loaded(d, (inb) => inboxHTML(inb, TODO_PREVIEW)), {
-    desc: count, aside: '<button type="button" class="adm-link" data-adm-go="inbox">Tout voir</button>',
+  const count = d && d.status === 'ready' ? tx('{total} élément(s)', { total: fmtInt(d.value.total) }) : '';
+  return admCard(tx('À traiter'), loaded(d, (inb) => inboxHTML(inb, TODO_PREVIEW)), {
+    desc: count, aside: '<button type="button" class="adm-link" data-adm-go="inbox">' + tx('Tout voir') + '</button>',
   });
 }
 
 function feedHTML(feed) {
   const rows = feedRows(feed);
-  if (!rows.length) return empty('Aucun événement récent.');
-  return '<ul class="adm-feed" aria-label="Derniers événements">' + rows.map((r) =>
+  if (!rows.length) return empty(tx('Aucun événement récent.'));
+  return '<ul class="adm-feed" aria-label="' + tx('Derniers événements') + '">' + rows.map((r) =>
     '<li><span class="adm-feed-t">' + esc(r.at) + '</span><span class="adm-feed-x">' +
     (r.target ? '<strong>' + esc(r.target) + '</strong> ' : '') + esc(r.label) + '</span></li>').join('') + '</ul>';
 }
 
 function liveCardHTML(d) {
-  return admCard('En direct', loaded(d, (l) =>
-    '<ul class="adm-live-counts" aria-label="Activité en direct">' +
-    '<li><strong>' + fmtInt(l.online) + '</strong><span>en ligne</span></li>' +
-    '<li><strong>' + fmtInt(l.watching) + '</strong><span>en lecture</span></li>' +
-    '<li><strong>' + fmtInt(l.parties) + '</strong><span>watch parties</span></li></ul>' + feedHTML(l.feed)), {
-    aside: '<span class="adm-live-tag"><i class="adm-dot" aria-hidden="true"></i>Live</span>',
+  return admCard(tx('En direct'), loaded(d, (l) =>
+    '<ul class="adm-live-counts" aria-label="' + tx('Activité en direct') + '">' +
+    '<li><strong>' + fmtInt(l.online) + '</strong><span>' + tx('en ligne') + '</span></li>' +
+    '<li><strong>' + fmtInt(l.watching) + '</strong><span>' + tx('en lecture') + '</span></li>' +
+    '<li><strong>' + fmtInt(l.parties) + '</strong><span>' + tx('watch parties') + '</span></li></ul>' + feedHTML(l.feed)), {
+    aside: '<span class="adm-live-tag"><i class="adm-dot" aria-hidden="true">' + tx('</i>Live') + '</span>',
   });
 }
 
@@ -142,23 +143,23 @@ function kpisHTML(ov, tr) {
   const name = RANGE_NAME[t ? t.range : dashRange] || '';
   const pending = (d) => (d.status === 'error' ? '—' : '…');
   const acc = (fn) => (o ? fn(o) : pending(ov));
-  const accHint = (fn) => (o ? fn(o) : ov.status === 'error' ? 'Indisponible' : '');
+  const accHint = (fn) => (o ? fn(o) : ov.status === 'error' ? tx('Indisponible') : '');
   const traf = m ? null : pending(tr);
-  const delta = (pct, goodWhenUp) => (pct == null || !Number.isFinite(pct) ? null : { text: fmtDelta(pct) + ' vs période précédente', tone: deltaTone(pct, goodWhenUp) });
+  const delta = (pct, goodWhenUp) => (pct == null || !Number.isFinite(pct) ? null : { text: tx('{pct} vs période précédente', { pct: fmtDelta(pct) }), tone: deltaTone(pct, goodWhenUp) });
   // Mini-courbe seulement quand la série existe (au moins deux tranches) : sinon rien, pas de tracé vide.
   const curve = (values, label, cls) => (pts.length >= 2 ? sparkline(values, label, cls) : '');
-  return '<ul class="adm-kpis adm-kpis-dash" aria-label="Indicateurs">' +
-    kpiCard('Comptes', acc((x) => fmtInt(x.total)), accHint((x) => (x.suspended != null ? fmtInt(x.suspended) + ' suspendu(s)' : ''))) +
-    kpiCard('Actifs 24 h', acc((x) => (x.truncated ? '≥ ' : '') + fmtInt(x.active24)), accHint((x) => (x.truncated ? 'sur les ' + fmtInt(x.scanned) + ' derniers comptes' : 'dernière activité sur 24 h'))) +
-    kpiCard('Inscriptions 7 j', acc((x) => fmtInt(x.signups7)), accHint(() => 'nouveaux comptes')) +
-    kpiCard('Requêtes / min', m ? fmtRate(m.rpm) : traf, m ? fmtInt(m.requests) + ' sur ' + name : '', m ? delta(dl.requests, true) : null,
-      curve(pts.map((p) => p.requests), 'Requêtes par tranche, sur ' + name)) +
-    kpiCard('Erreurs 5xx', m ? fmtPct(m.errorRate, 2) : traf, m ? 'réponses 5xx' : '', m ? delta(dl.errors5xx, false) : null,
-      curve(pts.map((p) => (p.requests > 0 ? p.errors5xx / p.requests : 0)), 'Taux d’erreur 5xx, sur ' + name, 'is-bad')) +
-    kpiCard('Latence p95', m ? fmtMs(m.p95) : traf, m ? 'médiane ' + fmtMs(m.p50) : '', m ? delta(dl.p95, false) : null,
-      curve(pts.map((p) => p.p95), 'Latence p95, sur ' + name, 'is-alt')) +
-    kpiCard('Salons actifs', acc((x) => (x.rooms != null ? fmtInt(x.rooms) : '—')), accHint((x) => (x.rooms == null ? 'indisponible' : ''))) +
-    kpiCard('Signalements en attente', acc((x) => (x.reports != null ? fmtInt(x.reports) : '—')), accHint((x) => (x.reports == null ? 'indisponible' : ''))) +
+  return '<ul class="adm-kpis adm-kpis-dash" aria-label="' + tx('Indicateurs') + '">' +
+    kpiCard(tx('Comptes'), acc((x) => fmtInt(x.total)), accHint((x) => (x.suspended != null ? fmtInt(x.suspended) + ' suspendu(s)' : ''))) +
+    kpiCard(tx('Actifs 24 h'), acc((x) => (x.truncated ? '≥ ' : '') + fmtInt(x.active24)), accHint((x) => (x.truncated ? tx('sur les {scanned} derniers comptes', { scanned: fmtInt(x.scanned) }) : tx('dernière activité sur 24 h')))) +
+    kpiCard(tx('Inscriptions 7 j'), acc((x) => fmtInt(x.signups7)), accHint(() => tx('nouveaux comptes'))) +
+    kpiCard(tx('Requêtes / min'), m ? fmtRate(m.rpm) : traf, m ? fmtInt(m.requests) + ' sur ' + name : '', m ? delta(dl.requests, true) : null,
+      curve(pts.map((p) => p.requests), tx('Requêtes par tranche, sur {name}', { name }))) +
+    kpiCard(tx('Erreurs 5xx'), m ? fmtPct(m.errorRate, 2) : traf, m ? tx('réponses 5xx') : '', m ? delta(dl.errors5xx, false) : null,
+      curve(pts.map((p) => (p.requests > 0 ? p.errors5xx / p.requests : 0)), tx('Taux d’erreur 5xx, sur {name}', { name }), 'is-bad')) +
+    kpiCard(tx('Latence p95'), m ? fmtMs(m.p95) : traf, m ? tx('médiane {p50}', { p50: fmtMs(m.p50) }) : '', m ? delta(dl.p95, false) : null,
+      curve(pts.map((p) => p.p95), tx('Latence p95, sur {name}', { name }), 'is-alt')) +
+    kpiCard(tx('Salons actifs'), acc((x) => (x.rooms != null ? fmtInt(x.rooms) : '—')), accHint((x) => (x.rooms == null ? 'indisponible' : ''))) +
+    kpiCard(tx('Signalements en attente'), acc((x) => (x.reports != null ? fmtInt(x.reports) : '—')), accHint((x) => (x.reports == null ? 'indisponible' : ''))) +
     '</ul>';
 }
 
@@ -168,20 +169,20 @@ function trafficHTML(d) {
     const name = RANGE_NAME[t.range] || t.range;
     const pts = t.series && Array.isArray(t.series.points) ? t.series.points : [];
     const labels = seriesLabels(pts, t.range);
-    const notice = t.seriesErr ? '<p class="adm-banner" role="status">Courbes indisponibles : ' + esc(t.seriesErr) + '</p>' : '';
+    const notice = t.seriesErr ? '<p class="adm-banner" role="status">' + tx('Courbes indisponibles : {seriesErr}', { seriesErr: esc(t.seriesErr) }) + '</p>' : '';
     const traffic = pts.length
       ? lineChart({
         series: [
-          { name: 'Requêtes', values: pts.map((p) => p.requests), cls: 'adm-s1', area: true },
-          { name: 'Erreurs 5xx', values: pts.map((p) => p.errors5xx), cls: 'adm-s4' },
+          { name: tx('Requêtes'), values: pts.map((p) => p.requests), cls: 'adm-s1', area: true },
+          { name: tx('Erreurs 5xx'), values: pts.map((p) => p.errors5xx), cls: 'adm-s4' },
         ],
-        labels, yFmt: (v) => fmtInt(v), description: 'Requêtes et erreurs 5xx par tranche, sur ' + name,
+        labels, yFmt: (v) => fmtInt(v), description: tx('Requêtes et erreurs 5xx par tranche, sur {name}', { name }),
       })
-      : empty('Pas encore de série sur cette période.');
+      : empty(tx('Pas encore de série sur cette période.'));
     const latency = pts.length
-      ? lineChart({ series: [{ name: 'p95', values: pts.map((p) => p.p95), cls: 'adm-s2' }], labels, yFmt: (v) => fmtMs(v), description: 'Latence p95 par tranche, sur ' + name })
-      : empty('Pas encore de série sur cette période.');
-    return notice + '<div class="adm-grid2">' + admCard('Trafic et erreurs · ' + name, traffic) + admCard('Latence p95 · ' + name, latency) + '</div>';
+      ? lineChart({ series: [{ name: 'p95', values: pts.map((p) => p.p95), cls: 'adm-s2' }], labels, yFmt: (v) => fmtMs(v), description: tx('Latence p95 par tranche, sur {name}', { name }) })
+      : empty(tx('Pas encore de série sur cette période.'));
+    return notice + '<div class="adm-grid2">' + admCard(tx('Trafic et erreurs · {name}', { name }), traffic) + admCard(tx('Latence p95 · {name}', { name }), latency) + '</div>';
   });
 }
 
@@ -189,11 +190,11 @@ function trafficHTML(d) {
 export function overviewHTML(S) {
   const at = (k) => S[k] || IDLE;
   const ov = at('ov');
-  const updated = S.liveAt ? '<p class="adm-live" role="status">Dernier relevé « En direct » : ' + new Date(S.liveAt).toLocaleTimeString('fr-FR') + ' · actualisé toutes les 30 s.</p>' : '';
-  return sectionHead('Tableau de bord', 'Ce qui demande ton attention, puis l’état du serveur en un coup d’œil.',
-    '<div class="adm-head-tools"><div class="pills adm-ranges" role="group" aria-label="Période" data-nav>' + RANGES.map(([v, l]) => pill(v, l)).join('') + '</div>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button></div>') +
-    (ov.status === 'ready' && ov.value.maintenance ? '<p class="adm-banner is-warn" role="status">Mode maintenance activé : seuls les administrateurs accèdent au serveur.</p>' : '') +
+  const updated = S.liveAt ? '<p class="adm-live" role="status">' + tx('Dernier relevé « En direct » : {v} · actualisé toutes les 30 s.', { v: new Date(S.liveAt).toLocaleTimeString('fr-FR') }) + '</p>' : '';
+  return sectionHead(tx('Tableau de bord'), tx('Ce qui demande ton attention, puis l’état du serveur en un coup d’œil.'),
+    '<div class="adm-head-tools"><div class="pills adm-ranges" role="group" aria-label="' + tx('Période') + '" data-nav>' + RANGES.map(([v, l]) => pill(v, l)).join('') + '</div>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>' + tx('Actualiser') + '</button></div>') +
+    (ov.status === 'ready' && ov.value.maintenance ? '<p class="adm-banner is-warn" role="status">' + tx('Mode maintenance activé : seuls les administrateurs accèdent au serveur.') + '</p>' : '') +
     updated + healthHTML(at('health')) +
     '<div class="adm-dash">' + todoCardHTML(at('inbox')) + liveCardHTML(at('live')) + '</div>' +
     kpisHTML(ov, at('traffic')) + trafficHTML(at('traffic'));
@@ -201,10 +202,10 @@ export function overviewHTML(S) {
 
 // ---------- Rendu : « À traiter » (page) ----------
 export function inboxPageHTML(S) {
-  return sectionHead('À traiter', 'Ce qui demande une action : signalements, alertes, quotas.',
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') +
-    loaded(S.inbox || IDLE, (inb) => admCard('Éléments', inboxHTML(inb), {
-      desc: fmtInt(inb.total) + ' élément(s), par sévérité.',
+  return sectionHead(tx('À traiter'), tx('Ce qui demande une action : signalements, alertes, quotas.'),
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>' + tx('Actualiser') + '</button>') +
+    loaded(S.inbox || IDLE, (inb) => admCard(tx('Éléments'), inboxHTML(inb), {
+      desc: tx('{total} élément(s), par sévérité.', { total: fmtInt(inb.total) }),
     }));
 }
 
@@ -246,12 +247,12 @@ async function runInboxAction(ctx, key) {
   const item = findItem(ctx, key);
   if (!item || !item.action) return;
   if (item.action.call === 'tv-rerun') {
-    if (!(await confirmDialog({ title: 'Relancer la tâche TV', message: 'La mise à jour des chaînes va être relancée maintenant, en dehors de son horaire habituel.', confirmLabel: 'Relancer' }))) return;
-    if (await attempt(() => api.rerunTv(), ctx.toast)) ctx.toast('Relance demandée.');
+    if (!(await confirmDialog({ title: tx('Relancer la tâche TV'), message: tx('La mise à jour des chaînes va être relancée maintenant, en dehors de son horaire habituel.'), confirmLabel: tx('Relancer') }))) return;
+    if (await attempt(() => api.rerunTv(), ctx.toast)) ctx.toast(tx('Relance demandée.'));
     return;
   }
   const sid = routeSection(item.action.route);
-  if (!sid || !ctx.go(sid)) ctx.toast('Cette section n’est pas encore disponible.');
+  if (!sid || !ctx.go(sid)) ctx.toast(tx('Cette section n’est pas encore disponible.'));
 }
 
 function bindInbox(root, ctx) {
@@ -271,9 +272,9 @@ function bindOverview(root, ctx) {
 }
 
 export const pilotageSections = [
-  { id: 'overview', group: 'pilotage', label: 'Tableau de bord', icon: 'grid', render: overviewHTML, bind: bindOverview, load: loadOverview },
+  { id: 'overview', group: 'pilotage', label: tx('Tableau de bord'), icon: 'grid', render: overviewHTML, bind: bindOverview, load: loadOverview },
   {
-    id: 'inbox', group: 'pilotage', label: 'À traiter', icon: 'inbox', render: inboxPageHTML, bind: bindInbox,
+    id: 'inbox', group: 'pilotage', label: tx('À traiter'), icon: 'inbox', render: inboxPageHTML, bind: bindInbox,
     load: (ctx, quiet) => ctx.fetch('inbox', () => api.getInbox(), quiet),
   },
 ];

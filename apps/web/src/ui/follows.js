@@ -5,6 +5,7 @@ import { userStore } from '../data/userStore';
 import { toast } from './dom.js';
 import { ICON } from './icons.js';
 import { registerCtxItems, state } from './state.js';
+import { t as tr } from '../i18n';
 
 /** Métadonnées d'une clé `movie:1` / `tv:2` / `person:3` : élément connu, fiche ouverte, ou attributs du bouton. */
 function followMeta(key, btn) {
@@ -23,8 +24,8 @@ function followMeta(key, btn) {
 export function followBtn(key, cls, extra, offLabel) {
   const on = userStore.isFollowing(key);
   return '<button type="button" class="' + cls + (on ? ' is-on' : '') + '" data-follow="' + key + '" aria-pressed="' + on + '"' + (extra || '') +
-    (offLabel ? ' data-off-label="' + esc(offLabel) + '"' : '') + ' data-tip="' + (on ? 'Suivi' : 'Suivre') + '" aria-label="' + (on ? 'Suivi (ne plus suivre)' : 'Suivre') + '">' + (on ? ICON.bellOn : ICON.bell) +
-    (/(^|\s)btn(\s|$)/.test(cls) ? '<span class="f-follow-label">' + (on ? 'Suivi' : offLabel || 'Suivre') + '</span>' : '') + '</button>';
+    (offLabel ? ' data-off-label="' + esc(offLabel) + '"' : '') + ' data-tip="' + (on ? tr('Suivi') : tr('Suivre')) + '" aria-label="' + (on ? tr('Suivi (ne plus suivre)') : tr('Suivre')) + '">' + (on ? ICON.bellOn : ICON.bell) +
+    (/(^|\s)btn(\s|$)/.test(cls) ? '<span class="f-follow-label">' + (on ? tr('Suivi') : offLabel || tr('Suivre')) + '</span>' : '') + '</button>';
 }
 
 function refreshFollowUI() {
@@ -32,10 +33,10 @@ function refreshFollowUI() {
     const on = userStore.isFollowing(b.dataset.follow);
     b.setAttribute('aria-pressed', String(on));
     b.classList.toggle('is-on', on);
-    b.dataset.tip = on ? 'Suivi' : 'Suivre';
-    b.setAttribute('aria-label', on ? 'Suivi (ne plus suivre)' : 'Suivre');
+    b.dataset.tip = on ? tr('Suivi') : tr('Suivre');
+    b.setAttribute('aria-label', on ? tr('Suivi (ne plus suivre)') : tr('Suivre'));
     const off = b.dataset.offLabel;
-    const label = b.classList.contains('btn') || off ? '<span class="f-follow-label">' + (on ? 'Suivi' : off || 'Suivre') + '</span>' : '';
+    const label = b.classList.contains('btn') || off ? '<span class="f-follow-label">' + (on ? tr('Suivi') : off || tr('Suivre')) + '</span>' : '';
     b.innerHTML = (on ? ICON.bellOn : ICON.bell) + label;
   });
 }
@@ -46,11 +47,11 @@ async function toggleFollow(key, btn) {
   const on = !userStore.isFollowing(key);
   const pending = userStore.setFollow(meta, on);
   refreshFollowUI();
-  toast(on ? (meta.type === 'person' ? 'Tu suis ' + meta.title : 'Suivi : tu seras prévenu des nouveautés') : 'Tu ne suis plus ce titre');
+  toast(on ? (meta.type === 'person' ? tr('Tu suis {title}', { title: meta.title }) : tr('Suivi : tu seras prévenu des nouveautés')) : tr('Tu ne suis plus ce titre'));
   const ok = await pending;
   if (!ok) {
     refreshFollowUI();
-    toast('Enregistrement impossible : modification annulée');
+    toast(tr('Enregistrement impossible : modification annulée'));
   }
   return ok;
 }
@@ -70,5 +71,5 @@ registerCtxItems((t) => {
   if (t.kind === 'fiche' && (!t.model || t.model.cinemaSince)) return [];
   const key = t.kind === 'person' ? 'person:' + t.id : t.kind === 'fiche' ? t.model.key : t.key;
   const on = userStore.isFollowing(key);
-  return [{ id: 'follow', label: on ? 'Ne plus suivre' : 'Suivre', icon: on ? ICON.bellOn : ICON.bell, run: () => toggleFollow(key, t.el) }];
+  return [{ id: 'follow', label: on ? tr('Ne plus suivre') : tr('Suivre'), icon: on ? ICON.bellOn : ICON.bell, run: () => toggleFollow(key, t.el) }];
 });

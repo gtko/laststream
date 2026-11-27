@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { LastAddonError } from './errors';
 import { cleartextAllowed } from './lan';
+import { t } from '../i18n';
 
 /**
  * Réglages lastAddon : même clé localStorage que l'application précédente (même origine), pour récupérer
@@ -100,14 +101,14 @@ export function normalizeBase(raw: string): string {
   try {
     url = new URL(trimmed);
   } catch {
-    throw new LastAddonError('invalid_base', 'Adresse lastAddon invalide.');
+    throw new LastAddonError('invalid_base', t('Adresse lastAddon invalide.'));
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new LastAddonError('invalid_base', 'L’adresse lastAddon doit commencer par http ou https.');
+    throw new LastAddonError('invalid_base', t('L’adresse lastAddon doit commencer par http ou https.'));
   }
   // Application Android : le http en clair n'est permis que vers le réseau local (le PC qui héberge lastAddon).
   if (isAndroidApp() && !cleartextAllowed(trimmed)) {
-    throw new LastAddonError('invalid_base', 'En http, l’adresse doit être celle d’un appareil de ton réseau local (par exemple http://192.168.1.20:7000). Sinon utilise https.');
+    throw new LastAddonError('invalid_base', t('En http, l’adresse doit être celle d’un appareil de ton réseau local (par exemple http://192.168.1.20:7000). Sinon utilise https.'));
   }
   return trimmed;
 }
@@ -138,7 +139,7 @@ export function subscribe(listener: () => void): () => void {
 }
 
 export function requireBase(): string {
-  if (settings.base === '') throw new LastAddonError('not_configured', 'lastAddon n’est pas configuré.');
+  if (settings.base === '') throw new LastAddonError('not_configured', t('lastAddon n’est pas configuré.'));
   return settings.base;
 }
 
@@ -158,12 +159,12 @@ function buildQuery(query?: Record<string, QueryValue>): string {
 
 /** URL d'une route lt : `{base}/{config}/lt/<path>`. Lève not_configured si base ou config manquent. */
 export function ltUrl(path: string, query?: Record<string, QueryValue>): string {
-  if (!isConfigured()) throw new LastAddonError('not_configured', 'lastAddon n’est pas configuré.');
+  if (!isConfigured()) throw new LastAddonError('not_configured', t('lastAddon n’est pas configuré.'));
   return `${settings.base}/${encodeURIComponent(settings.config)}/lt/${encodePath(path)}${buildQuery(query)}`;
 }
 
 /** URL d'une route Stremio de l'addon : `{base}/{config}/<path>` (ex. stream/movie/tt123.json). */
 export function addonUrl(path: string): string {
-  if (!isConfigured()) throw new LastAddonError('not_configured', 'lastAddon n’est pas configuré.');
+  if (!isConfigured()) throw new LastAddonError('not_configured', t('lastAddon n’est pas configuré.'));
   return `${settings.base}/${encodeURIComponent(settings.config)}/${path.replace(/^\/+/, '')}`;
 }

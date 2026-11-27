@@ -19,12 +19,13 @@ import { bucketAt } from './playbackSocial';
 import { createMarkBar } from './markbar';
 import { markCovered } from './backdrop';
 import { hasMouse, keyboardFocusInOverlay, isTypingIn, OVERLAY_HOVER_SELECTOR, UI_IDLE_MS, WAKE_EVENT } from './idle';
+import { t as tr } from '../i18n';
 
 const btn = (act, icon, label, extra = '', cls = '') => '<button type="button" class="lp-btn' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + icon + '</button>';
 const tbtn = (act, icon, label, extra = '') => '<button type="button" class="lp-tbtn" data-act="' + act + '"' + extra + '>' + icon + '<span>' + esc(label) + '</span></button>';
 const PANEL_ALIAS = { audio: 'tracks', subtitles: 'tracks', speed: 'settings' };
 const REMAIN_KEY = 'laststream.player.remaining';
-const MARK_LABEL = { intro: 'Intro', recap: 'Récap', credits: 'Générique', postcredits: 'Scène post-générique', preview: 'Aperçu' };
+const MARK_LABEL = { intro: tr('Intro'), recap: tr('Récap'), credits: tr('Générique'), postcredits: tr('Scène post-générique'), preview: tr('Aperçu') };
 const CINEMA_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9M12.4 3.4l3.1 4M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
 // Crochets [ ] : début et fin d'un segment à marquer sur la barre.
 const MARK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4H5v16h3M16 4h3v16h-3M9 12h6"/></svg>';
@@ -35,61 +36,61 @@ const REACT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 function skeleton() {
   return '<video class="lp-video" playsinline></video>' +
     '<div class="lp-subs" aria-hidden="true"></div>' +
-    '<div class="lp-pause" hidden><div class="lp-pause-in"><p class="lp-pause-k">Vous regardez</p><div class="lp-pause-logo"></div><p class="lp-pause-ep"></p><p class="lp-pause-syn"></p></div></div>' +
+    '<div class="lp-pause" hidden><div class="lp-pause-in"><p class="lp-pause-k">' + tr('Vous regardez') + '</p><div class="lp-pause-logo"></div><p class="lp-pause-ep"></p><p class="lp-pause-syn"></p></div></div>' +
     '<div class="lp-bspin" aria-hidden="true"></div>' +
-    '<div class="lp-sndwait" role="status">Chargement du son…</div>' +
+    '<div class="lp-sndwait" role="status">' + tr('Chargement du son…') + '</div>' +
     '<div class="lp-sndnote" role="status" hidden></div>' +
     '<div class="lp-loading" role="status"><div class="lp-load-bg"></div><div class="lp-load-in">' +
       '<div class="lp-lring" aria-hidden="true"><svg viewBox="0 0 64 64"><circle class="lp-lring-bg" cx="32" cy="32" r="28"/><circle class="lp-lring-fg" cx="32" cy="32" r="28" stroke-dasharray="175.9" stroke-dashoffset="132"/></svg></div>' +
       '<div class="lp-load-logo"></div><p class="lp-load-ep"></p><p class="lp-load-msg"></p><p class="lp-load-src"></p><ol class="lp-steps"></ol>' +
-      '<button type="button" class="btn btn-primary lp-self" data-act="choose-myself" hidden>Choisir moi-même</button>' +
-      '<button type="button" class="btn btn-ghost lp-cancel" data-act="close">Annuler</button></div></div>' +
+      '<button type="button" class="btn btn-primary lp-self" data-act="choose-myself" hidden>' + tr('Choisir moi-même') + '</button>' +
+      '<button type="button" class="btn btn-ghost lp-cancel" data-act="close">' + tr('Annuler') + '</button></div></div>' +
     '<div class="lp-cast" role="status" hidden><div class="lp-cast-in">' + LI.cast + '<p class="lp-cast-t"></p><p class="lp-cast-time"></p><div class="lp-cast-actions">' +
-      '<button type="button" class="btn btn-ghost" data-act="cast-toggle">Pause</button><button type="button" class="btn btn-primary" data-act="cast-here">Reprendre ici</button></div></div></div>' +
+      '<button type="button" class="btn btn-ghost" data-act="cast-toggle">' + tr('Pause') + '</button><button type="button" class="btn btn-primary" data-act="cast-here">' + tr('Reprendre ici') + '</button></div></div></div>' +
     '<div class="lp-error" role="alert" hidden><p class="lp-err-title"></p><p class="lp-err-msg"></p><div class="lp-err-actions"></div>' +
-      '<div class="lp-err-report" hidden><button type="button" data-act="report-error">' + LI.feedback + 'Signaler ce problème</button><p>Le détail de l’erreur sera joint au message.</p></div></div>' +
+      '<div class="lp-err-report" hidden><button type="button" data-act="report-error">' + LI.feedback + tr('Signaler ce problème') + '</button><p>' + tr('Le détail de l’erreur sera joint au message.') + '</p></div></div>' +
     '<div class="lp-top">' +
-      btn('close', LI.back, 'Retour (Échap)', ' data-role="back"', 'lp-close') +
+      btn('close', LI.back, tr('Retour (Échap)'), ' data-role="back"', 'lp-close') +
       '<div class="lp-heading"><p class="lp-title"></p><p class="lp-sub"></p></div>' +
-      '<div class="lp-top-r">' + btn('party', LI.people, 'Watch party', ' data-role="party" hidden') + btn('minimize', LI.mini, 'Réduire le lecteur (I)', ' data-role="mini" hidden') + btn('feedback', LI.feedback, 'Signaler un problème', ' data-role="feedback" hidden') + btn('info', LI.info, 'Infos') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('cast', LI.cast, 'Caster', ' data-role="cast" hidden') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
+      '<div class="lp-top-r">' + btn('party', LI.people, tr('Watch party'), ' data-role="party" hidden') + btn('minimize', LI.mini, tr('Réduire le lecteur (I)'), ' data-role="mini" hidden') + btn('feedback', LI.feedback, tr('Signaler un problème'), ' data-role="feedback" hidden') + btn('info', LI.info, tr('Infos')) + btn('pip', LI.pip, tr('Image dans l’image (P)'), ' data-role="pip"') + btn('cast', LI.cast, tr('Caster'), ' data-role="cast" hidden') + btn('panel:settings', LI.gear, tr('Réglages (vitesse, options)'), ' data-role="speed"') + '</div>' +
     '</div>' +
     '<div class="lp-center">' +
-      btn('back10', LI.back10, 'Reculer de 10 s', '', 'lp-big') + btn('toggle-play', LI.play, 'Lecture / pause (Espace)', ' data-role="bigplay"', 'lp-big lp-huge') + btn('fwd10', LI.fwd10, 'Avancer de 10 s', '', 'lp-big') +
+      btn('back10', LI.back10, tr('Reculer de 10 s'), '', 'lp-big') + btn('toggle-play', LI.play, tr('Lecture / pause (Espace)'), ' data-role="bigplay"', 'lp-big lp-huge') + btn('fwd10', LI.fwd10, tr('Avancer de 10 s'), '', 'lp-big') +
     '</div>' +
     '<div class="lp-ripple lp-ripple-l" hidden>−10 s</div><div class="lp-ripple lp-ripple-r" hidden>+10 s</div>' +
     '<button type="button" class="lp-skip" data-act="skip" hidden></button><button type="button" class="lp-skipno" data-act="skip-wrong" hidden></button>' +
     '<div class="lp-next" hidden></div>' +
     '<div class="lp-endrow" hidden></div>' +
-    '<div class="lp-resume" role="dialog" aria-label="Reprise" hidden></div>' +
+    '<div class="lp-resume" role="dialog" aria-label="' + tr('Reprise') + '" hidden></div>' +
     '<div class="lp-bottom">' +
       '<div class="lp-heat" aria-hidden="true" hidden></div>' +
-      '<div class="lp-seek" data-seek role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">' +
+      '<div class="lp-seek" data-seek role="slider" tabindex="0" aria-label="' + tr('Position') + '" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">' +
         '<div class="lp-track"><span class="lp-buf"></span><span class="lp-played"></span><span class="lp-marks"></span><span class="lp-notes"></span></div>' +
         '<span class="lp-thumb"></span><span class="lp-hover" hidden><canvas class="lp-hover-c" hidden></canvas><img class="lp-hover-i" alt="" hidden><b class="lp-hover-t"></b><i class="lp-hover-s"></i></span>' +
       '</div>' +
       '<div class="lp-row">' +
         '<div class="lp-grp">' +
-          btn('toggle-play', LI.play, 'Lecture / pause (Espace)', ' data-role="play"') +
-          btn('back10', LI.back10, 'Reculer de 10 s') + btn('fwd10', LI.fwd10, 'Avancer de 10 s') +
-          '<span class="lp-vol">' + btn('mute', LI.vol, 'Couper le son (M)', ' data-role="mute"') +
-          '<input class="lp-vslider" type="range" min="0" max="100" step="5" value="100" aria-label="Volume"></span>' +
-          '<button type="button" class="lp-time" data-act="toggle-remaining" aria-label="Afficher le temps restant" data-tip="Temps écoulé / restant">0:00 / 0:00</button>' +
+          btn('toggle-play', LI.play, tr('Lecture / pause (Espace)'), ' data-role="play"') +
+          btn('back10', LI.back10, tr('Reculer de 10 s')) + btn('fwd10', LI.fwd10, tr('Avancer de 10 s')) +
+          '<span class="lp-vol">' + btn('mute', LI.vol, tr('Couper le son (M)'), ' data-role="mute"') +
+          '<input class="lp-vslider" type="range" min="0" max="100" step="5" value="100" aria-label="' + tr('Volume') + '"></span>' +
+          '<button type="button" class="lp-time" data-act="toggle-remaining" aria-label="' + tr('Afficher le temps restant') + '" data-tip="' + tr('Temps écoulé / restant') + '">0:00 / 0:00</button>' +
         '</div>' +
         '<div class="lp-grp lp-grp-r">' +
-          tbtn('next', LI.next, 'Épisode suivant', ' data-role="next" hidden') +
-          tbtn('panel:episodes', LI.list, 'Épisodes', ' data-role="episodes" hidden') +
-          btn('mark-open', MARK_ICON, 'Marquer un segment (intro, récap, générique)', ' data-role="mark" hidden') +
-          tbtn('react', REACT_ICON, 'Réagir ici', ' data-role="react" aria-label="Réagir ici" data-tip="Réagir ici" hidden') +
-          btn('share', SHARE_ICON, 'Partager', ' data-role="share" hidden') +
-          btn('cinema', CINEMA_ICON, 'Mode cinéma : couper le social', ' data-role="cinema" hidden aria-haspopup="dialog"') +
-          tbtn('panel:tracks', LI.tracks, 'Audio et sous-titres') +
-          tbtn('source', LI.source, 'Sources') +
-          btn('fullscreen', LI.full, 'Plein écran (F)', ' data-role="full"') +
+          tbtn('next', LI.next, tr('Épisode suivant'), ' data-role="next" hidden') +
+          tbtn('panel:episodes', LI.list, tr('Épisodes'), ' data-role="episodes" hidden') +
+          btn('mark-open', MARK_ICON, tr('Marquer un segment (intro, récap, générique)'), ' data-role="mark" hidden') +
+          tbtn('react', REACT_ICON, tr('Réagir ici'), ' data-role="react" aria-label="' + tr('Réagir ici') + '" data-tip="' + tr('Réagir ici') + '" hidden') +
+          btn('share', SHARE_ICON, tr('Partager'), ' data-role="share" hidden') +
+          btn('cinema', CINEMA_ICON, tr('Mode cinéma : couper le social'), ' data-role="cinema" hidden aria-haspopup="dialog"') +
+          tbtn('panel:tracks', LI.tracks, tr('Audio et sous-titres')) +
+          tbtn('source', LI.source, tr('Sources')) +
+          btn('fullscreen', LI.full, tr('Plein écran (F)'), ' data-role="full"') +
         '</div>' +
       '</div>' +
     '</div>' +
     '<div class="lp-watchchip" hidden><span class="lp-wc-av"></span><span class="lp-wc-t"></span><button type="button" class="lp-wc-go" data-act="catch-up"></button></div>' +
-    '<aside class="lp-panel" hidden aria-label="Panneau"></aside>' +
+    '<aside class="lp-panel" hidden aria-label="' + tr('Panneau') + '"></aside>' +
     '<div class="lp-toast" role="status" aria-live="polite"><span class="lp-toast-t"></span><button type="button" class="lp-toast-a" hidden></button></div>';
 }
 
@@ -107,7 +108,7 @@ export function createPlayerUI(h) {
   root.id = 'lsplayer';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
-  root.setAttribute('aria-label', 'Lecteur vidéo');
+  root.setAttribute('aria-label', tr('Lecteur vidéo'));
   root.hidden = true;
   root.innerHTML = skeleton();
   document.body.appendChild(root);
@@ -470,8 +471,8 @@ export function createPlayerUI(h) {
       const back = q('[data-role="back"]');
       // Retour : le lecteur décide (lecture en cours réduite, sinon fermée) ; sans réduction possible, il ferme.
       back.dataset.act = ok ? 'leave' : 'close';
-      back.setAttribute('aria-label', 'Retour (Échap)');
-      back.dataset.tip = 'Retour (Échap)';
+      back.setAttribute('aria-label', tr('Retour (Échap)'));
+      back.dataset.tip = tr('Retour (Échap)');
     },
     /**
      * Chargeur. `extra` : { logo, backdrop, episode, source, steps, step, cancel }. Avec `steps`, l'anneau se remplit à chaque
@@ -695,10 +696,10 @@ export function createPlayerUI(h) {
       av.style.background = info.color;
       const t = q('.lp-wc-t');
       t.textContent = '';
-      t.append(info.name + (info.more ? ' et ' + info.more + (info.more > 1 ? ' autres' : ' autre') : '') + ' regarde' + (info.more ? 'nt' : '') + ' aussi · ', Object.assign(document.createElement('b'), { textContent: formatClock(info.pos) }));
+      t.append(info.name + (info.more ? ' et ' + info.more + (info.more > 1 ? ' autres' : ' autre') : '') + ' ' + tr('regarde{v} aussi ·', { v: (info.more ? 'nt' : '') }) + ' ', Object.assign(document.createElement('b'), { textContent: formatClock(info.pos) }));
       const go = q('.lp-wc-go');
-      go.textContent = 'Se caler sur elle';
-      go.setAttribute('aria-label', 'Se caler sur ' + info.name + ' à ' + formatClock(info.pos));
+      go.textContent = tr('Se caler sur elle');
+      go.setAttribute('aria-label', tr('Se caler sur {name} à {pos}', { name: info.name, pos: formatClock(info.pos) }));
       go.dataset.pos = String(info.pos);
       if (first) { chip.classList.add('is-in'); wake(); }
     },
@@ -710,7 +711,7 @@ export function createPlayerUI(h) {
     setCinemaActive(on) {
       cinemaBtn.classList.toggle('is-active', on);
       cinemaBtn.setAttribute('aria-pressed', String(on));
-      cinemaBtn.setAttribute('aria-label', on ? 'Mode cinéma actif' : 'Mode cinéma : couper le social');
+      cinemaBtn.setAttribute('aria-label', on ? tr('Mode cinéma actif') : tr('Mode cinéma : couper le social'));
     },
     setCinemaIndicator(count) { cinemaInd.set(count); },
     openCinemaMenu(model) { api.closeMark(false); api.closePanel(true); api.closeReact(false); api.closeNoteMenu(false); wake(); cinemaMenu.open(model); syncOpeners(); },
@@ -756,7 +757,7 @@ export function createPlayerUI(h) {
       if (!c) return;
       q('.lp-cast-t').textContent = c.label;
       q('.lp-cast-time').textContent = c.duration > 0 ? formatClock(c.time) + ' / ' + formatClock(c.duration) : formatClock(c.time);
-      q('[data-act="cast-toggle"]').textContent = c.paused ? 'Lecture' : 'Pause';
+      q('[data-act="cast-toggle"]').textContent = c.paused ? tr('Lecture') : tr('Pause');
       el.style.backgroundImage = c.backdrop ? 'linear-gradient(rgba(0,0,0,.78), rgba(0,0,0,.78)), url("' + c.backdrop + '")' : '';
       // Focus prêt pour la télécommande et le clavier à l'ouverture de l'écran.
       if (!was && !panelName) q('[data-act="cast-here"]').focus({ preventScroll: true });
@@ -769,7 +770,7 @@ export function createPlayerUI(h) {
       if (wasHidden || b.dataset.kind !== key) { b.dataset.kind = key; b.innerHTML = LI.skip + '<span>' + esc(skipLabel(seg)) + '</span>'; }
       const no = q('.lp-skipno');
       no.hidden = !seg.inferred;
-      no.textContent = seg.kind === 'intro' ? 'Ce n’est pas l’intro' : seg.kind === 'recap' ? 'Ce n’est pas le récap' : 'Ce n’est pas ça';
+      no.textContent = seg.kind === 'intro' ? tr('Ce n’est pas l’intro') : seg.kind === 'recap' ? tr('Ce n’est pas le récap') : tr('Ce n’est pas ça');
       b.hidden = false;
       // Focus prêt pour la télécommande (Entrée) dès l'apparition, sans voler le focus d'un panneau ou d'une fenêtre ouverts.
       if (wasHidden && !panelName && !document.querySelector('#modal:not([hidden])')) b.focus({ preventScroll: true });
@@ -784,11 +785,11 @@ export function createPlayerUI(h) {
         const r = 20;
         const c = 2 * Math.PI * r;
         const ring = card.countdown !== null
-          ? '<span class="lp-ring" aria-label="Lancement dans ' + card.countdown + ' secondes"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="' + r + '" class="lp-ring-bg"/><circle cx="24" cy="24" r="' + r + '" class="lp-ring-fg" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + (c * (1 - card.ratio)).toFixed(1) + '" transform="rotate(-90 24 24)"/></svg><b>' + card.countdown + '</b></span>'
+          ? '<span class="lp-ring" aria-label="' + tr('Lancement dans {countdown} secondes', { countdown: card.countdown }) + '"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="' + r + '" class="lp-ring-bg"/><circle cx="24" cy="24" r="' + r + '" class="lp-ring-fg" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + (c * (1 - card.ratio)).toFixed(1) + '" transform="rotate(-90 24 24)"/></svg><b>' + card.countdown + '</b></span>'
           : '';
         el.innerHTML = '<span class="lp-next-still">' + (card.still ? '<img src="' + esc(card.still) + '" alt="">' : '') + ring + '</span>' +
-          '<div class="lp-next-body"><p class="lp-next-k">' + esc(card.kicker || 'Épisode suivant') + '</p><p class="lp-next-t">' + esc(card.title) + '</p>' +
-          '<div class="lp-next-actions"><button type="button" class="btn btn-primary" data-act="next" aria-label="Lire maintenant ' + (card.playLabel ? 'la partie suivante' : 'l’épisode suivant') + '">' + LI.next + esc(card.playLabel || 'Lire maintenant') + '</button><button type="button" class="btn btn-ghost" data-act="next-dismiss" aria-label="Regarder le générique">Générique</button></div></div>';
+          '<div class="lp-next-body"><p class="lp-next-k">' + esc(card.kicker || tr('Épisode suivant')) + '</p><p class="lp-next-t">' + esc(card.title) + '</p>' +
+          '<div class="lp-next-actions"><button type="button" class="btn btn-primary" data-act="next" aria-label="' + tr('Lire maintenant') + ' ' + (card.playLabel ? tr('la partie suivante') : tr('l’épisode suivant')) + '">' + LI.next + esc(card.playLabel || tr('Lire maintenant')) + '</button><button type="button" class="btn btn-ghost" data-act="next-dismiss" aria-label="' + tr('Regarder le générique') + '">' + tr('Générique') + '</button></div></div>';
       }
       el.hidden = false;
     },
@@ -796,13 +797,13 @@ export function createPlayerUI(h) {
     setEndRow(show) {
       const el = q('.lp-endrow');
       if (!show) { el.hidden = true; return; }
-      if (el.hidden) el.innerHTML = '<p class="lp-next-k">Terminé ?</p><div><button type="button" class="btn btn-primary" data-act="more-info">Plus d’infos</button><button type="button" class="btn btn-ghost" data-act="recs">Recommandés</button><button type="button" class="btn btn-ghost" data-act="end-dismiss">Regarder le générique</button></div>';
+      if (el.hidden) el.innerHTML = '<p class="lp-next-k">' + tr('Terminé ?') + '</p><div><button type="button" class="btn btn-primary" data-act="more-info">' + tr('Plus d’infos') + '</button><button type="button" class="btn btn-ghost" data-act="recs">' + tr('Recommandés') + '</button><button type="button" class="btn btn-ghost" data-act="end-dismiss">' + tr('Regarder le générique') + '</button></div>';
       el.hidden = false;
     },
     setResume(pos) {
       const el = q('.lp-resume');
       if (pos === null) { el.hidden = true; return; }
-      el.innerHTML = '<p>Tu en étais à <strong>' + formatClock(pos) + '</strong></p><div><button type="button" class="btn btn-primary" data-act="resume">Reprendre à ' + formatClock(pos) + '</button><button type="button" class="btn btn-ghost" data-act="restart">Recommencer</button></div>';
+      el.innerHTML = '<p>' + tr('Tu en étais à <strong>{pos}</strong>', { pos: formatClock(pos) }) + '</p><div><button type="button" class="btn btn-primary" data-act="resume">' + tr('Reprendre à {pos}', { pos: formatClock(pos) }) + '</button><button type="button" class="btn btn-ghost" data-act="restart">' + tr('Recommencer') + '</button></div>';
       el.hidden = false;
       const b = el.querySelector('[data-act="resume"]');
       if (b) b.focus({ preventScroll: true });

@@ -5,6 +5,7 @@ import { MpvEngine } from '../player/engines.js';
 import { NativePlayer, isNativePlayer, nativeAudioTracks, nativeSubtitleTracks } from '../player/native';
 import { connectShell, isShellEnvironment, mpvAudioTracks, mpvSubtitleTracks, setShellFullscreen } from '../player/shell';
 import { trackOptions, techFromTracks, NONE } from './tvControls.js';
+import { t as tr } from '../i18n';
 
 let mpv = null;
 let mpvShell = null;
@@ -89,7 +90,7 @@ export function externalControls() {
       canPip: false, pip: () => false, setPip: () => {},
       audio: () => trackOptions(nativeAudioTracks(nativeAudio)),
       setAudio: (id) => call(p.setAudioTrack({ id: Number(id) })),
-      subs: () => trackOptions(nativeSubtitleTracks(nativeSubs), 'Désactivés'),
+      subs: () => trackOptions(nativeSubtitleTracks(nativeSubs), tr('Désactivés')),
       setSub: (id) => call(p.setSubtitleTrack({ id: Number(id) })),
       levels: () => [], setLevel: () => {},
       tech: () => ({}),
@@ -107,7 +108,7 @@ export function externalControls() {
       canPip: false, pip: () => false, setPip: () => {},
       audio: () => trackOptions(mpvAudioTracks(tl())),
       setAudio: (id) => mpv.setAudioTrack(id),
-      subs: () => trackOptions(mpvSubtitleTracks(tl()), 'Désactivés'),
+      subs: () => trackOptions(mpvSubtitleTracks(tl()), tr('Désactivés')),
       setSub: (id) => mpv.setSubtitleTrack(id === NONE ? null : id),
       levels: () => [], setLevel: () => {},
       tech: () => techFromTracks(tl()),

@@ -5,6 +5,7 @@ import { resolveDeviceLink } from '../downloads/service';
 import { errorMessage } from '../downloads/viewModel';
 import { browserDownload, CorsBlockedError, folderPickerSupported, folderWritable, getSaveFolder, openBrowserTab, safeFileName, writeToFolder } from '../downloads/webSave';
 import { toast } from './dom.js';
+import { t as tr } from '../i18n';
 
 /** Dernier segment du chemin du lien, s'il ressemble à un nom de fichier (extension courte). */
 function nameFromUrl(url) {
@@ -25,7 +26,7 @@ async function writableFolder() {
   const folder = await getSaveFolder();
   if (!folder) return null;
   if (await folderWritable(folder, true)) return folder;
-  toast('Accès au dossier « ' + folder.name + ' » refusé : le navigateur enregistre le fichier dans son dossier de téléchargements.');
+  toast(tr('Accès au dossier « {name} » refusé : le navigateur enregistre le fichier dans son dossier de téléchargements.', { name: folder.name }));
   return null;
 }
 
@@ -34,10 +35,10 @@ function handToBrowser(tab, file, name, label) {
   const open = tab || openBrowserTab();
   if (open) {
     open.go(file.url);
-    toast('Téléchargement confié au navigateur · ' + label, { ms: 4000 });
+    toast(tr('Téléchargement confié au navigateur · {label}', { label }), { ms: 4000 });
     return;
   }
-  toast('Le navigateur a bloqué l’ouverture du téléchargement.', { action: { label: 'Télécharger', run: () => browserDownload(file.url, name) }, ms: 15000 });
+  toast(tr('Le navigateur a bloqué l’ouverture du téléchargement.'), { action: { label: tr('Télécharger'), run: () => browserDownload(file.url, name) }, ms: 15000 });
 }
 
 /**
@@ -60,18 +61,18 @@ export async function saveToDevice(t, choice, label, onProgress = () => undefine
   }
   const name = fileNameOf(file, label);
   if (!folder) { handToBrowser(tab, file, name, label); return true; }
-  toast('Enregistrement dans « ' + folder.name + ' » · ' + label, { ms: 3500 });
+  toast(tr('Enregistrement dans « {name} » · {label}', { name: folder.name, label }), { ms: 3500 });
   try {
     const saved = await writeToFolder(folder, name, file.url, {
       signal: ctl.signal,
-      onProgress: (done, total) => onProgress(total ? Math.min(99, Math.floor((done / total) * 100)) + ' %' : Math.round(done / 1048576) + ' Mo'),
+      onProgress: (done, total) => onProgress(total ? Math.min(99, Math.floor((done / total) * 100)) + ' %' : tr('{v} Mo', { v: Math.round(done / 1048576) })),
     });
-    toast('Enregistré dans « ' + folder.name + ' » : ' + saved.name, { ms: 5000 });
+    toast(tr('Enregistré dans « {name} » : {name2}', { name: folder.name, name2: saved.name }), { ms: 5000 });
     return true;
   } catch (err) {
     if (err instanceof CorsBlockedError) {
       // L'hébergeur interdit la lecture par la page (AllDebrid) : seul le navigateur peut l'enregistrer, dans son propre dossier.
-      toast('L’hébergeur de ce fichier interdit l’écriture directe dans ton dossier : il passe par les téléchargements du navigateur.', { ms: 6000 });
+      toast(tr('L’hébergeur de ce fichier interdit l’écriture directe dans ton dossier : il passe par les téléchargements du navigateur.'), { ms: 6000 });
       handToBrowser(null, file, name, label);
       return true;
     }
@@ -90,14 +91,14 @@ export async function saveSeasonToDevice(plan, onProgress = () => undefined) {
   const folder = await writableFolder();
   if (!folder) {
     toast(folderPickerSupported()
-      ? 'Pour une saison entière, choisis d’abord un dossier dans Téléchargements, ou télécharge les épisodes un par un.'
-      : 'Ton navigateur ne peut pas enregistrer une saison d’un coup : télécharge les épisodes un par un.', { ms: 6000 });
+      ? tr('Pour une saison entière, choisis d’abord un dossier dans Téléchargements, ou télécharge les épisodes un par un.')
+      : tr('Ton navigateur ne peut pas enregistrer une saison d’un coup : télécharge les épisodes un par un.'), { ms: 6000 });
     return;
   }
   const n = plan.entries.length;
   let saved = 0;
   let blocked = 0;
-  toast('Enregistrement de ' + n + (n > 1 ? ' épisodes' : ' épisode') + ' dans « ' + folder.name + ' »', { ms: 3500 });
+  toast(tr('Enregistrement de {n}{v} dans « {name} »', { n, v: (n > 1 ? ' ' + tr('épisodes') : ' ' + tr('épisode')), name: folder.name }), { ms: 3500 });
   try {
     for (let i = 0; i < n; i++) {
       const { target, choice } = plan.entries[i];
@@ -117,7 +118,7 @@ export async function saveSeasonToDevice(plan, onProgress = () => undefined) {
     onProgress(null);
   }
   const failed = n - saved - blocked;
-  toast(saved + ' / ' + n + ' épisodes enregistrés dans « ' + folder.name + ' »' +
-    (blocked ? ' · ' + blocked + ' refusés par leur hébergeur (à télécharger un par un)' : '') +
-    (failed ? ' · ' + failed + ' en échec' : ''), { ms: 8000 });
+  toast(tr('{saved} / {n} épisodes enregistrés dans « {name} »', { saved, n, name: folder.name }) +
+    (blocked ? ' ' + tr('· {blocked} refusés par leur hébergeur (à télécharger un par un)', { blocked }) : '') +
+    (failed ? ' ' + tr('· {failed} en échec', { failed }) : ''), { ms: 8000 });
 }

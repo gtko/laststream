@@ -1,4 +1,5 @@
 import type { Probe, ProbeStream } from './server';
+import { t as tx } from '../i18n';
 
 /* Pistes audio et sous-titres : normalisation des langues, libellés, choix par défaut. Fonctions pures, testées. */
 
@@ -11,8 +12,8 @@ const LANG_ALIASES: Record<string, string> = {
 };
 
 const LANG_NAMES: Record<string, string> = {
-  fr: 'Français', en: 'Anglais', de: 'Allemand', es: 'Espagnol', it: 'Italien', pt: 'Portugais', ja: 'Japonais', ko: 'Coréen',
-  zh: 'Chinois', ru: 'Russe', ar: 'Arabe', nl: 'Néerlandais', pl: 'Polonais', tr: 'Turc', sv: 'Suédois',
+  fr: tx('Français'), en: tx('Anglais'), de: tx('Allemand'), es: tx('Espagnol'), it: tx('Italien'), pt: tx('Portugais'), ja: tx('Japonais'), ko: tx('Coréen'),
+  zh: tx('Chinois'), ru: tx('Russe'), ar: tx('Arabe'), nl: tx('Néerlandais'), pl: tx('Polonais'), tr: tx('Turc'), sv: tx('Suédois'),
 };
 
 /** Code de langue à deux lettres (fre, fra, fr-FR, French → fr) ; vide si inconnu. */
@@ -50,12 +51,12 @@ export function trackLang(lang: string | undefined | null, title?: string | null
 
 export function langName(code: string): string {
   const c = normalizeLang(code);
-  return LANG_NAMES[c] ?? (c ? c.toUpperCase() : 'Inconnue');
+  return LANG_NAMES[c] ?? (c ? c.toUpperCase() : tx('Inconnue'));
 }
 
 const CODEC_LABEL: Record<string, string> = {
-  aac: 'AAC', ac3: 'Dolby Digital', eac3: 'Dolby Digital+', truehd: 'TrueHD', dts: 'DTS', 'dts-hd': 'DTS-HD', mp3: 'MP3', opus: 'Opus', vorbis: 'Vorbis', flac: 'FLAC',
-  subrip: 'SRT', srt: 'SRT', ass: 'ASS', ssa: 'SSA', webvtt: 'WebVTT', mov_text: 'Texte', hdmv_pgs_subtitle: 'PGS', dvd_subtitle: 'VobSub', dvb_subtitle: 'DVB',
+  aac: 'AAC', ac3: tx('Dolby Digital'), eac3: tx('Dolby Digital+'), truehd: 'TrueHD', dts: 'DTS', 'dts-hd': 'DTS-HD', mp3: 'MP3', opus: 'Opus', vorbis: tx('Vorbis'), flac: 'FLAC',
+  subrip: 'SRT', srt: 'SRT', ass: 'ASS', ssa: 'SSA', webvtt: 'WebVTT', mov_text: tx('Texte'), hdmv_pgs_subtitle: 'PGS', dvd_subtitle: 'VobSub', dvb_subtitle: 'DVB',
 };
 
 export function codecLabel(codec: string | undefined): string {
@@ -65,7 +66,7 @@ export function codecLabel(codec: string | undefined): string {
 
 function channelsLabel(n: number | undefined): string {
   if (!n || n <= 0) return '';
-  return ({ 1: 'Mono', 2: 'Stéréo', 6: '5.1', 7: '6.1', 8: '7.1' } as Record<number, string>)[n] ?? n + ' canaux';
+  return ({ 1: tx('Mono'), 2: tx('Stéréo'), 6: '5.1', 7: '6.1', 8: '7.1' } as Record<number, string>)[n] ?? n + ' canaux';
 }
 
 export interface AudioTrack {
@@ -107,7 +108,7 @@ export function audioTrackLabel(t: { lang: string; title?: string; codec?: strin
   const ln = t.lang ? langName(t.lang) : '';
   const title = (t.title ?? '').trim();
   // Le titre du fichier (« Français VFF ») est plus précis que le nom de langue seul.
-  const base = title && ln ? (stripAccents(title).includes(stripAccents(ln)) ? title : ln + ' (' + title + ')') : ln || title || 'Piste audio';
+  const base = title && ln ? (stripAccents(title).includes(stripAccents(ln)) ? title : ln + ' (' + title + ')') : ln || title || tx('Piste audio');
   const tech = [codecLabel(t.codec), channelsLabel(t.channels)].filter(Boolean).join(' ');
   return tech ? base + ' · ' + tech : base;
 }
@@ -142,7 +143,7 @@ export function parseProbe(probe: Probe | null): ProbeTracks {
     const forced = s.forced === true || /forc/i.test(s.title ?? s.label ?? '');
     return {
       id: 's' + (s.id ?? i), title: s.title ?? s.label ?? '', lang, codec, forced, origin: 'embedded', renderable: !IMAGE_SUBS.has(codec), engineId: s.id ?? i, selected: false,
-      label: (lang ? langName(lang) : s.title || 'Sous-titres') + (forced ? ' (forcés)' : '') + (codec ? ' · ' + codecLabel(codec) : ''),
+      label: (lang ? langName(lang) : s.title || tx('Sous-titres')) + (forced ? ' ' + tx('(forcés)') : '') + (codec ? ' · ' + codecLabel(codec) : ''),
     };
   });
   const d = probe.format?.duration;

@@ -2,6 +2,7 @@ import { Capacitor, CapacitorHttp, registerPlugin, type PluginListenerHandle } f
 import type { SourceStatus } from '../sources/info';
 import type { SkipSegment } from './skip';
 import { normalizeLang, trackLang, type AudioTrack, type SubtitleTrack } from './tracks';
+import { t as tr } from '../i18n';
 
 /* Pont vers le lecteur natif Android (plugin Capacitor `LaststreamPlayer`, libVLC). Comme pour mpv dans la coque Windows,
  * la lecture est déléguée : la session JS garde la progression, les segments et l'épisode suivant, et réagit aux évènements. */
@@ -180,7 +181,7 @@ export async function nativeFetch(url: string, init: RequestInit = {}, timeoutMs
   return new Response(text, { status: r.status, headers: { 'content-type': 'application/json' } });
 }
 
-const GROUP_LABEL: Record<string, string> = { '2160p': '4K', '1440p': '2K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: 'Autres' };
+const GROUP_LABEL: Record<string, string> = { '2160p': '4K', '1440p': '2K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: tr('Autres') };
 
 interface SourceLike {
   index: number; group: string; playable?: boolean; sizeLabel?: string; bitrateLabel?: string;
@@ -203,7 +204,7 @@ export function toNativeSources<V extends SourceLike>(views: readonly V[], curre
       label: line(v),
       detail: [v.sizeLabel, v.bitrateLabel, origins(v)].filter(Boolean).join(' · '),
       current: v.index === currentIndex,
-      group: GROUP_LABEL[v.group] ?? 'Autres',
+      group: GROUP_LABEL[v.group] ?? tr('Autres'),
       quality: v.quality || undefined,
       sourceType: v.sourceType || undefined,
       codec: v.codec || undefined,
@@ -244,7 +245,7 @@ export function toNativeEpisodes(
     });
   });
   return {
-    seasons: seasons.map((s) => ({ number: s.season, name: 'Saison ' + s.season })),
+    seasons: seasons.map((s) => ({ number: s.season, name: tr('Saison {season}', { season: s.season }) })),
     currentSeason: cur.season ?? seasons[0]?.season ?? 1,
     items,
   };

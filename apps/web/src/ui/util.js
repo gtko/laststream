@@ -1,5 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { userStore } from '../data/userStore';
+import { t } from '../i18n';
 
 export { escapeHtml as esc } from '../data/format';
 
@@ -13,7 +14,7 @@ export function rewriteKeepingFocus(el, html) {
       if (v !== null) { sel = '[' + attr + (v ? '="' + v.replace(/["\\]/g, '\\$&') + '"' : '') + ']'; break; }
     }
   }
-  // eslint-disable-next-line no-restricted-syntax -- données serveur échappées par esc dans chaque gabarit
+  // eslint-disable-next-line laststream/no-html-sink -- données serveur échappées par esc dans chaque gabarit
   el.innerHTML = html;
   const next = sel ? el.querySelector(sel) : null;
   if (next) next.focus({ preventScroll: true });
@@ -35,7 +36,7 @@ export const fmtDate = (s) => {
   return isNaN(d) ? s : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 export const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
-export const typeLabel = (it) => (it.type === 'tv' ? 'Série' : 'Film');
+export const typeLabel = (it) => (it.type === 'tv' ? t('Série') : t('Film'));
 export const cut = (list, n) => (list ? list.slice(0, n) : null);
 export function store(key, value) {
   try {

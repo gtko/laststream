@@ -7,11 +7,12 @@ import { socialAvailable } from './socialButton.js';
 import { SEEN_LABEL, avatarHTML, byName, shortName } from './socialFmt.js';
 import { SI } from './socialIcons.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Avatars affichés au plus par groupe : le rail défile, mais reste léger. */
 export const RAIL_MAX = 40;
 
-const GROUPS = [['watching', 'En train de regarder'], ['online', 'En ligne'], ['offline', 'Hors ligne']];
+const GROUPS = [['watching', tr('En train de regarder')], ['online', tr('En ligne')], ['offline', tr('Hors ligne')]];
 
 /** Répartit les amis acceptés et les profils du foyer, rangés comme des amis : regarde, en ligne, hors ligne (un profil une seule fois). */
 export function railGroups(s) {
@@ -39,7 +40,7 @@ export function railHTML(s) {
   const groups = GROUPS.filter(([id]) => g[id].length).map(([id, title]) =>
     '<hr class="fr-sep"><ul class="fr-group" role="group" aria-label="' + esc(title) + ' (' + g[id].length + ')">' +
     g[id].slice(0, RAIL_MAX).map((f) => itemHTML(f, id)).join('') + '</ul>').join('');
-  return '<button type="button" class="fr-add" data-fr-add aria-label="Ajouter un ami">' + SI.addUser + '</button>' + groups;
+  return '<button type="button" class="fr-add" data-fr-add aria-label="' + tr('Ajouter un ami') + '">' + SI.addUser + '</button>' + groups;
 }
 
 /** Ouvre la barre des amis (Social chargé au besoin) : la fiche de l'ami `pid`, ou la liste avec le champ d'ajout. */
@@ -68,7 +69,7 @@ function paintInto(el, html) {
   const focused = cur instanceof HTMLElement && el.contains(cur) ? cur : null;
   const pid = focused ? focused.dataset.frPid : undefined;
   written.set(el, html);
-  // eslint-disable-next-line no-restricted-syntax -- noms, pid et titres échappés par esc (railHTML)
+  // eslint-disable-next-line laststream/no-html-sink -- noms, pid et titres échappés par esc (railHTML)
   el.innerHTML = html;
   if (!el.dataset.wired) { el.dataset.wired = '1'; el.addEventListener('click', onClick); }
   if (focused) { // le rail se redessine : le focus clavier reste sur le même ami (ou sur l'ajout)

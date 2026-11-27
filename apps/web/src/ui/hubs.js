@@ -12,13 +12,14 @@ import { socialAvailable } from './socialButton.js';
 import { state } from './state.js';
 import { mainNavHTML, topActionsHTML } from './topnav.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 /** Suffixe des ids des menus de cette barre : la barre de l'accueil (masquée) garde les siens. */
 const BAR_ID = '-hub';
 
 /** Barre du haut : logo, menu principal (entrée de la page soulignée), recherche, profil. */
 const topbarHTML = (id) =>
-  '<header class="topbar">' + brand() + '<nav class="nav" aria-label="Principale">' + mainNavHTML({ current: id, idSuffix: BAR_ID, social: socialAvailable() }) + '</nav>' +
+  '<header class="topbar">' + brand() + '<nav class="nav" aria-label="' + t('Principale') + '">' + mainNavHTML({ current: id, idSuffix: BAR_ID, social: socialAvailable() }) + '</nav>' +
   topActionsHTML({ social: socialAvailable(), server: isServerMode(), owner: canAdmin(), idSuffix: BAR_ID }) + '</header>';
 
 /** Affiche la page `id` ('films', 'series' ou 'documentaires'). */
@@ -28,13 +29,13 @@ export async function showHub(id) {
   teardownFiche();
   const token = state.token;
   state.kind = 'hub';
-  document.title = hub.title + ' · Laststream';
+  document.title = t('{title} · Laststream', { title: hub.title });
   detailEl.innerHTML = '<div class="s-a hub-root">' + topbarHTML(id) +
     '<article class="svc-page hub-page" aria-labelledby="hub-title" aria-busy="true">' +
     '<h1 class="hub-title" id="hub-title" tabindex="-1">' + esc(hub.title) + '</h1>' +
     '<div class="rows hub-rows" id="hub-rows"></div>' +
     '<div class="hub-sk" aria-hidden="true"><span class="sk sk-line"></span><div class="row">' + '<span class="sk sk-card"></span>'.repeat(6) + '</div></div>' +
-    '<p class="sr-only" role="status">Chargement du catalogue…</p></article>' + tabbar('hub') + '</div>';
+    '<p class="sr-only" role="status">' + t('Chargement du catalogue…') + '</p></article>' + tabbar('hub') + '</div>';
   const h1 = detailEl.querySelector('#hub-title');
   if (h1) h1.focus({ preventScroll: true });
   const slot = detailEl.querySelector('#hub-rows');
@@ -44,5 +45,5 @@ export async function showHub(id) {
   if (!alive()) return;
   page.removeAttribute('aria-busy');
   page.querySelectorAll('.hub-sk, [role="status"]').forEach((el) => el.remove());
-  if (!shown) slot.innerHTML = '<p class="row-msg">Rien à voir ici pour le moment.</p>';
+  if (!shown) slot.innerHTML = '<p class="row-msg">' + t('Rien à voir ici pour le moment.') + '</p>';
 }

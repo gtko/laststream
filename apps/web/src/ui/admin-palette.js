@@ -11,6 +11,7 @@ import {
 } from '../data/adminPalette';
 import { confirmDialog } from './admin-dialog.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const ICON = '<svg class="adm-pal-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">' +
   '<circle cx="7" cy="7" r="5"></circle><path d="M11 11l3.5 3.5"></path></svg>';
@@ -43,9 +44,9 @@ const isEditable = (node) => {
 
 /** Message lisible d'une erreur : les codes techniques (snake_case) deviennent un message générique. */
 function messageOf(err) {
-  if (err && err.code === 'cancelled') return 'Action annulée.';
+  if (err && err.code === 'cancelled') return tr('Action annulée.');
   const m = err && typeof err.message === 'string' ? err.message : '';
-  return m && !/^[a-z_]+$/.test(m) ? m : 'Action impossible pour le moment.';
+  return m && !/^[a-z_]+$/.test(m) ? m : tr('Action impossible pour le moment.');
 }
 
 /** Recherche de comptes par défaut : listAccounts, limité à PALETTE_ACCOUNT_LIMIT. Le débounce est géré par la palette. */
@@ -68,15 +69,15 @@ export function defaultActions(ctx = {}) {
     const r = await getCaches('24h');
     return (r.caches || []).filter((c) => c.prefix).map((c) => ({
       id: 'purge:' + c.prefix,
-      label: 'Purger le cache « ' + c.prefix + ' »',
-      hint: 'Plateforme',
+      label: tr('Purger le cache « {prefix} »', { prefix: c.prefix }),
+      hint: tr('Plateforme'),
       sensitive: true,
       elevated: true,
-      done: 'Purge lancée.',
+      done: tr('Purge lancée.'),
       confirm: () => ({
-        title: 'Vider le cache « ' + c.prefix + ' »',
-        message: 'Toutes les entrées du cache <strong>' + esc(c.prefix) + '</strong> seront supprimées par lots, en arrière-plan. Les prochaines requêtes seront plus lentes le temps de le reconstituer.',
-        confirmLabel: 'Vider le cache',
+        title: tr('Vider le cache « {prefix} »', { prefix: c.prefix }),
+        message: tr('Toutes les entrées du cache <strong>{prefix}</strong> seront supprimées par lots, en arrière-plan. Les prochaines requêtes seront plus lentes le temps de le reconstituer.', { prefix: esc(c.prefix) }),
+        confirmLabel: tr('Vider le cache'),
         danger: true,
       }),
       run: () => purgeCache(c.prefix),
@@ -85,68 +86,68 @@ export function defaultActions(ctx = {}) {
   return [
     {
       id: 'maintenance-on',
-      label: 'Activer la maintenance',
-      hint: 'Système',
+      label: tr('Activer la maintenance'),
+      hint: tr('Système'),
       sensitive: true,
       elevated: true,
       confirm: () => ({
-        title: 'Activer la maintenance',
-        message: '<strong>Tout le serveur répondra « 503 »</strong> à tous les utilisateurs sauf à l’administration. Tu devras confirmer avec ton mot de passe.',
-        confirmLabel: 'Activer la maintenance',
+        title: tr('Activer la maintenance'),
+        message: tr('<strong>Tout le serveur répondra « 503 »</strong> à tous les utilisateurs sauf à l’administration. Tu devras confirmer avec ton mot de passe.'),
+        confirmLabel: tr('Activer la maintenance'),
         danger: true,
       }),
       run: setMaintenance(true),
-      done: 'Maintenance activée.',
+      done: tr('Maintenance activée.'),
     },
     {
       id: 'maintenance-off',
-      label: 'Désactiver la maintenance',
-      hint: 'Système',
+      label: tr('Désactiver la maintenance'),
+      hint: tr('Système'),
       sensitive: true,
       confirm: () => ({
-        title: 'Désactiver la maintenance',
-        message: 'Le serveur redevient accessible à tous les utilisateurs.',
-        confirmLabel: 'Désactiver la maintenance',
+        title: tr('Désactiver la maintenance'),
+        message: tr('Le serveur redevient accessible à tous les utilisateurs.'),
+        confirmLabel: tr('Désactiver la maintenance'),
       }),
       run: setMaintenance(false),
-      done: 'Maintenance désactivée.',
+      done: tr('Maintenance désactivée.'),
     },
     {
       id: 'purge',
-      label: 'Purger un préfixe de cache',
-      hint: 'Plateforme',
+      label: tr('Purger un préfixe de cache'),
+      hint: tr('Plateforme'),
       children: purgeItems,
-      pick: 'Tape le préfixe de cache à purger.',
+      pick: tr('Tape le préfixe de cache à purger.'),
     },
-    { id: 'announce', label: 'Publier une annonce', hint: 'Système', run: () => go('announcements'), done: '' },
+    { id: 'announce', label: tr('Publier une annonce'), hint: tr('Système'), run: () => go('announcements'), done: '' },
     {
       id: 'tv',
-      label: 'Relancer la tâche TV',
-      hint: 'Plateforme',
+      label: tr('Relancer la tâche TV'),
+      hint: tr('Plateforme'),
       sensitive: true,
       confirm: () => ({
-        title: 'Relancer la tâche TV',
-        message: 'La mise à jour des chaînes va être relancée maintenant, en dehors de son horaire habituel.',
-        confirmLabel: 'Relancer',
+        title: tr('Relancer la tâche TV'),
+        message: tr('La mise à jour des chaînes va être relancée maintenant, en dehors de son horaire habituel.'),
+        confirmLabel: tr('Relancer'),
       }),
       run: () => rerunTv(),
-      done: 'Relance demandée.',
+      done: tr('Relance demandée.'),
     },
     {
       id: 'suspend',
-      label: 'Suspendre',
-      hint: 'Action · mode élevé',
+      label: tr('Suspendre'),
+      hint: tr('Action · mode élevé'),
       sensitive: true,
       elevated: true,
       forAccount: true,
       confirm: (acc) => ({
-        title: 'Suspendre ' + acc.username,
-        message: '<strong>' + esc(acc.username) + '</strong> ne pourra plus se connecter et toutes ses sessions seront révoquées immédiatement. Tu pourras réactiver le compte.',
-        confirmLabel: 'Suspendre',
+        title: tr('Suspendre {username}', { username: acc.username }),
+        message: tr('<strong>{username}</strong> ne pourra plus se connecter et toutes ses sessions seront révoquées immédiatement. Tu pourras réactiver le compte.', { username: esc(acc.username) }),
+        confirmLabel: tr('Suspendre'),
         danger: true,
       }),
       run: (acc) => suspendAccount(acc.id),
-      done: 'Compte suspendu.',
+      done: tr('Compte suspendu.'),
     },
   ];
 }
@@ -187,16 +188,16 @@ export function openPalette(deps = {}) {
   let open = true;
 
   const layer = el('div', { class: 'adm-pal-layer' });
-  const dialog = el('div', { class: 'adm-pal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Palette de commandes' });
+  const dialog = el('div', { class: 'adm-pal', role: 'dialog', 'aria-modal': 'true', 'aria-label': tr('Palette de commandes') });
   const head = el('div', { class: 'adm-pal-head' });
   head.insertAdjacentHTML('beforeend', ICON);
   const input = el('input', {
-    class: 'adm-pal-input', type: 'text', role: 'combobox', 'aria-label': 'Commande', 'aria-autocomplete': 'list',
+    class: 'adm-pal-input', type: 'text', role: 'combobox', 'aria-label': tr('Commande'), 'aria-autocomplete': 'list',
     'aria-expanded': 'true', 'aria-controls': listId, autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false',
-    placeholder: 'Compte, section ou action…',
+    placeholder: tr('Compte, section ou action…'),
   });
-  head.append(input, el('kbd', { class: 'adm-pal-kbd' }, 'Échap'));
-  const list = el('div', { class: 'adm-pal-list', id: listId, role: 'listbox', 'aria-label': 'Résultats' });
+  head.append(input, el('kbd', { class: 'adm-pal-kbd' }, tr('Échap')));
+  const list = el('div', { class: 'adm-pal-list', id: listId, role: 'listbox', 'aria-label': tr('Résultats') });
   const empty = el('p', { class: 'adm-pal-empty', role: 'status' });
   dialog.append(head, list, empty);
   layer.append(dialog);
@@ -238,7 +239,7 @@ export function openPalette(deps = {}) {
     const accounts = [];
     const forAccount = d.actions.filter((a) => a.forAccount);
     for (const acc of st.accounts) {
-      accounts.push({ key: 'open:' + acc.id, label: acc.username, hint: 'Ouvrir la fiche', ref: { kind: 'open', account: acc } });
+      accounts.push({ key: 'open:' + acc.id, label: acc.username, hint: tr('Ouvrir la fiche'), ref: { kind: 'open', account: acc } });
       for (const a of forAccount) {
         accounts.push({
           key: a.id + ':' + acc.id, label: a.label + ' ' + acc.username, hint: a.hint || '',
@@ -288,9 +289,9 @@ export function openPalette(deps = {}) {
     setActive(st.active);
     let msg = '';
     if (!rows.length) {
-      if (st.searching) msg = 'Recherche…';
+      if (st.searching) msg = tr('Recherche…');
       else if (st.accountsError) msg = st.accountsError;
-      else msg = foldText(st.query) === '' ? 'Aucune commande disponible.' : 'Aucun résultat pour « ' + st.query.trim() + ' ».';
+      else msg = foldText(st.query) === '' ? tr('Aucune commande disponible.') : tr('Aucun résultat pour « {query} ».', { query: st.query.trim() });
     }
     empty.textContent = msg;
     empty.hidden = !msg;
@@ -318,7 +319,7 @@ export function openPalette(deps = {}) {
     try { p = Promise.resolve(d.searchAccounts(q)); } catch (err) { p = Promise.reject(err); }
     p.then(
       (found) => { if (id === searchId && open) { st.accounts = Array.isArray(found) ? found : []; st.accountsError = ''; } },
-      () => { if (id === searchId && open) { st.accounts = []; st.accountsError = 'Recherche de comptes impossible.'; } },
+      () => { if (id === searchId && open) { st.accounts = []; st.accountsError = tr('Recherche de comptes impossible.'); } },
     ).then(() => {
       if (id === searchId && open) { st.searching = false; render(); }
     });
@@ -345,7 +346,7 @@ export function openPalette(deps = {}) {
 
   async function runAction(action, target) {
     if (typeof action.run !== 'function') {
-      say(action.pick || 'Action indisponible pour le moment.');
+      say(action.pick || tr('Action indisponible pour le moment.'));
       return;
     }
     try {
@@ -357,7 +358,7 @@ export function openPalette(deps = {}) {
         if (action.elevated && !d.hasElevation()) await d.elevate();
       }
       await action.run(target);
-      if (action.done !== '') say(action.done || 'Action effectuée.');
+      if (action.done !== '') say(action.done || tr('Action effectuée.'));
     } catch (err) {
       say(messageOf(err));
     }

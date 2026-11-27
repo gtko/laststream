@@ -4,6 +4,7 @@
  * actions de l'invité (handlers). Aucune URL ni jeton ici. */
 import { LI } from '../player/icons.js';
 import { formatClock } from '../player/progress';
+import { t as tr } from '../i18n';
 
 /** Les commandes se masquent après ce délai sans mouvement (souris, doigt, clavier) ; la pause les garde affichées. */
 export const IDLE_MS = 3000;
@@ -15,19 +16,19 @@ const BUTTON_SEEK_S = 10;
 
 /** Lignes du panneau « i » : clé du champ, libellé. */
 const INFO_ROWS = [
-  ['rate', 'Débit'],
-  ['bytesHost', 'Reçu de l’hôte'],
-  ['bytesPeers', 'Reçu des pairs'],
-  ['videoCodec', 'Vidéo'],
-  ['audioCodec', 'Audio'],
-  ['bufferAhead', 'Tampon'],
+  ['rate', tr('Débit')],
+  ['bytesHost', tr('Reçu de l’hôte')],
+  ['bytesPeers', tr('Reçu des pairs')],
+  ['videoCodec', tr('Vidéo')],
+  ['audioCodec', tr('Audio')],
+  ['bufferAhead', tr('Tampon')],
 ];
 const DASH = '—';
 
 const isNum = (n) => typeof n === 'number' && Number.isFinite(n);
 const num = (n) => (isNum(n) ? n : 0);
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-const fmtMb = (bytes) => (isNum(bytes) ? (bytes / 1048576).toFixed(1).replace('.', ',') + ' Mo' : DASH);
+const fmtMb = (bytes) => (isNum(bytes) ? tr('{v} Mo', { v: (bytes / 1048576).toFixed(1).replace('.', ',') }) : DASH);
 const fmtRate = (bps) => (isNum(bps) ? fmtMb(bps) + '/s' : DASH);
 const fmtCodec = (name) => (typeof name === 'string' && name.trim() ? name.trim().toUpperCase() : DASH);
 const fmtSecs = (s) => (isNum(s) && s >= 0 ? Math.round(s) + ' s' : DASH);
@@ -50,25 +51,25 @@ function skeleton() {
     '<div class="gp-side"></div>' +
     '<div class="gp-wait" role="status" hidden><span class="lp-spin" aria-hidden="true"></span><span class="gp-wait-t"></span></div>' +
     '<span class="lp-spin gp-spin" aria-hidden="true" hidden></span>' +
-    '<button type="button" class="lp-btn gp-center" data-gp="center" aria-label="Lecture (Espace)" hidden>' + LI.play + '</button>' +
-    '<div class="gp-info" role="dialog" aria-label="Infos de lecture" hidden><h3>Infos de lecture</h3><dl>' + infoDl + '</dl></div>' +
+    '<button type="button" class="lp-btn gp-center" data-gp="center" aria-label="' + tr('Lecture (Espace)') + '" hidden>' + LI.play + '</button>' +
+    '<div class="gp-info" role="dialog" aria-label="' + tr('Infos de lecture') + '" hidden><h3>' + tr('Infos de lecture') + '</h3><dl>' + infoDl + '</dl></div>' +
     '<div class="gp-ui">' +
-      '<div class="lp-seek" data-gp="seek" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-disabled="true">' +
+      '<div class="lp-seek" data-gp="seek" role="slider" tabindex="0" aria-label="' + tr('Position') + '" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-disabled="true">' +
         '<div class="lp-track"><span class="lp-buf"></span><span class="lp-played"></span></div><span class="lp-thumb"></span>' +
         '<span class="lp-hover" hidden></span>' +
       '</div>' +
       '<div class="lp-row">' +
         '<div class="lp-grp">' +
-          iconBtn('play', LI.play, 'Lecture (Espace)') +
-          iconBtn('back', LI.back10, 'Reculer de 10 s', 'gp-skip') +
-          iconBtn('fwd', LI.fwd10, 'Avancer de 10 s', 'gp-skip') +
-          '<span class="lp-vol" data-gp="vol" hidden>' + iconBtn('mute', LI.vol, 'Couper le son (M)') +
-            '<input class="lp-vslider" data-gp="volume" type="range" min="0" max="100" step="5" value="100" aria-label="Volume"></span>' +
+          iconBtn('play', LI.play, tr('Lecture (Espace)')) +
+          iconBtn('back', LI.back10, tr('Reculer de 10 s'), 'gp-skip') +
+          iconBtn('fwd', LI.fwd10, tr('Avancer de 10 s'), 'gp-skip') +
+          '<span class="lp-vol" data-gp="vol" hidden>' + iconBtn('mute', LI.vol, tr('Couper le son (M)')) +
+            '<input class="lp-vslider" data-gp="volume" type="range" min="0" max="100" step="5" value="100" aria-label="' + tr('Volume') + '"></span>' +
           '<span class="lp-time gp-time" data-gp="time">0:00 / 0:00</span>' +
         '</div>' +
         '<div class="lp-grp gp-grp-r"><span class="gp-menu"></span>' +
-          iconBtn('info', LI.info, 'Infos de lecture', '', ' aria-expanded="false"') +
-          iconBtn('full', LI.full, 'Plein écran (F)') +
+          iconBtn('info', LI.info, tr('Infos de lecture'), '', ' aria-expanded="false"') +
+          iconBtn('full', LI.full, tr('Plein écran (F)')) +
         '</div>' +
       '</div>' +
     '</div>';
@@ -105,7 +106,7 @@ export function createGuestControls(stage, handlers = {}) {
   const root = doc.createElement('div');
   root.className = 'gp';
   root.setAttribute('role', 'group');
-  root.setAttribute('aria-label', 'Commandes du lecteur');
+  root.setAttribute('aria-label', tr('Commandes du lecteur'));
   root.innerHTML = skeleton();
   stage.appendChild(root);
   stage.classList.add('gp-host', 'is-ui');
@@ -137,14 +138,14 @@ export function createGuestControls(stage, handlers = {}) {
     el.seek.setAttribute('aria-valuetext', formatClock(st.position));
     el.seek.setAttribute('aria-disabled', String(!st.ready));
     el.time.textContent = formatClock(st.position) + ' / ' + formatClock(dur);
-    const label = st.playing ? 'Pause (Espace)' : 'Lecture (Espace)';
+    const label = st.playing ? tr('Pause (Espace)') : tr('Lecture (Espace)');
     el.play.innerHTML = st.playing ? LI.pause : LI.play;
     el.play.setAttribute('aria-label', label);
     el.play.dataset.tip = label;
     el.center.hidden = st.playing || !st.ready;
     for (const b of [el.play, el.back, el.fwd, el.center]) b.disabled = !st.ready;
     el.full.innerHTML = fsActive() ? LI.fullExit : LI.full;
-    el.full.setAttribute('aria-label', fsActive() ? 'Quitter le plein écran (F)' : 'Plein écran (F)');
+    el.full.setAttribute('aria-label', fsActive() ? tr('Quitter le plein écran (F)') : tr('Plein écran (F)'));
     el.full.hidden = !fsSupported;
     el.mute.innerHTML = vol.muted || vol.volume === 0 ? LI.mute : LI.vol;
     el.mute.classList.toggle('is-active', vol.muted);

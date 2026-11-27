@@ -12,6 +12,7 @@ import { MiniState } from './mini';
 import { getMemory } from './memory';
 import { nextEpisode } from './progress';
 import { langFromTitle, normalizeLang } from './tracks';
+import { t } from '../i18n';
 
 export const S = {
   ui: null,
@@ -92,11 +93,11 @@ export const hasEpisodesPanel = (p) => p.req.type === 'tv' && !p.addon;
 
 // ---------- Chargement d'une source ----------
 
-export const abortError = () => new Error('annulé');
+export const abortError = () => new Error(t('annulé'));
 
 /** Clé « titre + épisode » des sources lentes ou en échec (mémorisées 24 h). */
 export const badKey = (p) => p.req.key + ':' + (p.cur.season ?? '') + ':' + (p.cur.episode ?? '');
-export const describeView = (v) => [v.quality, v.sourceType, v.langs.map((l) => l.label).join('/'), v.provider].filter(Boolean).join(' · ') || 'Source';
+export const describeView = (v) => [v.quality, v.sourceType, v.langs.map((l) => l.label).join('/'), v.provider].filter(Boolean).join(' · ') || t('Source');
 
 // ---------- Notes de la timeline (Social v2) ----------
 

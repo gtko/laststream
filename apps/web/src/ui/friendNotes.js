@@ -11,11 +11,12 @@ import { playAt } from '../data/watchWith';
 import { ago, clock, episodeCode, posterBox, socialErrorMessage } from './socialFmt.js';
 import { launchPlayback } from './socialHooks.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const PAGE = 30;
 const TEXT_MAX = 140;
 const META_PARALLEL = 4;
-const HIDDEN_TEXT = 'Note masquée (Anti-spoiler) : tu n’as pas encore vu ce passage.';
+const HIDDEN_TEXT = tr('Note masquée (Anti-spoiler) : tu n’as pas encore vu ce passage.');
 
 const keyOf = (m) => m.type + ':' + m.tmdbId;
 
@@ -27,8 +28,8 @@ function kindOf(body, fallback) {
 }
 
 function editError(err) {
-  if (err instanceof UserApiError && err.code === 'invalid_body') return 'Note invalide : 1 à ' + TEXT_MAX + ' caractères, ou un seul emoji.';
-  if (err instanceof UserApiError && err.code === 'note_not_found') return 'Cette note n’existe plus.';
+  if (err instanceof UserApiError && err.code === 'invalid_body') return tr('Note invalide : 1 à {TEXT_MAX} caractères, ou un seul emoji.', { TEXT_MAX });
+  if (err instanceof UserApiError && err.code === 'note_not_found') return tr('Cette note n’existe plus.');
   return socialErrorMessage(err);
 }
 
@@ -62,7 +63,7 @@ export function createFriendNotes(opts) {
   // ---------- Rendu ----------
 
   function metaOf(n) {
-    return s.meta.get(keyOf(n.media)) || { title: 'Titre #' + n.media.tmdbId, poster: null };
+    return s.meta.get(keyOf(n.media)) || { title: tr('Titre #') + n.media.tmdbId, poster: null };
   }
 
   function whenText(n) {
@@ -79,12 +80,12 @@ export function createFriendNotes(opts) {
   function editHTML(n, e) {
     const id = esc(n.id);
     return '<form class="ss-note-edit" data-fn-form="edit" data-id="' + id + '">' +
-      '<label class="ss-sr" for="ss-ne-' + id + '">Modifier la note</label>' +
+      '<label class="ss-sr" for="ss-ne-' + id + '">' + tr('Modifier la note') + '</label>' +
       '<input class="ss-input" id="ss-ne-' + id + '" name="body" maxlength="' + TEXT_MAX + '" autocomplete="off" data-fk="ne-input" value="' + esc(e.value) + '"' +
       (e.err ? ' aria-invalid="true" aria-describedby="ss-nerr-' + id + '"' : '') + '>' +
       (e.err ? '<p class="ss-note-err" id="ss-nerr-' + id + '" role="alert">' + esc(e.err) + '</p>' : '') +
-      '<div class="ss-dlg-acts"><button type="button" class="ss-btn2 ss-sec" data-fn="edit-cancel" data-fk="ne-cancel">Annuler</button>' +
-      '<button type="submit" class="ss-btn2 ss-pri" data-fk="ne-save">Enregistrer</button></div></form>';
+      '<div class="ss-dlg-acts"><button type="button" class="ss-btn2 ss-sec" data-fn="edit-cancel" data-fk="ne-cancel">' + tr('Annuler') + '</button>' +
+      '<button type="submit" class="ss-btn2 ss-pri" data-fk="ne-save">' + tr('Enregistrer') + '</button></div></form>';
   }
 
   function noteHTML(n) {
@@ -99,14 +100,14 @@ export function createFriendNotes(opts) {
     const first = n.hidden || editing
       ? '<div class="ss-note-row">' + poster + text + '</div>'
       : '<button type="button" class="ss-note-open" data-fn="open" data-id="' + id + '" data-fk="no:' + id + '" aria-label="' +
-        esc('Ouvrir ' + title + ' à ' + clock(n.pos)) + '">' + poster + text + '<span class="ss-note-go" aria-hidden="true">Ouvrir ›</span></button>';
+        esc(tr('Ouvrir {title} à {pos}', { title, pos: clock(n.pos) })) + '">' + poster + text + '<span class="ss-note-go" aria-hidden="true">' + tr('Ouvrir ›') + '</span></button>';
     let more = '';
     if (editing) more = editHTML(n, editing);
     else if (n.author.pid === myPid() && !n.hidden) {
       more = '<div class="ss-note-acts"><button type="button" class="ss-btn2 ss-sec" data-fn="edit" data-id="' + id + '" data-fk="ne:' + id + '" aria-label="' +
-        esc('Modifier la note sur ' + title) + '">Modifier</button>' +
+        esc(tr('Modifier la note sur {title}', { title })) + '">' + tr('Modifier') + '</button>' +
         '<button type="button" class="ss-btn2 ss-sec" data-fn="ask-delete" data-id="' + id + '" data-fk="nd:' + id + '" aria-label="' +
-        esc('Supprimer la note sur ' + title) + '">Supprimer</button></div>';
+        esc(tr('Supprimer la note sur {title}', { title })) + '">' + tr('Supprimer') + '</button></div>';
     }
     return '<li class="ss-note">' + first + more + '</li>';
   }
@@ -115,20 +116,20 @@ export function createFriendNotes(opts) {
     const n = s.confirm ? find(s.confirm) : null;
     if (!n) return '';
     return '<div class="ss-dlg-bk"><div class="ss-dlg" role="alertdialog" aria-modal="true" aria-labelledby="ss-nd-t" aria-describedby="ss-nd-d">' +
-      '<h3 class="ss-dlg-t" id="ss-nd-t">Supprimer cette note ?</h3>' +
-      '<p class="ss-hint" id="ss-nd-d">' + (n.kind === 'emoji' ? esc(n.body) : '« ' + esc(n.body) + ' »') + ' disparaîtra de la timeline pour tes amis.</p>' +
-      '<div class="ss-dlg-acts"><button type="button" class="ss-btn2 ss-sec" data-fn="delete-cancel" data-fk="nd-cancel">Annuler</button>' +
-      '<button type="button" class="ss-btn2 ss-danger" data-fn="delete-ok" data-fk="nd-ok">Supprimer</button></div></div></div>';
+      '<h3 class="ss-dlg-t" id="ss-nd-t">' + tr('Supprimer cette note ?') + '</h3>' +
+      '<p class="ss-hint" id="ss-nd-d">' + (n.kind === 'emoji' ? esc(n.body) : '« ' + esc(n.body) + ' »') + ' ' + tr('disparaîtra de la timeline pour tes amis.') + '</p>' +
+      '<div class="ss-dlg-acts"><button type="button" class="ss-btn2 ss-sec" data-fn="delete-cancel" data-fk="nd-cancel">' + tr('Annuler') + '</button>' +
+      '<button type="button" class="ss-btn2 ss-danger" data-fn="delete-ok" data-fk="nd-ok">' + tr('Supprimer') + '</button></div></div></div>';
   }
 
   function html() {
-    if (s.status === 'loading' || s.status === 'idle') return '<p class="ss-empty" role="status">Chargement…</p>';
-    if (s.status === 'error') return '<p class="ss-empty" role="alert">Notes indisponibles. <button type="button" class="ss-link" data-fn="retry" data-fk="n-retry">Réessayer</button></p>';
-    if (s.status === 'hidden') return '<p class="ss-empty">Son historique n’est pas partagé.</p>';
-    if (!s.items.length) return '<p class="ss-empty">' + (s.pid === myPid() ? 'Tu n’as posé aucune note pour l’instant.' : 'Aucune note pour l’instant.') + '</p>';
+    if (s.status === 'loading' || s.status === 'idle') return '<p class="ss-empty" role="status">' + tr('Chargement…') + '</p>';
+    if (s.status === 'error') return '<p class="ss-empty" role="alert">' + tr('Notes indisponibles.') + ' <button type="button" class="ss-link" data-fn="retry" data-fk="n-retry">' + tr('Réessayer') + '</button></p>';
+    if (s.status === 'hidden') return '<p class="ss-empty">' + tr('Son historique n’est pas partagé.') + '</p>';
+    if (!s.items.length) return '<p class="ss-empty">' + (s.pid === myPid() ? tr('Tu n’as posé aucune note pour l’instant.') : tr('Aucune note pour l’instant.')) + '</p>';
     return '<ul class="ss-nlist">' + s.items.map(noteHTML).join('') + '</ul>' +
       (s.more ? '<button type="button" class="ss-btn2 ss-sec ss-notes-more" data-fn="more" data-fk="n-more"' + (s.moreBusy ? ' disabled' : '') + '>' +
-        (s.moreBusy ? 'Chargement…' : 'Voir plus') + '</button>' : '') + confirmHTML();
+        (s.moreBusy ? tr('Chargement…') : tr('Voir plus')) + '</button>' : '') + confirmHTML();
   }
 
   /** `focusFk` : élément à focaliser après le rendu (sinon celui qui l'était, retrouvé par data-fk). */
@@ -160,9 +161,9 @@ export function createFriendNotes(opts) {
         let entry;
         try {
           const r = await fetchServerMeta(m.type, m.tmdbId);
-          entry = { title: r.title || 'Titre #' + m.tmdbId, poster: r.poster || null };
+          entry = { title: r.title || tr('Titre #') + m.tmdbId, poster: r.poster || null };
         } catch {
-          entry = { title: 'Titre #' + m.tmdbId, poster: null };
+          entry = { title: tr('Titre #') + m.tmdbId, poster: null };
         }
         if (mine !== seq) return;
         s.meta.set(keyOf(m), entry);
@@ -229,7 +230,7 @@ export function createFriendNotes(opts) {
     if (!n || !e || e.id !== id) return;
     const body = value.trim();
     if (!body) {
-      s.editing = { id, value, err: 'Écris une note (' + TEXT_MAX + ' caractères au maximum).' };
+      s.editing = { id, value, err: tr('Écris une note ({TEXT_MAX} caractères au maximum).', { TEXT_MAX }) };
       render('ne-input');
       return;
     }
@@ -251,7 +252,7 @@ export function createFriendNotes(opts) {
       const cur = find(id);
       if (cur && r && r.note) { cur.kind = r.note.kind; cur.body = r.note.body; }
       render();
-      toast('Note modifiée');
+      toast(tr('Note modifiée'));
     } catch (err) {
       if (mine !== seq) return;
       const cur = find(id);
@@ -282,7 +283,7 @@ export function createFriendNotes(opts) {
       }
     }
     if (mine !== seq) return;
-    toast('Note supprimée');
+    toast(tr('Note supprimée'));
     if (opts.onDeleted) opts.onDeleted();
   }
 

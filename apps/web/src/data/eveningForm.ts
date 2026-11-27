@@ -1,5 +1,6 @@
 import type { CreateEveningBody } from './socialV3Api';
 import { UserApiError } from './userApi';
+import { t as tr } from '../i18n';
 
 /* Formulaire de soirée planifiée (LAST-199, lot B) : plafonds du serveur (docs/social.md, « Soirées planifiées »), validation,
  * corps de création et textes d'erreur. Pur : aucune lecture du DOM ni du réseau, l'instant courant est un paramètre. */
@@ -83,19 +84,19 @@ export function validateEvening(input: EveningFormInput, now: number, o: { when?
   const out: FormProblem[] = [];
   const title = input.title.trim();
   const len = [...title].length;
-  if (!len) out.push({ field: 'title', text: 'Donne un titre à ta soirée.' });
-  else if (len > TITLE_MAX) out.push({ field: 'title', text: 'Le titre fait ' + len + ' caractères : ' + TITLE_MAX + ' au maximum.' });
+  if (!len) out.push({ field: 'title', text: tr('Donne un titre à ta soirée.') });
+  else if (len > TITLE_MAX) out.push({ field: 'title', text: tr('Le titre fait {len} caractères : {TITLE_MAX} au maximum.', { len, TITLE_MAX }) });
   const at = parseLocal(input.date, input.time);
   if (o.when !== false) {
-    if (Number.isNaN(at)) out.push({ field: 'when', text: Number.isNaN(parseLocal(input.date, '12:00')) || !/^\d{2}:\d{2}$/.test(input.time) ? 'Choisis une date et une heure.' : 'Cette heure n’existe pas ce jour-là (changement d’heure) : choisis-en une autre.' });
-    else if (at < now + MIN_LEAD_MS) out.push({ field: 'when', text: 'La soirée doit commencer dans au moins une minute.' });
-    else if (at > now + MAX_LEAD_MS) out.push({ field: 'when', text: 'La soirée doit avoir lieu dans les 90 prochains jours.' });
+    if (Number.isNaN(at)) out.push({ field: 'when', text: Number.isNaN(parseLocal(input.date, '12:00')) || !/^\d{2}:\d{2}$/.test(input.time) ? tr('Choisis une date et une heure.') : tr('Cette heure n’existe pas ce jour-là (changement d’heure) : choisis-en une autre.') });
+    else if (at < now + MIN_LEAD_MS) out.push({ field: 'when', text: tr('La soirée doit commencer dans au moins une minute.') });
+    else if (at > now + MAX_LEAD_MS) out.push({ field: 'when', text: tr('La soirée doit avoir lieu dans les 90 prochains jours.') });
   }
-  if (new Set(input.guests).size > MAX_GUESTS) out.push({ field: 'guests', text: MAX_GUESTS + ' invités au maximum.' });
+  if (new Set(input.guests).size > MAX_GUESTS) out.push({ field: 'guests', text: tr('{MAX_GUESTS} invités au maximum.', { MAX_GUESTS }) });
   if (input.repeat !== 'once' && input.until) {
     const until = untilOf(input);
-    if (until === undefined) out.push({ field: 'until', text: 'La date de fin n’est pas valide.' });
-    else if (!Number.isNaN(at) && until < at) out.push({ field: 'until', text: 'La fin de la série doit tomber après la première soirée.' });
+    if (until === undefined) out.push({ field: 'until', text: tr('La date de fin n’est pas valide.') });
+    else if (!Number.isNaN(at) && until < at) out.push({ field: 'until', text: tr('La fin de la série doit tomber après la première soirée.') });
   }
   return out;
 }
@@ -109,17 +110,17 @@ export function buildCreateBody(input: EveningFormInput, tz: string): CreateEven
 }
 
 const ERRORS: Record<string, string> = {
-  not_friend: 'Un des invités n’est pas (ou plus) dans tes amis.',
-  too_many_evenings: 'Tu as déjà 10 soirées à venir (ou 5 séries) : annule-en une avant d’en planifier une autre.',
-  invalid_body: 'Le serveur a refusé ces informations : vérifie le titre, la date et les invités.',
-  evening_closed: 'Cette soirée est annulée ou a déjà commencé.',
-  evening_not_found: 'Cette soirée n’existe plus.',
-  not_host: 'Seul l’hôte peut faire cela.',
-  kid_profile: 'Les soirées ne sont pas disponibles sur un profil enfant.',
-  rate_limited: 'Trop de demandes : réessaie dans un instant.',
-  network: 'Serveur injoignable : vérifie ta connexion.',
+  not_friend: tr('Un des invités n’est pas (ou plus) dans tes amis.'),
+  too_many_evenings: tr('Tu as déjà 10 soirées à venir (ou 5 séries) : annule-en une avant d’en planifier une autre.'),
+  invalid_body: tr('Le serveur a refusé ces informations : vérifie le titre, la date et les invités.'),
+  evening_closed: tr('Cette soirée est annulée ou a déjà commencé.'),
+  evening_not_found: tr('Cette soirée n’existe plus.'),
+  not_host: tr('Seul l’hôte peut faire cela.'),
+  kid_profile: tr('Les soirées ne sont pas disponibles sur un profil enfant.'),
+  rate_limited: tr('Trop de demandes : réessaie dans un instant.'),
+  network: tr('Serveur injoignable : vérifie ta connexion.'),
 };
-export const EVENING_FALLBACK = 'Cette action est impossible pour le moment.';
+export const EVENING_FALLBACK = tr('Cette action est impossible pour le moment.');
 
 /** Texte humain d'une erreur du serveur des soirées ; un code inconnu donne le texte générique. */
 export function eveningErrorText(err: unknown): string {

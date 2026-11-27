@@ -5,6 +5,7 @@ import { resolveArt } from './socialArt.js';
 import {
   QUICK_REACTIONS, authorName, colorOf, hhmm, initialOf, messageText, pollShare, pollTotal, posLabel, STATUS_COLOR,
 } from './socialConvModel.js';
+import { t as tr } from '../i18n';
 
 
 export const SVG = {
@@ -115,16 +116,16 @@ function titleCard(m, mine, ctx) {
   card.append(posterEl(t.poster, t.title, 54, 80, t));
   const col = h('div', 'cvm-card-col');
   const who = authorName(m.from, ctx.info, ctx.s);
-  col.append(h('div', 'cvm-card-kicker', mine ? 'Tu recommandes' : (who === 'Toi' ? 'Recommandé' : who + ' te recommande')));
+  col.append(h('div', 'cvm-card-kicker', mine ? tr('Tu recommandes') : (who === 'Toi' ? tr('Recommandé') : tr('{who} te recommande', { who }))));
   col.append(h('div', 'cvm-card-title', t.title));
   const meta = [t.year ? String(t.year) : '', typeof t.rating === 'number' ? '★ ' + t.rating + ' de ' + who.replace(/^Toi$/, 'moi') : ''].filter(Boolean).join(' · ');
   if (meta) col.append(h('div', 'cvm-card-meta', meta));
   const row = h('div', 'cvm-card-btns');
-  const read = btn('cvm-btn is-accent', 'Lire', (e) => ctx.act.read(t, e.currentTarget));
-  read.setAttribute('aria-label', 'Lire ' + t.title);
+  const read = btn('cvm-btn is-accent', tr('Lire'), (e) => ctx.act.read(t, e.currentTarget));
+  read.setAttribute('aria-label', tr('Lire {title}', { title: t.title }));
   const inList = ctx.act.inList(t);
-  const add = btn('cvm-btn', inList ? '✓ Dans ma liste' : '+ Ma liste', (e) => ctx.act.addToList(t, e.currentTarget));
-  add.setAttribute('aria-label', (inList ? 'Dans ma liste : ' : 'Ajouter à ma liste : ') + t.title);
+  const add = btn('cvm-btn', inList ? tr('✓ Dans ma liste') : tr('+ Ma liste'), (e) => ctx.act.addToList(t, e.currentTarget));
+  add.setAttribute('aria-label', (inList ? tr('Dans ma liste :') + ' ' : tr('Ajouter à ma liste :') + ' ') + t.title);
   if (inList) add.disabled = true;
   row.append(read, add);
   col.append(row);
@@ -163,8 +164,8 @@ function momentCard(m, ctx) {
   card.append(shot);
   const body = h('div', 'cvm-moment-body');
   if (m.body) body.append(h('div', 'cvm-moment-text', m.body));
-  const range = typeof mo.end === 'number' && mo.end > mo.pos ? ' de ' + posLabel(mo.pos) + ' à ' + posLabel(mo.end) : ' à ' + posLabel(mo.pos);
-  const link = h('button', 'cvm-moment-link', mo.title + ' · ouvrir' + range, { type: 'button', title: 'Ouvrir ce passage dans le lecteur' });
+  const range = typeof mo.end === 'number' && mo.end > mo.pos ? ' ' + tr('de {pos} à {end}', { pos: posLabel(mo.pos), end: posLabel(mo.end) }) : ' à ' + posLabel(mo.pos);
+  const link = h('button', 'cvm-moment-link', tr('{title} · ouvrir', { title: mo.title }) + range, { type: 'button', title: tr('Ouvrir ce passage dans le lecteur') });
   link.addEventListener('click', (e) => ctx.act.playMoment(mo, e.currentTarget));
   body.append(link);
   card.append(body);
@@ -174,10 +175,10 @@ function momentCard(m, ctx) {
 function partyCard(m, ctx) {
   const card = h('div', 'cvm-card cvm-party');
   const col = h('div', 'cvm-card-col');
-  col.append(h('div', 'cvm-card-kicker', 'Invitation à une watch party'));
+  col.append(h('div', 'cvm-card-kicker', tr('Invitation à une watch party')));
   col.append(h('div', 'cvm-card-title', m.party.title));
   const row = h('div', 'cvm-card-btns');
-  row.append(btn('cvm-btn is-accent', 'Rejoindre', () => ctx.act.joinParty(m.party.partyId)));
+  row.append(btn('cvm-btn is-accent', tr('Rejoindre'), () => ctx.act.joinParty(m.party.partyId)));
   col.append(row);
   card.append(col);
   return card;
@@ -187,21 +188,21 @@ function partyCard(m, ctx) {
 function pollCard(m, ctx) {
   const p = m.poll;
   const card = h('div', 'cvm-card cvm-poll');
-  card.append(h('div', 'cvm-poll-q', 'Sondage · ' + p.question));
-  const list = h('div', 'cvm-poll-opts', null, { role: 'group', 'aria-label': 'Options du sondage' });
+  card.append(h('div', 'cvm-poll-q', tr('Sondage · {question}', { question: p.question })));
+  const list = h('div', 'cvm-poll-opts', null, { role: 'group', 'aria-label': tr('Options du sondage') });
   for (const o of p.options) {
     const b = h('button', 'cvm-opt' + (o.mine ? ' is-mine' : ''), null, { type: 'button', 'aria-pressed': o.mine ? 'true' : 'false' });
     const bar = h('span', 'cvm-opt-bar');
     bar.style.width = pollShare(p, o) + '%';
     b.append(bar, h('span', 'cvm-opt-label', o.label), h('span', 'cvm-opt-n', String(o.votes)));
-    b.setAttribute('aria-label', o.label + ', ' + o.votes + ' vote' + (o.votes > 1 ? 's' : '') + (o.mine ? ', ton choix' : ''));
+    b.setAttribute('aria-label', tr('{label}, {votes} vote', { label: o.label, votes: o.votes }) + (o.votes > 1 ? 's' : '') + (o.mine ? tr(', ton choix') : ''));
     if (p.closed) b.disabled = true;
     else b.addEventListener('click', () => ctx.act.vote(m, o.id));
     list.append(b);
   }
   card.append(list);
   const n = pollTotal(p);
-  card.append(h('div', 'cvm-poll-foot', (p.closed ? 'Sondage terminé · ' : '') + n + ' vote' + (n > 1 ? 's' : '')));
+  card.append(h('div', 'cvm-poll-foot', (p.closed ? tr('Sondage terminé ·') + ' ' : '') + n + ' vote' + (n > 1 ? 's' : '')));
   return card;
 }
 
@@ -212,7 +213,7 @@ function quoteEl(m, ctx) {
   if (q) {
     box.append(h('b', null, authorName(q.from, ctx.info, ctx.s)), h('span', null, messageText(q)));
   } else {
-    box.append(h('span', null, 'Message d’origine indisponible'));
+    box.append(h('span', null, tr('Message d’origine indisponible')));
   }
   return box;
 }
@@ -223,7 +224,7 @@ function reactionsEl(m, ctx) {
   for (const r of m.reactions) {
     if (!(r.count > 0)) continue;
     const b = h('button', 'cvm-rx' + (r.mine ? ' is-mine' : ''), r.emoji + ' ' + r.count, {
-      type: 'button', 'aria-pressed': r.mine ? 'true' : 'false', 'aria-label': 'Réaction ' + r.emoji + ', ' + r.count + (r.mine ? ', la tienne' : ''),
+      type: 'button', 'aria-pressed': r.mine ? 'true' : 'false', 'aria-label': tr('Réaction {emoji}, {count}', { emoji: r.emoji, count: r.count }) + (r.mine ? tr(', la tienne') : ''),
     });
     b.addEventListener('click', () => ctx.act.react(m, r.emoji));
     row.append(b);
@@ -233,14 +234,14 @@ function reactionsEl(m, ctx) {
 
 /** Barre de réactions (appui long ou survol) : emojis rapides, ↩ répondre, plus d'emojis. */
 function reactionBar(m, ctx) {
-  const bar = h('div', 'cvm-bar', null, { role: 'toolbar', 'aria-label': 'Réagir au message' });
+  const bar = h('div', 'cvm-bar', null, { role: 'toolbar', 'aria-label': tr('Réagir au message') });
   for (const r of QUICK_REACTIONS) {
     const mine = m.reactions.some((x) => x.emoji === r.emoji && x.mine);
-    const b = h('button', 'cvm-bar-em' + (mine ? ' is-on' : ''), r.emoji, { type: 'button', 'aria-label': 'Réagir : ' + r.name, 'aria-pressed': mine ? 'true' : 'false' });
+    const b = h('button', 'cvm-bar-em' + (mine ? ' is-on' : ''), r.emoji, { type: 'button', 'aria-label': tr('Réagir : {name}', { name: r.name }), 'aria-pressed': mine ? 'true' : 'false' });
     b.addEventListener('click', () => ctx.act.react(m, r.emoji));
     bar.append(b);
   }
-  bar.append(h('button', 'cvm-bar-em is-text', '↩', { type: 'button', 'aria-label': 'Répondre' }));
+  bar.append(h('button', 'cvm-bar-em is-text', '↩', { type: 'button', 'aria-label': tr('Répondre') }));
   bar.lastChild.addEventListener('click', () => ctx.act.reply(m));
   return bar;
 }
@@ -263,7 +264,7 @@ export function messageRow(m, ctx) {
     content.title = Number.isFinite(m.createdAt) ? hhmm(m.createdAt) : '';
     if (m.context) {
       const c = m.context;
-      const b = h('button', 'ss-chat-ctx', (typeof c.pos === 'number' ? 'à ' + posLabel(c.pos) + ' ' : '') + 'dans un titre', { type: 'button' });
+      const b = h('button', 'ss-chat-ctx', (typeof c.pos === 'number' ? 'à ' + posLabel(c.pos) + ' ' : '') + tr('dans un titre'), { type: 'button' });
       b.addEventListener('click', (e) => ctx.act.playMoment({ type: c.type, tmdbId: c.tmdbId, season: c.season, episode: c.episode, title: '', pos: c.pos || 0 }, e.currentTarget));
       content = h('div', 'cvm-bub-ctx');
       content.append(h('div', 'cvm-bub', m.body || ''), b);
@@ -274,8 +275,8 @@ export function messageRow(m, ctx) {
   if (!ctx.mobile) {
     const acts = h('div', 'cvm-acts');
     acts.append(
-      iconBtn('cvm-act', 'Réagir', SVG.smile.replace(/width="18" height="18"/, 'width="16" height="16"'), () => ctx.act.toggleBar(m)),
-      iconBtn('cvm-act', 'Répondre', SVG.reply, () => ctx.act.reply(m)),
+      iconBtn('cvm-act', tr('Réagir'), SVG.smile.replace(/width="18" height="18"/, 'width="16" height="16"'), () => ctx.act.toggleBar(m)),
+      iconBtn('cvm-act', tr('Répondre'), SVG.reply, () => ctx.act.reply(m)),
     );
     wrap.append(acts);
   }

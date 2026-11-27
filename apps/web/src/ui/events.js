@@ -26,6 +26,7 @@ import { state } from './state.js';
 import { allChannels, boxLocked, boxStatus, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, snapChannel, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
 import { handlePopState } from './backStack.js';
+import { t as tx } from '../i18n';
 
 /** Un seul déclenchement par bouton : un clic répété pendant l'action (ou juste après, pour une bascule) est ignoré (ODY-237). */
 const once = (kind, el, fn, opts = {}) => runOnce(elKey(kind, el), fn, opts);
@@ -101,7 +102,7 @@ document.addEventListener('click', (e) => {
     try { localStorage.removeItem('ls_tv_playlist'); } catch (_) { /* ignoré */ }
     tv.user = [];
     const msg = detailEl.querySelector('#tv-form-msg');
-    if (msg) msg.textContent = 'Playlist retirée.';
+    if (msg) msg.textContent = tx('Playlist retirée.');
     refreshCats();
     renderEpgGrid();
     return;
@@ -118,9 +119,9 @@ document.addEventListener('click', (e) => {
       hcl.setAttribute('aria-pressed', String(on));
       hcl.classList.toggle('is-on', on);
       hcl.innerHTML = on ? ICON.check : ICON.list;
-      hcl.dataset.tip = on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream';
-      hcl.setAttribute('aria-label', on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream');
-      toast(on ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque');
+      hcl.dataset.tip = on ? tx('Dans ta bibliothèque') : tx('Ajouter à ma bibliothèque Laststream');
+      hcl.setAttribute('aria-label', on ? tx('Dans ta bibliothèque (retirer)') : tx('Ajouter à ma bibliothèque Laststream'));
+      toast(on ? tx('Ajouté à ta bibliothèque') : tx('Retiré de ta bibliothèque'));
       renderLibrary();
     });
     return;
@@ -134,7 +135,7 @@ document.addEventListener('click', (e) => {
     const open = bioB.getAttribute('aria-expanded') !== 'true';
     if (bp) bp.classList.toggle('is-clamped', !open);
     bioB.setAttribute('aria-expanded', String(open));
-    bioB.textContent = open ? 'Réduire' : 'Lire la suite';
+    bioB.textContent = open ? tx('Réduire') : tx('Lire la suite');
     return;
   }
   const ppf = t.closest('[data-ppf]');
@@ -144,7 +145,7 @@ document.addEventListener('click', (e) => {
   const ph = t.closest('[data-photo]');
   if (ph) {
     e.preventDefault();
-    openModal('<h2 id="modal-title" class="sr-only">Photo</h2><img class="photo-big" src="' + esc(IMG('w780', ph.dataset.photo)) + '" alt="Photo agrandie">', ph, '');
+    openModal('<h2 id="modal-title" class="sr-only">' + tx('Photo') + '</h2><img class="photo-big" src="' + esc(IMG('w780', ph.dataset.photo)) + '" alt="' + tx('Photo agrandie') + '">', ph, '');
     return;
   }
   const svcT = t.closest('[data-service]');
@@ -179,9 +180,9 @@ document.addEventListener('click', (e) => {
       const on = i < 0;
       detailEl.querySelectorAll('[data-remind]').forEach((b) => {
         b.setAttribute('aria-pressed', String(on));
-        b.innerHTML = (on ? ICON.check : ICON.bell) + '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span>';
+        b.innerHTML = (on ? ICON.check : ICON.bell) + '<span class="f-play-label">' + (on ? tx('Rappel activé') : tx('Me rappeler')) + '</span>';
       });
-      toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
+      toast(on ? tx('On te rappellera la sortie') : tx('Rappel retiré'));
     });
     return;
   }
@@ -190,7 +191,7 @@ document.addEventListener('click', (e) => {
   const vid = t.closest('[data-vid]');
   if (vid) {
     e.preventDefault();
-    openVideo(vid.dataset.vid, vid.dataset.vtitle || 'Vidéo', vid, vid.dataset.vo === '1');
+    openVideo(vid.dataset.vid, vid.dataset.vtitle || tx('Vidéo'), vid, vid.dataset.vo === '1');
     return;
   }
   const fs = t.closest('[data-fsound]');
@@ -205,9 +206,9 @@ document.addEventListener('click', (e) => {
       lb.setAttribute('aria-pressed', String(on));
       lb.classList.toggle('is-on', on);
       lb.innerHTML = on ? ICON.check : ICON.list;
-      lb.dataset.tip = on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream';
-      lb.setAttribute('aria-label', on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream');
-      toast(on ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque');
+      lb.dataset.tip = on ? tx('Dans ta bibliothèque') : tx('Ajouter à ma bibliothèque Laststream');
+      lb.setAttribute('aria-label', on ? tx('Dans ta bibliothèque (retirer)') : tx('Ajouter à ma bibliothèque Laststream'));
+      toast(on ? tx('Ajouté à ta bibliothèque') : tx('Retiré de ta bibliothèque'));
     });
     return;
   }
@@ -223,8 +224,8 @@ document.addEventListener('click', (e) => {
       const on = i < 0;
       rk.setAttribute('aria-pressed', String(on));
       rk.innerHTML = on ? ICON.check : ICON.bell;
-      rk.dataset.tip = on ? 'Rappel activé' : 'Me rappeler';
-      toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
+      rk.dataset.tip = on ? tx('Rappel activé') : tx('Me rappeler');
+      toast(on ? tx('On te rappellera la sortie') : tx('Rappel retiré'));
     });
     return;
   }
@@ -242,7 +243,7 @@ document.addEventListener('click', (e) => {
   const calB = t.closest('[data-calnav]');
   if (calB) { e.preventDefault(); go('#/calendar', calB); return; }
   const setB = t.closest('[data-settings]');
-    if (setB) { e.preventDefault(); if (isKidProfile()) void import('./auth-ui.js').then((m) => m.leaveKidProfile(), () => toast('Impossible de charger cet écran, vérifiez la connexion.')); else go('#/settings', setB); return; }
+    if (setB) { e.preventDefault(); if (isKidProfile()) void import('./auth-ui.js').then((m) => m.leaveKidProfile(), () => toast(tx('Impossible de charger cet écran, vérifiez la connexion.'))); else go('#/settings', setB); return; }
     const libNav = t.closest('[data-libnav]');
   if (libNav) { e.preventDefault(); go('#/library', libNav); return; }
   const hidNav = t.closest('[data-hidden-nav]');
@@ -265,15 +266,15 @@ document.addEventListener('click', (e) => {
       return;
     }
     const url = location.href;
-    const done = () => toast('Lien copié');
+    const done = () => toast(tx('Lien copié'));
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(url).then(done, () => toast('Copie impossible'));
+      navigator.clipboard.writeText(url).then(done, () => toast(tx('Copie impossible')));
     } else {
       const ta = document.createElement('textarea');
       ta.value = url;
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand('copy'); done(); } catch (_) { toast('Copie impossible'); }
+      try { document.execCommand('copy'); done(); } catch (_) { toast(tx('Copie impossible')); }
       ta.remove();
     }
     return;

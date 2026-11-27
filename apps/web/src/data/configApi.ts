@@ -1,6 +1,7 @@
 import { LastAddonError } from './errors';
 import { requireBase } from './config';
 import { cachedRequest, requestJson } from './transport';
+import { t } from '../i18n';
 
 /**
  * Chiffre une configuration (POST {base}/config/encode). Avec `previous` (chaîne déjà enregistrée), le serveur garde
@@ -9,7 +10,7 @@ import { cachedRequest, requestJson } from './transport';
 export async function encodeConfig(config: Record<string, unknown>, previous?: string, base: string = requireBase()): Promise<string> {
   const body = previous ? { previous, config } : config;
   const res = await requestJson<{ config?: unknown }>(`${base}/config/encode`, { method: 'POST', body });
-  if (typeof res.config !== 'string') throw new LastAddonError('invalid_response', 'Réponse d’encodage invalide.');
+  if (typeof res.config !== 'string') throw new LastAddonError('invalid_response', t('Réponse d’encodage invalide.'));
   return res.config;
 }
 

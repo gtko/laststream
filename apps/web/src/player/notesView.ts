@@ -2,6 +2,7 @@ import type { Note } from '../data/socialV2Api';
 import { formatClock } from './progress';
 import { NOTE_MAX, QUICK_EMOJIS, noteBody, noteLength, safeColor, type NoteCluster, type NoteKind } from './notesTimeline';
 import { initialOf, isFuture } from './playbackSocial';
+import { t as tr } from '../i18n';
 
 /* Rendu DOM des notes du lecteur : marqueurs sur la barre (couche distincte des chapitres), aperçu au survol ou au focus,
  * puce brève à la lecture d'une note, popover « Réagir ici » (éventail d'emojis en version tactile). Tout texte
@@ -40,15 +41,15 @@ function cardOf(notes: readonly Note[], clock: string): HTMLElement {
     row.append(dotOf(n, 'lp-nc-d'), el('span', 'lp-nc-w', n.author.handle.name), el('span', 'lp-nc-t', n.body));
     box.append(row);
   }
-  if (notes.length > 3) box.append(el('span', 'lp-nc-m', '+ ' + (notes.length - 3) + ' autres'));
+  if (notes.length > 3) box.append(el('span', 'lp-nc-m', tr('+ {v} autres', { v: (notes.length - 3) })));
   return box;
 }
 
 /** Libellé accessible d'un marqueur : heure et contenu de la première note du groupe. */
 function labelOf(notes: readonly Note[], clock: string): string {
   const first = notes[0];
-  if (notes.length === 1) return 'Réaction de ' + first.author.handle.name + ' à ' + clock + ' : ' + first.body;
-  return notes.length + ' réactions à ' + clock + ', la première de ' + first.author.handle.name;
+  if (notes.length === 1) return tr('Réaction de {name} à {clock} : {body}', { name: first.author.handle.name, clock, body: first.body });
+  return tr('{length} réactions à {clock}, la première de {name}', { length: notes.length, clock, name: first.author.handle.name });
 }
 
 /** Gestion de ses propres notes : `mine` reconnaît les notes du profil actif ; `onMenu` ouvre le menu ancré au marqueur. */
@@ -74,14 +75,14 @@ function markerOf(c: NoteCluster, onSeek: (pos: number) => void, own?: OwnNotes)
   b.style.left = c.pct.toFixed(3) + '%';
   b.dataset.pos = String(first.pos);
   b.dataset.label = labelOf(c.notes, clock);
-  b.dataset.futureLabel = 'Réaction à venir à ' + clock;
+  b.dataset.futureLabel = tr('Réaction à venir à {clock}', { clock });
   b.setAttribute('aria-label', b.dataset.label);
   b.append(dotOf(first, 'lp-note-dot'));
   if (c.notes.length > 1) b.append(el('b', 'lp-note-n', String(c.notes.length)));
   b.append(cardOf(c.notes, clock));
   if (own && mine.length) {
     b.classList.add('is-mine');
-    b.dataset.label += mine.length > 1 ? ' — ' + mine.length + ' sont les tiennes : modifier ou supprimer' : ' — la tienne : modifier ou supprimer';
+    b.dataset.label += mine.length > 1 ? ' ' + tr('— {length} sont les tiennes : modifier ou supprimer', { length: mine.length }) : ' ' + tr('— la tienne : modifier ou supprimer');
     b.setAttribute('aria-label', b.dataset.label);
     b.setAttribute('aria-haspopup', 'dialog');
   }
@@ -148,7 +149,7 @@ export const MORE_EMOJIS: readonly string[] = ['👍', '😮', '😢', '🥹', '
 /** Éventail tactile : les cinq premiers emojis rapides (maquette Android). */
 export const FAN_COUNT = 5;
 const EMOJI_LABEL: Record<string, string> = {
-  '😂': 'rire', '🔥': 'feu', '😱': 'choc', '😭': 'larmes', '❤️': 'cœur', '👏': 'bravo', '🤯': 'esprit soufflé',
+  '😂': 'rire', '🔥': 'feu', '😱': 'choc', '😭': 'larmes', '❤️': tr('cœur'), '👏': 'bravo', '🤯': tr('esprit soufflé'),
 };
 
 interface ReactOpenOptions {
@@ -174,14 +175,14 @@ export interface ReactPanel {
 export function createReactPanel(opts: { onPick: (kind: NoteKind, body: string, also?: string) => void; onCancel: () => void }): ReactPanel {
   const root = el('div', 'lp-react');
   root.setAttribute('role', 'dialog');
-  root.setAttribute('aria-label', 'Réagir à ce moment');
+  root.setAttribute('aria-label', tr('Réagir à ce moment'));
   root.hidden = true;
 
   const title = el('p', 'lp-react-t');
   const clockEl = el('b', 'lp-react-clock');
   const left = el('span');
-  left.append('Réagir à ', clockEl);
-  title.append(left, el('span', 'lp-react-vis', 'Visible : amis'));
+  left.append(tr('Réagir à') + ' ', clockEl);
+  title.append(left, el('span', 'lp-react-vis', tr('Visible : amis')));
 
   let also: string | null = null;
   const alsoBox = el('input');
@@ -194,29 +195,29 @@ export function createReactPanel(opts: { onPick: (kind: NoteKind, body: string, 
   const emojiBtn = (e: string, cls: string): HTMLButtonElement => {
     const b = el('button', cls, e);
     b.type = 'button';
-    b.setAttribute('aria-label', 'Réagir avec ' + (EMOJI_LABEL[e] ? EMOJI_LABEL[e] + ' ' : '') + e);
+    b.setAttribute('aria-label', tr('Réagir avec') + ' ' + (EMOJI_LABEL[e] ? EMOJI_LABEL[e] + ' ' : '') + e);
     b.addEventListener('click', () => pick('emoji', e));
     return b;
   };
 
   const row = el('div', 'lp-react-emo');
   row.setAttribute('role', 'group');
-  row.setAttribute('aria-label', 'Réactions rapides');
+  row.setAttribute('aria-label', tr('Réactions rapides'));
   QUICK_EMOJIS.forEach((e, i) => row.append(emojiBtn(e, 'lp-react-e' + (i >= FAN_COUNT ? ' is-extra' : ''))));
   const more = el('button', 'lp-react-more', '+');
   more.type = 'button';
-  more.setAttribute('aria-label', 'Plus d’emojis');
+  more.setAttribute('aria-label', tr('Plus d’emojis'));
   more.setAttribute('aria-expanded', 'false');
   const moreRow = el('div', 'lp-react-emo lp-react-emo2');
   moreRow.hidden = true;
   moreRow.setAttribute('role', 'group');
-  moreRow.setAttribute('aria-label', 'Plus d’emojis');
+  moreRow.setAttribute('aria-label', tr('Plus d’emojis'));
   for (const e of MORE_EMOJIS) moreRow.append(emojiBtn(e, 'lp-react-e2'));
   more.addEventListener('click', () => {
     moreRow.hidden = !moreRow.hidden;
     more.setAttribute('aria-expanded', String(!moreRow.hidden));
   });
-  const noteBtn = el('button', 'lp-react-note', 'Note');
+  const noteBtn = el('button', 'lp-react-note', tr('Note'));
   noteBtn.type = 'button';
   row.append(more, noteBtn);
 
@@ -224,11 +225,11 @@ export function createReactPanel(opts: { onPick: (kind: NoteKind, body: string, 
   const input = el('input', 'lp-react-in');
   input.type = 'text';
   input.maxLength = NOTE_MAX;
-  input.placeholder = 'Une note à ce moment… (' + NOTE_MAX + ')';
+  input.placeholder = tr('Une note à ce moment… ({NOTE_MAX})', { NOTE_MAX });
   input.autocomplete = 'off';
-  input.setAttribute('aria-label', 'Note texte, ' + NOTE_MAX + ' caractères au plus');
+  input.setAttribute('aria-label', tr('Note texte, {NOTE_MAX} caractères au plus', { NOTE_MAX }));
   const count = el('span', 'lp-react-c', '0 / ' + NOTE_MAX);
-  const send = el('button', 'lp-react-send', 'Poser');
+  const send = el('button', 'lp-react-send', tr('Poser'));
   send.type = 'submit';
   send.disabled = true;
   form.append(input, count, send);
@@ -272,7 +273,7 @@ export function createReactPanel(opts: { onPick: (kind: NoteKind, body: string, 
       sync();
       also = o.friend ? o.friend.pid : null;
       alsoRow.hidden = !o.friend;
-      alsoTxt.textContent = o.friend ? 'Aussi envoyer à ' + o.friend.name + ' en message' : '';
+      alsoTxt.textContent = o.friend ? tr('Aussi envoyer à {name} en message', { name: o.friend.name }) : '';
       alsoBox.checked = true;
       moreRow.hidden = true;
       more.setAttribute('aria-expanded', 'false');
@@ -318,7 +319,7 @@ type MenuView = { kind: 'list' } | { kind: 'edit'; id: string } | { kind: 'confi
 export function createNoteMenu(opts: NoteMenuOptions): NoteMenu {
   const root = el('div', 'lp-notemenu');
   root.setAttribute('role', 'dialog');
-  root.setAttribute('aria-label', 'Mes réactions');
+  root.setAttribute('aria-label', tr('Mes réactions'));
   root.hidden = true;
 
   let notes: Note[] = [];
@@ -345,14 +346,14 @@ export function createNoteMenu(opts: NoteMenuOptions): NoteMenu {
   };
 
   function renderList(): void {
-    root.replaceChildren(el('p', 'lp-nm-t', notes.length > 1 ? 'Mes réactions' : 'Ma réaction'));
+    root.replaceChildren(el('p', 'lp-nm-t', notes.length > 1 ? tr('Mes réactions') : tr('Ma réaction')));
     for (const n of notes) {
       const row = el('div', 'lp-nm-row');
       const what = n.kind === 'emoji' ? n.body : '« ' + n.body + ' »';
       row.append(el('span', 'lp-nm-w' + (n.kind === 'emoji' ? ' is-emoji' : ''), n.body), el('span', 'lp-nm-c', clockOf(n)));
-      const edit = btn('lp-nm-b', 'Modifier', 'Modifier ma réaction ' + what + ' à ' + clockOf(n));
+      const edit = btn('lp-nm-b', tr('Modifier'), tr('Modifier ma réaction {what} à {n}', { what, n: clockOf(n) }));
       edit.addEventListener('click', () => { view = { kind: 'edit', id: n.id }; render(); });
-      const del = btn('lp-nm-b is-danger', 'Supprimer', 'Supprimer ma réaction ' + what + ' à ' + clockOf(n));
+      const del = btn('lp-nm-b is-danger', tr('Supprimer'), tr('Supprimer ma réaction {what} à {n}', { what, n: clockOf(n) }));
       del.addEventListener('click', () => { view = { kind: 'confirm', id: n.id }; render(); });
       row.append(edit, del);
       root.append(row);
@@ -362,13 +363,13 @@ export function createNoteMenu(opts: NoteMenuOptions): NoteMenu {
   }
 
   function renderConfirm(n: Note): void {
-    const cancel = btn('lp-nm-b', 'Annuler');
+    const cancel = btn('lp-nm-b', tr('Annuler'));
     cancel.addEventListener('click', () => { view = { kind: 'list' }; render(); });
-    const ok = btn('lp-nm-b is-danger', 'Confirmer', 'Confirmer la suppression de ma réaction à ' + clockOf(n));
+    const ok = btn('lp-nm-b is-danger', tr('Confirmer'), tr('Confirmer la suppression de ma réaction à {n}', { n: clockOf(n) }));
     ok.addEventListener('click', () => { opts.onDelete(n.id); dismiss(true); });
     const acts = el('div', 'lp-nm-acts');
     acts.append(cancel, ok);
-    const ask = el('p', 'lp-nm-t', 'Supprimer cette réaction ?');
+    const ask = el('p', 'lp-nm-t', tr('Supprimer cette réaction ?'));
     ask.setAttribute('role', 'alert');
     root.replaceChildren(ask, el('p', 'lp-nm-sub', n.body), acts);
     cancel.focus({ preventScroll: true });
@@ -378,23 +379,23 @@ export function createNoteMenu(opts: NoteMenuOptions): NoteMenu {
     let kind: NoteKind = n.kind;
     let body = n.body;
     const title = el('p', 'lp-nm-t');
-    title.append('Modifier la réaction à ', el('b', 'lp-nm-clock', clockOf(n)));
+    title.append(tr('Modifier la réaction à') + ' ', el('b', 'lp-nm-clock', clockOf(n)));
 
     const emojis = el('div', 'lp-react-emo');
     emojis.setAttribute('role', 'group');
-    emojis.setAttribute('aria-label', 'Choisir un emoji');
+    emojis.setAttribute('aria-label', tr('Choisir un emoji'));
     const form = el('form', 'lp-react-f');
     const input = el('input', 'lp-react-in');
     input.type = 'text';
     input.maxLength = NOTE_MAX;
     input.autocomplete = 'off';
     input.value = n.kind === 'text' ? n.body : '';
-    input.placeholder = 'Ou une note (' + NOTE_MAX + ')';
-    input.setAttribute('aria-label', 'Note texte, ' + NOTE_MAX + ' caractères au plus');
+    input.placeholder = tr('Ou une note ({NOTE_MAX})', { NOTE_MAX });
+    input.setAttribute('aria-label', tr('Note texte, {NOTE_MAX} caractères au plus', { NOTE_MAX }));
     const count = el('span', 'lp-react-c');
-    const save = el('button', 'lp-nm-b is-primary', 'Enregistrer');
+    const save = el('button', 'lp-nm-b is-primary', tr('Enregistrer'));
     save.type = 'submit';
-    const cancel = btn('lp-nm-b', 'Annuler');
+    const cancel = btn('lp-nm-b', tr('Annuler'));
     cancel.addEventListener('click', () => { view = { kind: 'list' }; render(); });
     const acts = el('div', 'lp-nm-acts');
     acts.append(cancel, save);
@@ -407,7 +408,7 @@ export function createNoteMenu(opts: NoteMenuOptions): NoteMenu {
       save.disabled = next === null || (kind === n.kind && next === n.body);
     };
     for (const e of QUICK_EMOJIS) {
-      const b = btn('lp-react-e', e, 'Choisir ' + (EMOJI_LABEL[e] ? EMOJI_LABEL[e] + ' ' : '') + e);
+      const b = btn('lp-react-e', e, tr('Choisir') + ' ' + (EMOJI_LABEL[e] ? EMOJI_LABEL[e] + ' ' : '') + e);
       b.addEventListener('click', () => { kind = 'emoji'; body = e; input.value = ''; sync(); });
       picks.push([e, b]);
       emojis.append(b);

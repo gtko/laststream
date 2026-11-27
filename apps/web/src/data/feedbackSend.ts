@@ -5,6 +5,7 @@ import { isAndroidApp } from './config';
 import { hasCommunity, isKidProfile } from './auth';
 import { type ContextSection, type FeedbackError, type FeedbackKind, type Value, forgetError, forumAvailable, providers, scrubFeedback as scrubText, sentryApi, slug } from './feedback';
 import { sendForumFeedback } from './forumApi';
+import { t } from '../i18n';
 
 const MAX_TEXT = 300;
 
@@ -44,7 +45,7 @@ export function collectContext(): Record<string, ContextSection> {
     application: cleanSection({
       Version: appVersion(),
       Plateforme: platformOf(),
-      Serveur: hasCommunity() ? 'service en ligne' : 'auto-hébergé',
+      Serveur: hasCommunity() ? t('service en ligne') : t('auto-hébergé'),
       Écran: screenOf(),
       Profil: isKidProfile() ? 'enfant' : 'principal',
     }),
@@ -84,7 +85,7 @@ export interface FeedbackResult {
   forumError?: string;
 }
 
-const KIND_LABEL: Record<FeedbackKind, string> = { bug: 'Bug', idea: 'Idée', other: 'Autre' };
+const KIND_LABEL: Record<FeedbackKind, string> = { bug: t('Bug'), idea: t('Idée'), other: t('Autre') };
 
 /** Texte du feedback : motif en tête, puis le message. */
 function composeMessage(input: Pick<FeedbackInput, 'reason' | 'message'>): string {
@@ -111,7 +112,7 @@ export async function sendFeedback(input: FeedbackInput): Promise<FeedbackResult
       associatedEventId = sentry.captureException(original, { tags, contexts, fingerprint: ['feedback', err.code], level: 'error' });
     }
     eventId = sentry.captureFeedback(
-      { message: message || '(sans message)', source: 'laststream-app', associatedEventId, tags: { ...tags, kind: KIND_LABEL[input.kind] } },
+      { message: message || t('(sans message)'), source: 'laststream-app', associatedEventId, tags: { ...tags, kind: KIND_LABEL[input.kind] } },
       { captureContext: { tags, contexts } },
     );
     result.sentry = true;
@@ -122,7 +123,7 @@ export async function sendFeedback(input: FeedbackInput): Promise<FeedbackResult
       const res = await sendForumFeedback({
         kind: input.kind === 'idea' ? 'idea' : 'bug',
         code: err && input.kind === 'bug' ? err.code : undefined,
-        title: err && input.kind === 'bug' ? err.title + (/\bhttp-(\d{3})$/.exec(err.code) ? ' · HTTP ' + /\bhttp-(\d{3})$/.exec(err.code)?.[1] : '') : undefined,
+        title: err && input.kind === 'bug' ? err.title + (/\bhttp-(\d{3})$/.exec(err.code) ? ' ' + t('· HTTP {v}', { v: /\bhttp-(\d{3})$/.exec(err.code)?.[1] }) : '') : undefined,
         message,
         version: /^[0-9A-Za-z.+-]{1,32}$/.test(appVersion()) ? appVersion() : undefined,
         platform: platformOf(),
@@ -142,7 +143,7 @@ export async function sendFeedback(input: FeedbackInput): Promise<FeedbackResult
 /** Lignes lisibles du contexte joint, pour la fenêtre (« Voir ce qui est joint »). */
 export function contextRows(ctx: Record<string, ContextSection>, err: FeedbackError | null): [string, string][] {
   const rows: [string, string][] = [];
-  if (err) rows.push(['Erreur', err.title + ' · ' + err.code]);
+  if (err) rows.push([t('Erreur'), err.title + ' · ' + err.code]);
   for (const section of Object.values(ctx)) for (const [k, v] of Object.entries(section)) rows.push([k, String(v)]);
   return rows;
 }

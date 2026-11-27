@@ -4,9 +4,10 @@
 import { catalogDisplay, addonKeyOf, pruneAddonCatalogs, readAddonCatalogs, setAddonCatalog } from '../data/addonCatalog';
 import { isDemo } from '../data/demo';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 /** Avertissement permanent : une clé de débrideur dans l’adresse serait appelée depuis cet appareil. */
-const WARNING = 'N’ajoute jamais ta clé de débrideur dans l’adresse d’un addon : elle serait appelée depuis cet appareil.';
+const WARNING = t('N’ajoute jamais ta clé de débrideur dans l’adresse d’un addon : elle serait appelée depuis cet appareil.');
 
 /** Vrai si le manifest lu déclare au moins un catalogue affichable (accueil ou recherche, pas masqué). */
 function hasShowable(manifestCatalogs) {
@@ -21,7 +22,7 @@ function entryOf(manifestUrl, info, home) {
   const m = info.manifestCatalogs;
   return {
     manifestUrl,
-    name: info.name || 'Addon',
+    name: info.name || t('Addon'),
     logo: info.logo || undefined,
     home,
     catalogs: m.catalogs,
@@ -44,13 +45,13 @@ export function catalogBoxHTML(manifestUrl, info) {
   const entry = storedEntry(manifestUrl);
   const on = !!entry;
   return '<div class="src-cats">' +
-    '<div class="set-row" data-nav><div class="set-row-t"><span class="set-row-l">Afficher les catalogues de cet addon</span>' +
-    '<span class="set-row-d">Ses catalogues sont lus depuis cet appareil et s’affichent dans l’app.</span></div>' +
-    '<div class="set-row-c"><button type="button" class="set-switch" role="switch" data-addon-cat aria-label="Afficher les catalogues de cet addon"' +
+    '<div class="set-row" data-nav><div class="set-row-t"><span class="set-row-l">' + t('Afficher les catalogues de cet addon') + '</span>' +
+    '<span class="set-row-d">' + t('Ses catalogues sont lus depuis cet appareil et s’affichent dans l’app.') + '</span></div>' +
+    '<div class="set-row-c"><button type="button" class="set-switch" role="switch" data-addon-cat aria-label="' + t('Afficher les catalogues de cet addon') + '"' +
     ' aria-checked="' + (on ? 'true' : 'false') + '"' + (isDemo() ? ' disabled' : '') + '><span class="set-switch-k"></span></button></div></div>' +
     '<div class="src-cats-home"' + (on ? '' : ' hidden') + '><label class="src-toggle"><input type="checkbox" data-addon-cat-home' +
-    (entry && entry.home ? ' checked' : '') + '> <span>Rangée à l’accueil</span></label>' +
-    '<span class="set-hint">Une rangée par catalogue sur l’accueil.</span></div>' +
+    (entry && entry.home ? ' checked' : '') + '> <span>' + t('Rangée à l’accueil') + '</span></label>' +
+    '<span class="set-hint">' + t('Une rangée par catalogue sur l’accueil.') + '</span></div>' +
     '<p class="set-hint src-cats-warn">' + esc(WARNING) + '</p></div>';
 }
 

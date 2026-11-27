@@ -1,5 +1,6 @@
 import { appFetch } from './crossFetch';
 import { tmdb } from './lt';
+import { t as tr } from '../i18n';
 
 /* Résolution de l'identifiant IMDb d'un titre TMDB (ODY-248). lastAddon cherche les sources par `tt…` : quand TMDB n'en donne
  * pas (`external_ids.imdb_id` vide), on retrouve l'identifiant par une chaîne de repli, toujours depuis l'appareil et sans
@@ -17,7 +18,7 @@ export interface ImdbResolution {
 }
 
 const SOURCE_LABEL: Record<ImdbSource, string> = {
-  tmdb: 'TMDB', wikidata: 'Wikidata', tvmaze: 'TVmaze (identifiant TVDB)', 'tvmaze-title': 'TVmaze (titre et année)',
+  tmdb: 'TMDB', wikidata: tr('Wikidata'), tvmaze: tr('TVmaze (identifiant TVDB)'), 'tvmaze-title': tr('TVmaze (titre et année)'),
 };
 
 const STORE_PREFIX = 'laststream.imdbId:';
@@ -195,5 +196,5 @@ export class NoImdbError extends Error {
 
 /** Texte du sélecteur de sources quand aucun identifiant n'a été trouvé : dit ce qui a été essayé. */
 export function noImdbMessage(tried: readonly string[]): string {
-  return `Aucun identifiant IMDb trouvé pour ce titre${tried.length ? ` (essayé : ${tried.join(', ')})` : ''} : impossible de chercher des sources. Réessaie plus tard.`;
+  return `${tr('Aucun identifiant IMDb trouvé pour ce titre{v} : impossible de chercher des sources. Réessaie plus tard.', { v: tried.length ? ` ${tr('(essayé : {v})', { v: tried.join(', ') })}` : '' })}`;
 }

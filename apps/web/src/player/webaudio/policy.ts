@@ -1,6 +1,7 @@
 import type { DecodeCap } from '../../relay/protocol';
 import { chooseCompatibleSource, fileCodecsOf, type ChoiceResult, type FileCodecs, type SourceLike } from '../../party/compat';
 import type { MediaCaps } from '../server';
+import { t } from '../../i18n';
 
 /* Son en lecture web sans serveur de streaming : qui joue la piste audio ?
  *  - `native`      : le navigateur la décode (rien à faire) ;
@@ -19,17 +20,17 @@ export type AudioPlan =
   /** La source ne livre pas l'en-tête (ou aucun son) en temps utile : image seule, avec une note. */
   | { mode: 'stalled'; note: string };
 
-export const NOTE_CORS = 'Son non disponible dans le navigateur pour cette source';
-export const NOTE_STALLED = 'Son indisponible : la source met trop de temps à répondre';
-export const NOTE_DTS = 'Son DTS non pris en charge par le navigateur';
+export const NOTE_CORS = t('Son non disponible dans le navigateur pour cette source');
+export const NOTE_STALLED = t('Son indisponible : la source met trop de temps à répondre');
+export const NOTE_DTS = t('Son DTS non pris en charge par le navigateur');
 /** Ajoutée à la note quand la source est Dolby et ne sonne pas dans le navigateur : Edge (Windows) et l'app décodent le son. */
-export const DOLBY_HINT = 'Pour le son Dolby, ouvre Laststream dans Microsoft Edge ou dans l’app Windows/Android';
+export const DOLBY_HINT = t('Pour le son Dolby, ouvre Laststream dans Microsoft Edge ou dans l’app Windows/Android');
 
-const LABEL: Record<string, string> = { dts: 'DTS', truehd: 'TrueHD', ac3: 'AC-3', eac3: 'E-AC-3', aac: 'AAC', opus: 'Opus', flac: 'FLAC', mp3: 'MP3', vorbis: 'Vorbis' };
+const LABEL: Record<string, string> = { dts: 'DTS', truehd: 'TrueHD', ac3: 'AC-3', eac3: 'E-AC-3', aac: 'AAC', opus: 'Opus', flac: 'FLAC', mp3: 'MP3', vorbis: t('Vorbis') };
 const label = (codec: string): string => LABEL[codec] ?? codec.toUpperCase();
 
 function unsupportedNote(codec: string): string {
-  return codec === 'dts' ? NOTE_DTS : 'Son ' + label(codec) + ' non pris en charge par le navigateur';
+  return codec === 'dts' ? NOTE_DTS : t('Son {codec} non pris en charge par le navigateur', { codec: label(codec) });
 }
 
 /** Codecs que mediabunny ne décode pas et que l'app n'essaie même pas. */

@@ -1,5 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { DAY_MS } from './constants.js';
+import { t } from '../i18n';
 
 export const todayStr = () => {
   const d = new Date();
@@ -15,10 +16,10 @@ export const fmtShort = (iso) => {
 export function countdown(iso) {
   const n = dayDiff(iso);
   if (n < 0) return '';
-  if (n === 0) return 'aujourd’hui';
+  if (n === 0) return t('aujourd’hui');
   if (n === 1) return 'demain';
-  if (n < 61) return 'dans ' + n + ' jours';
-  return 'dans ' + Math.round(n / 30) + ' mois';
+  if (n < 61) return t('dans {n} jours', { n });
+  return t('dans {v} mois', { v: Math.round(n / 30) });
 }
 
 /** Titre déjà sorti d'après sa date (film : sortie, série : première diffusion). Sans date : non sorti. */

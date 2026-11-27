@@ -15,6 +15,7 @@ import { MOBILE_MAX } from './socialConvModel.js';
 import { sendErrorMessage } from './socialChat.js';
 import { qrSvg } from './qrcode.js';
 import * as M from './shareModel.js';
+import { t as tr } from '../i18n';
 
 let toastFn = () => undefined;
 /** Branche le message bref de l'application. À appeler une fois depuis main.js. */
@@ -62,7 +63,7 @@ async function copyText(text) {
 async function nativeShare({ title, text, url }) {
   const plug = Capacitor && Capacitor.Plugins ? Capacitor.Plugins.Share : null;
   if (plug && typeof plug.share === 'function') {
-    try { await plug.share({ title, text, url, dialogTitle: 'Partager' }); return 'native'; } catch (e) {
+    try { await plug.share({ title, text, url, dialogTitle: tr('Partager') }); return 'native'; } catch (e) {
       if (e && /cancel|abort/i.test(String(e.message || e.name || ''))) return 'cancelled';
     }
   }
@@ -85,9 +86,9 @@ const openExternal = (href) => {
 const isMobile = () => typeof window !== 'undefined' && (window.matchMedia ? window.matchMedia('(max-width: ' + MOBILE_MAX + 'px)').matches : window.innerWidth <= MOBILE_MAX);
 
 function linkErrorText(e) {
-  if (e && e.status === 429) return 'Trop de liens créés d’un coup : réessaie dans une minute.';
-  if (e && (e.status === 0 || e.code === 'network')) return 'Serveur injoignable pour le moment.';
-  return 'Impossible de créer le lien pour le moment.';
+  if (e && e.status === 429) return tr('Trop de liens créés d’un coup : réessaie dans une minute.');
+  if (e && (e.status === 0 || e.code === 'network')) return tr('Serveur injoignable pour le moment.');
+  return tr('Impossible de créer le lien pour le moment.');
 }
 
 let current = null;
@@ -200,7 +201,7 @@ export function openShareDialog(opts) {
   function friendBtn(t, size) {
     const on = st.keys.includes(t.key);
     const b = h('button', 'shd-fr' + (on ? ' is-on' : ''), null, { type: 'button', 'aria-pressed': on ? 'true' : 'false', 'data-key': t.key });
-    b.setAttribute('aria-label', (t.kind === 'group' ? 'Groupe ' : '') + t.name + (on ? ', choisi' : ''));
+    b.setAttribute('aria-label', (t.kind === 'group' ? tr('Groupe') + ' ' : '') + t.name + (on ? tr(', choisi') : ''));
     const av = h('span', 'shd-avwrap');
     if (t.kind === 'group') {
       const g = h('span', 'shd-gr', Array.from(t.name).slice(0, 4).join('').toUpperCase(), { 'aria-hidden': 'true' });
@@ -229,8 +230,8 @@ export function openShareDialog(opts) {
     const list = M.filterTargets(all, st.q);
     const focusKey = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.key : '';
     ui.grid.textContent = '';
-    if (!all.length) ui.grid.append(h('p', 'shd-empty', 'Tu n’as pas encore d’ami. Ajoute-en depuis la barre des amis.'));
-    else if (!list.length) ui.grid.append(h('p', 'shd-empty', 'Aucun ami ni groupe ne correspond.'));
+    if (!all.length) ui.grid.append(h('p', 'shd-empty', tr('Tu n’as pas encore d’ami. Ajoute-en depuis la barre des amis.')));
+    else if (!list.length) ui.grid.append(h('p', 'shd-empty', tr('Aucun ami ni groupe ne correspond.')));
     for (const t of list) ui.grid.append(friendBtn(t, mobile ? 56 : 52));
     if (focusKey) { const f = ui.grid.querySelector('[data-key="' + focusKey + '"]'); if (f) f.focus(); }
   }
@@ -240,20 +241,20 @@ export function openShareDialog(opts) {
   /** Début et fin de ce qui part selon le mode (moment : `pos` seul ; extrait : la plage choisie). */
   const posNow = () => (st.mode === 'clip' ? st.clipStart : st.pos);
   const endNow = () => (st.mode === 'clip' ? st.clipEnd : undefined);
-  const clipSub = () => 'Extrait · ' + M.posLabel(st.clipEnd - st.clipStart) + ' · de ' + M.posLabel(st.clipStart) + ' à ' + M.posLabel(st.clipEnd);
+  const clipSub = () => tr('Extrait · {v} · de {clipStart} à {clipEnd}', { v: M.posLabel(st.clipEnd - st.clipStart), clipStart: M.posLabel(st.clipStart), clipEnd: M.posLabel(st.clipEnd) });
   const subLine = () => {
     if (!st.media) return '';
     if (st.mode === 'clip') return clipSub();
-    if (st.mode === 'moment') return 'Tu en es à ' + M.posLabel(st.pos);
-    return st.media.type === 'series' ? 'Série' : 'Film';
+    if (st.mode === 'moment') return tr('Tu en es à {pos}', { pos: M.posLabel(st.pos) });
+    return st.media.type === 'series' ? tr('Série') : tr('Film');
   };
 
   function paintHeader() {
     if (!ui.titleEl) return;
     const t = st.media ? st.media.title : '';
-    ui.titleEl.textContent = 'Partager ' + t;
-    ui.sub.textContent = mobile ? (st.mode === 'moment' ? 'Ce moment · ' + M.posLabel(st.pos) : subLine()) : subLine();
-    box.setAttribute('aria-label', 'Partager ' + t);
+    ui.titleEl.textContent = tr('Partager {t}', { t });
+    ui.sub.textContent = mobile ? (st.mode === 'moment' ? tr('Ce moment · {pos}', { pos: M.posLabel(st.pos) }) : subLine()) : subLine();
+    box.setAttribute('aria-label', tr('Partager {t}', { t }));
     box.removeAttribute('aria-labelledby');
   }
 
@@ -288,18 +289,18 @@ export function openShareDialog(opts) {
     };
     if (canMoment()) {
       const step = h('span', 'shd-step');
-      const minus = h('button', 'shd-step-b', '−10 s', { type: 'button', 'aria-label': 'Reculer de 10 secondes' });
-      const plus = h('button', 'shd-step-b', '+10 s', { type: 'button', 'aria-label': 'Avancer de 10 secondes' });
+      const minus = h('button', 'shd-step-b', '−10 s', { type: 'button', 'aria-label': tr('Reculer de 10 secondes') });
+      const plus = h('button', 'shd-step-b', '+10 s', { type: 'button', 'aria-label': tr('Avancer de 10 secondes') });
       const val = h('b', 'shd-step-v', M.posLabel(st.pos), { 'aria-live': 'polite' });
       minus.addEventListener('click', () => { st.pos = M.shiftPos(st.pos, -M.MOMENT_STEP); st.mode = 'moment'; paintOpts(); paintHeader(); focusStep(0); });
       plus.addEventListener('click', () => { st.pos = M.shiftPos(st.pos, M.MOMENT_STEP); st.mode = 'moment'; paintOpts(); paintHeader(); focusStep(1); });
       step.append(minus, ' · ', val, ' · ', plus);
-      ui.opts.append(mk('moment', 'Ce moment précis', 'S’ouvre chez eux à ' + M.posLabel(st.pos), step));
+      ui.opts.append(mk('moment', tr('Ce moment précis'), tr('S’ouvre chez eux à {pos}', { pos: M.posLabel(st.pos) }), step));
     }
-    if (canClip()) ui.opts.append(mk('clip', 'Un extrait', 'Choisis un début et une fin (5 min max)', st.mode === 'clip' ? buildClip() : null));
-    ui.opts.append(mk('title', 'Le titre', canMoment() ? 'Depuis le début' : 'La fiche, avec ton conseil'));
+    if (canClip()) ui.opts.append(mk('clip', tr('Un extrait'), tr('Choisis un début et une fin (5 min max)'), st.mode === 'clip' ? buildClip() : null));
+    ui.opts.append(mk('title', tr('Le titre'), canMoment() ? tr('Depuis le début') : tr('La fiche, avec ton conseil')));
     ui.opts.setAttribute('role', 'radiogroup');
-    ui.opts.setAttribute('aria-label', 'Ce que tu partages');
+    ui.opts.setAttribute('aria-label', tr('Ce que tu partages'));
     paintClip();
   }
 
@@ -311,8 +312,8 @@ export function openShareDialog(opts) {
 
   /** Mobile avec extrait possible : trois puces « Ce moment / Un extrait / Le titre », l'éditeur d'extrait en dessous. */
   function paintChips() {
-    const chips = h('div', 'shd-chips shd-modes', null, { role: 'radiogroup', 'aria-label': 'Ce que tu partages' });
-    for (const [id, label] of [['moment', 'Ce moment'], ['clip', 'Un extrait'], ['title', 'Le titre']]) {
+    const chips = h('div', 'shd-chips shd-modes', null, { role: 'radiogroup', 'aria-label': tr('Ce que tu partages') });
+    for (const [id, label] of [['moment', tr('Ce moment')], ['clip', tr('Un extrait')], ['title', tr('Le titre')]]) {
       const on = st.mode === id;
       const b = h('button', 'shd-chip' + (on ? ' is-done' : ''), label, { type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', 'data-opt': id });
       b.addEventListener('click', () => pickMode(id));
@@ -390,8 +391,8 @@ export function openShareDialog(opts) {
       drags[which] = begin;
       return el;
     };
-    c.hs = handle('start', 'Début de l’extrait');
-    c.he = handle('end', 'Fin de l’extrait');
+    c.hs = handle('start', tr('Début de l’extrait'));
+    c.he = handle('end', tr('Fin de l’extrait'));
     // Clic sur la frise : la poignée la plus proche saute là et se laisse glisser.
     bar.addEventListener('pointerdown', (e) => {
       if (e.target !== bar) return;
@@ -403,7 +404,7 @@ export function openShareDialog(opts) {
     });
     bar.append(c.shadeL, c.shadeR, c.frame, c.head, c.hs, c.he);
     const scale = h('div', 'shd-clip-scale');
-    scale.append(h('span', null, '0:00'), h('span', null, 'Durée du titre ' + M.posLabel(st.duration)));
+    scale.append(h('span', null, '0:00'), h('span', null, tr('Durée du titre {duration}', { duration: M.posLabel(st.duration) })));
     wrap.append(bar, scale);
 
     const fields = h('div', 'shd-clip-fields');
@@ -411,7 +412,7 @@ export function openShareDialog(opts) {
       const f = h('div', 'shd-clip-f');
       const id = 'shd-clip-' + which;
       const inp = h('input', 'shd-clip-fi', null, { id, type: 'text', autocomplete: 'off', spellcheck: 'false', 'aria-label': label });
-      const stepBtn = (d) => h('button', 'shd-clip-fb', d < 0 ? '−' : '+', { type: 'button', 'aria-label': label + ' : ' + (d < 0 ? 'reculer' : 'avancer') + ' d’une seconde' });
+      const stepBtn = (d) => h('button', 'shd-clip-fb', d < 0 ? '−' : '+', { type: 'button', 'aria-label': tr('{label} : {v} d’une seconde', { label, v: (d < 0 ? 'reculer' : 'avancer') }) });
       const minus = stepBtn(-1);
       const plus = stepBtn(1);
       const cur = () => (which === 'start' ? st.clipStart : st.clipEnd);
@@ -419,7 +420,7 @@ export function openShareDialog(opts) {
       plus.addEventListener('click', () => setClip(which, cur() + 1));
       inp.addEventListener('change', () => {
         const t = M.parseTimecode(inp.value);
-        if (t === null) { paintClip(); say('Temps illisible : écris par exemple 41:12 ou 1:02:03.', 'error'); return; }
+        if (t === null) { paintClip(); say(tr('Temps illisible : écris par exemple 41:12 ou 1:02:03.'), 'error'); return; }
         say('');
         setClip(which, t);
       });
@@ -430,13 +431,13 @@ export function openShareDialog(opts) {
       c['in_' + which] = inp;
       return f;
     };
-    fields.append(field('start', 'Début'), field('end', 'Fin'));
+    fields.append(field('start', tr('Début')), field('end', tr('Fin')));
     c.pill = h('span', 'shd-clip-pill');
     fields.append(c.pill);
     wrap.append(fields);
 
     const acts = h('div', 'shd-clip-acts');
-    const now = h('button', 'shd-btn is-sec is-s', 'Prendre la position actuelle', { type: 'button' });
+    const now = h('button', 'shd-btn is-sec is-s', tr('Prendre la position actuelle'), { type: 'button' });
     now.addEventListener('click', () => {
       const len = st.clipEnd - st.clipStart;
       const from = st.initPos || 0;
@@ -476,7 +477,7 @@ export function openShareDialog(opts) {
     setH(c.he, st.clipEnd, st.clipStart + M.CLIP_MIN_SEC, d);
     c.in_start.value = M.posLabel(st.clipStart);
     c.in_end.value = M.posLabel(st.clipEnd);
-    c.pill.textContent = 'Durée ' + M.posLabel(st.clipEnd - st.clipStart);
+    c.pill.textContent = tr('Durée {v}', { v: M.posLabel(st.clipEnd - st.clipStart) });
   }
   function focusStep(i) { const b = ui.opts && ui.opts.querySelectorAll('.shd-step-b')[i]; if (b) b.focus(); }
 
@@ -484,7 +485,7 @@ export function openShareDialog(opts) {
     const t = targets();
     const none = st.keys.length === 0;
     const label = M.sendLabel(t, st.keys, st.mode === 'clip');
-    if (ui.send) { ui.send.textContent = mobile ? 'Envoyer' : label; ui.send.disabled = none || st.busy; ui.send.setAttribute('aria-label', label); }
+    if (ui.send) { ui.send.textContent = mobile ? tr('Envoyer') : label; ui.send.disabled = none || st.busy; ui.send.setAttribute('aria-label', label); }
     if (ui.party) ui.party.disabled = none;
     if (ui.partyRow) ui.partyRow.disabled = none;
   }
@@ -493,7 +494,7 @@ export function openShareDialog(opts) {
   async function send() {
     if (st.busy || !st.keys.length) return;
     const input = M.buildShareInput({ keys: st.keys, media: st.media, mode: st.mode, pos: posNow(), end: endNow(), body: st.body });
-    if (st.mode === 'clip' && !M.canShareClip(st.media, st.clipStart, st.clipEnd, st.duration)) { say('Choisis un extrait de 1 s à 5 min.', 'error'); return; }
+    if (st.mode === 'clip' && !M.canShareClip(st.media, st.clipStart, st.clipEnd, st.duration)) { say(tr('Choisis un extrait de 1 s à 5 min.'), 'error'); return; }
     if (!input) return;
     st.busy = true;
     paintSend();
@@ -501,7 +502,7 @@ export function openShareDialog(opts) {
     try {
       await store.share(input);
       const n = st.keys.length;
-      toastFn(n === 1 ? 'Envoyé' : 'Envoyé à ' + n + ' destinataires');
+      toastFn(n === 1 ? tr('Envoyé') : tr('Envoyé à {n} destinataires', { n }));
       close();
     } catch (e) {
       st.busy = false;
@@ -514,7 +515,7 @@ export function openShareDialog(opts) {
     const pids = M.friendPids(targets(), st.keys, mePid());
     if (!pids.length) return;
     pids.forEach((pid) => { try { inviteToParty(pid); } catch { /* invitation suivante */ } });
-    toastFn(pids.length === 1 ? 'Invitation à la watch party envoyée' : 'Invitations à la watch party envoyées');
+    toastFn(pids.length === 1 ? tr('Invitation à la watch party envoyée') : tr('Invitations à la watch party envoyées'));
     close();
   }
 
@@ -536,7 +537,7 @@ export function openShareDialog(opts) {
         st.invitesLeft = 0;
         st.withInvite = false;
         paintInvite();
-        say('Tu n’as plus d’invitation libre : le lien se copie sans invitation.', 'error');
+        say(tr('Tu n’as plus d’invitation libre : le lien se copie sans invitation.'), 'error');
       } else {
         say(linkErrorText(e), 'error');
       }
@@ -548,7 +549,7 @@ export function openShareDialog(opts) {
     const l = await ensureLink();
     if (!l) return;
     const ok = await copyText(l.url);
-    toastFn(ok ? 'Lien copié' : 'Copie impossible : sélectionne le lien et copie-le');
+    toastFn(ok ? tr('Lien copié') : tr('Copie impossible : sélectionne le lien et copie-le'));
     if (ui.linkInput) { ui.linkInput.focus(); ui.linkInput.select(); }
   }
   const textFor = () => (st.media ? M.shareText(st.media, posNow(), st.mode, endNow()) : 'Laststream');
@@ -561,8 +562,8 @@ export function openShareDialog(opts) {
     const l = await ensureLink();
     if (!l) return;
     const r = await nativeShare({ title: textFor(), text: textFor(), url: l.url });
-    if (r === 'copied') toastFn('Lien copié');
-    else if (r === 'failed') say('Partage impossible : copie le lien à la main.', 'error');
+    if (r === 'copied') toastFn(tr('Lien copié'));
+    else if (r === 'failed') say(tr('Partage impossible : copie le lien à la main.'), 'error');
   }
   async function toggleQr() {
     if (st.qr) { st.qr = false; paintQr(); return; }
@@ -579,26 +580,26 @@ export function openShareDialog(opts) {
     if (ui.qrBtn) ui.qrBtn.setAttribute('aria-expanded', st.qr ? 'true' : 'false');
     if (!st.qr || !st.link) return;
     try {
-      const s = qrSvg(st.link.url, 'QR code du lien vers ' + (st.media ? st.media.title : 'le titre'));
+      const s = qrSvg(st.link.url, tr('QR code du lien vers') + ' ' + (st.media ? st.media.title : tr('le titre')));
       s.classList.add('shd-qr-img');
-      ui.qr.append(s, h('p', 'shd-qr-cap', 'Scanne pour ouvrir la fiche.'));
+      ui.qr.append(s, h('p', 'shd-qr-cap', tr('Scanne pour ouvrir la fiche.')));
     } catch {
-      ui.qr.append(h('p', 'shd-qr-cap', 'QR code indisponible pour ce lien.'));
+      ui.qr.append(h('p', 'shd-qr-cap', tr('QR code indisponible pour ce lien.')));
     }
   }
 
   function paintLink() {
     if (ui.linkInput) {
       ui.linkInput.value = st.link ? st.link.url : '';
-      ui.linkInput.placeholder = 'Le lien est créé quand tu le copies';
+      ui.linkInput.placeholder = tr('Le lien est créé quand tu le copies');
     }
     paintQr();
   }
 
   const inviteHint = () => {
-    if (st.invitesLeft === null) return 'Quelqu’un sans compte peut s’inscrire avec ce lien. Il devient ton ami automatiquement.';
-    if (st.invitesLeft === 0) return 'Quelqu’un sans compte pourrait s’inscrire avec ce lien, mais ' + M.invitesText(0).toLowerCase();
-    return 'Quelqu’un sans compte peut s’inscrire avec ce lien. ' + M.invitesText(st.invitesLeft) + ' Il devient ton ami automatiquement.';
+    if (st.invitesLeft === null) return tr('Quelqu’un sans compte peut s’inscrire avec ce lien. Il devient ton ami automatiquement.');
+    if (st.invitesLeft === 0) return tr('Quelqu’un sans compte pourrait s’inscrire avec ce lien, mais {v}', { v: M.invitesText(0).toLowerCase() });
+    return tr('Quelqu’un sans compte peut s’inscrire avec ce lien. {invitesLeft} Il devient ton ami automatiquement.', { invitesLeft: M.invitesText(st.invitesLeft) });
   };
   function paintInvite() {
     const on = st.withInvite && st.invitesLeft !== 0;
@@ -610,7 +611,7 @@ export function openShareDialog(opts) {
     if (ui.inviteHint) ui.inviteHint.textContent = inviteHint();
     if (ui.copySub) {
       const n = st.invitesLeft;
-      ui.copySub.textContent = on ? 'Avec une invitation' + (n === null ? '' : ' · ' + n + ' restante' + (n > 1 ? 's' : '')) : 'Sans invitation';
+      ui.copySub.textContent = on ? tr('Avec une invitation') + (n === null ? '' : ' ' + tr('· {n} restante', { n }) + (n > 1 ? 's' : '')) : tr('Sans invitation');
     }
   }
   function toggleInvite() {
@@ -637,22 +638,22 @@ export function openShareDialog(opts) {
     try {
       await store.addToList(list.id, itemOf());
       st.added.add(list.id);
-      toastFn('Ajouté à « ' + list.name + ' »');
+      toastFn(tr('Ajouté à « {name} »', { name: list.name }));
       paintLists();
     } catch (e) {
-      toastFn(e && e.status === 409 ? 'Déjà dans cette liste' : 'Ajout impossible pour le moment');
+      toastFn(e && e.status === 409 ? tr('Déjà dans cette liste') : tr('Ajout impossible pour le moment'));
     }
   }
   function newList(opener2) {
     const picked = new Set();
     let nameEl;
     openDialog({
-      title: 'Nouvelle liste partagée', confirmLabel: 'Créer et ajouter', opener: opener2,
+      title: tr('Nouvelle liste partagée'), confirmLabel: tr('Créer et ajouter'), opener: opener2,
       build(body, ctl) {
-        nameEl = h('input', 'cvd-input', null, { type: 'text', maxlength: M.LIST_NAME_MAX, placeholder: 'Nom de la liste', 'aria-label': 'Nom de la liste' });
+        nameEl = h('input', 'cvd-input', null, { type: 'text', maxlength: M.LIST_NAME_MAX, placeholder: tr('Nom de la liste'), 'aria-label': tr('Nom de la liste') });
         const sync = () => ctl.setValid(nameEl.value.trim().length > 0);
         nameEl.addEventListener('input', sync);
-        body.append(nameEl, h('p', 'cvd-hint', 'Choisis les amis qui la verront et pourront y ajouter des titres.'));
+        body.append(nameEl, h('p', 'cvd-hint', tr('Choisis les amis qui la verront et pourront y ajouter des titres.')));
         const people = h('div', 'cvd-people');
         for (const t of targets().filter((x) => x.kind === 'friend')) {
           const lab = h('label', 'cvd-person');
@@ -669,11 +670,11 @@ export function openShareDialog(opts) {
           await store.addToList(l.id, itemOf());
           st.added.add(l.id);
           st.lists = store.getState().lists;
-          toastFn('Liste « ' + l.name + ' » créée');
+          toastFn(tr('Liste « {name} » créée', { name: l.name }));
           paintLists();
         } catch (e) {
-          if (e && e.code === 'list_limit_reached') throw new Error('Tu as atteint le nombre maximal de listes.');
-          throw new Error('Création impossible pour le moment.');
+          if (e && e.code === 'list_limit_reached') throw new Error(tr('Tu as atteint le nombre maximal de listes.'));
+          throw new Error(tr('Création impossible pour le moment.'));
         }
       },
     });
@@ -684,12 +685,12 @@ export function openShareDialog(opts) {
     for (const l of st.lists) {
       const done = st.added.has(l.id);
       const b = h('button', 'shd-chip' + (done ? ' is-done' : ''), (done ? '✓ ' : '') + l.name, { type: 'button', 'aria-pressed': done ? 'true' : 'false' });
-      b.setAttribute('aria-label', (done ? 'Ajouté à la liste ' : 'Ajouter à la liste ') + l.name);
+      b.setAttribute('aria-label', (done ? tr('Ajouté à la liste') + ' ' : tr('Ajouter à la liste') + ' ') + l.name);
       if (done) b.disabled = true;
       b.addEventListener('click', () => { void addTo(l); });
       ui.lists.append(b);
     }
-    const nw = h('button', 'shd-chip is-new', '+ Nouvelle', { type: 'button', 'aria-label': 'Créer une liste partagée' });
+    const nw = h('button', 'shd-chip is-new', tr('+ Nouvelle'), { type: 'button', 'aria-label': tr('Créer une liste partagée') });
     nw.addEventListener('click', () => newList(nw));
     ui.lists.append(nw);
   }
@@ -704,15 +705,15 @@ export function openShareDialog(opts) {
     box.removeAttribute('aria-label');
     const head = h('div', 'shd-head');
     const hc = h('div', 'shd-head-t');
-    hc.append(h('h2', 'shd-title', 'Partager un titre', { id }), h('div', 'shd-sub', 'Cherche le film ou la série à envoyer.'));
-    head.append(hc, iconBtn('shd-x', 'Fermer', SVG.close, close));
+    hc.append(h('h2', 'shd-title', tr('Partager un titre'), { id }), h('div', 'shd-sub', tr('Cherche le film ou la série à envoyer.')));
+    head.append(hc, iconBtn('shd-x', tr('Fermer'), SVG.close, close));
     const wrap = h('div', 'shd-pick');
     const field = h('div', 'shd-search');
     field.innerHTML = ICO.search;
-    const inp = h('input', null, null, { type: 'search', placeholder: 'Titre d’un film ou d’une série', 'aria-label': 'Rechercher un film ou une série', autocomplete: 'off' });
+    const inp = h('input', null, null, { type: 'search', placeholder: tr('Titre d’un film ou d’une série'), 'aria-label': tr('Rechercher un film ou une série'), autocomplete: 'off' });
     field.append(inp);
     const res = h('div', 'shd-results', null, { role: 'list' });
-    const stat = h('p', 'shd-empty', 'Tape au moins deux lettres.', { role: 'status' });
+    const stat = h('p', 'shd-empty', tr('Tape au moins deux lettres.'), { role: 'status' });
     wrap.append(field, stat, res);
     box.append(head, wrap);
     let seq = 0;
@@ -728,26 +729,26 @@ export function openShareDialog(opts) {
       const q = inp.value.trim();
       const my = ++seq;
       res.textContent = '';
-      if (q.length < 2) { stat.textContent = 'Tape au moins deux lettres.'; return; }
-      stat.textContent = 'Recherche…';
+      if (q.length < 2) { stat.textContent = tr('Tape au moins deux lettres.'); return; }
+      stat.textContent = tr('Recherche…');
       try {
         const data = await tmdb('search/multi', { query: q, include_adult: 'false' });
         if (my !== seq || !alive) return;
         const list = (data.results || []).filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && (r.title || r.name)).slice(0, 12);
-        stat.textContent = list.length ? '' : 'Aucun résultat.';
+        stat.textContent = list.length ? '' : tr('Aucun résultat.');
         for (const r of list) {
           const b = h('button', 'shd-res', null, { type: 'button', role: 'listitem' });
           const date = (r.release_date || r.first_air_date || '').slice(0, 4);
           const p = h('span', 'shd-res-p');
           if (r.poster_path) { const im = h('img', null, null, { alt: '', loading: 'lazy' }); im.src = 'https://image.tmdb.org/t/p/w92' + r.poster_path; p.append(im); }
           const c = h('span', 'shd-res-c');
-          c.append(h('span', 'shd-res-t', r.title || r.name), h('span', 'shd-res-m', (r.media_type === 'tv' ? 'Série' : 'Film') + (date ? ' · ' + date : '')));
+          c.append(h('span', 'shd-res-t', r.title || r.name), h('span', 'shd-res-m', (r.media_type === 'tv' ? tr('Série') : tr('Film')) + (date ? ' · ' + date : '')));
           b.append(p, c);
           b.addEventListener('click', () => choose(r));
           res.append(b);
         }
       } catch {
-        if (my === seq) stat.textContent = 'Recherche indisponible pour le moment.';
+        if (my === seq) stat.textContent = tr('Recherche indisponible pour le moment.');
       }
     }
     inp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => { void run(); }, 250); });
@@ -777,15 +778,15 @@ export function openShareDialog(opts) {
   }
 
   function messageField(placeholderMode) {
-    const lab = h('label', 'sr-only', 'Message', { for: 'shd-mot' });
-    const common = { id: 'shd-mot', maxlength: '1000', 'aria-label': 'Message' };
+    const lab = h('label', 'sr-only', tr('Message'), { for: 'shd-mot' });
+    const common = { id: 'shd-mot', maxlength: '1000', 'aria-label': tr('Message') };
     if (placeholderMode === 'input') {
-      const inp = h('input', 'shd-in', null, { ...common, type: 'text', placeholder: 'Ajouter un mot…' });
+      const inp = h('input', 'shd-in', null, { ...common, type: 'text', placeholder: tr('Ajouter un mot…') });
       inp.addEventListener('input', () => { st.body = inp.value; });
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void send(); } });
       return [lab, inp];
     }
-    const ta = h('textarea', 'shd-ta', null, { ...common, placeholder: 'Ajouter un mot…', rows: '2' });
+    const ta = h('textarea', 'shd-ta', null, { ...common, placeholder: tr('Ajouter un mot…'), rows: '2' });
     ta.addEventListener('input', () => { st.body = ta.value; });
     return [lab, ta];
   }
@@ -794,8 +795,8 @@ export function openShareDialog(opts) {
   function myLinksSection() {
     const wrap = h('div', 'shd-mine');
     const toggle = h('button', 'shd-mine-b', null, { type: 'button', 'aria-expanded': 'false' });
-    toggle.append(h('span', null, 'Mes liens'), h('span', 'shd-mine-c', '▾', { 'aria-hidden': 'true' }));
-    const list = h('div', 'shd-mine-l', null, { role: 'list', 'aria-label': 'Mes liens de partage' });
+    toggle.append(h('span', null, tr('Mes liens')), h('span', 'shd-mine-c', '▾', { 'aria-hidden': 'true' }));
+    const list = h('div', 'shd-mine-l', null, { role: 'list', 'aria-label': tr('Mes liens de partage') });
     list.hidden = true;
     const info = h('p', 'shd-note', '', { role: 'status' });
     wrap.append(toggle, list, info);
@@ -804,7 +805,7 @@ export function openShareDialog(opts) {
 
     const paint = () => {
       list.textContent = '';
-      if (!items.length) { info.textContent = 'Tu n’as pas encore créé de lien.'; return; }
+      if (!items.length) { info.textContent = tr('Tu n’as pas encore créé de lien.'); return; }
       info.textContent = '';
       for (const l of items) {
         const r = M.linkRow(l);
@@ -813,13 +814,13 @@ export function openShareDialog(opts) {
         tx.append(h('div', 'shd-mine-n', r.title), h('div', 'shd-mine-s', r.sub));
         row.append(tx);
         if (!r.expired) {
-          const cp = h('button', 'shd-btn is-sec is-s', 'Copier', { type: 'button', 'aria-label': 'Copier le lien ' + r.title });
-          cp.addEventListener('click', async () => { toastFn((await copyText(l.url)) ? 'Lien copié' : 'Copie impossible : ouvre le lien et copie-le'); });
+          const cp = h('button', 'shd-btn is-sec is-s', tr('Copier'), { type: 'button', 'aria-label': tr('Copier le lien {title}', { title: r.title }) });
+          cp.addEventListener('click', async () => { toastFn((await copyText(l.url)) ? tr('Lien copié') : tr('Copie impossible : ouvre le lien et copie-le')); });
           row.append(cp);
         } else {
-          row.append(h('span', 'shd-mine-x', 'Expiré'));
+          row.append(h('span', 'shd-mine-x', tr('Expiré')));
         }
-        const rv = h('button', 'shd-btn is-sec is-s', 'Révoquer', { type: 'button', 'aria-label': 'Révoquer le lien ' + r.title });
+        const rv = h('button', 'shd-btn is-sec is-s', tr('Révoquer'), { type: 'button', 'aria-label': tr('Révoquer le lien {title}', { title: r.title }) });
         rv.addEventListener('click', async () => {
           rv.disabled = true;
           try {
@@ -829,7 +830,7 @@ export function openShareDialog(opts) {
           }
           items = items.filter((x) => x.code !== l.code);
           if (st.link && st.link.code === l.code) { st.link = null; st.linkKey = ''; paintLink(); }
-          toastFn('Lien révoqué');
+          toastFn(tr('Lien révoqué'));
           if (alive) paint();
         });
         row.append(rv);
@@ -837,7 +838,7 @@ export function openShareDialog(opts) {
       }
     };
     const load = async () => {
-      info.textContent = 'Chargement de tes liens…';
+      info.textContent = tr('Chargement de tes liens…');
       try {
         const r = await getMyShareLinks();
         items = Array.isArray(r && r.links) ? r.links : [];
@@ -867,40 +868,40 @@ export function openShareDialog(opts) {
     ui.titleEl = h('h2', 'shd-title', '', { id });
     ui.sub = h('div', 'shd-sub');
     hc.append(ui.titleEl, ui.sub);
-    head.append(hc, iconBtn('shd-x', 'Fermer', SVG.close, close));
+    head.append(hc, iconBtn('shd-x', tr('Fermer'), SVG.close, close));
     ui.firstFocus = null;
 
     const cols = h('div', 'shd-cols');
     // à des amis
     const left = h('div', 'shd-col shd-left');
-    left.append(h('div', 'shd-lb', 'À des amis'));
+    left.append(h('div', 'shd-lb', tr('À des amis')));
     const search = h('div', 'shd-search');
     search.innerHTML = ICO.search;
-    const sInp = h('input', null, null, { type: 'search', placeholder: 'Ami, groupe ou Nom#TAG', 'aria-label': 'Chercher un ami ou un groupe', autocomplete: 'off' });
+    const sInp = h('input', null, null, { type: 'search', placeholder: tr('Ami, groupe ou Nom#TAG'), 'aria-label': tr('Chercher un ami ou un groupe'), autocomplete: 'off' });
     sInp.addEventListener('input', () => { st.q = sInp.value; paintGrid(); });
     search.append(sInp);
-    ui.grid = h('div', 'shd-grid', null, { role: 'group', 'aria-label': 'Amis et groupes' });
+    ui.grid = h('div', 'shd-grid', null, { role: 'group', 'aria-label': tr('Amis et groupes') });
     ui.opts = h('div', 'shd-opts');
     const [lab, ta] = messageField('textarea');
     ui.status = h('p', 'shd-status', '', { role: 'alert' });
     const foot = h('div', 'shd-foot');
     ui.party = h('button', 'shd-btn is-sec', null, { type: 'button' });
     ui.party.innerHTML = ICO.party;
-    ui.party.append('Watch party');
+    ui.party.append(tr('Watch party'));
     ui.party.addEventListener('click', startParty);
-    ui.send = h('button', 'shd-btn is-pri', 'Envoyer', { type: 'button' });
+    ui.send = h('button', 'shd-btn is-pri', tr('Envoyer'), { type: 'button' });
     ui.send.addEventListener('click', () => { void send(); });
     foot.append(ui.party, ui.send);
     left.append(search, ui.grid, ui.opts, lab, ta, ui.status, foot);
 
     // hors de Laststream
     const right = h('div', 'shd-col shd-right');
-    right.append(h('div', 'shd-lb', 'Hors de Laststream'));
+    right.append(h('div', 'shd-lb', tr('Hors de Laststream')));
     const lk = h('div', 'shd-link');
-    lk.append(h('label', 'shd-link-l', 'Lien de partage', { for: 'shd-link' }));
+    lk.append(h('label', 'shd-link-l', tr('Lien de partage'), { for: 'shd-link' }));
     const lrow = h('div', 'shd-link-row');
-    ui.linkInput = h('input', 'shd-link-in', null, { id: 'shd-link', type: 'text', readonly: '', 'aria-label': 'Lien de partage' });
-    const copy = h('button', 'shd-btn is-pri is-s', 'Copier', { type: 'button' });
+    ui.linkInput = h('input', 'shd-link-in', null, { id: 'shd-link', type: 'text', readonly: '', 'aria-label': tr('Lien de partage') });
+    const copy = h('button', 'shd-btn is-pri is-s', tr('Copier'), { type: 'button' });
     copy.addEventListener('click', () => { void copyLink(); });
     lrow.append(ui.linkInput, copy);
     lk.append(lrow);
@@ -914,18 +915,18 @@ export function openShareDialog(opts) {
       b.addEventListener('click', () => { void fn(); });
       return b;
     };
-    ui.qrBtn = sh(ICO.qr, 'QR code', toggleQr, true);
-    shares.append(sh(ICO.chat, 'Messages', viaSms), sh(ICO.mail, 'E-mail', viaMail), ui.qrBtn, sh(ICO.share, 'Autres', viaSystem));
+    ui.qrBtn = sh(ICO.qr, tr('QR code'), toggleQr, true);
+    shares.append(sh(ICO.chat, tr('Messages'), viaSms), sh(ICO.mail, 'E-mail', viaMail), ui.qrBtn, sh(ICO.share, tr('Autres'), viaSystem));
     ui.qr = h('div', 'shd-qr');
     ui.qr.hidden = true;
     const inv = h('div', 'shd-opt shd-inv');
     ui.inviteHint = h('div', 'shd-opt-h');
     const invTxt = h('div', 'shd-opt-txt');
-    invTxt.append(h('div', 'shd-opt-t', 'Joindre une invitation'), ui.inviteHint);
-    inv.append(makeSwitch('Joindre une invitation'), invTxt);
-    const priv = h('p', 'shd-note', 'Le lien montre la fiche et ta recommandation, jamais ta position ni ta bibliothèque, sauf « ce moment » ou « un extrait ».');
+    invTxt.append(h('div', 'shd-opt-t', tr('Joindre une invitation')), ui.inviteHint);
+    inv.append(makeSwitch(tr('Joindre une invitation')), invTxt);
+    const priv = h('p', 'shd-note', tr('Le lien montre la fiche et ta recommandation, jamais ta position ni ta bibliothèque, sauf « ce moment » ou « un extrait ».'));
     ui.lists = h('div', 'shd-chips');
-    right.append(lk, shares, ui.qr, inv, priv, h('div', 'shd-lb shd-lb-2', 'Ajouter à une liste partagée'), ui.lists, myLinksSection());
+    right.append(lk, shares, ui.qr, inv, priv, h('div', 'shd-lb shd-lb-2', tr('Ajouter à une liste partagée')), ui.lists, myLinksSection());
 
     cols.append(left, right);
     box.append(head, cols);
@@ -944,26 +945,26 @@ export function openShareDialog(opts) {
     hc.append(ui.titleEl, ui.sub);
     head.append(hc);
     if (canClip()) {
-      head.append(iconBtn('shd-x', 'Fermer', SVG.close, close));
+      head.append(iconBtn('shd-x', tr('Fermer'), SVG.close, close));
     } else if (canMoment()) {
-      const sw = h('button', 'shd-pill', st.mode === 'moment' ? 'Le titre' : 'Ce moment', { type: 'button' });
+      const sw = h('button', 'shd-pill', st.mode === 'moment' ? tr('Le titre') : tr('Ce moment'), { type: 'button' });
       sw.addEventListener('click', () => {
         setMode(st.mode === 'moment' ? 'title' : 'moment');
-        sw.textContent = st.mode === 'moment' ? 'Le titre' : 'Ce moment';
+        sw.textContent = st.mode === 'moment' ? tr('Le titre') : tr('Ce moment');
       });
       head.append(sw);
     } else {
-      head.append(iconBtn('shd-x', 'Fermer', SVG.close, close));
+      head.append(iconBtn('shd-x', tr('Fermer'), SVG.close, close));
     }
     box.append(head);
     ui.opts = null;
     if (canClip()) { ui.opts = h('div', 'shd-opts'); box.append(ui.opts); }
-    box.append(h('div', 'shd-lb', 'Amis'));
-    ui.grid = h('div', 'shd-grid is-row', null, { role: 'group', 'aria-label': 'Amis et groupes' });
+    box.append(h('div', 'shd-lb', tr('Amis')));
+    ui.grid = h('div', 'shd-grid is-row', null, { role: 'group', 'aria-label': tr('Amis et groupes') });
     box.append(ui.grid);
     const [lab, inp] = messageField('input');
     ui.status = h('p', 'shd-status', '', { role: 'alert' });
-    ui.send = h('button', 'shd-btn is-pri is-m', 'Envoyer', { type: 'button' });
+    ui.send = h('button', 'shd-btn is-pri is-m', tr('Envoyer'), { type: 'button' });
     ui.send.addEventListener('click', () => { void send(); });
     const row = h('div', 'shd-msg');
     row.append(lab, inp, ui.send);
@@ -981,14 +982,14 @@ export function openShareDialog(opts) {
       b.addEventListener('click', () => { void fn(); });
       return { b, subEl };
     };
-    const party = act(ICO.partyL, 'Lancer une watch party', 'Avec les amis choisis', startParty);
+    const party = act(ICO.partyL, tr('Lancer une watch party'), tr('Avec les amis choisis'), startParty);
     ui.partyRow = party.b;
-    const copyA = act(ICO.link, 'Copier le lien', 'Avec une invitation', copyLink);
+    const copyA = act(ICO.link, tr('Copier le lien'), tr('Avec une invitation'), copyLink);
     ui.copySub = copyA.subEl;
     const copyWrap = h('div', 'shd-ac-wrap');
-    copyWrap.append(copyA.b, makeSwitch('Joindre une invitation'));
-    const sys = act(ICO.shareS, 'Autres applis', Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() ? 'Partage Android : WhatsApp, SMS…' : 'Partage du système', viaSystem);
-    const lst = act(ICO.list, 'Liste partagée', 'Ajouter à une liste', () => showListsView());
+    copyWrap.append(copyA.b, makeSwitch(tr('Joindre une invitation')));
+    const sys = act(ICO.shareS, tr('Autres applis'), Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() ? tr('Partage Android : WhatsApp, SMS…') : tr('Partage du système'), viaSystem);
+    const lst = act(ICO.list, tr('Liste partagée'), tr('Ajouter à une liste'), () => showListsView());
     ui.listSub = lst.subEl;
     acts.append(party.b, copyWrap, sys.b, lst.b);
     box.append(acts, myLinksSection());
@@ -1002,10 +1003,10 @@ export function openShareDialog(opts) {
     const saved = Array.from(box.childNodes);
     box.textContent = '';
     const head = h('div', 'shd-head');
-    head.append(iconBtn('shd-x', 'Retour', SVG.back, restore), h('h2', 'shd-title', 'Liste partagée'));
+    head.append(iconBtn('shd-x', tr('Retour'), SVG.back, restore), h('h2', 'shd-title', tr('Liste partagée')));
     ui.lists = h('div', 'shd-chips is-col');
     box.append(h('div', 'shd-handle', null, { 'aria-hidden': 'true' }), head,
-      h('p', 'shd-sub', 'Ajouter « ' + st.media.title + ' » à une liste que tu partages avec tes amis.'), ui.lists);
+      h('p', 'shd-sub', tr('Ajouter « {title} » à une liste que tu partages avec tes amis.', { title: st.media.title })), ui.lists);
     paintLists();
     const first = ui.lists.querySelector('button');
     if (first) first.focus();

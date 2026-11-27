@@ -4,6 +4,7 @@
  * Aucune clé API n'est jamais envoyée à cet endpoint : la requête part sans en-tête d'authentification ni cookie.
  */
 import { appFetch } from './crossFetch';
+import { t } from '../i18n';
 
 export const MODELS_URL = 'https://openrouter.ai/api/v1/models';
 export const CACHE_KEY = 'ls_openrouter_models_v1';
@@ -91,8 +92,8 @@ export function money(n: number): string {
 
 /** « 0,15 $ / 0,60 $ » (par million, entrée / sortie), « Gratuit », ou « Prix variable » (routeurs). */
 export function priceLabel(m: OrModel): string {
-  if (isFreeModel(m)) return 'Gratuit';
-  if (m.inPrice === null || m.outPrice === null) return 'Prix variable';
+  if (isFreeModel(m)) return t('Gratuit');
+  if (m.inPrice === null || m.outPrice === null) return t('Prix variable');
   return money(m.inPrice) + ' / ' + money(m.outPrice);
 }
 
@@ -111,11 +112,11 @@ export function estimateCost(m: OrModel): number | null {
 }
 
 export function estimateText(m: OrModel | undefined): string {
-  const per = ' pour ' + ESTIMATE_RUNS + ' recommandations';
-  if (m && isFreeModel(m)) return '≈ 0' + NBSP + '$' + per + ' (modèle gratuit, débit limité par OpenRouter).';
+  const per = ' ' + t('pour {ESTIMATE_RUNS} recommandations', { ESTIMATE_RUNS });
+  if (m && isFreeModel(m)) return t('≈ 0{NBSP}${per} (modèle gratuit, débit limité par OpenRouter).', { NBSP, per });
   const cost = m ? estimateCost(m) : null;
-  if (cost === null) return 'Coût inconnu pour cet identifiant : vérifie son prix sur openrouter.ai.';
-  if (cost < 0.005) return '≈ moins de 0,01' + NBSP + '$' + per + '.';
+  if (cost === null) return t('Coût inconnu pour cet identifiant : vérifie son prix sur openrouter.ai.');
+  if (cost < 0.005) return t('≈ moins de 0,01{NBSP}${per}.', { NBSP, per });
   return '≈ ' + cost.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + NBSP + '$' + per + '.';
 }
 
@@ -195,7 +196,7 @@ export async function loadModels(opts: { force?: boolean; now?: number } = {}): 
     const res = await appFetch(MODELS_URL, { method: 'GET', headers: { Accept: 'application/json' }, credentials: 'omit', signal: ctrl.signal });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const models = parseModels(await res.json());
-    if (!models.length) throw new Error('Liste vide');
+    if (!models.length) throw new Error(t('Liste vide'));
     try { globalThis.localStorage?.setItem(CACHE_KEY, JSON.stringify({ at: now, models } satisfies CacheEntry)); } catch { /* quota : pas de cache */ }
     return models;
   } catch (err) {

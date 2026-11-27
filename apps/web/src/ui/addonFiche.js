@@ -15,14 +15,15 @@ import { ficheHash } from './ficheRoute.js';
 import { topBar } from './fragments.js';
 import { ICON } from './icons.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 /** Types de fiche à épisodes (la liste vient de l'addon). */
 const SERIES = new Set(['series', 'anime', 'tv']);
-const NO_SOURCE = 'Aucune source trouvée sur cet addon';
+const NO_SOURCE = t('Aucune source trouvée sur cet addon');
 
 const notice = (msg, action = '') => '<div class="state" role="status"><p>' + esc(msg) + '</p>' + action + '</div>';
-const SETTINGS = '<div class="f-actions"><a class="btn btn-ghost" href="#/settings" data-go>Ouvrir les réglages</a></div>';
-const HOME = '<div class="f-actions"><a class="btn btn-ghost" href="#/" data-go>Retour à l’accueil</a></div>';
+const SETTINGS = '<div class="f-actions"><a class="btn btn-ghost" href="#/settings" data-go>' + t('Ouvrir les réglages') + '</a></div>';
+const HOME = '<div class="f-actions"><a class="btn btn-ghost" href="#/" data-go>' + t('Retour à l’accueil') + '</a></div>';
 
 const yearOf = (v) => {
   const s = typeof v === 'number' ? String(v) : typeof v === 'string' ? v : '';
@@ -63,26 +64,26 @@ function modelOf(type, id, preview, meta) {
   };
 }
 
-const libLabel = (on) => (on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream');
-const libTip = (on) => (on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream');
+const libLabel = (on) => (on ? t('Dans ta bibliothèque (retirer)') : t('Ajouter à ma bibliothèque Laststream'));
+const libTip = (on) => (on ? t('Dans ta bibliothèque') : t('Ajouter à ma bibliothèque Laststream'));
 const libHTML = (on) =>
   '<button type="button" class="btn-round' + (on ? ' is-on' : '') + '" data-lib aria-pressed="' + on + '" data-tip="' + libTip(on) +
   '" aria-label="' + libLabel(on) + '">' + (on ? ICON.check : ICON.list) + '</button>';
 
 const epRowsHTML = (m, season, canStream) => m.videos.filter((v) => v.season === season).map((v) =>
-  '<li class="ep"><div class="ep-main"><span class="ep-title">' + esc(v.title || 'Épisode ' + v.episode) + '</span>' +
-  '<span class="ep-meta">Saison ' + v.season + ' · épisode ' + v.episode + '</span></div>' +
-  (canStream ? '<button type="button" class="btn btn-ghost btn-sm" data-ep="' + v.season + ':' + v.episode + '">Lire</button>' : '') +
+  '<li class="ep"><div class="ep-main"><span class="ep-title">' + esc(v.title || t('Épisode {episode}', { episode: v.episode })) + '</span>' +
+  '<span class="ep-meta">' + t('Saison {season} · épisode {episode}', { season: v.season, episode: v.episode }) + '</span></div>' +
+  (canStream ? '<button type="button" class="btn btn-ghost btn-sm" data-ep="' + v.season + ':' + v.episode + '">' + t('Lire') + '</button>' : '') +
   '</li>').join('');
 
 function episodesHTML(m, canStream) {
   if (!SERIES.has(m.type)) return '';
   // Série sans épisode numéroté, fiche lue : un mot discret, sans liste vide.
-  if (!m.videos.length) return m.loaded ? '<div class="f-panels"><p class="f-next">Aucun épisode disponible sur cet addon</p></div>' : '';
+  if (!m.videos.length) return m.loaded ? '<div class="f-panels"><p class="f-next">' + t('Aucun épisode disponible sur cet addon') + '</p></div>' : '';
   const seasons = [...new Set(m.videos.map((v) => v.season))];
-  const options = seasons.map((s) => '<option value="' + s + '">Saison ' + s + '</option>').join('');
-  return '<div class="f-panels"><section class="f-sec" id="f-p-eps" aria-labelledby="f-p-eps-h"><h2 class="f-sec-title" id="f-p-eps-h">Épisodes</h2>' +
-    '<div class="f-eps-head"><label class="dc-field" for="af-season"><span>Saison</span><select id="af-season">' + options + '</select></label></div>' +
+  const options = seasons.map((s) => '<option value="' + s + '">' + t('Saison {s}', { s }) + '</option>').join('');
+  return '<div class="f-panels"><section class="f-sec" id="f-p-eps" aria-labelledby="f-p-eps-h"><h2 class="f-sec-title" id="f-p-eps-h">' + t('Épisodes') + '</h2>' +
+    '<div class="f-eps-head"><label class="dc-field" for="af-season"><span>' + t('Saison') + '</span><select id="af-season">' + options + '</select></label></div>' +
     '<ol class="eps" id="af-eplist" data-nav>' + epRowsHTML(m, seasons[0], canStream) + '</ol></section></div>';
 }
 
@@ -93,22 +94,22 @@ function pageHTML(m, sourceName, canStream, libOn) {
   const isSeries = SERIES.has(m.type);
   const actions = [];
   if (!isSeries && canStream) {
-    actions.push('<button type="button" class="btn btn-primary btn-pill" data-play>' + ICON.play + '<span class="f-play-label">Lecture</span></button>');
-    actions.push('<button type="button" class="btn btn-ghost" data-sources>Sources</button>');
+    actions.push('<button type="button" class="btn btn-primary btn-pill" data-play>' + ICON.play + '<span class="f-play-label">' + t('Lecture') + '</span></button>');
+    actions.push('<button type="button" class="btn btn-ghost" data-sources>' + t('Sources') + '</button>');
   }
   actions.push(libHTML(libOn));
   if (m.ids.tmdb) {
-    actions.push('<a class="btn btn-ghost" href="' + esc(ficheHash(m.type === 'movie' ? 'movie' : 'tv', m.ids.tmdb)) + '" data-go>Voir la fiche complète</a>');
+    actions.push('<a class="btn btn-ghost" href="' + esc(ficheHash(m.type === 'movie' ? 'movie' : 'tv', m.ids.tmdb)) + '" data-go>' + t('Voir la fiche complète') + '</a>');
   }
   return topBar(false) +
     '<article class="fiche af-fiche" aria-labelledby="f-title" tabindex="-1">' +
     '<div class="f-bg' + (m.backdrop ? '' : ' no-img') + '">' + (m.backdrop ? '<img src="' + esc(m.backdrop) + '" alt="" decoding="async">' : '') + '</div>' +
     '<div class="f-scrim" aria-hidden="true"></div>' +
-    '<section class="f-first" aria-label="Présentation"><div class="f-info">' +
-    '<p class="f-release"><span>Addon</span> ' + esc(sourceName) + '</p>' +
+    '<section class="f-first" aria-label="' + t('Présentation') + '"><div class="f-info">' +
+    '<p class="f-release"><span>' + t('Addon') + '</span> ' + esc(sourceName) + '</p>' +
     '<h1 class="f-title" id="f-title" tabindex="-1"><span class="title-text">' + esc(m.name) + '</span></h1>' +
     '<ul class="meta f-meta">' + metaItems + '</ul>' +
-    '<div class="f-syn"><p class="f-ov">' + esc(m.description || 'Pas de synopsis disponible.') + '</p></div>' +
+    '<div class="f-syn"><p class="f-ov">' + esc(m.description || t('Pas de synopsis disponible.')) + '</p></div>' +
     '<div class="f-actions" data-nav>' + actions.join('') + '</div>' +
     '<p class="f-next" id="af-msg" role="status"></p>' +
     '</div></section>' +
@@ -126,11 +127,11 @@ export function showAddonFiche(root, { addonKey, type, id }) {
   const done = { destroy() { alive = false; } };
 
   if (isKidProfile()) {
-    root.innerHTML = topBar(false) + '<article class="svc-page" tabindex="-1">' + notice('Cette fiche n’est pas disponible sur ce profil.') + '</article>';
+    root.innerHTML = topBar(false) + '<article class="svc-page" tabindex="-1">' + notice(t('Cette fiche n’est pas disponible sur ce profil.')) + '</article>';
     return done;
   }
   if (!entry) {
-    root.innerHTML = topBar(false) + '<article class="svc-page" tabindex="-1">' + notice('Ce catalogue n’est plus activé.', SETTINGS) + '</article>';
+    root.innerHTML = topBar(false) + '<article class="svc-page" tabindex="-1">' + notice(t('Ce catalogue n’est plus activé.'), SETTINGS) + '</article>';
     return done;
   }
 
@@ -158,7 +159,7 @@ export function showAddonFiche(root, { addonKey, type, id }) {
 
   const sourcesOf = async (m, btn) => {
     btn.disabled = true;
-    setMsg('Recherche des sources…');
+    setMsg(t('Recherche des sources…'));
     const views = await loadAddonSources(entry, type, id).catch(() => []);
     if (!alive) return;
     btn.disabled = false;
@@ -183,7 +184,7 @@ export function showAddonFiche(root, { addonKey, type, id }) {
 
   const paint = (m) => {
     root.innerHTML = pageHTML(m, entry.name, canStream, isInAddonLibrary(libKey));
-    document.title = m.name + ' · Laststream';
+    document.title = t('{name} · Laststream', { name: m.name });
     const article = root.querySelector('.af-fiche');
     if (article) {
       article.addEventListener('click', (e) => {
@@ -213,13 +214,13 @@ export function showAddonFiche(root, { addonKey, type, id }) {
 
   const model = modelOf(type, id, preview, null);
   if (model.name) paint(model);
-  else root.innerHTML = topBar(false) + '<article class="svc-page" tabindex="-1" aria-busy="true">' + notice('Chargement de la fiche…') + '</article>';
+  else root.innerHTML = topBar(false) + '<article class="svc-page" tabindex="-1" aria-busy="true">' + notice(t('Chargement de la fiche…')) + '</article>';
 
   fetchAddonMeta(entry, type, id).catch(() => ({})).then((res) => {
     if (!alive) return;
     if (!res.meta) {
       // Pas de fiche complète : l'aperçu (déjà affiché) suffit, sans message ; sans aperçu, la fiche ne peut pas s'afficher.
-      if (!model.name) root.innerHTML = topBar(false) + '<article class="svc-page" tabindex="-1">' + notice('Cette fiche n’a pas pu être chargée.', HOME) + '</article>';
+      if (!model.name) root.innerHTML = topBar(false) + '<article class="svc-page" tabindex="-1">' + notice(t('Cette fiche n’a pas pu être chargée.'), HOME) + '</article>';
       return;
     }
     paint(modelOf(type, id, preview, res.meta));

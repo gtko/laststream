@@ -11,6 +11,7 @@ import { saveSeasonToDevice, saveToDevice } from './deviceSave.js';
 import { detailEl, toast, toastError } from './dom.js';
 import { esc, names } from './util.js';
 import { pushLayer } from './backStack.js';
+import { t as tr } from '../i18n';
 
 const svg = (d, extra = '') => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' + extra + '>' + d + '</svg>';
 
@@ -40,7 +41,7 @@ const ringSVG = () => '<svg class="dl-ring" viewBox="0 0 44 44" aria-hidden="tru
   '<circle class="dl-ring-p" cx="22" cy="22" r="19" stroke-dasharray="' + RING.toFixed(2) + '" stroke-dashoffset="' + RING.toFixed(2) + '"/></svg>';
 
 function avail() {
-  try { return platformAvailability(); } catch (_) { return { ok: false, reason: 'Téléchargements indisponibles sur cet appareil.' }; }
+  try { return platformAvailability(); } catch (_) { return { ok: false, reason: tr('Téléchargements indisponibles sur cet appareil.') }; }
 }
 
 /** Les téléchargements sont masqués sur un profil enfant (comme Statistiques et Réglages). */
@@ -93,7 +94,7 @@ export function ficheDownloadHTML(m, ep, off) {
   const whyId = 'dl-why-' + String(m.key).replace(/[^a-z0-9]/gi, '-');
   return '<span class="dl-wrap">' +
     '<button type="button" class="btn btn-pill dl-btn" data-dl-ctl="btn"' + targetAttrs(t) + (off ? ' data-dl-off="' + esc(off) + '"' : '') + ' aria-describedby="' + whyId + '">' +
-    '<span class="dl-fill" aria-hidden="true"></span><span class="dl-lbl"><span class="dl-ic">' + DL_ICON.dl + '</span><span class="dl-txt">Télécharger</span>' +
+    '<span class="dl-fill" aria-hidden="true"></span><span class="dl-lbl"><span class="dl-ic">' + DL_ICON.dl + '</span><span class="dl-txt">' + tr('Télécharger') + '</span>' +
     ' <span class="dl-sub">' + (m.type === 'tv' ? esc(epCode(t.season, t.episode)) : '') + '</span></span></button>' +
     '<span class="dl-why" id="' + whyId + '" hidden></span></span>';
 }
@@ -107,11 +108,11 @@ export function ficheDownloadMenuItems(m, ep, opener) {
   const item = visibleItems(listDownloads()).find((it) => it.id === id);
   if (!item) return [];
   const out = [];
-  if (item.state === 'running') out.push({ id: 'dl-pause', label: 'Mettre en pause le téléchargement', icon: DL_ICON.pause, run: () => pauseItem(id) });
-  if (item.state === 'paused') out.push({ id: 'dl-resume', label: 'Reprendre le téléchargement', icon: DL_ICON.play, run: () => resumeItem(id) });
-  if (item.state === 'error') out.push({ id: 'dl-retry', label: 'Réessayer le téléchargement', icon: DL_ICON.retry, run: () => retryItem(id) });
+  if (item.state === 'running') out.push({ id: 'dl-pause', label: tr('Mettre en pause le téléchargement'), icon: DL_ICON.pause, run: () => pauseItem(id) });
+  if (item.state === 'paused') out.push({ id: 'dl-resume', label: tr('Reprendre le téléchargement'), icon: DL_ICON.play, run: () => resumeItem(id) });
+  if (item.state === 'error') out.push({ id: 'dl-retry', label: tr('Réessayer le téléchargement'), icon: DL_ICON.retry, run: () => retryItem(id) });
   // Toujours « Supprimer » : la confirmation dit « Supprimer » et son « Annuler » veut dire garder.
-  out.push({ id: 'dl-remove', label: 'Supprimer le téléchargement', icon: DL_ICON.trash, run: () => confirmRemove(item, opener) });
+  out.push({ id: 'dl-remove', label: tr('Supprimer le téléchargement'), icon: DL_ICON.trash, run: () => confirmRemove(item, opener) });
   return out.map((x) => ({ ...x, group: 'dl' }));
 }
 
@@ -120,7 +121,7 @@ export function episodeDownloadHTML(m, season, episode, epName) {
   if (!downloadsAllowed()) return '';
   const t = { key: m.key, type: 'tv', id: String(m.id), name: m.name, season, episode };
   return '<button type="button" class="dl-pill dl-ep" data-dl-ctl="pill"' + targetAttrs(t) + ' data-dl-ep="' + esc(epCode(season, episode) + (epName ? ' ' + epName : '')) +
-    '" aria-label="' + esc('Télécharger : ' + epCode(season, episode)) + '">' + ringSVG() + '<span class="dl-ic">' + DL_ICON.dl + '</span></button>';
+    '" aria-label="' + esc(tr('Télécharger : {season}', { season: epCode(season, episode) })) + '">' + ringSVG() + '<span class="dl-ic">' + DL_ICON.dl + '</span></button>';
 }
 
 // ---------- Bouton « Télécharger la saison » (en-tête de la saison affichée, ODY-234) ----------
@@ -130,7 +131,7 @@ const seasonTargets = new WeakMap();
 /** Bouton de l'en-tête des épisodes, masqué tant que la saison n'est pas chargée. Chaîne vide : profil enfant ou plateforme indisponible. */
 export function seasonDownloadHTML() {
   if (!downloadsAllowed() || !avail().ok) return '';
-  return '<span class="dl-season-wrap" data-nav><button type="button" class="btn btn-ghost btn-sm dl-season" data-dl-season hidden>' + DL_ICON.dl + '<span class="dl-season-l">Télécharger la saison</span></button></span>';
+  return '<span class="dl-season-wrap" data-nav><button type="button" class="btn btn-ghost btn-sm dl-season" data-dl-season hidden>' + DL_ICON.dl + '<span class="dl-season-l">' + tr('Télécharger la saison') + '</span></button></span>';
 }
 
 /** Une cible par épisode déjà diffusé de la saison (les épisodes à date future sont exclus). */
@@ -151,7 +152,7 @@ function paintSeasonButton(btn, items) {
   btn.disabled = covered;
   btn.classList.toggle('is-done', all);
   const label = btn.querySelector('.dl-season-l');
-  const text = all ? 'Saison téléchargée' : queued ? 'Saison en file' : 'Télécharger la saison';
+  const text = all ? tr('Saison téléchargée') : queued ? tr('Saison en file') : tr('Télécharger la saison');
   if (label && label.textContent !== text) label.textContent = text;
 }
 
@@ -168,19 +169,19 @@ const STATE_ICON = { available: 'dl', pending: 'clock', running: 'pause', paused
 
 /** Libellé court du bouton (maquette LAST-500) et, à droite, `sub` : l'épisode visé, l'avancement ou « Hors ligne ». */
 function viewOf(el, item, av) {
-  if (!item && el.dataset.dlOff) return { state: 'unavailable', label: 'Indisponible', sub: '', percent: null, reason: el.dataset.dlOff };
+  if (!item && el.dataset.dlOff) return { state: 'unavailable', label: tr('Indisponible'), sub: '', percent: null, reason: el.dataset.dlOff };
   const vm = buttonState(item, av);
   const p = vm.percent;
   const pct = p == null ? '' : p + ' %';
   const ep = el.dataset.dlS ? epCode(el.dataset.dlS, el.dataset.dlE) : '';
   let label = vm.label;
   let sub = '';
-  if (vm.state === 'running') { label = 'Téléchargement'; sub = pct || '…'; }
-  else if (vm.state === 'paused') { label = 'En pause'; sub = pct; }
-  else if (vm.state === 'error') label = 'Échec · Réessayer';
-  else if (vm.state === 'done') sub = 'Hors ligne';
-  else if (vm.state === 'available' && el.dataset.dlBusy) label = 'Recherche…';
-  else if (vm.state === 'available') { label = 'Télécharger'; sub = ep; }
+  if (vm.state === 'running') { label = tr('Téléchargement'); sub = pct || '…'; }
+  else if (vm.state === 'paused') { label = tr('En pause'); sub = pct; }
+  else if (vm.state === 'error') label = tr('Échec · Réessayer');
+  else if (vm.state === 'done') sub = tr('Hors ligne');
+  else if (vm.state === 'available' && el.dataset.dlBusy) label = tr('Recherche…');
+  else if (vm.state === 'available') { label = tr('Télécharger'); sub = ep; }
   return { ...vm, label, sub };
 }
 
@@ -188,13 +189,13 @@ function pillAria(el, v) {
   const ep = el.dataset.dlEp || '';
   const p = v.percent == null ? '' : v.percent + ' %, ';
   switch (v.state) {
-    case 'pending': return 'En attente, annuler : ' + ep;
-    case 'running': return 'En cours, ' + p + 'mettre en pause : ' + ep;
-    case 'paused': return 'En pause, ' + p + 'reprendre : ' + ep;
-    case 'done': return 'Téléchargé : ' + ep + ', ouvrir le menu';
-    case 'error': return 'Erreur, réessayer : ' + ep + (v.reason ? ' (' + v.reason + ')' : '');
-    case 'unavailable': return 'Indisponible : ' + (v.reason || ep);
-    default: return 'Télécharger : ' + ep;
+    case 'pending': return tr('En attente, annuler : {ep}', { ep });
+    case 'running': return tr('En cours, {p}mettre en pause : {ep}', { p, ep });
+    case 'paused': return tr('En pause, {p}reprendre : {ep}', { p, ep });
+    case 'done': return tr('Téléchargé : {ep}, ouvrir le menu', { ep });
+    case 'error': return tr('Erreur, réessayer : {ep}', { ep }) + (v.reason ? ' (' + v.reason + ')' : '');
+    case 'unavailable': return tr('Indisponible :') + ' ' + (v.reason || ep);
+    default: return tr('Télécharger : {ep}', { ep });
   }
 }
 
@@ -226,7 +227,7 @@ function paintControl(el, item, av) {
   const sub = el.querySelector('.dl-sub');
   if (sub && sub.textContent !== v.sub) sub.textContent = v.sub;
   // En cours ou en pause, le libellé dit l'état : le nom accessible et l'infobulle disent ce que fait l'appui.
-  const act = v.state === 'running' ? 'mettre en pause' : v.state === 'paused' ? 'reprendre' : '';
+  const act = v.state === 'running' ? tr('mettre en pause') : v.state === 'paused' ? 'reprendre' : '';
   if (act) {
     const name = v.label + (v.sub ? ' ' + v.sub : '') + ', ' + act;
     if (el.getAttribute('aria-label') !== name) el.setAttribute('aria-label', name);
@@ -269,7 +270,7 @@ export function teardownDownloadControls() {
 // ---------- Pastilles de navigation (barre du haut, onglet, carte de la Bibliothèque) ----------
 export const activeCount = (items) => visibleItems(items).filter((it) => it.state === 'running' || it.state === 'pending').length;
 const badgeText = (n) => (n > 99 ? '99+' : String(n));
-const navLabel = (n) => 'Téléchargements' + (n > 0 ? ', ' + n + ' en cours' : '');
+const navLabel = (n) => tr('Téléchargements') + (n > 0 ? tr(', {n} en cours', { n }) : '');
 
 export function paintDlBadges(items) {
   const n = activeCount(items);
@@ -288,7 +289,7 @@ const badgeHTML = (cls) => {
 /** Bouton rond « Téléchargements » de la barre du haut (bureau, web, TV), avant Amis. */
 export function downloadsNavHTML() {
   if (!downloadsAllowed()) return '';
-  return '<a class="icon-btn nav-dl" href="#/downloads" data-go data-dl-nav aria-label="' + esc(navLabel(activeCount(listDownloads()))) + '" title="Téléchargements">' + DL_ICON.dl + badgeHTML('') + '</a>';
+  return '<a class="icon-btn nav-dl" href="#/downloads" data-go data-dl-nav aria-label="' + esc(navLabel(activeCount(listDownloads()))) + '" title="' + tr('Téléchargements') + '">' + DL_ICON.dl + badgeHTML('') + '</a>';
 }
 
 /** Pastille de l'onglet « Téléchargés » (barre mobile). */
@@ -299,9 +300,9 @@ export function libraryDownloadsCardHTML() {
   if (!downloadsAllowed()) return '';
   const items = visibleItems(listDownloads());
   const done = items.filter((it) => it.state === 'done').length;
-  const sub = items.length ? done + ' téléchargé' + (done > 1 ? 's' : '') + (activeCount(items) ? ' · ' + activeCount(items) + ' en cours' : '') : 'Regarde tes titres sans connexion';
+  const sub = items.length ? tr('{done} téléchargé', { done }) + (done > 1 ? 's' : '') + (activeCount(items) ? ' ' + tr('· {items} en cours', { items: activeCount(items) }) : '') : tr('Regarde tes titres sans connexion');
   return '<a class="dl-libcard" href="#/downloads" data-go data-dl-nav aria-label="' + esc(navLabel(activeCount(items))) + '"><span class="dl-libcard-ic">' + DL_ICON.dl + badgeHTML('') + '</span>' +
-    '<span class="dl-libcard-t"><span class="dl-libcard-h">Téléchargements</span><span class="dl-libcard-s">' + esc(sub) + '</span></span>' +
+    '<span class="dl-libcard-t"><span class="dl-libcard-h">' + tr('Téléchargements') + '</span><span class="dl-libcard-s">' + esc(sub) + '</span></span>' +
     '<span class="dl-libcard-go" aria-hidden="true">›</span></a>';
 }
 
@@ -410,7 +411,7 @@ async function removeWithUndo(item, onChange) {
   if (wasActive) m.pause(item.id);
   const timer = setTimeout(() => {
     pendingRemoval.delete(item.id);
-    m.remove(item.id).catch((e) => toastError('La suppression a échoué', e, 'telechargements'));
+    m.remove(item.id).catch((e) => toastError(tr('La suppression a échoué'), e, 'telechargements'));
   }, UNDO_MS);
   const restore = () => {
     if (wasActive) m.resume(item.id);
@@ -420,9 +421,9 @@ async function removeWithUndo(item, onChange) {
   pendingRemoval.set(item.id, { timer, restore });
   if (onChange) onChange();
   paintControls(listDownloads());
-  toast('Téléchargement supprimé', {
+  toast(tr('Téléchargement supprimé'), {
     ms: UNDO_MS,
-    action: { label: 'Annuler', run: () => cancelPendingRemoval(item.id) },
+    action: { label: tr('Annuler'), run: () => cancelPendingRemoval(item.id) },
   });
   // Clavier ou télécommande : le bouton « Annuler » reçoit le focus, sinon il n'est pas atteignable sans souris.
   if (document.documentElement.dataset.input === 'kbd') document.querySelector('#toast .toast-action')?.focus({ preventScroll: true });
@@ -432,12 +433,12 @@ async function removeWithUndo(item, onChange) {
 export function confirmRemove(item, opener, onChange) {
   const size = item.state === 'done' ? item.bytesTotal || item.bytesDone : item.bytesDone;
   openSheet({
-    title: 'Supprimer « ' + itemLabel(item) + ' » ?',
+    title: tr('Supprimer « {item} » ?', { item: itemLabel(item) }),
     cls: 'is-center',
     opener,
     render: (body, close) => {
-      body.innerHTML = '<p class="dl-sheet-p">' + esc((size ? 'Libère ' + formatBytes(size) + '. ' : '') + 'Tu pourras le retélécharger quand tu veux.') + '</p>' +
-        '<div class="dl-sheet-acts">' + btnHTML('dl-btn-d', ' data-dl-yes', 'Supprimer') + btnHTML('btn-ghost', ' data-dl-close', 'Annuler') + '</div>';
+      body.innerHTML = '<p class="dl-sheet-p">' + esc((size ? tr('Libère {size}.', { size: formatBytes(size) }) + ' ' : '') + tr('Tu pourras le retélécharger quand tu veux.')) + '</p>' +
+        '<div class="dl-sheet-acts">' + btnHTML('dl-btn-d', ' data-dl-yes', tr('Supprimer')) + btnHTML('btn-ghost', ' data-dl-close', tr('Annuler')) + '</div>';
       body.querySelector('[data-dl-yes]').addEventListener('click', () => { close(); void removeWithUndo(item, onChange); });
     },
   });
@@ -447,11 +448,11 @@ export function confirmRemove(item, opener, onChange) {
 export function openDoneSheet(item, opener, onChange) {
   openSheet({
     title: itemLabel(item),
-    sub: 'Téléchargé' + (item.bytesTotal ? ' · ' + formatBytes(item.bytesTotal) : ''),
+    sub: tr('Téléchargé') + (item.bytesTotal ? ' · ' + formatBytes(item.bytesTotal) : ''),
     opener,
     render: (body) => {
-      body.innerHTML = '<div class="dl-sheet-acts">' + btnHTML('btn-primary', ' data-dl-play', 'Lire hors ligne', 'play') +
-        btnHTML('dl-btn-d', ' data-dl-del', 'Supprimer', 'trash') + btnHTML('dl-btn-link', ' data-dl-close', 'Annuler') + '</div>';
+      body.innerHTML = '<div class="dl-sheet-acts">' + btnHTML('btn-primary', ' data-dl-play', tr('Lire hors ligne'), 'play') +
+        btnHTML('dl-btn-d', ' data-dl-del', tr('Supprimer'), 'trash') + btnHTML('dl-btn-link', ' data-dl-close', tr('Annuler')) + '</div>';
       body.querySelector('[data-dl-play]').addEventListener('click', () => playOffline(item, opener));
       body.querySelector('[data-dl-del]').addEventListener('click', () => confirmRemove(item, opener, onChange));
     },
@@ -468,11 +469,11 @@ export function openErrorSheet(item, opener, onChange) {
     cls: 'is-error',
     opener,
     render: (body, close) => {
-      body.innerHTML = '<ul class="dl-sheet-hints"><li>Réseau coupé : reprise automatique au retour du réseau.</li>' +
-        '<li>Espace insuffisant : libère de la place ou augmente la limite.</li><li>Fichier inaccessible : supprime-le et relance.</li></ul>' +
-        '<div class="dl-sheet-acts">' + btnHTML('btn-primary', ' data-dl-retry', 'Réessayer', 'retry') +
-        (item.source && item.source.ref ? btnHTML('btn-ghost', ' data-dl-other', 'Choisir une autre source') : '') +
-        btnHTML('dl-btn-d', ' data-dl-del', 'Supprimer le téléchargement') + '</div>';
+      body.innerHTML = '<ul class="dl-sheet-hints"><li>' + tr('Réseau coupé : reprise automatique au retour du réseau.') + '</li>' +
+        '<li>' + tr('Espace insuffisant : libère de la place ou augmente la limite.') + '</li><li>' + tr('Fichier inaccessible : supprime-le et relance.') + '</li></ul>' +
+        '<div class="dl-sheet-acts">' + btnHTML('btn-primary', ' data-dl-retry', tr('Réessayer'), 'retry') +
+        (item.source && item.source.ref ? btnHTML('btn-ghost', ' data-dl-other', tr('Choisir une autre source')) : '') +
+        btnHTML('dl-btn-d', ' data-dl-del', tr('Supprimer le téléchargement')) + '</div>';
       body.querySelector('[data-dl-retry]').addEventListener('click', () => { close(); void retryItem(item.id); });
       const other = body.querySelector('[data-dl-other]');
       if (other) other.addEventListener('click', () => { close(true); void chooseAnotherSource(item, opener); });
@@ -494,26 +495,26 @@ export async function openSpaceFullSheet(opener) {
   const limit = getDownloadSettings().limitBytes;
   const next = limit == null ? undefined : nextLimit(limit);
   openSheet({
-    title: 'Espace plein',
+    title: tr('Espace plein'),
     icon: DL_ICON.disk,
     cls: 'is-center',
     opener,
     render: (body, close) => {
-      body.innerHTML = '<p class="dl-sheet-p">' + esc('Tu as atteint ta limite' + (limit ? ' de ' + formatBytes(limit) : '') + '. Supprime des titres ou augmente la limite pour continuer.') + '</p>' +
-        '<div class="dl-bar dl-bar-lg is-full" role="progressbar" aria-label="Espace utilisé" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + g.percent + '"><i style="width:' + g.percent + '%"></i></div>' +
+      body.innerHTML = '<p class="dl-sheet-p">' + esc(tr('Tu as atteint ta limite{v}. Supprime des titres ou augmente la limite pour continuer.', { v: (limit ? ' de ' + formatBytes(limit) : '') })) + '</p>' +
+        '<div class="dl-bar dl-bar-lg is-full" role="progressbar" aria-label="' + tr('Espace utilisé') + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + g.percent + '"><i style="width:' + g.percent + '%"></i></div>' +
         (g.label ? '<p class="dl-sheet-note">' + esc(g.label) + '</p>' : '') +
-        '<div class="dl-sheet-acts"><a class="btn btn-primary" href="#/downloads" data-dl-manage>Gérer l’espace</a>' +
-        (next !== undefined ? btnHTML('btn-ghost', ' data-dl-raise', next === null ? 'Passer sans limite' : 'Augmenter la limite à ' + formatBytes(next)) : '') +
-        btnHTML('dl-btn-link', ' data-dl-close', 'Annuler') + '</div>';
+        '<div class="dl-sheet-acts"><a class="btn btn-primary" href="#/downloads" data-dl-manage>' + tr('Gérer l’espace') + '</a>' +
+        (next !== undefined ? btnHTML('btn-ghost', ' data-dl-raise', next === null ? tr('Passer sans limite') : tr('Augmenter la limite à {next}', { next: formatBytes(next) })) : '') +
+        btnHTML('dl-btn-link', ' data-dl-close', tr('Annuler')) + '</div>';
       body.querySelector('[data-dl-manage]').addEventListener('click', () => close(true));
       const raise = body.querySelector('[data-dl-raise]');
-      if (raise) raise.addEventListener('click', () => { setDownloadSettings({ limitBytes: next }); close(); toast(next === null ? 'Limite d’espace retirée' : 'Limite portée à ' + formatBytes(next)); });
+      if (raise) raise.addEventListener('click', () => { setDownloadSettings({ limitBytes: next }); close(); toast(next === null ? tr('Limite d’espace retirée') : tr('Limite portée à {next}', { next: formatBytes(next) })); });
     },
   });
 }
 
 /** Libellés lisibles des groupes de qualité : `SourceChoice.group` est la clé de groupe (2160p, 1080p…). */
-const QUALITY_NAME = { '2160p': '4K', '1440p': '2K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: 'Autres' };
+const QUALITY_NAME = { '2160p': '4K', '1440p': '2K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: tr('Autres') };
 /** Sources montrées d'abord par résolution ; les autres se déplient (« Voir N autres sources »). */
 const SHOWN_PER_GROUP = 3;
 const langName = (code) => {
@@ -521,7 +522,7 @@ const langName = (code) => {
   return n ? n.charAt(0).toLowerCase() + n.slice(1) : code;
 };
 /** Libellé d'une langue : « audio français » ; « multi » et « original » ne sont pas des codes de langue ISO. */
-const langTitle = (code) => (code === 'multi' ? 'multi-audio' : code === 'original' ? 'version originale' : 'audio ' + langName(code));
+const langTitle = (code) => (code === 'multi' ? 'multi-audio' : code === 'original' ? tr('version originale') : 'audio ' + langName(code));
 /** « 1080p · WEB-DL · H.265 » */
 const choiceTitle = (c) => [c.quality, c.sourceType, c.codec].filter(Boolean).join(' · ');
 /** « Audio français · AAC 5.1 · via Torrentio » */
@@ -530,19 +531,19 @@ const choiceSub = (c) => {
   return [langs ? langs.charAt(0).toUpperCase() + langs.slice(1) : '', c.audio, c.origin ? 'via ' + c.origin : ''].filter(Boolean).join(' · ');
 };
 
-const SEARCHING = 'Recherche des sources…';
+const SEARCHING = tr('Recherche des sources…');
 /** Bouton « Annuler » seul (feuille de préparation de la saison). */
-const cancelHTML = () => '<div class="dl-sheet-acts">' + btnHTML('dl-btn-link', ' data-dl-close data-dl-autofocus', 'Annuler') + '</div>';
+const cancelHTML = () => '<div class="dl-sheet-acts">' + btnHTML('dl-btn-link', ' data-dl-close data-dl-autofocus', tr('Annuler')) + '</div>';
 /** Au-delà de ce délai sans fin de recherche, la feuille le dit et laisse choisir sans attendre. */
 const SLOW_MS = 6000;
-const SLOW_TEXT = 'Certaines sources répondent lentement, tu peux choisir maintenant.';
+const SLOW_TEXT = tr('Certaines sources répondent lentement, tu peux choisir maintenant.');
 
 /** Une source sur la feuille : nom, langue, origine, taille. Trop grande pour l'espace libre : grisée, avec le motif. */
 function choiceRow(c, free) {
   const tpl = document.createElement('template');
   tpl.innerHTML = '<button type="button" class="dl-opt dl-src" role="radio" data-dl-src="' + esc(c.key) + '" aria-checked="false">' +
     '<span class="dl-rad" aria-hidden="true"></span><span class="dl-opt-t"><span class="dl-opt-l"><span data-dl-title></span>' +
-    ' <span class="dl-tag" data-dl-tag hidden>Recommandé</span></span>' +
+    ' <span class="dl-tag" data-dl-tag hidden>' + tr('Recommandé') + '</span></span>' +
     '<span class="dl-opt-s" data-dl-sub></span></span>' +
     '<span class="dl-opt-v" data-dl-size></span></button>';
   const el = tpl.content.firstElementChild;
@@ -561,8 +562,8 @@ function updateChoiceRow(el, c, free) {
   if (off) el.setAttribute('aria-disabled', 'true');
   else el.removeAttribute('aria-disabled');
   el.querySelector('[data-dl-title]').textContent = choiceTitle(c);
-  el.querySelector('[data-dl-sub]').textContent = off ? 'Trop grand pour ton espace libre (' + formatBytes(free) + ')' : choiceSub(c);
-  el.querySelector('[data-dl-size]').textContent = c.sizeBytes ? formatBytes(c.sizeBytes) : 'Taille inconnue';
+  el.querySelector('[data-dl-sub]').textContent = off ? tr('Trop grand pour ton espace libre ({free})', { free: formatBytes(free) }) : choiceSub(c);
+  el.querySelector('[data-dl-size]').textContent = c.sizeBytes ? formatBytes(c.sizeBytes) : tr('Taille inconnue');
 }
 
 /**
@@ -577,12 +578,12 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
     '<p class="dl-sheet-note" data-dl-slow hidden>' + SLOW_TEXT + '</p>' +
     '</div>' +
     '<div class="dl-groups" data-dl-groups></div>' +
-    '<p class="dl-sheet-note" data-dl-notice hidden>Ta source n’est plus proposée : la recommandée est présélectionnée.</p>' +
+    '<p class="dl-sheet-note" data-dl-notice hidden>' + tr('Ta source n’est plus proposée : la recommandée est présélectionnée.') + '</p>' +
     '<p class="dl-sheet-note" data-dl-free hidden></p>' +
     '<p class="dl-sheet-p" role="alert" data-dl-alert hidden></p>' +
     '<div class="dl-sheet-acts">' +
     '<button type="button" class="btn btn-primary" data-dl-go disabled hidden>' + DL_ICON.dl + '<span data-dl-go-l></span></button>' +
-    btnHTML('dl-btn-link', ' data-dl-close data-dl-autofocus', 'Annuler') + '</div>';
+    btnHTML('dl-btn-link', ' data-dl-close data-dl-autofocus', tr('Annuler')) + '</div>';
   const q = (s) => body.querySelector(s);
   const status = q('[data-dl-status]');
   const line = q('[data-dl-line]');
@@ -621,7 +622,7 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
     rows.forEach((el, key) => el.setAttribute('aria-checked', String(key === selected)));
     const c = selected != null ? byKey.get(selected) : undefined;
     go.disabled = !c;
-    goLabel.textContent = 'Télécharger' + (c && c.sizeBytes ? ' · ' + formatBytes(c.sizeBytes) : '');
+    goLabel.textContent = tr('Télécharger') + (c && c.sizeBytes ? ' · ' + formatBytes(c.sizeBytes) : '');
   };
 
   /** Insertion de lignes sans saut : la ligne survolée ou focalisée garde sa place à l'écran (le défilement suit). */
@@ -651,7 +652,7 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
     go.hidden = true;
     alertEl.textContent = message;
     alertEl.hidden = false;
-    cancel.querySelector('span').textContent = 'Fermer';
+    cancel.querySelector('span').textContent = tr('Fermer');
     cancel.focus({ preventScroll: true });
   };
 
@@ -738,24 +739,24 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
             more.setAttribute('aria-expanded', 'false');
             sec.el.appendChild(more);
           }
-          more.textContent = 'Voir ' + rest + (rest > 1 ? ' autres sources' : ' autre source');
+          more.textContent = tr('Voir {rest}', { rest }) + (rest > 1 ? ' ' + tr('autres sources') : ' ' + tr('autre source'));
         } else if (more) {
           more.remove();
         }
       }
     });
-    const found = count + (count > 1 ? ' sources trouvées' : ' source trouvée');
+    const found = count + (count > 1 ? ' ' + tr('sources trouvées') : ' ' + tr('source trouvée'));
     line.className = 'dl-sheet-note';
-    statusText.textContent = found + (pending ? ' · recherche en cours…' : ' · à toi de choisir');
+    statusText.textContent = found + (pending ? ' ' + tr('· recherche en cours…') : ' ' + tr('· à toi de choisir'));
     spin.hidden = !pending;
     groupsEl.hidden = false;
     refreshSlow();
-    const freeLine = space && space.limit != null ? 'Espace libre : ' + formatBytes(free) + ' sur ta limite de ' + formatBytes(space.limit)
-      : space ? formatBytes(space.used) + ' utilisés · sans limite' : '';
+    const freeLine = space && space.limit != null ? tr('Espace libre : {free} sur ta limite de {limit}', { free: formatBytes(free), limit: formatBytes(space.limit) })
+      : space ? tr('{used} utilisés · sans limite', { used: formatBytes(space.used) }) : '';
     freeEl.textContent = freeLine;
     freeEl.hidden = !freeLine;
     const allOff = choices.every(tooBig);
-    alertEl.innerHTML = allOff ? esc('Aucune source ne tient dans ton espace libre.') + ' <a href="#/downloads" data-dl-manage data-dl-close>Gérer l’espace</a>' : '';
+    alertEl.innerHTML = allOff ? esc(tr('Aucune source ne tient dans ton espace libre.')) + ' <a href="#/downloads" data-dl-manage data-dl-close>' + tr('Gérer l’espace') + '</a>' : '';
     alertEl.hidden = !allOff;
     go.hidden = false;
     syncGo();
@@ -806,7 +807,7 @@ function openChoiceSheet(t, opener, { exclude = null } = {}) {
     let picked = null;
     const search = new AbortController();
     openSheet({
-      title: exclude ? 'Choisir une autre source' : 'Télécharger',
+      title: exclude ? tr('Choisir une autre source') : tr('Télécharger'),
       sub: t.name + (t.season != null ? ' · ' + epCode(t.season, t.episode) : ''),
       opener,
       onClose: () => {
@@ -815,7 +816,7 @@ function openChoiceSheet(t, opener, { exclude = null } = {}) {
       },
       render: (body, close) => {
         const ui = choiceSheetBody(body, {
-          emptyText: exclude ? 'Aucune autre source n’est disponible pour ce titre.' : errorMessage('content'),
+          emptyText: exclude ? tr('Aucune autre source n’est disponible pour ce titre.') : errorMessage('content'),
           onPick: (source) => {
             picked = { source };
             close(true);
@@ -848,17 +849,17 @@ function setBusy(el) {
   if (!el || !el.classList) return () => {};
   el.dataset.dlBusy = '1';
   const txt = el.querySelector('.dl-txt');
-  if (txt) txt.textContent = 'Recherche…';
+  if (txt) txt.textContent = tr('Recherche…');
   return () => {
     delete el.dataset.dlBusy;
-    if (txt && txt.textContent === 'Recherche…') txt.textContent = 'Télécharger';
+    if (txt && txt.textContent === 'Recherche…') txt.textContent = tr('Télécharger');
   };
 }
 
 /** Lance un téléchargement : la feuille liste les sources trouvées et l'utilisateur choisit. Erreurs traduites en toast. */
 export async function startDownload(t, opener) {
   const s = getDownloadSettings();
-  if (s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
+  if (s.wifiOnly && isCellular()) { toast(tr('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger')); return; }
   const idle = setBusy(opener);
   let choice;
   try {
@@ -879,7 +880,7 @@ async function enqueueChoice(t, choice, opener) {
   if (downloadDestination() === 'device' && choice && choice.source) { await saveChoiceToDevice(t, choice.source, opener); return; }
   const s = getDownloadSettings();
   // Confirmation tout de suite : la résolution de la source peut durer avant que le titre apparaisse dans la file.
-  toast('Téléchargement lancé · ' + (t.name || 'titre') + (t.season != null ? ' ' + epCode(t.season, t.episode) : ''), { action: { label: 'Voir', run: () => { location.hash = '#/downloads'; } }, ms: 3500 });
+  toast(tr('Téléchargement lancé ·') + ' ' + (t.name || 'titre') + (t.season != null ? ' ' + epCode(t.season, t.episode) : ''), { action: { label: tr('Voir'), run: () => { location.hash = '#/downloads'; } }, ms: 3500 });
   const idle = setBusy(opener);
   try {
     await requestDownload(t, choice);
@@ -887,7 +888,7 @@ async function enqueueChoice(t, choice, opener) {
   } catch (err) {
     const code = err && err.code;
     if (code === 'quota_exceeded') { await openSpaceFullSheet(opener); return; }
-    if (code === 'network' && s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
+    if (code === 'network' && s.wifiOnly && isCellular()) { toast(tr('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger')); return; }
     toast(errorMessage(code || 'resolve_failed'));
   } finally { idle(); }
 }
@@ -896,7 +897,7 @@ async function enqueueChoice(t, choice, opener) {
 function progressLabel(el) {
   const txt = el && el.querySelector ? el.querySelector('.dl-txt') : null;
   const base = txt ? txt.textContent : '';
-  return (p) => { if (txt && txt.isConnected) txt.textContent = p == null ? base : 'Enregistrement… ' + p; };
+  return (p) => { if (txt && txt.isConnected) txt.textContent = p == null ? base : tr('Enregistrement… {p}', { p }); };
 }
 
 /** Web « Sur cet appareil » (LAST-498) : dossier choisi ou téléchargement du navigateur, hors de la file de l'app. */
@@ -917,18 +918,18 @@ function openSeasonSheet(targets, label, opener) {
     let gone = false;
     const ctl = new AbortController(); // fermer la feuille arrête la résolution des sources restantes
     openSheet({
-      title: 'Télécharger la saison',
+      title: tr('Télécharger la saison'),
       sub: label,
       opener,
       onClose: () => { gone = true; if (!confirmed) ctl.abort(); resolve(confirmed); },
       render: (body, close) => {
         const fail = (msg) => {
-          body.innerHTML = '<p class="dl-sheet-p" role="alert">' + esc(msg) + '</p><div class="dl-sheet-acts">' + btnHTML('btn-ghost', ' data-dl-close data-dl-autofocus', 'Fermer') + '</div>';
+          body.innerHTML = '<p class="dl-sheet-p" role="alert">' + esc(msg) + '</p><div class="dl-sheet-acts">' + btnHTML('btn-ghost', ' data-dl-close data-dl-autofocus', tr('Fermer')) + '</div>';
           body.querySelector('button').focus({ preventScroll: true });
         };
         // Gabarit posé une fois, puis mis à jour en place : le bouton Annuler garde son nœud et son focus (D-pad).
         body.innerHTML = '<p class="dl-sheet-load" role="status"><span class="dl-spin" aria-hidden="true"></span><span data-dl-load-t></span></p>' +
-          '<div class="dl-bar dl-bar-lg" role="progressbar" aria-label="Préparation de la saison" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i style="width:0%"></i></div>' +
+          '<div class="dl-bar dl-bar-lg" role="progressbar" aria-label="' + tr('Préparation de la saison') + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i style="width:0%"></i></div>' +
           cancelHTML();
         const progress = (done, total) => {
           if (gone || !body.isConnected) return;
@@ -936,24 +937,24 @@ function openSeasonSheet(targets, label, opener) {
           const bar = body.querySelector('.dl-bar');
           if (!txt || !bar) return;
           const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-          txt.textContent = 'Recherche des sources…' + (total > 0 ? ' ' + done + ' / ' + total : '');
+          txt.textContent = tr('Recherche des sources…') + (total > 0 ? ' ' + done + ' / ' + total : '');
           bar.setAttribute('aria-valuenow', String(pct));
           bar.firstElementChild.style.width = pct + '%';
         };
         progress(0, targets.length);
         planSeasonDownload(targets, { onProgress: progress, signal: ctl.signal }).then((plan) => {
           if (gone || !body.isConnected) return;
-          if (!plan.entries.length) { fail('Aucune source n’est disponible pour cette saison.'); return; }
-          if (!(plan.totalBytes > 0)) { fail('La taille de cette saison est introuvable : le téléchargement n’est pas lancé.'); return; }
+          if (!plan.entries.length) { fail(tr('Aucune source n’est disponible pour cette saison.')); return; }
+          if (!(plan.totalBytes > 0)) { fail(tr('La taille de cette saison est introuvable : le téléchargement n’est pas lancé.')); return; }
           const n = plan.entries.length;
-          const size = (plan.unknownCount > 0 ? 'au moins ' : '~') + formatBytes(plan.totalBytes);
+          const size = (plan.unknownCount > 0 ? tr('au moins') + ' ' : '~') + formatBytes(plan.totalBytes);
           const capped = plan.capped || 0;
           const off = plan.unavailable.length - capped;
-          body.innerHTML = '<p class="dl-sheet-p dl-season-sum" role="status">' + esc(n + (n > 1 ? ' épisodes' : ' épisode') + ' · ' + size) + '</p>' +
-            (off ? '<p class="dl-sheet-note">' + esc(off + (off > 1 ? ' épisodes indisponibles' : ' épisode indisponible') + ' (aucune source)') + '</p>' : '') +
-            (capped ? '<p class="dl-sheet-note">' + esc(capped + (capped > 1 ? ' épisodes au-delà de la limite de 50' : ' épisode au-delà de la limite de 50')) + '</p>' : '') +
-            '<div class="dl-sheet-acts"><button type="button" class="btn btn-primary" data-dl-go data-dl-autofocus>' + DL_ICON.dl + '<span>' + esc('Télécharger · ' + formatBytes(plan.totalBytes)) + '</span></button>' +
-            btnHTML('dl-btn-link', ' data-dl-close', 'Annuler') + '</div>';
+          body.innerHTML = '<p class="dl-sheet-p dl-season-sum" role="status">' + esc(n + (n > 1 ? ' ' + tr('épisodes') : ' ' + tr('épisode')) + ' · ' + size) + '</p>' +
+            (off ? '<p class="dl-sheet-note">' + esc(off + (off > 1 ? ' ' + tr('épisodes indisponibles') : ' ' + tr('épisode indisponible')) + ' ' + tr('(aucune source)')) + '</p>' : '') +
+            (capped ? '<p class="dl-sheet-note">' + esc(capped + (capped > 1 ? ' ' + tr('épisodes au-delà de la limite de 50') : ' ' + tr('épisode au-delà de la limite de 50'))) + '</p>' : '') +
+            '<div class="dl-sheet-acts"><button type="button" class="btn btn-primary" data-dl-go data-dl-autofocus>' + DL_ICON.dl + '<span>' + esc(tr('Télécharger · {totalBytes}', { totalBytes: formatBytes(plan.totalBytes) })) + '</span></button>' +
+            btnHTML('dl-btn-link', ' data-dl-close', tr('Annuler')) + '</div>';
           const go = body.querySelector('[data-dl-go]');
           go.addEventListener('click', () => {
             go.disabled = true; // une seule confirmation
@@ -974,7 +975,7 @@ function openSeasonSheet(targets, label, opener) {
 export async function startSeasonDownload(targets, label, opener) {
   if (!targets.length) return;
   const s = getDownloadSettings();
-  if (s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
+  if (s.wifiOnly && isCellular()) { toast(tr('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger')); return; }
   const device = downloadDestination() === 'device';
   const space = device ? null : await getSpace();
   if (space && space.full) { await openSpaceFullSheet(opener); return; }
@@ -984,12 +985,12 @@ export async function startSeasonDownload(targets, label, opener) {
   if (device) { await saveSeasonToDevice(plan, progressLabel(opener)); return; }
   try {
     const added = await requestSeasonDownload(plan);
-    if (!added.length) { toast('Opération annulée, réessaie'); return; } // plan caduc (purge, changement de profil)
+    if (!added.length) { toast(tr('Opération annulée, réessaie')); return; } // plan caduc (purge, changement de profil)
     if (opener && opener.isConnected) opener.focus({ preventScroll: true });
   } catch (err) {
     const code = err && err.code;
     if (code === 'quota_exceeded') { await openSpaceFullSheet(opener); return; }
-    if (code === 'network' && s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
+    if (code === 'network' && s.wifiOnly && isCellular()) { toast(tr('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger')); return; }
     toast(errorMessage(code || 'resolve_failed'));
   }
 }
@@ -1003,7 +1004,7 @@ async function chooseAnotherSource(item, opener) {
   if (!ref) return;
   const t = { key: ref.key, type: ref.type, id: ref.id, name: ref.name, ...(ref.season !== undefined ? { season: ref.season } : {}), ...(ref.episode !== undefined ? { episode: ref.episode } : {}) };
   // Même contrôle que startDownload, avant de supprimer : l'item en erreur ne doit pas disparaître si l'ajout est refusé.
-  if (getDownloadSettings().wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
+  if (getDownloadSettings().wifiOnly && isCellular()) { toast(tr('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger')); return; }
   const choice = await openChoiceSheet(t, opener, { exclude: ref.match });
   if (!choice) return;
   // « Sur cet appareil » : l'enregistrement peut échouer, l'item en erreur reste dans la liste jusqu'à ce que l'utilisateur le supprime.
@@ -1020,7 +1021,7 @@ async function onControl(el) {
   const id = el.dataset.dlId;
   if (el.dataset.dlBusy) return; // déjà en préparation : un second clic ne relance rien
   const item = visibleItems(listDownloads()).find((it) => it.id === id);
-  if (st === 'unavailable') { toast(el.dataset.dlOff || (avail().ok ? 'Indisponible' : avail().reason)); return; }
+  if (st === 'unavailable') { toast(el.dataset.dlOff || (avail().ok ? tr('Indisponible') : avail().reason)); return; }
   if (!item || st === 'available') {
     // Relancé pendant les 6 s d'une suppression : le titre revient, sans nouvel ajout (la suppression différée l'effacerait).
     if (cancelPendingRemoval(id)) return;
@@ -1032,7 +1033,7 @@ async function onControl(el) {
   if (st === 'error') return retryItem(id);
   if (st === 'pending') {
     const m = await manager();
-    if (m) { await m.remove(id); toast('Téléchargement annulé'); }
+    if (m) { await m.remove(id); toast(tr('Téléchargement annulé')); }
     return;
   }
   if (st === 'done') openDoneSheet(item, el);
@@ -1056,5 +1057,5 @@ detailEl.addEventListener('click', (e) => {
   e.stopPropagation();
   const targets = seasonTargets.get(el) || [];
   const first = targets[0];
-  void runOnce(elKey('dl-season', el), () => startSeasonDownload(targets, first ? first.name + (first.season != null ? ' · Saison ' + first.season : '') : '', el), { el, maxMs: 120000 });
+  void runOnce(elKey('dl-season', el), () => startSeasonDownload(targets, first ? first.name + (first.season != null ? ' ' + tr('· Saison {season}', { season: first.season }) : '') : '', el), { el, maxMs: 120000 });
 });

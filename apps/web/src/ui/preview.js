@@ -10,6 +10,7 @@ import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
 import { trailersAllowed } from '../player/playerState';
 import { state } from './state.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 let dwellIO = null;
 // ---------- Aperçu vidéo muet (mise en avant de l'accueil) ----------
@@ -61,8 +62,8 @@ export function whenEnded(iframe, cb) {
 export function paintSound(btn, muted) {
   btn.innerHTML = muted ? ICON.mute : ICON.sound;
   btn.setAttribute('aria-pressed', String(!muted));
-  btn.setAttribute('aria-label', muted ? 'Activer le son' : 'Couper le son');
-  btn.dataset.tip = muted ? 'Activer le son' : 'Couper le son';
+  btn.setAttribute('aria-label', muted ? t('Activer le son') : t('Couper le son'));
+  btn.dataset.tip = muted ? t('Activer le son') : t('Couper le son');
 }
 
 export function ytSrc(key, extra) {
@@ -150,7 +151,7 @@ export async function startPreview(media) {
   const carousel = !!media.closest('[data-hero]');
   const wrap = document.createElement('div');
   wrap.className = 'preview';
-  wrap.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer, !carousel)) + '"></iframe>';
+  wrap.innerHTML = '<iframe title="' + t('Aperçu vidéo sans son') + '" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer, !carousel)) + '"></iframe>';
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'f-round preview-sound';

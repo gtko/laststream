@@ -1,4 +1,5 @@
 /** Thèmes : même format de stockage que l'application précédente (`laststream.theme` = JSON {id, accent}). */
+import { t } from '../i18n';
 const THEME_STORAGE_KEY = 'laststream.theme';
 const DEFAULT_THEME_ID = 'laststream';
 export const CUSTOM_THEME_ID = 'custom';
@@ -13,8 +14,8 @@ export interface ThemePreset {
 export const PRESETS: readonly ThemePreset[] = [
   { id: 'laststream', label: 'Laststream', accent: '#FF5A36' },
   { id: 'stremio', label: 'Stremio', accent: '#7B5BF5' },
-  { id: 'teal', label: 'Teal', accent: '#19C3A6' },
-  { id: 'amber', label: 'Amber', accent: '#F5B700' },
+  { id: 'teal', label: t('Teal'), accent: '#19C3A6' },
+  { id: 'amber', label: t('Amber'), accent: '#F5B700' },
 ];
 
 export interface Theme {

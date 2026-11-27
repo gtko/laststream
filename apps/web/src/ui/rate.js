@@ -3,17 +3,18 @@ import { userStore } from '../data/userStore';
 import { detailEl, toast } from './dom.js';
 import { registerCtxItems, state } from './state.js';
 import { esc, fmtNum } from './util.js';
+import { t as tr } from '../i18n';
 
 const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/></svg>';
 
 /** Étoiles cliquables par demi-étoile. `value` : note actuelle (ou null). */
 function starsHTML(value, key) {
-  let out = '<span class="stars" role="radiogroup" aria-label="Ta note" data-stars="' + esc(key) + '">';
+  let out = '<span class="stars" role="radiogroup" aria-label="' + tr('Ta note') + '" data-stars="' + esc(key) + '">';
   for (let i = 1; i <= 5; i++) {
     const fill = value >= i ? 'full' : value >= i - 0.5 ? 'half' : '';
     out += '<span class="star' + (fill ? ' is-' + fill : '') + '"><span class="star-bg">' + STAR + '</span><span class="star-fg">' + STAR + '</span>' +
-      '<button type="button" class="half l" role="radio" aria-checked="' + (value === i - 0.5) + '" data-rate="' + (i - 0.5) + '" data-rkey="' + esc(key) + '" aria-label="' + (i - 0.5) + ' étoiles"></button>' +
-      '<button type="button" class="half r" role="radio" aria-checked="' + (value === i) + '" data-rate="' + i + '" data-rkey="' + esc(key) + '" aria-label="' + i + ' étoile' + (i > 1 ? 's' : '') + '"></button></span>';
+      '<button type="button" class="half l" role="radio" aria-checked="' + (value === i - 0.5) + '" data-rate="' + (i - 0.5) + '" data-rkey="' + esc(key) + '" aria-label="' + (i - 0.5) + ' ' + tr('étoiles') + '"></button>' +
+      '<button type="button" class="half r" role="radio" aria-checked="' + (value === i) + '" data-rate="' + i + '" data-rkey="' + esc(key) + '" aria-label="' + tr('{i} étoile', { i }) + (i > 1 ? 's' : '') + '"></button></span>';
   }
   return out + '</span>';
 }
@@ -41,11 +42,11 @@ async function rate(key, value) {
   const next = cur === value ? null : value;
   const pending = userStore.setRating(metaOf(key), next);
   refreshRatingUI();
-  toast(next === null ? 'Note retirée' : 'Note enregistrée : ' + starsText(next));
+  toast(next === null ? tr('Note retirée') : tr('Note enregistrée : {next}', { next: starsText(next) }));
   const ok = await pending;
   if (!ok) {
     refreshRatingUI();
-    toast('Enregistrement impossible : note annulée');
+    toast(tr('Enregistrement impossible : note annulée'));
   }
   return ok;
 }
@@ -55,10 +56,10 @@ async function rate(key, value) {
 export function ficheRateHTML(m) {
   const v = userStore.getRating(m.key);
   const can = canRate(m.key);
-  return '<span class="f-rate-l"><span class="f-rate-label">Ta note</span><span class="f-rate-value">' +
-    (can ? (v ? fmtNum(v, 1) + ' / 5' : 'Pas encore noté') : 'Après visionnage') + '</span></span>' +
+  return '<span class="f-rate-l"><span class="f-rate-label">' + tr('Ta note') + '</span><span class="f-rate-value">' +
+    (can ? (v ? fmtNum(v, 1) + ' / 5' : tr('Pas encore noté')) : tr('Après visionnage')) + '</span></span>' +
     (can ? starsHTML(v, m.key)
-      : '<span class="stars is-locked" role="img" aria-label="Note possible une fois le titre vu, ou à moitié">' +
+      : '<span class="stars is-locked" role="img" aria-label="' + tr('Note possible une fois le titre vu, ou à moitié') + '">' +
         ('<span class="star"><span class="star-bg">' + STAR + '</span></span>').repeat(5) + '</span>');
 }
 
@@ -101,9 +102,9 @@ export function showRatePrompt(key, opts) {
   const pop = document.createElement('div');
   pop.className = 'rate-pop glass';
   pop.setAttribute('role', 'dialog');
-  pop.setAttribute('aria-label', 'Noter ' + meta.title);
-  pop.innerHTML = '<p class="rate-q">' + esc(o.question || 'Tu as aimé ?') + (meta.title ? ' <strong>' + esc(meta.title) + '</strong>' : '') + '</p>' +
-    starsHTML(userStore.getRating(key), key) + '<button type="button" class="link-btn" data-rate-close>Plus tard</button>';
+  pop.setAttribute('aria-label', tr('Noter {title}', { title: meta.title }));
+  pop.innerHTML = '<p class="rate-q">' + esc(o.question || tr('Tu as aimé ?')) + (meta.title ? ' <strong>' + esc(meta.title) + '</strong>' : '') + '</p>' +
+    starsHTML(userStore.getRating(key), key) + '<button type="button" class="link-btn" data-rate-close>' + tr('Plus tard') + '</button>';
   document.body.appendChild(pop);
   popTimer = setTimeout(closeRatePrompt, 14000);
 }
@@ -125,7 +126,7 @@ registerCtxItems((t) => {
   if (t.kind !== 'title' && t.kind !== 'show') return [];
   const v = userStore.getRating(t.key);
   return [{
-    id: 'rate', label: v ? 'Modifier ma note (' + fmtNum(v, 1) + ' ★)' : 'Noter…', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/></svg>',
-    run: () => { if (canRate(t.key)) showRatePrompt(t.key, { force: true, question: 'Ta note' }); else toast('Regarde au moins la moitié pour pouvoir noter'); },
+    id: 'rate', label: v ? tr('Modifier ma note ({v} ★)', { v: fmtNum(v, 1) }) : tr('Noter…'), icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/></svg>',
+    run: () => { if (canRate(t.key)) showRatePrompt(t.key, { force: true, question: tr('Ta note') }); else toast(tr('Regarde au moins la moitié pour pouvoir noter')); },
   }];
 });

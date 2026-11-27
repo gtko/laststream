@@ -14,9 +14,10 @@ import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
 import { avatarPicker, avatarPickerHTML } from './avatar-picker.js';
 import { ICON } from './icons.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Fonds proposés pour la couleur du profil (pastilles de l'aperçu). */
-const BACKGROUNDS = [['#ffd9cf', 'Corail clair'], ['#d6e4ff', 'Bleu clair'], ['#d9f2ea', 'Menthe'], ['#fff1c2', 'Jaune'], ['#e8dcff', 'Lavande'], ['#221f2b', 'Sombre']];
+const BACKGROUNDS = [['#ffd9cf', tr('Corail clair')], ['#d6e4ff', tr('Bleu clair')], ['#d9f2ea', tr('Menthe')], ['#fff1c2', tr('Jaune')], ['#e8dcff', tr('Lavande')], ['#221f2b', tr('Sombre')]];
 const DEFAULT_BG = '#ffd9cf';
 const FALLBACK_TILE_BG = '#94a3b8';
 const PAGE = 60;
@@ -25,7 +26,7 @@ const DEBOUNCE_MS = 250;
 const MIN_QUERY = 2;
 /** Famille des illustrés : elle héberge aussi les avatars générés (DiceBear, Héros). */
 const FREE = 'free';
-const UNAVAILABLE = "Les collections d'avatars ne sont pas disponibles pour le moment.";
+const UNAVAILABLE = tr('Les collections d\'avatars ne sont pas disponibles pour le moment.');
 const SEARCH_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>';
 const EMPTY_CAT = { version: '', families: [], collections: [], featured: [] };
 
@@ -35,20 +36,20 @@ const initialOf = (name) => (name || '?').trim().slice(0, 1).toUpperCase();
 
 /** Nom affiché avant (ou sans) le chargement du fichier de la collection. */
 function fallbackName(value) {
-  if (!value) return 'Initiale';
+  if (!value) return tr('Initiale');
   const col = parseColAvatar(value);
   if (col) return cap(col.charId);
   const hero = parseHero(value);
   if (hero) return cap(hero.seed);
   const gen = parseAvatar(value);
-  return gen ? cap(gen.seed) : 'Avatar';
+  return gen ? cap(gen.seed) : tr('Avatar');
 }
 
 /** Nom et sous-titre d'un avatar, sans réseau. */
 export function describeAvatarSync(value) {
-  if (!value) return { name: 'Initiale', sub: 'Sur la couleur du profil' };
+  if (!value) return { name: tr('Initiale'), sub: tr('Sur la couleur du profil') };
   if (parseColAvatar(value)) return { name: fallbackName(value), sub: '' };
-  return { name: fallbackName(value), sub: parseHero(value) ? 'Héros' : 'Avatar généré' };
+  return { name: fallbackName(value), sub: parseHero(value) ? tr('Héros') : tr('Avatar généré') };
 }
 
 /** Nom du personnage et de sa collection (fichier de la collection chargé au besoin ; repli sans réseau). */
@@ -115,17 +116,17 @@ export function openAvatarStudio(opts = {}) {
   overlay.className = 'as-overlay';
   overlay.innerHTML = '<div class="as-app' + (kid ? ' is-kid' : '') + '" role="dialog" aria-modal="true" aria-labelledby="as-title">' +
     '<header class="as-top">' +
-    '<button type="button" class="as-round" data-as-back aria-label="Retour">' + ICON.back + '</button>' +
-    '<h2 class="as-title" id="as-title">Choisir un avatar</h2>' +
-    '<label class="as-search">' + SEARCH_ICON + '<input type="search" name="assearch" autocomplete="off" placeholder="Rechercher un personnage, une série, un jeu…" aria-label="Rechercher un avatar"></label>' +
+    '<button type="button" class="as-round" data-as-back aria-label="' + tr('Retour') + '">' + ICON.back + '</button>' +
+    '<h2 class="as-title" id="as-title">' + tr('Choisir un avatar') + '</h2>' +
+    '<label class="as-search">' + SEARCH_ICON + '<input type="search" name="assearch" autocomplete="off" placeholder="' + tr('Rechercher un personnage, une série, un jeu…') + '" aria-label="' + tr('Rechercher un avatar') + '"></label>' +
     '<span class="as-count" data-as-count></span>' +
-    '<button type="button" class="as-round as-close" data-as-close aria-label="Fermer">' + ICON.close + '</button>' +
+    '<button type="button" class="as-round as-close" data-as-close aria-label="' + tr('Fermer') + '">' + ICON.close + '</button>' +
     '</header>' +
-    '<p class="as-banner" data-as-banner' + (kid ? '' : ' hidden') + '>Profil enfant : seulement les collections pour les enfants</p>' +
+    '<p class="as-banner" data-as-banner' + (kid ? '' : ' hidden') + '>' + tr('Profil enfant : seulement les collections pour les enfants') + '</p>' +
     '<div class="as-body">' +
-    '<nav class="as-rail" aria-label="Familles" data-as-rail></nav>' +
+    '<nav class="as-rail" aria-label="' + tr('Familles') + '" data-as-rail></nav>' +
     '<main class="as-main">' +
-    '<section class="as-preview" data-as-preview aria-label="Aperçu"></section>' +
+    '<section class="as-preview" data-as-preview aria-label="' + tr('Aperçu') + '"></section>' +
     '<div class="as-content" data-as-content></div>' +
     '</main>' +
     '</div>' +
@@ -141,8 +142,8 @@ export function openAvatarStudio(opts = {}) {
   const recentList = () => (profileId ? recentAvatars(profileId) : []).filter(isKidOk);
 
   function familyLabel(id) {
-    if (id === 'all') return 'Pour toi';
-    if (id === FREE) return st.cat?.families.find((f) => f.id === FREE)?.label || 'Illustrés';
+    if (id === 'all') return tr('Pour toi');
+    if (id === FREE) return st.cat?.families.find((f) => f.id === FREE)?.label || tr('Illustrés');
     return st.cat?.families.find((f) => f.id === id)?.label || id;
   }
 
@@ -155,11 +156,11 @@ export function openAvatarStudio(opts = {}) {
   }
 
   function subOf(value) {
-    if (!value) return 'Sur la couleur du profil';
+    if (!value) return tr('Sur la couleur du profil');
     const col = parseColAvatar(value);
-    if (!col) return parseHero(value) ? 'Héros' : 'Avatar généré';
+    if (!col) return parseHero(value) ? tr('Héros') : tr('Avatar généré');
     const c = st.cat?.collections.find((x) => x.id === col.colId);
-    return c ? (c.style ? c.name + ' · ' + c.style : c.name) : 'Collection';
+    return c ? (c.style ? c.name + ' · ' + c.style : c.name) : tr('Collection');
   }
 
   // ---------- Vignettes et rangées ----------
@@ -184,21 +185,21 @@ export function openAvatarStudio(opts = {}) {
   const countLabel = (n) => (n ? fmt(n) + ' personnages' : '');
 
   /** Carte d'une collection (ou d'un univers : le premier style ouvre la collection). */
-  const cardHTML = (name, col) => '<button type="button" class="as-card" data-as-col="' + esc(col.id) + '" aria-label="' + esc(name + (col.total ? ', ' + fmt(col.total) + ' personnages' : '')) + '">' +
+  const cardHTML = (name, col) => '<button type="button" class="as-card" data-as-col="' + esc(col.id) + '" aria-label="' + esc(name + (col.total ? tr(', {total} personnages', { total: fmt(col.total) }) : '')) + '">' +
     mosaicHTML(col) + '<span class="as-card-name">' + esc(name) + '</span><span class="as-card-n">' + esc(countLabel(col.total)) + '</span></button>';
 
   const cardsSectionHTML = (title, sub, groups) => '<section class="as-section"><div class="as-row-head"><h2 class="as-h2" tabindex="-1">' + esc(title) + '</h2>' +
     '<span class="as-sub">' + esc(sub) + '</span></div>' +
-    (groups.length ? '<div class="as-cards">' + groups.map((g) => cardHTML(g.name, g.styles[0])).join('') + '</div>' : '<p class="as-empty">Aucune collection à afficher.</p>') + '</section>';
+    (groups.length ? '<div class="as-cards">' + groups.map((g) => cardHTML(g.name, g.styles[0])).join('') + '</div>' : '<p class="as-empty">' + tr('Aucune collection à afficher.') + '</p>') + '</section>';
 
   /** Variante enfant : une section par collection, tuiles en 3 colonnes. */
   function kidSectionsHTML(groups) {
-    if (!groups.length) return '<p class="as-empty">Aucune collection pour les enfants pour le moment.</p>';
+    if (!groups.length) return '<p class="as-empty">' + tr('Aucune collection pour les enfants pour le moment.') + '</p>';
     return groups.map((g) => {
       const first = g.styles[0];
       const values = first.previews.slice(0, 6).map((ch) => formatColAvatar(first.id, ch));
       return '<section class="as-kid-sec"><div class="as-row-head"><h2 class="as-h2" tabindex="-1">' + esc(g.name) + '</h2>' +
-        '<button type="button" class="as-link" data-as-col="' + esc(first.id) + '">Tout voir</button></div>' +
+        '<button type="button" class="as-link" data-as-col="' + esc(first.id) + '">' + tr('Tout voir') + '</button></div>' +
         '<div class="as-grid as-grid-kid">' + values.map((v) => tileHTML(v, nameOf(v))).join('') + '</div></section>';
     }).join('');
   }
@@ -224,41 +225,41 @@ export function openAvatarStudio(opts = {}) {
       const c = parseColAvatar(v);
       return c && st.scope.collections.some((x) => x.id === c.colId);
     });
-    return rowHTML("D'après ce que tu regardes", watchSub ? watchSub + '…' : '', st.watch.slice(0, ROW_MAX).map((r) => formatColAvatar(r.colId, r.charId))) +
-      rowHTML('Les plus choisis', 'Sur tous les profils Laststream', featured.slice(0, ROW_MAX)) +
-      cardsSectionHTML('Toutes les collections', 'Ouvre une collection pour voir tous ses personnages', st.groups);
+    return rowHTML(tr('D\'après ce que tu regardes'), watchSub ? watchSub + '…' : '', st.watch.slice(0, ROW_MAX).map((r) => formatColAvatar(r.colId, r.charId))) +
+      rowHTML(tr('Les plus choisis'), tr('Sur tous les profils Laststream'), featured.slice(0, ROW_MAX)) +
+      cardsSectionHTML(tr('Toutes les collections'), tr('Ouvre une collection pour voir tous ses personnages'), st.groups);
   }
 
   function initialHTML() {
     return '<section class="as-initial"><span class="as-initial-art" style="background:' + esc(st.bg) + '">' + esc(initialOf(profileName)) + '</span>' +
-      '<div class="as-initial-text"><h2 class="as-h2" tabindex="-1">Initiale et couleur</h2>' +
-      '<p>Le profil affiche son initiale sur la couleur choisie. Choisis la couleur du fond ci-dessous, puis « Utiliser l\'initiale ».</p>' +
-      '<div><button type="button" class="as-btn as-btn-primary" data-as-use-initial>Utiliser l\'initiale</button></div></div></section>';
+      '<div class="as-initial-text"><h2 class="as-h2" tabindex="-1">' + tr('Initiale et couleur') + '</h2>' +
+      '<p>' + tr('Le profil affiche son initiale sur la couleur choisie. Choisis la couleur du fond ci-dessous, puis « Utiliser l\'initiale ».') + '</p>' +
+      '<div><button type="button" class="as-btn as-btn-primary" data-as-use-initial>' + tr('Utiliser l\'initiale') + '</button></div></div></section>';
   }
 
   /** « Illustrés » : collections illustrées, et l'ancien sélecteur DiceBear / Héros sous « Générés ». */
   function freeHTML() {
-    const tabs = '<div class="as-subtabs" role="group" aria-label="Type d\'illustrés">' +
-      '<button type="button" class="as-chip" data-as-sub="col" aria-pressed="' + (st.sub === 'col') + '">Collections</button>' +
-      '<button type="button" class="as-chip" data-as-sub="gen" aria-pressed="' + (st.sub === 'gen') + '">Générés</button></div>';
+    const tabs = '<div class="as-subtabs" role="group" aria-label="' + tr('Type d\'illustrés') + '">' +
+      '<button type="button" class="as-chip" data-as-sub="col" aria-pressed="' + (st.sub === 'col') + '">' + tr('Collections') + '</button>' +
+      '<button type="button" class="as-chip" data-as-sub="gen" aria-pressed="' + (st.sub === 'gen') + '">' + tr('Générés') + '</button></div>';
     if (st.sub === 'gen') return tabs + '<div class="as-gen" data-as-gen></div>';
     const groups = st.groups.filter((g) => g.family === FREE);
-    return tabs + (groups.length ? cardsSectionHTML(familyLabel(FREE), 'Ouvre une collection pour voir tous ses personnages', groups)
-      : '<p class="as-empty">Pas encore de collection illustrée. Les avatars générés sont dans l\'onglet « Générés ».</p>');
+    return tabs + (groups.length ? cardsSectionHTML(familyLabel(FREE), tr('Ouvre une collection pour voir tous ses personnages'), groups)
+      : '<p class="as-empty">' + tr('Pas encore de collection illustrée. Les avatars générés sont dans l\'onglet « Générés ».') + '</p>');
   }
 
   function familyHTML(fam) {
     if (fam === 'recent') {
       const list = recentList();
-      return list.length ? rowHTML('Récents', 'Tes derniers choix sur ce profil', list)
-        : '<p class="as-empty">Pas encore de choix récent sur ce profil.</p>';
+      return list.length ? rowHTML(tr('Récents'), tr('Tes derniers choix sur ce profil'), list)
+        : '<p class="as-empty">' + tr('Pas encore de choix récent sur ce profil.') + '</p>';
     }
     if (fam === 'initial') return initialHTML();
     if (fam === FREE) return freeHTML();
     const groups = st.groups.filter((g) => g.family === fam);
     if (kid) return kidSectionsHTML(groups);
-    return rowHTML(familyLabel(fam), 'Personnages populaires', interleave(groups.map((g) => g.styles[0]))) +
-      cardsSectionHTML('Collections · ' + familyLabel(fam), 'Ouvre une collection pour voir tous ses personnages', groups);
+    return rowHTML(familyLabel(fam), tr('Personnages populaires'), interleave(groups.map((g) => g.styles[0]))) +
+      cardsSectionHTML(tr('Collections · {fam}', { fam: familyLabel(fam) }), tr('Ouvre une collection pour voir tous ses personnages'), groups);
   }
 
   function collectionHTML(colId) {
@@ -267,28 +268,28 @@ export function openAvatarStudio(opts = {}) {
     const styles = group ? group.styles : [];
     const name = col ? col.name : colId;
     const famId = col && col.family ? col.family : 'all';
-    const crumbs = '<nav class="as-crumbs" aria-label="Fil d\'Ariane">' +
+    const crumbs = '<nav class="as-crumbs" aria-label="' + tr('Fil d\'Ariane') + '">' +
       '<button type="button" class="as-link" data-as-fam="' + esc(famId) + '">' + esc(familyLabel(famId)) + '</button>' +
       '<span aria-hidden="true">›</span><h2 class="as-h2 as-crumb-h" tabindex="-1">' + esc(name) + '</h2></nav>';
-    const chips = styles.length > 1 ? '<div class="as-chips" role="group" aria-label="Style">' + styles.map((s) =>
+    const chips = styles.length > 1 ? '<div class="as-chips" role="group" aria-label="' + tr('Style') + '">' + styles.map((s) =>
       '<button type="button" class="as-chip" data-as-style="' + esc(s.id) + '" aria-pressed="' + (s.id === colId) + '">' + esc(s.style || s.name) + '</button>').join('') + '</div>' : '';
-    return crumbs + chips + '<div class="as-grid" data-as-grid></div><button type="button" class="as-more" data-as-more hidden>Voir plus</button>';
+    return crumbs + chips + '<div class="as-grid" data-as-grid></div><button type="button" class="as-more" data-as-more hidden>' + tr('Voir plus') + '</button>';
   }
 
   function searchHTML() {
     const q = st.query.trim();
-    const head = '<h2 class="as-h2" tabindex="-1">Résultats pour « ' + esc(q) + ' »</h2>';
+    const head = '<h2 class="as-h2" tabindex="-1">' + tr('Résultats pour « {q} »', { q: esc(q) }) + '</h2>';
     const r = st.search;
-    if (!r) return head + '<p class="as-empty">Recherche…</p>';
+    if (!r) return head + '<p class="as-empty">' + tr('Recherche…') + '</p>';
     if (r.error) return head + '<p class="as-empty">' + esc(UNAVAILABLE) + '</p>';
-    if (!r.cols.length && !r.chars.length) return head + '<p class="as-empty">Aucun résultat.</p>';
+    if (!r.cols.length && !r.chars.length) return head + '<p class="as-empty">' + tr('Aucun résultat.') + '</p>';
     let html = head;
     if (r.cols.length) {
-      html += '<section class="as-section"><h3 class="as-h3">Collections</h3><div class="as-cards">' + r.cols.map((c) =>
+      html += '<section class="as-section"><h3 class="as-h3">' + tr('Collections') + '</h3><div class="as-cards">' + r.cols.map((c) =>
         cardHTML(c.style ? c.name + ' · ' + c.style : c.name, c)).join('') + '</div></section>';
     }
     if (r.chars.length) {
-      html += '<section class="as-section"><h3 class="as-h3">Personnages</h3><div class="as-grid">' + r.chars.map((h) =>
+      html += '<section class="as-section"><h3 class="as-h3">' + tr('Personnages') + '</h3><div class="as-grid">' + r.chars.map((h) =>
         tileHTML(formatColAvatar(h.colId, h.charId), h.name)).join('') + '</div></section>';
     }
     return html;
@@ -297,16 +298,16 @@ export function openAvatarStudio(opts = {}) {
   function renderHeader() {
     const v = st.view;
     const col = v.kind === 'collection' && st.cat ? st.cat.collections.find((c) => c.id === v.colId) : null;
-    input.placeholder = col ? 'Chercher dans ' + col.name + (col.total ? ' (' + fmt(col.total) + ')' : '') : 'Rechercher un personnage, une série, un jeu…';
-    input.setAttribute('aria-label', col ? 'Chercher dans la collection' : 'Rechercher un avatar');
+    input.placeholder = col ? tr('Chercher dans {name}', { name: col.name }) + (col.total ? ' (' + fmt(col.total) + ')' : '') : tr('Rechercher un personnage, une série, un jeu…');
+    input.setAttribute('aria-label', col ? tr('Chercher dans la collection') : tr('Rechercher un avatar'));
     count.textContent = st.scope ? st.scope.collections.length + ' collections' : '';
   }
 
   function renderRail() {
     const items = [];
-    if (st.status !== 'error') items.push({ id: 'all', label: 'Pour toi', count: 0 });
+    if (st.status !== 'error') items.push({ id: 'all', label: tr('Pour toi'), count: 0 });
     const recents = recentList().length;
-    items.push({ id: 'recent', label: 'Récents', count: recents });
+    items.push({ id: 'recent', label: tr('Récents'), count: recents });
     if (st.cat) {
       for (const f of st.cat.families) {
         if (f.id === FREE || f.id === 'initial') continue;
@@ -315,7 +316,7 @@ export function openAvatarStudio(opts = {}) {
       }
     }
     items.push({ id: FREE, label: familyLabel(FREE), count: 0 });
-    items.push({ id: 'initial', label: 'Initiale et couleur', count: 0 });
+    items.push({ id: 'initial', label: tr('Initiale et couleur'), count: 0 });
     const current = activeFamily();
     rail.innerHTML = items.map((it) => '<button type="button" class="as-rail-item" data-as-fam="' + esc(it.id) + '" aria-pressed="' + (it.id === current) + '">' +
       '<span>' + esc(it.label) + '</span>' + (it.count ? '<span class="as-rail-n">' + it.count + '</span>' : '') + '</button>').join('');
@@ -324,7 +325,7 @@ export function openAvatarStudio(opts = {}) {
   /** Pastilles « Fond » : les 6 pastels, plus la couleur courante si elle n'en fait pas partie (sélectionnée). */
   function swatches() {
     const list = BACKGROUNDS.map(([c, l]) => [c, l]);
-    if (!BACKGROUNDS.some(([c]) => c.toLowerCase() === st.bg.toLowerCase())) list.push([st.bg, 'Couleur du profil']);
+    if (!BACKGROUNDS.some(([c]) => c.toLowerCase() === st.bg.toLowerCase())) list.push([st.bg, tr('Couleur du profil')]);
     return list;
   }
 
@@ -332,12 +333,12 @@ export function openAvatarStudio(opts = {}) {
     const v = st.sel;
     const init = initialOf(profileName);
     preview.innerHTML = '<div class="as-prev-main"><span class="as-prev-art as-art"' + avatarAttrs(v, st.bg) + '>' + (v ? '' : esc(init)) + '</span>' +
-      '<div class="as-prev-text"><span class="as-prev-name" data-as-prev-name>' + esc(v ? nameOf(v) : 'Initiale') + '</span>' +
+      '<div class="as-prev-text"><span class="as-prev-name" data-as-prev-name>' + esc(v ? nameOf(v) : tr('Initiale')) + '</span>' +
       '<span class="as-prev-sub">' + esc(subOf(v)) + '</span></div></div>' +
-      '<div class="as-bgs" role="group" aria-label="Couleur du fond">' + swatches().map(([c, l]) =>
-        '<button type="button" class="as-swatch" data-as-bg="' + c + '" aria-label="Fond : ' + esc(l) + '" aria-pressed="' + (c.toLowerCase() === st.bg.toLowerCase()) + '" style="background:' + c + '"></button>').join('') + '</div>' +
-      '<div class="as-prev-actions"><button type="button" class="as-btn" data-as-cancel>Annuler</button>' +
-      '<button type="button" class="as-btn as-btn-primary" data-as-use>' + (kid ? "C'est moi !" : 'Utiliser cet avatar') + '</button></div>';
+      '<div class="as-bgs" role="group" aria-label="' + tr('Couleur du fond') + '">' + swatches().map(([c, l]) =>
+        '<button type="button" class="as-swatch" data-as-bg="' + c + '" aria-label="' + tr('Fond : {l}', { l: esc(l) }) + '" aria-pressed="' + (c.toLowerCase() === st.bg.toLowerCase()) + '" style="background:' + c + '"></button>').join('') + '</div>' +
+      '<div class="as-prev-actions"><button type="button" class="as-btn" data-as-cancel>' + tr('Annuler') + '</button>' +
+      '<button type="button" class="as-btn as-btn-primary" data-as-use>' + (kid ? tr('C\'est moi !') : tr('Utiliser cet avatar')) + '</button></div>';
     hydrateAvatars(preview);
   }
 
@@ -353,14 +354,14 @@ export function openAvatarStudio(opts = {}) {
       return;
     }
     if (d.status === 'error') {
-      grid.innerHTML = '<p class="as-empty">Cette collection n\'est pas disponible pour le moment.</p>';
+      grid.innerHTML = '<p class="as-empty">' + tr('Cette collection n\'est pas disponible pour le moment.') + '</p>';
       if (more) more.hidden = true;
       return;
     }
     const q = normalizeText(st.query);
     const list = q ? d.chars.filter((ch) => normalizeText(ch.name).includes(q)) : d.chars;
     if (!list.length) {
-      grid.innerHTML = '<p class="as-empty">Aucun personnage ne correspond à « ' + esc(st.query.trim()) + ' ».</p>';
+      grid.innerHTML = '<p class="as-empty">' + tr('Aucun personnage ne correspond à « {query} ».', { query: esc(st.query.trim()) }) + '</p>';
       if (more) more.hidden = true;
       return;
     }
@@ -395,7 +396,7 @@ export function openAvatarStudio(opts = {}) {
   function renderContent() {
     if (closed) return;
     if (st.status === 'loading') {
-      content.innerHTML = '<p class="as-empty">Chargement des avatars…</p>';
+      content.innerHTML = '<p class="as-empty">' + tr('Chargement des avatars…') + '</p>';
       return;
     }
     const v = st.view;

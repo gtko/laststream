@@ -13,6 +13,7 @@ import {
   type ItemResult, type ItemStatus, type MigrationAction, type MigrationBundle, type MigrationItem, type MigrationList, type MigrationSource,
 } from './types';
 import { decodeWatched, type Inflate } from './watchedBitfield';
+import { t as tr } from '../../i18n';
 
 const JOB_PREFIX = 'laststream.migration.job:';
 const SAVE_EVERY = 20;
@@ -101,11 +102,11 @@ export function reportOf(job: MigrationJob): MigrationReport {
 /** Rapport en texte brut (à copier ou à télécharger). */
 export function reportText(rep: MigrationReport, at = Date.now()): string {
   const lines = [
-    'Import ' + SOURCE_LABEL[rep.source] + ' vers Laststream, ' + new Date(at).toLocaleString('fr-FR'),
-    'Réussis : ' + rep.ok + ' · Ignorés : ' + rep.skipped + ' · Échoués : ' + rep.failed + ' (sur ' + rep.total + ')',
+    tr('Import {v} vers Laststream, {v2}', { v: SOURCE_LABEL[rep.source], v2: new Date(at).toLocaleString('fr-FR') }),
+    tr('Réussis : {ok} · Ignorés : {skipped} · Échoués : {failed} (sur {total})', { ok: rep.ok, skipped: rep.skipped, failed: rep.failed, total: rep.total }),
     '',
   ];
-  for (const p of rep.problems) lines.push((p.status === 'skipped' ? 'Ignoré' : 'Échec') + ' · ' + p.title + ' · ' + (p.reason || 'raison inconnue'));
+  for (const p of rep.problems) lines.push((p.status === 'skipped' ? tr('Ignoré') : tr('Échec')) + ' · ' + p.title + ' · ' + (p.reason || tr('raison inconnue')));
   return lines.join('\n');
 }
 
@@ -123,13 +124,13 @@ export function isTransient(err: unknown): boolean {
 function reasonOf(err: unknown): string {
   if (err instanceof NotFound) return err.message;
   if (err instanceof UserApiError) {
-    if (err.status === 403) return 'Refusé par le serveur : ce profil ne peut pas modifier ces données';
-    if (err.status === 404) return 'Fonction absente du serveur Laststream';
-    if (err.status === 400 || err.status === 422) return 'Refusé par le serveur : donnée invalide';
-    return 'Refusé par le serveur (' + err.code + ')';
+    if (err.status === 403) return tr('Refusé par le serveur : ce profil ne peut pas modifier ces données');
+    if (err.status === 404) return tr('Fonction absente du serveur Laststream');
+    if (err.status === 400 || err.status === 422) return tr('Refusé par le serveur : donnée invalide');
+    return tr('Refusé par le serveur ({code})', { code: err.code });
   }
-  if (err instanceof LastAddonError) return 'Recherche TMDB impossible : ' + err.message;
-  return err instanceof Error && err.message ? err.message : 'Erreur inconnue';
+  if (err instanceof LastAddonError) return tr('Recherche TMDB impossible : {message}', { message: err.message });
+  return err instanceof Error && err.message ? err.message : tr('Erreur inconnue');
 }
 
 export interface RunDeps {
@@ -164,13 +165,13 @@ async function applyItem(job: MigrationJob, it: MigrationItem, deps: RunDeps): P
       if (!deps.sink.hasLists) {
         // Sans listes (sans compte, ou serveur ancien) : le titre rejoint la bibliothèque, rien n'est perdu.
         await deps.sink.library(t, it.at ?? 0);
-        return { s: 'ok', r: 'Ajouté à la bibliothèque (listes indisponibles sur ce profil)' };
+        return { s: 'ok', r: tr('Ajouté à la bibliothèque (listes indisponibles sur ce profil)') };
       }
       const name = LIST_NAME[list] + ' · ' + SOURCE_LABEL[job.source].replace(/ \(fichier\)$/, '');
       const id = await deps.sink.ensureList(list, name, job.lists[list]);
       job.lists[list] = id;
       const already = await deps.sink.listItem(id, t);
-      return already ? { s: 'skipped', r: 'Déjà dans la liste « ' + name + ' »' } : { s: 'ok' };
+      return already ? { s: 'skipped', r: tr('Déjà dans la liste « {name} »', { name }) } : { s: 'ok' };
     }
     case 'watched': {
       if (t.type === 'movie') {
@@ -181,16 +182,16 @@ async function applyItem(job: MigrationJob, it: MigrationItem, deps: RunDeps): P
       let episodes = it.episodes ?? [];
       if (!episodes.length && it.stremioWatched) {
         const imdb = t.imdb ?? it.ref.imdb;
-        if (!imdb) return { s: 'failed', r: 'Épisodes vus illisibles : identifiant IMDb manquant' };
+        if (!imdb) return { s: 'failed', r: tr('Épisodes vus illisibles : identifiant IMDb manquant') };
         try {
           episodes = await decodeWatched(it.stremioWatched, await deps.videos(imdb), deps.inflate);
         } catch (err) {
           if (err instanceof NotFound) return { s: 'failed', r: err.message };
           if (isTransient(err)) throw err;
-          return { s: 'failed', r: 'Épisodes vus illisibles dans les données Stremio' };
+          return { s: 'failed', r: tr('Épisodes vus illisibles dans les données Stremio') };
         }
       }
-      if (!episodes.length) return { s: 'skipped', r: 'Aucun épisode vu à reprendre' };
+      if (!episodes.length) return { s: 'skipped', r: tr('Aucun épisode vu à reprendre') };
       await deps.sink.watched(t, episodes);
       rememberWatchDate(key, it.at ?? 0);
       return { s: 'ok' };
@@ -198,7 +199,7 @@ async function applyItem(job: MigrationJob, it: MigrationItem, deps: RunDeps): P
     case 'progress': {
       const pos = it.positionSec ?? 0;
       const dur = it.durationSec ?? 0;
-      if (pos <= 0 || dur <= 0) return { s: 'skipped', r: 'Position de lecture absente' };
+      if (pos <= 0 || dur <= 0) return { s: 'skipped', r: tr('Position de lecture absente') };
       await deps.sink.progress(t, it.season !== undefined ? { season: it.season, episode: it.episode } : {}, pos, dur);
       return { s: 'ok' };
     }
@@ -218,7 +219,7 @@ export async function runJob(job: MigrationJob, deps: RunDeps): Promise<Migratio
     if (job.results[it.uid]) continue;
     if (deps.signal?.aborted) {
       job.status = 'paused';
-      job.pausedReason = 'Import interrompu : il reprendra là où il s’est arrêté.';
+      job.pausedReason = tr('Import interrompu : il reprendra là où il s’est arrêté.');
       saveJob(job);
       return job;
     }
@@ -227,7 +228,7 @@ export async function runJob(job: MigrationJob, deps: RunDeps): Promise<Migratio
     } catch (err) {
       if (isTransient(err)) {
         job.status = 'paused';
-        job.pausedReason = 'Connexion perdue : l’import reprendra là où il s’est arrêté, sans doublon.';
+        job.pausedReason = tr('Connexion perdue : l’import reprendra là où il s’est arrêté, sans doublon.');
         saveJob(job);
         deps.onProgress?.(job);
         return job;

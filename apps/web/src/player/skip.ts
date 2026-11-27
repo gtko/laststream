@@ -1,4 +1,5 @@
 import { getSkipPref, type SkipPrefName } from '../data/prefs';
+import { t as tr } from '../i18n';
 
 /* Segments de saut (intro, récap, générique) fournis par lastAddon : lecture tolérante, segment actif, repères. */
 
@@ -35,7 +36,7 @@ export function skipLabel(seg: Pick<SkipSegment, 'kind' | 'inferred'>): string {
 }
 
 const SKIP_LABEL: Record<SkipKind, string> = {
-  intro: 'Passer l’intro', recap: 'Passer le récap', credits: 'Passer le générique', postcredits: 'Passer la scène post-générique', preview: 'Passer l’aperçu',
+  intro: tr('Passer l’intro'), recap: tr('Passer le récap'), credits: tr('Passer le générique'), postcredits: tr('Passer la scène post-générique'), preview: tr('Passer l’aperçu'),
 };
 
 /** Segment à proposer à l’instant `t` (intro / récap / aperçu ; le générique relève de la carte « épisode suivant »). */

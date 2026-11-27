@@ -7,6 +7,7 @@ import { isPlayerOpen, playBest } from '../player/sessionLoader.js';
 import { detailEl, modal } from './dom.js';
 import { watchPlayback } from './playback.js';
 import { postYT } from './preview.js';
+import { t } from '../i18n';
 
 /** Recherche silencieuse des sources, après l'ouverture de la fiche. */
 export const PREFETCH_MS = 10000;
@@ -77,11 +78,11 @@ export function createTrailerPlay({ request, opener, alive }) {
       countdown = document.createElement('div');
       countdown.className = 'f-next-up';
       countdown.setAttribute('role', 'status');
-      countdown.innerHTML = '<span class="f-next-txt"></span><button type="button" class="btn btn-ghost btn-sm" data-autocancel>Annuler</button>';
+      countdown.innerHTML = '<span class="f-next-txt"></span><button type="button" class="btn btn-ghost btn-sm" data-autocancel>' + t('Annuler') + '</button>';
       countdown.querySelector('[data-autocancel]').addEventListener('click', cancel);
       (detailEl.querySelector('.f-first') || detailEl).appendChild(countdown);
     }
-    countdown.querySelector('.f-next-txt').textContent = 'Lecture dans ' + left + ' s';
+    countdown.querySelector('.f-next-txt').textContent = t('Lecture dans {left} s', { left });
   };
 
   const handoff = () => {

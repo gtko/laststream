@@ -6,6 +6,7 @@
 import * as store from '../data/socialStore';
 import { playAt } from '../data/watchWith';
 import { state } from './state.js';
+import { t } from '../i18n';
 
 const PAGE = 50;
 /** Distance (px) sous laquelle la liste est considérée comme « en bas ». */
@@ -31,10 +32,10 @@ export function posLabel(sec) {
 /** Message lisible d’une erreur d’envoi (403 : ni amis ni foyer ; 429 : trop de messages). */
 export function sendErrorMessage(err) {
   const status = err ? err.status : undefined;
-  if (status === 403) return 'Tu ne peux écrire qu’à tes amis et à ton foyer.';
-  if (status === 429) return 'Trop de messages d’un coup : réessaie dans une minute.';
-  if (status === 0 || (err && err.code === 'network')) return 'Serveur injoignable pour le moment.';
-  return 'Message non envoyé. Réessaie.';
+  if (status === 403) return t('Tu ne peux écrire qu’à tes amis et à ton foyer.');
+  if (status === 429) return t('Trop de messages d’un coup : réessaie dans une minute.');
+  if (status === 0 || (err && err.code === 'network')) return t('Serveur injoignable pour le moment.');
+  return t('Message non envoyé. Réessaie.');
 }
 
 const unreachable = (err) => err && (err.status === 0 || err.code === 'network');
@@ -47,42 +48,42 @@ export function groupErrorMessage(err, nameOf = (pid) => pid) {
   const status = err ? err.status : undefined;
   const code = err ? err.code : '';
   if (status === 403 && code === 'not_allowed') {
-    const names = (Array.isArray(err.issues) ? err.issues : []).map((p) => String(nameOf(p) || 'Quelqu’un'));
-    if (names.length === 1) return names[0] + ' n’accepte pas les messages de groupe.';
-    if (names.length > 1) return names.slice(0, -1).join(', ') + ' et ' + names[names.length - 1] + ' n’acceptent pas les messages de groupe.';
-    return 'Une personne choisie n’accepte pas les messages de groupe.';
+    const names = (Array.isArray(err.issues) ? err.issues : []).map((p) => String(nameOf(p) || t('Quelqu’un')));
+    if (names.length === 1) return t('{v} n’accepte pas les messages de groupe.', { v: names[0] });
+    if (names.length > 1) return t('{v} et {v2} n’acceptent pas les messages de groupe.', { v: names.slice(0, -1).join(', '), v2: names[names.length - 1] });
+    return t('Une personne choisie n’accepte pas les messages de groupe.');
   }
-  if (status === 403 && code === 'owner_only') return 'Seul le propriétaire du groupe peut le modifier.';
-  if (status === 403) return 'Tu ne peux ajouter que tes amis.';
-  if (status === 404) return 'Ce groupe n’existe plus.';
-  if (status === 429) return 'Trop de groupes ou de modifications d’un coup : réessaie dans quelques minutes.';
-  if (unreachable(err)) return 'Serveur injoignable pour le moment.';
-  return 'Le groupe n’a pas pu être modifié. Réessaie.';
+  if (status === 403 && code === 'owner_only') return t('Seul le propriétaire du groupe peut le modifier.');
+  if (status === 403) return t('Tu ne peux ajouter que tes amis.');
+  if (status === 404) return t('Ce groupe n’existe plus.');
+  if (status === 429) return t('Trop de groupes ou de modifications d’un coup : réessaie dans quelques minutes.');
+  if (unreachable(err)) return t('Serveur injoignable pour le moment.');
+  return t('Le groupe n’a pas pu être modifié. Réessaie.');
 }
 
 /** Message d’une réaction refusée (409 : 6 emojis différents au plus ; 429 : trop vite ; 403 / 404 : plus possible ici). */
 export function reactionErrorMessage(err) {
   const status = err ? err.status : undefined;
-  if (status === 409) return 'Six emojis différents au maximum par message.';
-  if (status === 429) return 'Trop de réactions d’un coup : patiente un instant.';
-  if (status === 403 || status === 404) return 'Tu ne peux plus réagir ici.';
-  if (unreachable(err)) return 'Serveur injoignable pour le moment.';
-  return 'Réaction non envoyée.';
+  if (status === 409) return t('Six emojis différents au maximum par message.');
+  if (status === 429) return t('Trop de réactions d’un coup : patiente un instant.');
+  if (status === 403 || status === 404) return t('Tu ne peux plus réagir ici.');
+  if (unreachable(err)) return t('Serveur injoignable pour le moment.');
+  return t('Réaction non envoyée.');
 }
 
 /** Message d’une demande de rejoindre refusée (429 : trop de demandes). */
 export function joinErrorMessage(err) {
-  if (err && err.status === 429) return 'Trop de demandes d’un coup : réessaie dans quelques minutes.';
-  if (err && err.status === 403) return 'Cette personne n’accepte pas cette demande.';
-  if (unreachable(err)) return 'Serveur injoignable pour le moment.';
-  return 'Demande non envoyée. Réessaie.';
+  if (err && err.status === 429) return t('Trop de demandes d’un coup : réessaie dans quelques minutes.');
+  if (err && err.status === 403) return t('Cette personne n’accepte pas cette demande.');
+  if (unreachable(err)) return t('Serveur injoignable pour le moment.');
+  return t('Demande non envoyée. Réessaie.');
 }
 
 /** Message d’un signalement refusé (429 : trop de signalements). */
 export function reportErrorMessage(err) {
-  if (err && err.status === 429) return 'Trop de signalements d’un coup : réessaie plus tard.';
-  if (unreachable(err)) return 'Serveur injoignable pour le moment.';
-  return 'Signalement non envoyé. Réessaie.';
+  if (err && err.status === 429) return t('Trop de signalements d’un coup : réessaie plus tard.');
+  if (unreachable(err)) return t('Serveur injoignable pour le moment.');
+  return t('Signalement non envoyé. Réessaie.');
 }
 
 /** Titre d’un passage : catalogue, puis relevé de l’ami s’il regarde ce titre ; sinon chaîne vide. */
@@ -97,7 +98,7 @@ function titleOfContext(ctx, friend) {
 /** Libellé du contexte : « à 12:34 dans Dune » ; « dans un titre » si le titre est inconnu. */
 function contextLabel(ctx, title) {
   const at = typeof ctx.pos === 'number' && ctx.pos >= 0 ? 'à ' + posLabel(ctx.pos) + ' ' : '';
-  return at + 'dans ' + (title || 'un titre');
+  return at + 'dans ' + (title || t('un titre'));
 }
 
 const button = (cls, text) => {
@@ -123,7 +124,7 @@ export function createConversationRenderer({ launch, toast }) {
 
     const wrap = document.createElement('div');
     wrap.className = 'ss-chat';
-    const more = button('btn btn-ghost btn-sm ss-chat-more', 'Charger les messages précédents');
+    const more = button('btn btn-ghost btn-sm ss-chat-more', t('Charger les messages précédents'));
     more.hidden = true;
     const log = document.createElement('div');
     log.className = 'ss-chat-log';
@@ -139,9 +140,9 @@ export function createConversationRenderer({ launch, toast }) {
     input.type = 'text';
     input.name = 'text';
     input.autocomplete = 'off';
-    input.placeholder = 'Écrire un message';
-    input.setAttribute('aria-label', 'Message');
-    const send = button('btn btn-primary btn-sm', 'Envoyer');
+    input.placeholder = t('Écrire un message');
+    input.setAttribute('aria-label', t('Message'));
+    const send = button('btn btn-primary btn-sm', t('Envoyer'));
     send.type = 'submit';
     form.append(input, send);
     const count = document.createElement('p');
@@ -178,7 +179,7 @@ export function createConversationRenderer({ launch, toast }) {
     function contextButton(ctx) {
       const title = titleOfContext(ctx, friend);
       const btn = button('ss-chat-ctx', contextLabel(ctx, title));
-      btn.title = 'Ouvrir ce passage dans le lecteur';
+      btn.title = t('Ouvrir ce passage dans le lecteur');
       btn.addEventListener('click', () => {
         playAt({ launch, toast }, { type: ctx.type, tmdbId: ctx.tmdbId, title, season: ctx.season, episode: ctx.episode },
           typeof ctx.pos === 'number' ? ctx.pos : 0, btn);
@@ -205,7 +206,7 @@ export function createConversationRenderer({ launch, toast }) {
         time.textContent = hhmm(m.createdAt);
       }
       meta.append(time);
-      if (mine && m.readAt) meta.append(' · Lu');
+      if (mine && m.readAt) meta.append(' ' + t('· Lu'));
       bub.append(meta);
       row.append(bub);
       return row;
@@ -230,7 +231,7 @@ export function createConversationRenderer({ launch, toast }) {
         if (!loading) {
           const empty = document.createElement('p');
           empty.className = 'wp-empty';
-          empty.textContent = 'Aucun message pour l’instant. Écris le premier !';
+          empty.textContent = t('Aucun message pour l’instant. Écris le premier !');
           log.append(empty);
         }
       } else {
@@ -247,7 +248,7 @@ export function createConversationRenderer({ launch, toast }) {
     function paintMore() {
       more.hidden = !(hasMore || loadFailed);
       more.disabled = loading;
-      more.textContent = loadFailed ? 'Réessayer le chargement' : 'Charger les messages précédents';
+      more.textContent = loadFailed ? t('Réessayer le chargement') : t('Charger les messages précédents');
     }
 
     function updateForm() {
@@ -274,7 +275,7 @@ export function createConversationRenderer({ launch, toast }) {
       }
       loading = false;
       if (!alive) return;
-      setStatus(loadFailed ? 'Messages indisponibles pour le moment.' : '', loadFailed ? 'error' : '');
+      setStatus(loadFailed ? t('Messages indisponibles pour le moment.') : '', loadFailed ? 'error' : '');
       lastSig = null;
       paintLog(listOf());
       paintMore();
@@ -295,7 +296,7 @@ export function createConversationRenderer({ launch, toast }) {
         hasMore = merged.length > prev;
       } catch {
         hasMore = true;
-        if (alive) toast('Messages précédents indisponibles pour le moment.');
+        if (alive) toast(t('Messages précédents indisponibles pour le moment.'));
       }
       loading = false;
       if (!alive) return;
@@ -317,7 +318,7 @@ export function createConversationRenderer({ launch, toast }) {
       const text = input.value.trim();
       if (sending || !text) return;
       if (Array.from(text).length > store.MESSAGE_MAX) {
-        setStatus('Message trop long : ' + store.MESSAGE_MAX + ' caractères au maximum.', 'error');
+        setStatus(t('Message trop long : {MESSAGE_MAX} caractères au maximum.', { MESSAGE_MAX: store.MESSAGE_MAX }), 'error');
         return;
       }
       sending = true;

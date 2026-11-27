@@ -3,6 +3,7 @@ import type { MissedSummary } from '../data/socialV3Api';
 import { CINEMA_LABELS, indicatorText, menuElements, type CinemaDuration } from './playbackSocial';
 import { avatarEl } from './notesView';
 import { formatClock } from './progress';
+import { t } from '../i18n';
 
 /* Interface du mode cinéma dans le lecteur : menu (interrupteur, durée, cases « Masquer »), indicateur discret
  * « Mode cinéma · N messages en attente » et résumé de fin. Aucune logique de store ici : la session branche les
@@ -42,27 +43,27 @@ export interface CinemaMenu {
 }
 
 const DURATIONS: ReadonlyArray<{ id: CinemaDuration; label: string }> = [
-  { id: 'film', label: 'Jusqu’à la fin de ce film' },
-  { id: 'hour', label: 'Pendant 1 heure' },
-  { id: 'always', label: 'Toujours (réglage du profil)' },
+  { id: 'film', label: t('Jusqu’à la fin de ce film') },
+  { id: 'hour', label: t('Pendant 1 heure') },
+  { id: 'always', label: t('Toujours (réglage du profil)') },
 ];
 
 export function createCinemaMenu(h: CinemaHandlers): CinemaMenu {
   const root = el('div', 'lp-cinema-menu');
   root.setAttribute('role', 'dialog');
-  root.setAttribute('aria-label', 'Mode cinéma');
+  root.setAttribute('aria-label', t('Mode cinéma'));
   root.hidden = true;
 
   const head = el('div', 'lp-cm-head');
   const hd = el('div', 'lp-cm-hd');
-  hd.append(el('div', 'lp-cm-title', 'Mode cinéma'), el('div', 'lp-cm-sub', 'Coupe le social, rien n’est perdu'));
+  hd.append(el('div', 'lp-cm-title', t('Mode cinéma')), el('div', 'lp-cm-sub', t('Coupe le social, rien n’est perdu')));
   const sw = el('button', 'lp-cm-switch');
   sw.type = 'button';
   sw.setAttribute('role', 'switch');
   sw.append(el('span', 'lp-cm-knob'));
   head.append(hd, sw);
 
-  const durLabel = el('div', 'lp-cm-lb', 'Durée');
+  const durLabel = el('div', 'lp-cm-lb', t('Durée'));
   durLabel.id = 'lp-cm-dur';
   const durs = el('div', 'lp-cm-durs');
   durs.setAttribute('role', 'radiogroup');
@@ -80,7 +81,7 @@ export function createCinemaMenu(h: CinemaHandlers): CinemaMenu {
     durs.append(b);
   }
 
-  const hideLabel = el('div', 'lp-cm-lb', 'Masquer');
+  const hideLabel = el('div', 'lp-cm-lb', t('Masquer'));
   const grid = el('div', 'lp-cm-grid');
   const boxes = new Map<CinemaElement, HTMLButtonElement>();
   for (const id of menuElements()) {
@@ -92,8 +93,8 @@ export function createCinemaMenu(h: CinemaHandlers): CinemaMenu {
     boxes.set(id, b);
     grid.append(b);
   }
-  const foot = el('div', 'lp-cm-foot', 'À la fin du film : un résumé de ce que tu as manqué (messages, notes posées par tes amis pendant ce film).');
-  const locked = el('div', 'lp-cm-lock', 'Pour changer la durée, désactive puis réactive le mode.');
+  const foot = el('div', 'lp-cm-foot', t('À la fin du film : un résumé de ce que tu as manqué (messages, notes posées par tes amis pendant ce film).'));
+  const locked = el('div', 'lp-cm-lock', t('Pour changer la durée, désactive puis réactive le mode.'));
   locked.hidden = true;
   root.append(head, durLabel, durs, locked, hideLabel, grid, foot);
 
@@ -107,7 +108,7 @@ export function createCinemaMenu(h: CinemaHandlers): CinemaMenu {
 
   function render(m: CinemaModel): void {
     sw.setAttribute('aria-checked', String(m.active));
-    sw.setAttribute('aria-label', m.active ? 'Mode cinéma activé' : 'Mode cinéma désactivé');
+    sw.setAttribute('aria-label', m.active ? t('Mode cinéma activé') : t('Mode cinéma désactivé'));
     sw.classList.toggle('is-on', m.active);
     for (const [id, b] of radios) {
       const on = id === m.duration;
@@ -160,11 +161,11 @@ export function createCinemaIndicator(): { el: HTMLElement; set(count: number | 
 export function createCinemaSummary(onClose: () => void, onSeek: (pos: number) => void): { el: HTMLElement; show(s: MissedSummary): void; hide(): void; isOpen(): boolean } {
   const root = el('div', 'lp-cinema-sum');
   root.setAttribute('role', 'dialog');
-  root.setAttribute('aria-label', 'Ce que tu as manqué');
+  root.setAttribute('aria-label', t('Ce que tu as manqué'));
   root.hidden = true;
-  const title = el('div', 'lp-cs-title', 'Ce que tu as manqué');
+  const title = el('div', 'lp-cs-title', t('Ce que tu as manqué'));
   const body = el('div', 'lp-cs-body');
-  const ok = el('button', 'lp-cs-ok', 'Fermer');
+  const ok = el('button', 'lp-cs-ok', t('Fermer'));
   ok.type = 'button';
   ok.addEventListener('click', onClose);
   root.append(title, body, ok);
@@ -181,16 +182,16 @@ export function createCinemaSummary(onClose: () => void, onSeek: (pos: number) =
       const noMsg = s.messages <= 0;
       const noNotes = s.notes.length === 0;
       if (noMsg && noNotes) {
-        body.append(el('p', 'lp-cs-empty', 'Rien de nouveau pendant ce film.'));
+        body.append(el('p', 'lp-cs-empty', t('Rien de nouveau pendant ce film.')));
       }
       if (!noMsg) {
-        body.append(el('p', 'lp-cs-line', s.messages + (s.messages > 1 ? ' messages reçus' : ' message reçu')));
+        body.append(el('p', 'lp-cs-line', s.messages + (s.messages > 1 ? ' ' + t('messages reçus') : ' ' + t('message reçu'))));
         const ul = el('ul', 'lp-cs-friends');
         for (const f of s.byFriend) ul.append(el('li', '', f.handle.name + ' : ' + f.count));
         if (ul.childElementCount) body.append(ul);
       }
       if (!noNotes) {
-        body.append(el('p', 'lp-cs-line', s.notes.length + (s.notes.length > 1 ? ' notes d’amis' : ' note d’ami')));
+        body.append(el('p', 'lp-cs-line', s.notes.length + (s.notes.length > 1 ? ' ' + t('notes d’amis') : ' ' + t('note d’ami'))));
         const ul = el('ul', 'lp-cs-notes');
         for (const n of s.notes.slice(0, 5)) {
           const li = el('li');

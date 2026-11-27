@@ -5,6 +5,7 @@
 import { CHAT_MAX_CHARS, REACTIONS } from '../party/protocol';
 import { LI } from '../player/icons.js';
 import { pad2 } from '../data/format';
+import { t as tr } from '../i18n';
 
 /** Lignes gardées à l'écran (miroir de CHAT_MEMORY_LINES du client). */
 const CHAT_KEEP = 200;
@@ -25,13 +26,13 @@ export function clockOf(at) {
 
 /** Structure statique du tiroir (aucune donnée du salon ici). */
 function drawerHtml() {
-  return '<header class="gc-head"><h3>Chat du salon</h3>' +
-    '<button type="button" class="lp-btn lp-btn-s gc-close" data-gc="close" aria-label="Fermer le chat" data-tip="Fermer le chat">' + LI.close + '</button></header>' +
-    '<div class="gc-log" role="log" aria-live="polite" aria-label="Messages du salon"></div>' +
-    '<div class="gc-react" role="group" aria-label="Réactions"></div>' +
+  return '<header class="gc-head"><h3>' + tr('Chat du salon') + '</h3>' +
+    '<button type="button" class="lp-btn lp-btn-s gc-close" data-gc="close" aria-label="' + tr('Fermer le chat') + '" data-tip="' + tr('Fermer le chat') + '">' + LI.close + '</button></header>' +
+    '<div class="gc-log" role="log" aria-live="polite" aria-label="' + tr('Messages du salon') + '"></div>' +
+    '<div class="gc-react" role="group" aria-label="' + tr('Réactions') + '"></div>' +
     '<form class="gc-form" autocomplete="off">' +
-    '<input class="gc-input" type="text" name="message" maxlength="' + CHAT_MAX_CHARS + '" placeholder="Écrire un message" aria-label="Message" enterkeyhint="send">' +
-    '<button type="submit" class="btn btn-primary btn-sm">Envoyer</button></form>' +
+    '<input class="gc-input" type="text" name="message" maxlength="' + CHAT_MAX_CHARS + '" placeholder="' + tr('Écrire un message') + '" aria-label="' + tr('Message') + '" enterkeyhint="send">' +
+    '<button type="submit" class="btn btn-primary btn-sm">' + tr('Envoyer') + '</button></form>' +
     '<p class="gc-status" role="status" hidden></p>';
 }
 
@@ -45,7 +46,7 @@ export function createGuestChat(controls, { onOpen } = {}) {
   const drawer = doc.createElement('section');
   drawer.className = 'gc';
   drawer.hidden = true;
-  drawer.setAttribute('aria-label', 'Chat du salon');
+  drawer.setAttribute('aria-label', tr('Chat du salon'));
   drawer.innerHTML = drawerHtml();
   controls.sideSlot.appendChild(drawer);
   const log = drawer.querySelector('.gc-log');
@@ -62,7 +63,7 @@ export function createGuestChat(controls, { onOpen } = {}) {
   fx.setAttribute('aria-hidden', 'true');
   controls.root.appendChild(fx);
 
-  const btn = controls.addMenuButton({ id: 'chat', icon: CHAT_ICON, label: 'Chat du salon', onClick: toggle });
+  const btn = controls.addMenuButton({ id: 'chat', icon: CHAT_ICON, label: tr('Chat du salon'), onClick: toggle });
   btn.setAttribute('aria-expanded', 'false');
 
   let port = null;
@@ -86,7 +87,7 @@ export function createGuestChat(controls, { onOpen } = {}) {
     b.type = 'button';
     b.className = 'gc-emoji';
     b.textContent = e;
-    b.setAttribute('aria-label', 'Réagir avec ' + e);
+    b.setAttribute('aria-label', tr('Réagir avec {e}', { e }));
     listen(b, 'click', () => react(e));
     reactBar.appendChild(b);
   }
@@ -100,7 +101,7 @@ export function createGuestChat(controls, { onOpen } = {}) {
     input.disabled = !enabled;
     send.disabled = !enabled;
     for (const b of reactBar.querySelectorAll('button')) b.disabled = !enabled;
-    input.placeholder = enabled ? 'Écrire un message' : 'Chat indisponible hors salon';
+    input.placeholder = enabled ? tr('Écrire un message') : tr('Chat indisponible hors salon');
   }
 
   function showBadge() {
@@ -188,7 +189,7 @@ export function createGuestChat(controls, { onOpen } = {}) {
     e.preventDefault();
     if (destroyed) return;
     if (!port) {
-      setStatus('Chat indisponible : rejoins le salon.');
+      setStatus(tr('Chat indisponible : rejoins le salon.'));
       return;
     }
     const text = input.value.trim().slice(0, CHAT_MAX_CHARS);
@@ -197,13 +198,13 @@ export function createGuestChat(controls, { onOpen } = {}) {
       input.value = '';
       setStatus('');
     } else {
-      setStatus('Message non envoyé : connexion au salon en cours.');
+      setStatus(tr('Message non envoyé : connexion au salon en cours.'));
     }
   }
 
   function react(emoji) {
     if (destroyed || !port) return;
-    setStatus(port.sendReact(emoji) ? '' : 'Réaction non envoyée : connexion au salon en cours.');
+    setStatus(port.sendReact(emoji) ? '' : tr('Réaction non envoyée : connexion au salon en cours.'));
   }
 
   function openDrawer() {

@@ -4,6 +4,7 @@
 import { modal, modalBody, toast } from './dom.js';
 import { closeModal, openModal } from './modal.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 const MAX_LINK = 2048;
 
@@ -39,15 +40,14 @@ function hostOf(link) {
  * `opts` : { name, page, openOutside(url), onApply(link) }.
  */
 export function openAddonConfig(opts, opener) {
-  const name = opts.name || 'l’addon';
+  const name = opts.name || t('l’addon');
   openModal(
     '<div class="addon-cfg-pane">' +
-    '<h2 id="modal-title">Configurer ' + esc(name) + '</h2>' +
-    '<p>La page de configuration est celle de l’addon, pas celle de Laststream. Ne saisis ta clé de débrideur que dans les addons dont tu acceptes qu’ils débrident depuis leurs serveurs.</p>' +
-    '<details><summary>En savoir plus</summary><p class="set-hint">Un addon appelle le débrideur depuis ses propres serveurs, dont les adresses sont celles d’un datacenter. ' +
-    'Un débrideur peut suspendre un compte appelé de cette façon. Laststream, lui, appelle le débrideur depuis ton appareil.</p></details>' +
-    '<div class="addon-cfg-actions"><button type="button" class="btn btn-ghost" data-acw-cancel>Annuler</button>' +
-    '<button type="button" class="btn" data-acw-go>J’ai compris, continuer</button></div></div>',
+    '<h2 id="modal-title">' + t('Configurer {name}', { name: esc(name) }) + '</h2>' +
+    '<p>' + t('La page de configuration est celle de l’addon, pas celle de Laststream. Ne saisis ta clé de débrideur que dans les addons dont tu acceptes qu’ils débrident depuis leurs serveurs.') + '</p>' +
+    '<details><summary>' + t('En savoir plus') + '</summary><p class="set-hint">' + t('Un addon appelle le débrideur depuis ses propres serveurs, dont les adresses sont celles d’un datacenter. Un débrideur peut suspendre un compte appelé de cette façon. Laststream, lui, appelle le débrideur depuis ton appareil.') + '</p></details>' +
+    '<div class="addon-cfg-actions"><button type="button" class="btn btn-ghost" data-acw-cancel>' + t('Annuler') + '</button>' +
+    '<button type="button" class="btn" data-acw-go>' + t('J’ai compris, continuer') + '</button></div></div>',
     opener, 'addon-cfg-warn');
   const cancel = modalBody.querySelector('[data-acw-cancel]');
   cancel.addEventListener('click', () => closeModal());
@@ -56,24 +56,24 @@ export function openAddonConfig(opts, opener) {
 }
 
 function showConfigWindow({ name: rawName, page, openOutside, onApply }) {
-  const name = rawName || 'l’addon';
+  const name = rawName || t('l’addon');
   let sameOrigin = false;
   try { sameOrigin = new URL(page).origin === location.origin; } catch (_) { sameOrigin = false; }
   const embed = canEmbed(page) && !sameOrigin;
   const pageHost = hostOf(page);
   openModal(
-    '<div class="addon-cfg-head"><h2 id="modal-title">Configurer ' + esc(name) + '</h2>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-acw-out>Ouvrir dans le navigateur</button></div>' +
-    '<p class="set-hint addon-cfg-empty">Page de ' + esc(pageHost) + '. Page vide ? Ouvre-la dans le navigateur.</p>' +
+    '<div class="addon-cfg-head"><h2 id="modal-title">' + t('Configurer {name}', { name: esc(name) }) + '</h2>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-acw-out>' + t('Ouvrir dans le navigateur') + '</button></div>' +
+    '<p class="set-hint addon-cfg-empty">' + t('Page de {pageHost}. Page vide ? Ouvre-la dans le navigateur.', { pageHost: esc(pageHost) }) + '</p>' +
     '<div class="addon-cfg-view">' + (embed
-      ? '<iframe src="' + esc(page) + '" title="' + esc('Configuration de ' + name) +
+      ? '<iframe src="' + esc(page) + '" title="' + esc(t('Configuration de {name}', { name })) +
         '" sandbox="allow-scripts allow-forms allow-same-origin allow-popups" allow="clipboard-write" referrerpolicy="no-referrer" loading="eager"></iframe>'
-      : '<p class="addon-cfg-noembed">Cette page ne peut pas s’afficher dans l’app : ouvre-la dans le navigateur.</p>') + '</div>' +
-    '<div class="addon-cfg-foot"><p class="set-hint">Quand la page affiche le lien d’installation, copie-le puis colle-le ici. Utilise « Copier le lien », pas « Installer ».</p>' +
-    '<label class="sr-only" for="acw-link">Lien d’installation</label>' +
-    '<div class="addon-cfg-row"><input type="text" id="acw-link" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://… ou stremio://…/manifest.json">' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-acw-paste>Coller</button>' +
-    '<button type="button" class="btn btn-sm" data-acw-use>Utiliser ce lien</button></div>' +
+      : '<p class="addon-cfg-noembed">' + t('Cette page ne peut pas s’afficher dans l’app : ouvre-la dans le navigateur.') + '</p>') + '</div>' +
+    '<div class="addon-cfg-foot"><p class="set-hint">' + t('Quand la page affiche le lien d’installation, copie-le puis colle-le ici. Utilise « Copier le lien », pas « Installer ».') + '</p>' +
+    '<label class="sr-only" for="acw-link">' + t('Lien d’installation') + '</label>' +
+    '<div class="addon-cfg-row"><input type="text" id="acw-link" inputmode="url" autocomplete="off" spellcheck="false" placeholder="' + t('https://… ou stremio://…/manifest.json') + '">' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-acw-paste>' + t('Coller') + '</button>' +
+    '<button type="button" class="btn btn-sm" data-acw-use>' + t('Utiliser ce lien') + '</button></div>' +
     '<p class="set-hint addon-cfg-status" aria-live="polite"></p></div>',
     undefined, 'addon-cfg');
   const input = modalBody.querySelector('#acw-link');
@@ -93,30 +93,30 @@ function showConfigWindow({ name: rawName, page, openOutside, onApply }) {
     const st = (r && r.status) || 'ok';
     if (st === 'ko') {
       // Sans adresse : un message d'erreur ne doit jamais contenir la clé du débrideur.
-      const why = String((r && r.error) || 'vérifie le lien.').replace(/(?:https?|stremio):\/\/\S+/gi, '').trim();
-      say('Lien lu, mais l’addon ne répond pas : ' + (why || 'vérifie le lien.'));
+      const why = String((r && r.error) || t('vérifie le lien.')).replace(/(?:https?|stremio):\/\/\S+/gi, '').trim();
+      say(t('Lien lu, mais l’addon ne répond pas :') + ' ' + (why || t('vérifie le lien.')));
       return;
     }
     ac.abort();
     closeModal();
-    toast('Lien appliqué : ' + name + (st === 'warn' ? ', mais sans ressource « stream »' : '') + '. Enregistre la page pour valider.');
+    toast(t('Lien appliqué : {name}{v}. Enregistre la page pour valider.', { name, v: (st === 'warn' ? t(', mais sans ressource « stream »') : '') }));
   };
   const useField = () => {
     const typed = input.value.trim();
     const link = typed ? extractInstallLink(typed) : lastDetected;
-    if (!link) { say(typed ? 'Ce n’est pas un lien d’installation : il doit finir par /manifest.json.' : 'Colle d’abord le lien d’installation.'); input.focus(); return Promise.resolve(); }
+    if (!link) { say(typed ? t('Ce n’est pas un lien d’installation : il doit finir par /manifest.json.') : t('Colle d’abord le lien d’installation.')); input.focus(); return Promise.resolve(); }
     return apply(link);
   };
 
   modalBody.querySelector('[data-acw-paste]').addEventListener('click', async () => {
     const link = extractInstallLink(await readClipboard());
     if (!link) {
-      say('Pas de lien d’installation dans le presse-papiers : copie le lien, puis colle-le dans le champ.');
+      say(t('Pas de lien d’installation dans le presse-papiers : copie le lien, puis colle-le dans le champ.'));
       input.focus();
       return;
     }
     lastDetected = link;
-    say('Lien lu : ' + hostOf(link) + '.');
+    say(t('Lien lu : {link}.', { link: hostOf(link) }));
     await apply(link);
   });
   modalBody.querySelector('[data-acw-use]').addEventListener('click', () => { void useField(); });
@@ -133,7 +133,7 @@ function showConfigWindow({ name: rawName, page, openOutside, onApply }) {
     const link = extractInstallLink(await readClipboard());
     if (!link || link === lastDetected || !input.isConnected) return;
     lastDetected = link;
-    say('Lien détecté dans le presse-papiers : ' + hostOf(link) + '. Clique « Utiliser ce lien ».');
+    say(t('Lien détecté dans le presse-papiers : {link}. Clique « Utiliser ce lien ».', { link: hostOf(link) }));
   };
   window.addEventListener('focus', onBack, { signal: ac.signal });
   document.addEventListener('visibilitychange', onBack, { signal: ac.signal });

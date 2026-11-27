@@ -2,21 +2,22 @@
  * conversations (résolution d'une conversation, aperçus, jours, heures, emojis, persistance de l'état ouvert).
  * Aucun accès au réseau ; tout texte venant du serveur reste à afficher avec textContent. */
 import { hhmm, posLabel } from './socialChat.js';
+import { t } from '../i18n';
 
 export { hhmm, posLabel };
 
 /** Réactions rapides (sélecteur au survol / appui long). `name` sert aux libellés d'accessibilité. */
 export const QUICK_REACTIONS = [
-  { emoji: '🔥', name: 'feu' }, { emoji: '😂', name: 'rire' }, { emoji: '❤️', name: 'cœur' },
+  { emoji: '🔥', name: 'feu' }, { emoji: '😂', name: 'rire' }, { emoji: '❤️', name: t('cœur') },
   { emoji: '😱', name: 'choc' }, { emoji: '👍', name: 'pouce' },
 ];
 
 /** Panneau d'emojis (clavier d'emojis de la maquette mobile). « Récents » est rempli à l'exécution. */
 export const EMOJI_TABS = [
-  { id: 'recent', label: 'Récents', list: [] },
-  { id: 'cine', label: 'Ciné', list: ['🍿', '🎬', '📺', '🎞️', '⭐', '👀', '💀', '🎭', '🎥', '📽️', '🎟️', '🏆', '🌟', '🎤', '🎧', '🎶', '🛋️', '🌙', '🔦', '🧨', '💥', '🤫'] },
-  { id: 'faces', label: 'Visages', list: ['😍', '🥲', '😴', '🤔', '😮', '🙌', '👍', '😀', '😁', '😅', '😎', '🥹', '😬', '🙄', '😤', '🤗', '😇', '🥳', '😏', '🫠', '😶', '🤭'] },
-  { id: 'react', label: 'Réactions', list: ['🔥', '😂', '😱', '🤯', '❤️', '👏', '😭', '💯', '👎', '🙏', '💔', '🤣', '😢', '😡', '🤩', '🫶', '✨', '🎉', '💪', '🤝', '🥵', '🤌'] },
+  { id: 'recent', label: t('Récents'), list: [] },
+  { id: 'cine', label: t('Ciné'), list: ['🍿', '🎬', '📺', '🎞️', '⭐', '👀', '💀', '🎭', '🎥', '📽️', '🎟️', '🏆', '🌟', '🎤', '🎧', '🎶', '🛋️', '🌙', '🔦', '🧨', '💥', '🤫'] },
+  { id: 'faces', label: t('Visages'), list: ['😍', '🥲', '😴', '🤔', '😮', '🙌', '👍', '😀', '😁', '😅', '😎', '🥹', '😬', '🙄', '😤', '🤗', '😇', '🥳', '😏', '🫠', '😶', '🤭'] },
+  { id: 'react', label: t('Réactions'), list: ['🔥', '😂', '😱', '🤯', '❤️', '👏', '😭', '💯', '👎', '🙏', '💔', '🤣', '😢', '😡', '🤩', '🫶', '✨', '🎉', '💪', '🤝', '🥵', '🤌'] },
 ];
 const RECENT_EMOJIS_DEFAULT = ['🔥', '😂', '😱', '🤯', '❤️', '👏', '😭'];
 
@@ -94,15 +95,15 @@ export function personName(pid, s) {
     if (m) return m.nickname || m.handle.name;
   }
   const c = (s.conversations || []).find((x) => x.pid === pid);
-  return c ? c.handle.name : 'Quelqu’un';
+  return c ? c.handle.name : t('Quelqu’un');
 }
 
 /** Nom affiché de l'auteur d'un message : « Toi », le membre du groupe, ou l'interlocuteur. */
 export function authorName(pid, info, s) {
-  if (s.me && pid === s.me.pid) return 'Toi';
+  if (s.me && pid === s.me.pid) return t('Toi');
   if (info && info.kind === 'group') {
     const m = info.members.find((x) => x.pid === pid);
-    return m ? m.nickname || m.handle.name : 'Un ancien membre';
+    return m ? m.nickname || m.handle.name : t('Un ancien membre');
   }
   return info ? info.name : '';
 }
@@ -110,10 +111,10 @@ export function authorName(pid, info, s) {
 /** Libellé court d'un message (aperçu de la liste, citation d'une réponse). */
 export function messageText(m) {
   switch (m.kind) {
-    case 'title': return m.title ? m.title.title : 'un titre';
-    case 'moment': return m.moment ? m.moment.title + (typeof m.moment.end === 'number' && m.moment.end > m.moment.pos ? ' de ' + posLabel(m.moment.pos) + ' à ' + posLabel(m.moment.end) : ' à ' + posLabel(m.moment.pos)) : 'un moment';
-    case 'party': return m.party ? 'Watch party : ' + m.party.title : 'Watch party';
-    case 'poll': return m.poll ? 'Sondage : ' + m.poll.question : 'Sondage';
+    case 'title': return m.title ? m.title.title : t('un titre');
+    case 'moment': return m.moment ? m.moment.title + (typeof m.moment.end === 'number' && m.moment.end > m.moment.pos ? ' ' + t('de {pos} à {end}', { pos: posLabel(m.moment.pos), end: posLabel(m.moment.end) }) : ' à ' + posLabel(m.moment.pos)) : t('un moment');
+    case 'party': return m.party ? t('Watch party : {title}', { title: m.party.title }) : t('Watch party');
+    case 'poll': return m.poll ? t('Sondage : {question}', { question: m.poll.question }) : t('Sondage');
     default: return m.body || '';
   }
 }
@@ -121,18 +122,18 @@ export function messageText(m) {
 /** Aperçu d'une conversation dans la liste : « a partagé : Severance S02 », « Nora : on vote… ». */
 export function previewOf(info, s) {
   const m = info.last;
-  if (!m) return 'Aucun message';
+  if (!m) return t('Aucun message');
   const mine = !!(s.me && m.from === s.me.pid);
   let text;
   switch (m.kind) {
-    case 'title': text = (mine ? 'tu as partagé : ' : 'a partagé : ') + messageText(m); break;
-    case 'moment': text = (mine ? 'tu as partagé un moment : ' : 'a partagé un moment : ') + messageText(m); break;
-    case 'party': text = mine ? 'tu as invité à une watch party' : 't’invite à une watch party'; break;
-    case 'poll': text = (mine ? 'tu as lancé un ' : 'a lancé un ') + messageText(m).toLowerCase(); break;
+    case 'title': text = (mine ? t('tu as partagé :') + ' ' : t('a partagé :') + ' ') + messageText(m); break;
+    case 'moment': text = (mine ? t('tu as partagé un moment :') + ' ' : t('a partagé un moment :') + ' ') + messageText(m); break;
+    case 'party': text = mine ? t('tu as invité à une watch party') : t('t’invite à une watch party'); break;
+    case 'poll': text = (mine ? t('tu as lancé un') + ' ' : t('a lancé un') + ' ') + messageText(m).toLowerCase(); break;
     default: text = m.body || '';
   }
   if (info.kind === 'group') return authorName(m.from, info, s) + (m.kind && m.kind !== 'text' ? ' ' : ' : ') + text;
-  if (mine) return m.kind && m.kind !== 'text' ? 'Toi, ' + text : 'Toi : ' + text;
+  if (mine) return m.kind && m.kind !== 'text' ? t('Toi, {text}', { text }) : t('Toi : {text}', { text });
   return m.kind && m.kind !== 'text' ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
@@ -154,8 +155,8 @@ export function listTime(ms, now = Date.now()) {
 /** Séparateur de jour : « Aujourd'hui · 21:42 » (heure du premier message du jour), « Hier », « 3 mars ». */
 export function dayLabel(ms, now = Date.now()) {
   const diff = startOfDay(now) - startOfDay(ms);
-  if (diff <= 0) return 'Aujourd’hui · ' + hhmm(ms);
-  if (diff < 2 * DAY) return 'Hier';
+  if (diff <= 0) return t('Aujourd’hui · {ms}', { ms: hhmm(ms) });
+  if (diff < 2 * DAY) return t('Hier');
   return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 }
 
@@ -189,15 +190,15 @@ export function watchingLine(w, now = Date.now()) {
   if (w.duration) pos = Math.min(pos, Number(w.duration));
   const ep = w.type === 'series' && Number.isInteger(w.season) && Number.isInteger(w.episode)
     ? ' S' + String(w.season).padStart(2, '0') + 'E' + String(w.episode).padStart(2, '0') : '';
-  return 'Regarde ' + (w.title || 'un titre') + ep + ' · ' + posLabel(pos) + (w.paused ? ' (en pause)' : '');
+  return t('Regarde {v}{ep} · {pos}', { v: (w.title || t('un titre')), ep, pos: posLabel(pos) }) + (w.paused ? ' ' + t('(en pause)') : '');
 }
 
 /** Phrase de saisie : « Léa écrit… », « Léa et Hugo écrivent… », « Léa, Hugo et 2 autres écrivent… ». */
 export function typingText(names) {
   if (names.length === 0) return '';
-  if (names.length === 1) return names[0] + ' écrit…';
-  if (names.length === 2) return names[0] + ' et ' + names[1] + ' écrivent…';
-  return names[0] + ', ' + names[1] + ' et ' + (names.length - 2) + ' autre' + (names.length > 3 ? 's' : '') + ' écrivent…';
+  if (names.length === 1) return t('{v} écrit…', { v: names[0] });
+  if (names.length === 2) return t('{v} et {v2} écrivent…', { v: names[0], v2: names[1] });
+  return t('{v}, {v2} et {v3} autre{v4} écrivent…', { v: names[0], v2: names[1], v3: (names.length - 2), v4: (names.length > 3 ? 's' : '') });
 }
 
 /** Couleur du point de présence. */

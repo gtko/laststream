@@ -1,6 +1,7 @@
 /* Mini-lecteur : calculs purs (géométrie de la vignette, aimantation aux coins, marges mpv, découpe de la page) et petit
  * contrôleur d'état. Aucun accès au DOM ici : le rendu est dans miniview.js, le perçage de la page dans minihole.js. */
 
+import { t } from '../i18n';
 export type Corner = 'tl' | 'tr' | 'bl' | 'br';
 
 export interface Rect { left: number; top: number; width: number; height: number }
@@ -105,7 +106,7 @@ export function roundedRectPath(r: Rect, radius: number): string {
   const right = x + r.width;
   const bottom = y + r.height;
   const n = (v: number) => String(Math.round(v * 100) / 100);
-  if (k === 0) return `M${n(x)} ${n(y)}H${n(right)}V${n(bottom)}H${n(x)}Z`;
+  if (k === 0) return `${t('M{x} {y}H{right}V{bottom}H{x}Z', { x: n(x), y: n(y), right: n(right), bottom: n(bottom) })}`;
   return `M${n(x + k)} ${n(y)}H${n(right - k)}A${n(k)} ${n(k)} 0 0 1 ${n(right)} ${n(y + k)}V${n(bottom - k)}`
     + `A${n(k)} ${n(k)} 0 0 1 ${n(right - k)} ${n(bottom)}H${n(x + k)}A${n(k)} ${n(k)} 0 0 1 ${n(x)} ${n(bottom - k)}`
     + `V${n(y + k)}A${n(k)} ${n(k)} 0 0 1 ${n(x + k)} ${n(y)}Z`;
@@ -116,7 +117,7 @@ export function roundedRectPath(r: Rect, radius: number): string {
  * deux sous-chemins en règle `evenodd`, le rectangle plein puis la vignette.
  */
 export function holeClipPath(size: { width: number; height: number }, hole: Rect, radius = MINI_RADIUS): string {
-  const outer = `M0 0H${Math.round(size.width * 100) / 100}V${Math.round(size.height * 100) / 100}H0Z`;
+  const outer = `${t('M0 0H{v}V{v2}H0Z', { v: Math.round(size.width * 100) / 100, v2: Math.round(size.height * 100) / 100 })}`;
   return `path(evenodd, '${outer} ${roundedRectPath(hole, radius)}')`;
 }
 

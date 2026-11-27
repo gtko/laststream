@@ -21,6 +21,7 @@ import { observeTiles, posterCard, tileCard, topCard } from './tiles.js';
 import { esc } from './util.js';
 import { addonCardHTML } from './addonCatalogPage.js';
 import { addonHomeRows, resolveAddonRow } from './addonRows.js';
+import { t as tr } from '../i18n';
 
 const AHEAD_PX = 700; // environ deux rangées d'avance
 
@@ -176,16 +177,16 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
       items = interleave(sim.status === 'fulfilled' ? toItems(sim.value, src.type) : [], disc.status === 'fulfilled' ? toItems(disc.value, src.type) : []);
     }
     items = items.filter((it) => it.key !== src.key);
-    return { title: (f.source === 'watched' ? 'Parce que tu as regardé ' : 'Parce que tu as aimé ') + src.title, items };
+    return { title: (f.source === 'watched' ? tr('Parce que tu as regardé') + ' ' : tr('Parce que tu as aimé') + ' ') + src.title, items };
   }
   if (f.k === 'person') {
     const p = followedPeople()[f.index];
     if (!p) return null;
-    if (page > 1) return { title: 'Avec ' + (p.name || ''), items: [] };
+    if (page > 1) return { title: tr('Avec') + ' ' + (p.name || ''), items: [] };
     const j = await tmdb('person/' + p.id + '/combined_credits');
     const items = (j.cast || []).filter((c) => c.poster_path && (c.media_type === 'movie' || c.media_type === 'tv') && !(c.genre_ids || []).some((g) => g === 10767 || g === 10763))
       .filter((c) => (c.release_date || c.first_air_date || '9999') <= todayStr()).sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 40).map((c) => register(listOf({ results: [c] }, c.media_type)[0]));
-    return { title: 'Avec ' + (p.name || 'ta personnalité suivie'), items };
+    return { title: tr('Avec') + ' ' + (p.name || tr('ta personnalité suivie')), items };
   }
   if (f.k === 'addon') return resolveAddonRow(def, page);
   return null;
@@ -238,8 +239,8 @@ const near = () => {
 function renderDef(def, title, items) {
   const addon = def.fetch.k === 'addon';
   const link = def.noBrowse ? '' : addon
-    ? ' <a class="row-link" href="' + esc(def.browseHref) + '" data-go>Tout voir</a>'
-    : ' <a class="row-link" href="#/browse/' + esc(def.id) + '" data-browse="' + esc(def.id) + '">Tout voir</a>';
+    ? ' <a class="row-link" href="' + esc(def.browseHref) + '" data-go>' + tr('Tout voir') + '</a>'
+    : ' <a class="row-link" href="#/browse/' + esc(def.id) + '" data-browse="' + esc(def.id) + '">' + tr('Tout voir') + '</a>';
   let html;
   if (def.kind === 'top10') html = row(rankTop(items).map(({ item, rank }) => topCard(item, rank)).join(''));
   else if (addon) html = row(items.map((it, i) => addonCardHTML(it, i)).join(''));
@@ -378,8 +379,8 @@ export async function showBrowse(id) {
   teardownFiche();
   state.kind = 'browse';
   const def = browseAllowed(id) ? rowById(id) : null;
-  const title = def ? def.title || 'Catalogue' : 'Catalogue';
-  document.title = title + ' · Laststream';
+  const title = def ? def.title || tr('Catalogue') : tr('Catalogue');
+  document.title = tr('{title} · Laststream', { title });
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
     '<h1 class="svc-title" id="svc-title" tabindex="-1">' + esc(title) + '</h1></div></header>' +
@@ -387,7 +388,7 @@ export async function showBrowse(id) {
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
   const box = detailEl.querySelector('#browse-grid');
-  if (!def) { box.innerHTML = '<p class="row-msg">Cette section n’est pas disponible.</p>'; return; }
+  if (!def) { box.innerHTML = '<p class="row-msg">' + tr('Cette section n’est pas disponible.') + '</p>'; return; }
   const ctx = makeCtx(getRegion().code, kidMaxAge());
   const token = state.token;
   const card = (it) => (def.kind === 'landscape' ? tileCard(it, { variant: 'land' }) : posterCard(it));
@@ -412,6 +413,6 @@ export async function showBrowse(id) {
     after: (host) => observeTiles(host),
   });
   await list.ready;
-  if (!box.children.length) box.innerHTML = '<p class="row-msg">Rien à voir ici pour le moment.</p>';
+  if (!box.children.length) box.innerHTML = '<p class="row-msg">' + tr('Rien à voir ici pour le moment.') + '</p>';
   applyRestore();
 }

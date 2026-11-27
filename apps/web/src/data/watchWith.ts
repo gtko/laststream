@@ -1,4 +1,5 @@
 import type { FriendView, Watching } from './socialV2Api';
+import { t } from '../i18n';
 
 /* « Regarder avec lui » et contexte cliquable des messages (Social v2, lot 3a). Le module est pur sauf l'appel de la
  * lecture, injecté : la lecture passe par le flux normal du lecteur (playBest) avec la source de l'utilisateur, jamais
@@ -47,8 +48,8 @@ export interface PlaybackDeps {
   toast: (msg: string) => void;
 }
 
-export const LAUNCH_ERROR = 'Impossible de lancer la lecture.';
-export const NOT_OPENABLE = 'Ce passage ne peut pas être ouvert : numéro d’épisode inconnu.';
+export const LAUNCH_ERROR = t('Impossible de lancer la lecture.');
+export const NOT_OPENABLE = t('Ce passage ne peut pas être ouvert : numéro d’épisode inconnu.');
 
 /**
  * Position à reprendre pour regarder comme l'ami : relevé + temps écoulé depuis `at` si la lecture n'est pas en pause.
@@ -113,10 +114,10 @@ export function playAt(deps: PlaybackDeps, media: MediaRef, startAt: number | Wa
  */
 export function createWatchWithHandler(deps: PlaybackDeps): (friend: FriendView | null) => void {
   return (friend) => {
-    const name = friend?.handle?.name || 'Cet ami';
+    const name = friend?.handle?.name || t('Cet ami');
     const w = friend?.watching;
     if (!w) {
-      deps.toast(name + ' ne regarde rien pour le moment.');
+      deps.toast(t('{name} ne regarde rien pour le moment.', { name }));
       return;
     }
     const point: WatchPoint = { pos: w.pos, at: w.at, paused: w.paused, duration: w.duration };

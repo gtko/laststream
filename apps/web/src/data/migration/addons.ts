@@ -7,6 +7,7 @@ import { addonKeyOf, catalogDisplay, parseManifestCatalogs, readAddonCatalogs, s
 import { appFetch } from '../crossFetch';
 import { isStoreBuild } from '../distribution';
 import { isObject, str, type MigrationAddon } from './types';
+import { t } from '../../i18n';
 
 const TIMEOUT_MS = 10_000;
 
@@ -38,12 +39,12 @@ const LOOPBACK = /^(127\.\d+\.\d+\.\d+|localhost|\[::1\])$/i;
 
 /** Raison d'écarter un addon avant toute requête ; null s'il peut être lu. */
 export function precheck(a: MigrationAddon, registry: Record<string, AddonCatalogEntry>): string | null {
-  if (a.official) return 'Addon officiel de Stremio : Laststream fournit déjà ces informations.';
+  if (a.official) return t('Addon officiel de Stremio : Laststream fournit déjà ces informations.');
   const url = manifestUrlOf(a.manifestUrl);
-  if (!url) return 'Adresse illisible ou protocole non pris en charge.';
+  if (!url) return t('Adresse illisible ou protocole non pris en charge.');
   const host = new URL(url).hostname;
-  if (LOOPBACK.test(host)) return 'Addon installé sur l’ancien appareil (adresse locale) : injoignable depuis celui-ci.';
-  if (registry[addonKeyOf(url)]) return 'Déjà présent sur cet appareil.';
+  if (LOOPBACK.test(host)) return t('Addon installé sur l’ancien appareil (adresse locale) : injoignable depuis celui-ci.');
+  if (registry[addonKeyOf(url)]) return t('Déjà présent sur cet appareil.');
   return null;
 }
 
@@ -57,10 +58,10 @@ async function readManifest(url: string, fetchFn: FetchFn): Promise<unknown> {
     try {
       res = await fetchFn(url, { signal: ctrl.signal });
     } catch {
-      throw new Error(ctrl.signal.aborted ? 'L’addon n’a pas répondu à temps.' : 'L’addon est injoignable depuis cet appareil.');
+      throw new Error(ctrl.signal.aborted ? t('L’addon n’a pas répondu à temps.') : t('L’addon est injoignable depuis cet appareil.'));
     }
-    if (!res.ok) throw new Error('L’addon a répondu par une erreur (HTTP ' + res.status + ').');
-    try { return await res.json(); } catch { throw new Error('Le manifest de l’addon est illisible.'); }
+    if (!res.ok) throw new Error(t('L’addon a répondu par une erreur (HTTP {status}).', { status: res.status }));
+    try { return await res.json(); } catch { throw new Error(t('Le manifest de l’addon est illisible.')); }
   } finally {
     clearTimeout(timer);
   }
@@ -75,7 +76,7 @@ export async function importAddons(addons: readonly MigrationAddon[], selected: 
   const fetchFn = opts.fetchFn ?? ((u, i) => appFetch(u, i));
   const log: AddonLogEntry[] = [];
   for (const a of addons) {
-    if (!selected.has(a.manifestUrl)) { log.push({ name: a.name, outcome: 'ignored', reason: 'Non sélectionné.' }); continue; }
+    if (!selected.has(a.manifestUrl)) { log.push({ name: a.name, outcome: 'ignored', reason: t('Non sélectionné.') }); continue; }
     const why = precheck(a, readAddonCatalogs());
     if (why) { log.push({ name: a.name, outcome: 'ignored', reason: why }); continue; }
     const url = manifestUrlOf(a.manifestUrl);
@@ -83,14 +84,14 @@ export async function importAddons(addons: readonly MigrationAddon[], selected: 
     try {
       manifest = await readManifest(url, fetchFn);
     } catch (err) {
-      log.push({ name: a.name, outcome: 'failed', reason: err instanceof Error ? err.message : 'Lecture du manifest impossible.' });
+      log.push({ name: a.name, outcome: 'failed', reason: err instanceof Error ? err.message : t('Lecture du manifest impossible.') });
       continue;
     }
     const parsed = parseManifestCatalogs(manifest);
     const name = (isObject(manifest) && str(manifest.name)) || a.name;
     const showable = parsed.catalogs.filter((c) => catalogDisplay(c) !== 'hidden');
     if (!showable.length) {
-      log.push({ name, outcome: 'ignored', reason: parsed.resources.stream ? 'Cet addon ne fournit que des sources de lecture, pas de catalogue : rien à ajouter ici.' : 'Cet addon ne déclare aucun catalogue affichable.' });
+      log.push({ name, outcome: 'ignored', reason: parsed.resources.stream ? t('Cet addon ne fournit que des sources de lecture, pas de catalogue : rien à ajouter ici.') : t('Cet addon ne déclare aucun catalogue affichable.') });
       continue;
     }
     const logo = isObject(manifest) ? str(manifest.logo) || str(manifest.icon) : '';
@@ -98,8 +99,8 @@ export async function importAddons(addons: readonly MigrationAddon[], selected: 
       manifestUrl: url, name, ...(logo ? { logo } : {}), home: false, catalogs: parsed.catalogs, idPrefixes: parsed.idPrefixes,
       types: parsed.types, resources: parsed.resources, at: opts.now ?? Date.now(), imported: true,
     });
-    if (!readAddonCatalogs()[addonKeyOf(url)]) { log.push({ name, outcome: 'failed', reason: 'Stockage de l’appareil plein : addon non enregistré.' }); continue; }
-    log.push({ name, outcome: 'added', reason: showable.length + (showable.length > 1 ? ' catalogues ajoutés' : ' catalogue ajouté') + ' sur cet appareil, masqués à l’accueil tant que tu ne les affiches pas.' });
+    if (!readAddonCatalogs()[addonKeyOf(url)]) { log.push({ name, outcome: 'failed', reason: t('Stockage de l’appareil plein : addon non enregistré.') }); continue; }
+    log.push({ name, outcome: 'added', reason: showable.length + (showable.length > 1 ? ' ' + t('catalogues ajoutés') : ' ' + t('catalogue ajouté')) + ' ' + t('sur cet appareil, masqués à l’accueil tant que tu ne les affiches pas.') });
   }
   return log;
 }

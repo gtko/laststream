@@ -16,6 +16,7 @@ import { fmtShort } from './dates.js';
 import { IMG } from './constants.js';
 import { state } from './state.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Mot du parrain : 280 caractères au plus (unités UTF-16, comme le serveur). */
 export const MESSAGE_MAX = 280;
@@ -73,11 +74,11 @@ export function expiryText(expiresAt, now = Date.now()) {
   const end = Date.parse(expiresAt);
   if (!Number.isFinite(end)) return '';
   const ms = end - now;
-  if (ms <= 0) return 'expiré';
+  if (ms <= 0) return tr('expiré');
   // Arrondi au supérieur : 8 j 23 h restantes s'affichent « 9 j », comme la maquette.
-  if (ms >= DAY_MS) return 'expire dans ' + Math.ceil(ms / DAY_MS) + ' j';
-  if (ms >= 3600000) return 'expire dans ' + Math.ceil(ms / 3600000) + ' h';
-  return 'expire dans ' + Math.max(1, Math.ceil(ms / 60000)) + ' min';
+  if (ms >= DAY_MS) return tr('expire dans {v} j', { v: Math.ceil(ms / DAY_MS) });
+  if (ms >= 3600000) return tr('expire dans {v} h', { v: Math.ceil(ms / 3600000) });
+  return tr('expire dans {v} min', { v: Math.max(1, Math.ceil(ms / 60000)) });
 }
 
 /**
@@ -97,7 +98,7 @@ function libraryPick(entry) {
   const type = entry.type === 'tv' ? 'series' : 'movie';
   const poster = httpsUrl(IMG('w342', entry.poster));
   const known = state.byKey.get(entry.type + ':' + entry.id);
-  return { key: type + ':' + entry.id, id: entry.id, type, name: entry.title || 'Sans titre', poster, background: httpsUrl(known && known.backdrop) || poster };
+  return { key: type + ':' + entry.id, id: entry.id, type, name: entry.title || tr('Sans titre'), poster, background: httpsUrl(known && known.backdrop) || poster };
 }
 
 /**
@@ -127,10 +128,10 @@ const CHEVRON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" str
 const CLOSE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"></path></svg>';
 /** Légende sous la rangée : un libellé par état. */
 const LEGEND = [
-  ['free', 'Disponible'],
-  ['sent', 'Envoyé, en attente'],
-  ['used', 'Validé'],
-  ['revoked', 'Révoqué'],
+  ['free', tr('Disponible')],
+  ['sent', tr('Envoyé, en attente')],
+  ['used', tr('Validé')],
+  ['revoked', tr('Révoqué')],
 ];
 
 /** Carte repliée par défaut ; ouverte ou repliée, l'état est mémorisé sur l'appareil. */
@@ -150,17 +151,17 @@ const MINIS_MAX = 8;
 /** État visuel d'un billet : libellés, classe de couleur et libellé lu par les lecteurs d'écran. */
 function ticketView(inv, index) {
   const num = ticketNumber(inv, index);
-  if (isRevoked(inv)) return { kind: 'revoked', num, head: 'Révoqué', sub: 'Par l’administrateur', stub: 'Révoqué', aria: 'Révoqué par l’administrateur, ne peut plus être envoyé' };
+  if (isRevoked(inv)) return { kind: 'revoked', num, head: tr('Révoqué'), sub: tr('Par l’administrateur'), stub: tr('Révoqué'), aria: tr('Révoqué par l’administrateur, ne peut plus être envoyé') };
   if (inv.state === 'used') {
     const since = shortDate(inv.usedAt);
-    const who = inv.invitee || 'Compte supprimé';
-    return { kind: 'used', num, head: who, sub: since ? 'Validé le ' + since : 'Validé', stub: 'Validé', aria: 'Validé par ' + who + (since ? ' le ' + since : '') };
+    const who = inv.invitee || tr('Compte supprimé');
+    return { kind: 'used', num, head: who, sub: since ? tr('Validé le {since}', { since }) : tr('Validé'), stub: tr('Validé'), aria: tr('Validé par {who}', { who }) + (since ? ' le ' + since : '') };
   }
   if (inv.state === 'sent') {
     const exp = expiryText(inv.expiresAt);
-    return { kind: 'sent', num, head: 'En attente', sub: 'Envoyé' + (exp ? ' · ' + exp : ''), stub: 'En route', aria: 'Envoyé, en attente' + (exp ? ', ' + exp : '') };
+    return { kind: 'sent', num, head: tr('En attente'), sub: tr('Envoyé') + (exp ? ' · ' + exp : ''), stub: tr('En route'), aria: tr('Envoyé, en attente') + (exp ? ', ' + exp : '') };
   }
-  return { kind: 'free', num, head: 'Offrir ce billet', sub: 'Une place pour un ami', stub: 'Admis', aria: 'Disponible, à offrir' };
+  return { kind: 'free', num, head: tr('Offrir ce billet'), sub: tr('Une place pour un ami'), stub: tr('Admis'), aria: tr('Disponible, à offrir') };
 }
 
 /** Billet (design d'origine : dégradé, encoches, talon). Un billet révoqué reste lisible au clavier mais ne s'ouvre pas. */
@@ -170,8 +171,8 @@ function ticketHTML(inv, index, selected, deal) {
   const off = v.kind === 'revoked';
   return '<button type="button" class="tk-ticket tk-is-' + v.kind + (deal ? ' tk-deal' : '') + '"' + (off ? '' : ' data-tk-sel="' + id + '"') +
     ' data-tk-ticket data-tk-focus="ticket:' + id + '"' + (off ? ' aria-disabled="true"' : ' aria-pressed="' + (selected ? 'true' : 'false') + '"') +
-    ' aria-label="' + esc('Billet ' + v.num + ' · ' + v.aria) + '">' +
-    '<span class="tk-main"><span class="tk-num">Billet N° ' + esc(v.num) + '</span><span class="tk-head">' + esc(v.head) + '</span>' +
+    ' aria-label="' + esc(tr('Billet {num} · {aria}', { num: v.num, aria: v.aria })) + '">' +
+    '<span class="tk-main"><span class="tk-num">' + tr('Billet N° {num}', { num: esc(v.num) }) + '</span><span class="tk-head">' + esc(v.head) + '</span>' +
     '<span class="tk-sub">' + ICONS[v.kind] + esc(v.sub) + '</span></span>' +
     '<span class="tk-stub"><span class="tk-stub-t">' + esc(v.stub) + '</span></span>' +
     '<span class="tk-notch tk-notch-t" aria-hidden="true"></span><span class="tk-notch tk-notch-b" aria-hidden="true"></span>' +
@@ -202,29 +203,29 @@ function composerHTML(inv, index, sheet) {
   const picks = picksOf(inv);
   const options = pickOptions(picks);
   const grid = options.length
-    ? '<div class="tk-grid-picks" role="group" aria-label="Coups de cœur">' + options.map((o) => pickHTML(o, picks, off)).join('') + '</div>'
-    : '<p class="tk-note">Ajoute des films ou séries à ta bibliothèque pour les proposer ici.</p>';
+    ? '<div class="tk-grid-picks" role="group" aria-label="' + tr('Coups de cœur') + '">' + options.map((o) => pickHTML(o, picks, off)).join('') + '</div>'
+    : '<p class="tk-note">' + tr('Ajoute des films ou séries à ta bibliothèque pour les proposer ici.') + '</p>';
   const warn = off
-    ? '<p class="tk-note tk-note-warn" role="status">Personnalisation indisponible : ce serveur ne sait pas encore enregistrer le mot ni les coups de cœur. Copier et Partager fonctionnent quand même.</p>'
+    ? '<p class="tk-note tk-note-warn" role="status">' + tr('Personnalisation indisponible : ce serveur ne sait pas encore enregistrer le mot ni les coups de cœur. Copier et Partager fonctionnent quand même.') + '</p>'
     : '';
   return (sheet ? '<div class="tk-scrim" data-tk-close aria-hidden="true"></div>' : '') +
     '<section class="tk-compose' + (sheet ? ' is-sheet' : '') + '" aria-labelledby="tk-compose-t"' + (sheet ? ' role="dialog" aria-modal="true" data-tk-sheet' : '') + '>' +
-    '<button type="button" class="tk-close" data-tk-close data-tk-focus="close" aria-label="Fermer">' + CLOSE + '</button>' +
+    '<button type="button" class="tk-close" data-tk-close data-tk-focus="close" aria-label="' + tr('Fermer') + '">' + CLOSE + '</button>' +
     '<div class="tk-compose-l">' +
-      '<h3 class="tk-compose-t" id="tk-compose-t">Personnalise le billet N° ' + esc(ticketNumber(inv, index)) + '</h3>' + warn +
-      '<label class="tk-label" for="tk-msg">Ton mot, affiché sur sa page d’arrivée</label>' +
+      '<h3 class="tk-compose-t" id="tk-compose-t">' + tr('Personnalise le billet N° {inv}', { inv: esc(ticketNumber(inv, index)) }) + '</h3>' + warn +
+      '<label class="tk-label" for="tk-msg">' + tr('Ton mot, affiché sur sa page d’arrivée') + '</label>' +
       '<textarea id="tk-msg" class="tk-msg" rows="3" maxlength="' + MESSAGE_MAX + '" data-tk-msg="' + id + '" data-tk-focus="msg" aria-describedby="tk-msg-count"' + (off ? ' readonly' : '') + '>' + esc(msg) + '</textarea>' +
       '<div class="tk-count" id="tk-msg-count">' + msg.length + ' / ' + MESSAGE_MAX + '</div>' +
-      '<div class="tk-actions"><button type="button" class="tk-btn tk-btn-primary" data-tk-copy="' + id + '" data-tk-focus="copy">Copier le lien</button>' +
-      '<button type="button" class="tk-btn" data-tk-share="' + id + '" data-tk-focus="share">Partager…</button></div>' +
-      '<p class="tk-note">Valable 14 jours après l’envoi · révocable · le billet revient si personne ne l’utilise</p>' +
+      '<div class="tk-actions"><button type="button" class="tk-btn tk-btn-primary" data-tk-copy="' + id + '" data-tk-focus="copy">' + tr('Copier le lien') + '</button>' +
+      '<button type="button" class="tk-btn" data-tk-share="' + id + '" data-tk-focus="share">' + tr('Partager…') + '</button></div>' +
+      '<p class="tk-note">' + tr('Valable 14 jours après l’envoi · révocable · le billet revient si personne ne l’utilise') + '</p>' +
     '</div>' +
     '<div class="tk-compose-r">' +
-      '<div class="tk-picks-h"><span class="tk-picks-t">Tes 3 coups de cœur à lui faire découvrir</span>' +
+      '<div class="tk-picks-h"><span class="tk-picks-t">' + tr('Tes 3 coups de cœur à lui faire découvrir') + '</span>' +
       '<span class="tk-picks-n' + (picks.length >= PICKS_MAX ? ' is-full' : '') + '" aria-live="polite">' + picks.length + ' / ' + PICKS_MAX + '</span></div>' +
       '<p class="tk-status" id="tk-pick-status" role="status"></p>' +
       grid +
-      '<p class="tk-note">Tirés de ta bibliothèque · fanart HD affiché en fond de son invitation</p>' +
+      '<p class="tk-note">' + tr('Tirés de ta bibliothèque · fanart HD affiché en fond de son invitation') + '</p>' +
     '</div></section>';
 }
 
@@ -233,26 +234,26 @@ function panelHTML(inv, index, sheet) {
   const id = esc(inv.id);
   if (isRevoked(inv)) {
     return '<section class="tk-panel tk-panel-revoked" aria-live="polite"><div class="tk-panel-b">' +
-      '<p class="tk-panel-t">Révoqué par l’administrateur</p><p class="tk-panel-d">Ce billet ne peut plus être envoyé.</p></div></section>';
+      '<p class="tk-panel-t">' + tr('Révoqué par l’administrateur') + '</p><p class="tk-panel-d">' + tr('Ce billet ne peut plus être envoyé.') + '</p></div></section>';
   }
   if (inv.state === 'free') return composerHTML(inv, index, sheet);
   if (inv.state === 'used') {
-    const who = inv.invitee ? esc(inv.invitee) + ' a validé ce billet' : 'Billet validé (compte supprimé)';
+    const who = inv.invitee ? tr('{invitee} a validé ce billet', { invitee: esc(inv.invitee) }) : tr('Billet validé (compte supprimé)');
     const since = shortDate(inv.usedAt);
-    const facts = ['Billet N° ' + esc(ticketNumber(inv, index)), since ? 'Validé le ' + since : ''].filter(Boolean).join(' · ');
+    const facts = [tr('Billet N° {inv}', { inv: esc(ticketNumber(inv, index)) }), since ? tr('Validé le {since}', { since }) : ''].filter(Boolean).join(' · ');
     return '<section class="tk-panel tk-panel-used" aria-live="polite"><span class="tk-avatar" aria-hidden="true">' + esc(initialOf(inv.invitee)) + '</span>' +
       '<div class="tk-panel-b"><p class="tk-panel-t">' + who + '</p><p class="tk-panel-d">' + facts + '</p></div></section>';
   }
   if (inv.state === 'sent') {
     const sent = shortDate(inv.sentAt);
     const exp = expiryText(inv.expiresAt);
-    const title = 'Envoyé' + (sent ? ' le ' + sent : '') + ' · pas encore ouvert';
-    const text = (exp ? 'Le lien ' + exp + '. ' : '') + 'Annule-le pour récupérer le billet.';
+    const title = tr('Envoyé{v} · pas encore ouvert', { v: (sent ? ' le ' + sent : '') });
+    const text = (exp ? tr('Le lien {exp}.', { exp }) + ' ' : '') + tr('Annule-le pour récupérer le billet.');
     const quote = inv.message ? '<p class="tk-quote">« ' + esc(inv.message) + ' »</p>' : '';
     return '<section class="tk-panel tk-panel-sent" aria-live="polite"><div class="tk-panel-b">' +
       '<p class="tk-panel-t">' + esc(title) + '</p><p class="tk-panel-d">' + esc(text) + '</p>' + quote + '</div>' +
-      '<div class="tk-panel-btns"><button type="button" class="tk-btn" data-tk-copy="' + id + '" data-tk-focus="copy">Copier à nouveau</button>' +
-      '<button type="button" class="tk-btn tk-btn-danger" data-tk-revoke="' + id + '" data-tk-focus="revoke">Annuler le billet</button></div></section>';
+      '<div class="tk-panel-btns"><button type="button" class="tk-btn" data-tk-copy="' + id + '" data-tk-focus="copy">' + tr('Copier à nouveau') + '</button>' +
+      '<button type="button" class="tk-btn tk-btn-danger" data-tk-revoke="' + id + '" data-tk-focus="revoke">' + tr('Annuler le billet') + '</button></div></section>';
   }
   return '';
 }
@@ -268,13 +269,13 @@ const plural = (n, word) => n + ' ' + word + (n > 1 ? 's' : '');
 
 /** Résumé de l'en-tête : « 4 billets disponibles · 0 validé » (les envoyés s'ajoutent s'il y en a). */
 function summaryText(list) {
-  if (!list.length) return 'Aucun billet pour le moment';
+  if (!list.length) return tr('Aucun billet pour le moment');
   const free = list.filter((i) => i.state === 'free' && !isRevoked(i)).length;
   const sent = list.filter((i) => i.state === 'sent' && !isRevoked(i)).length;
   const used = list.filter((i) => i.state === 'used').length;
-  const parts = [free ? plural(free, 'billet') + ' disponible' + (free > 1 ? 's' : '') : 'Aucun billet disponible'];
-  if (sent) parts.push(plural(sent, 'envoyé'));
-  parts.push(plural(used, 'validé'));
+  const parts = [free ? plural(free, 'billet') + ' disponible' + (free > 1 ? 's' : '') : tr('Aucun billet disponible')];
+  if (sent) parts.push(plural(sent, tr('envoyé')));
+  parts.push(plural(used, tr('validé')));
   return parts.join(' · ');
 }
 
@@ -289,9 +290,9 @@ function minisHTML(list) {
 /** En-tête de la carte : bouton d'accordéon (titre, résumé, miniatures, chevron). */
 function foldHeadHTML(d) {
   const list = d && d !== 'error' ? d.invites : null;
-  const sub = d === null ? 'Chargement des billets…' : list ? summaryText(list) : 'Billets indisponibles pour le moment';
+  const sub = d === null ? tr('Chargement des billets…') : list ? summaryText(list) : tr('Billets indisponibles pour le moment');
   return '<h3 class="tk-fold-hd"><button type="button" class="tk-fold" id="tk-fold-b" aria-expanded="' + (cardOpen ? 'true' : 'false') + '" aria-controls="tk-fold-r" data-tk-fold data-tk-focus="fold">' +
-    '<span class="tk-fold-t"><span class="tk-fold-h">Mes billets de parrainage</span><span class="tk-fold-s">' + esc(sub) + '</span></span>' +
+    '<span class="tk-fold-t"><span class="tk-fold-h">' + tr('Mes billets de parrainage') + '</span><span class="tk-fold-s">' + esc(sub) + '</span></span>' +
     (list ? minisHTML(list) : '') + '<span class="tk-fold-c">' + CHEVRON + '</span></button></h3>';
 }
 
@@ -305,12 +306,12 @@ function inviteTicketsHTML(list) {
   const sheet = !!sel && sel.state === 'free' && !isRevoked(sel) && isSheet();
   const dots = n > 1
     ? '<div class="tk-dots">' + (n <= DOTS_MAX ? '<span class="tk-dots-i" aria-hidden="true">' + list.map((_, i) => '<span class="tk-dot' + (i === 0 ? ' is-on' : '') + '"></span>').join('') + '</span>' : '') +
-      '<span class="tk-dots-t' + (n <= DOTS_MAX ? ' sr-only' : '') + '" data-tk-pos>Billet 1 sur ' + n + '</span></div>'
+      '<span class="tk-dots-t' + (n <= DOTS_MAX ? ' sr-only' : '') + '" data-tk-pos>' + tr('Billet 1 sur {n}', { n }) + '</span></div>'
     : '';
-  const legend = '<ul class="tk-legend" aria-label="États des billets">' +
+  const legend = '<ul class="tk-legend" aria-label="' + tr('États des billets') + '">' +
     LEGEND.map(([k, t]) => '<li><span class="tk-mini tk-is-' + k + '" aria-hidden="true"></span>' + ICONS[k] + '<span>' + t + '</span></li>').join('') + '</ul>';
   // Seule la rangée est un conteneur de requête : un conteneur englobant ferait de la carte le bloc de référence de la feuille du bas (position: fixed).
-  return '<div class="tk-row-wrap"><div class="tk-row" role="group" aria-label="Billets de parrainage" data-tk-row>' +
+  return '<div class="tk-row-wrap"><div class="tk-row" role="group" aria-label="' + tr('Billets de parrainage') + '" data-tk-row>' +
     list.map((inv, i) => ticketHTML(inv, i, i === at, deal)).join('') + '</div></div>' + dots + legend +
     (sel ? '<div class="tk-pane' + (sheet ? ' is-sheet-host' : '') + '" data-tk-pane data-tk-at="' + at + '">' + panelHTML(sel, at, sheet) + '</div>' : '');
 }
@@ -322,19 +323,18 @@ export function invitesBodyHTML(d) {
 }
 
 function regionHTML(d) {
-  if (d === null) return '<p class="set-hint" role="status">Chargement des billets…</p>';
-  if (d === 'error') return '<p class="set-hint" role="alert">Billets indisponibles : le serveur ne répond pas. <button type="button" class="link-btn" data-inv-reload>Réessayer</button></p>';
+  if (d === null) return '<p class="set-hint" role="status">' + tr('Chargement des billets…') + '</p>';
+  if (d === 'error') return '<p class="set-hint" role="alert">' + tr('Billets indisponibles : le serveur ne répond pas.') + ' <button type="button" class="link-btn" data-inv-reload>' + tr('Réessayer') + '</button></p>';
   const list = d.invites;
   const owner = auth.isOwner
-    ? '<form class="inv-quota" data-inv-quota><label class="set-row-d" for="inv-q-user">Quota d’un compte (propriétaire du serveur)</label>' +
+    ? '<form class="inv-quota" data-inv-quota><label class="set-row-d" for="inv-q-user">' + tr('Quota d’un compte (propriétaire du serveur)') + '</label>' +
       '<span class="inv-quota-f"><input class="set-input set-input-sm" id="inv-q-user" name="user" type="text" placeholder="pseudo" value="' + esc(auth.username) + '" autocapitalize="none" required>' +
-      '<input class="set-input set-input-sm" name="quota" type="number" min="0" max="100" value="' + d.quota + '" aria-label="Nombre de billets" required>' +
-      '<button type="submit" class="btn btn-ghost btn-sm">Appliquer</button></span></form>'
+      '<input class="set-input set-input-sm" name="quota" type="number" min="0" max="100" value="' + d.quota + '" aria-label="' + tr('Nombre de billets') + '" required>' +
+      '<button type="submit" class="btn btn-ghost btn-sm">' + tr('Appliquer') + '</button></span></form>'
     : '';
   const help = list.length
-    ? '<p class="tk-help">Invite tes proches avec un billet personnel : un mot et trois coups de cœur. Choisis un billet disponible pour le personnaliser. ' +
-      'Chaque billet ne sert qu’une fois ; ton filleul pourra devenir ton ami en un clic.</p>'
-    : '<p class="set-hint">Aucun billet pour le moment.</p>';
+    ? '<p class="tk-help">' + tr('Invite tes proches avec un billet personnel : un mot et trois coups de cœur. Choisis un billet disponible pour le personnaliser. Chaque billet ne sert qu’une fois ; ton filleul pourra devenir ton ami en un clic.') + '</p>'
+    : '<p class="set-hint">' + tr('Aucun billet pour le moment.') + '</p>';
   return help + (list.length ? inviteTicketsHTML(list) : '') + owner;
 }
 
@@ -381,7 +381,7 @@ function syncDots(slot, row) {
   }
   slot.querySelectorAll('.tk-dot').forEach((dot, i) => dot.classList.toggle('is-on', i === n));
   const pos = slot.querySelector('[data-tk-pos]');
-  const text = 'Billet ' + (n + 1) + ' sur ' + items.length;
+  const text = tr('Billet {v} sur {length}', { v: (n + 1), length: items.length });
   if (pos && pos.textContent !== text) pos.textContent = text;
 }
 
@@ -498,7 +498,7 @@ export async function copyInvite(id) {
   const inv = find(id);
   if (!inv) return false;
   const ok = await copyText(linkOf(inv));
-  toast(ok ? 'Lien copié' : 'Copie impossible : sélectionne le lien et copie-le');
+  toast(ok ? tr('Lien copié') : tr('Copie impossible : sélectionne le lien et copie-le'));
   if (ok) await markSent(inv);
   return ok;
 }
@@ -509,7 +509,7 @@ export async function shareInvite(id) {
   const url = linkOf(inv);
   if (typeof navigator.share === 'function') {
     try {
-      await navigator.share({ title: 'Invitation Laststream', text: 'Rejoins-moi sur Laststream :', url });
+      await navigator.share({ title: tr('Invitation Laststream'), text: tr('Rejoins-moi sur Laststream :'), url });
       await markSent(inv);
       return true;
     } catch (err) {
@@ -527,12 +527,12 @@ export async function revokeOne(id) {
     const fresh = res && res.invite ? res.invite : { ...inv, state: 'free', sentAt: null, expiresAt: null };
     data.invites = data.invites.map((i) => (i.id === id ? fresh : i));
     paint('ticket:' + id);
-    toast('Billet annulé : il est de nouveau libre');
+    toast(tr('Billet annulé : il est de nouveau libre'));
     return true;
   } catch (err) {
     const code = err instanceof UserApiError ? err.code : '';
-    if (code === 'invite_revoked') toast('Ce billet a été révoqué par l’administrateur : il ne peut plus être régénéré.');
-    else toast(code === 'invite_used' ? 'Ce billet est déjà validé' : 'Annulation impossible');
+    if (code === 'invite_revoked') toast(tr('Ce billet a été révoqué par l’administrateur : il ne peut plus être régénéré.'));
+    else toast(code === 'invite_used' ? tr('Ce billet est déjà validé') : tr('Annulation impossible'));
     if (code === 'invite_used' || code === 'invite_revoked') refreshInvites();
     return false;
   }
@@ -541,11 +541,11 @@ export async function revokeOne(id) {
 export async function applyQuota(user, quota) {
   try {
     const res = await setInviteQuota(user.trim().toLowerCase(), quota);
-    toast('Quota de ' + res.username + ' : ' + res.quota);
+    toast(tr('Quota de {username} : {quota}', { username: res.username, quota: res.quota }));
     if (res.username === auth.username) await refreshInvites();
     return true;
   } catch (err) {
-    toast(err instanceof UserApiError && err.code === 'account_not_found' ? 'Compte introuvable' : err instanceof UserApiError && err.code === 'owner_only' ? 'Réservé au propriétaire du serveur' : 'Quota non modifié');
+    toast(err instanceof UserApiError && err.code === 'account_not_found' ? tr('Compte introuvable') : err instanceof UserApiError && err.code === 'owner_only' ? tr('Réservé au propriétaire du serveur') : tr('Quota non modifié'));
     return false;
   }
 }
@@ -595,7 +595,7 @@ async function doSave(id) {
       paint();
       return true;
     }
-    toast('Billet non enregistré : réessaie');
+    toast(tr('Billet non enregistré : réessaie'));
     if (revOf(id) === rev) await reloadTicket(id);
     return false;
   }
@@ -681,7 +681,7 @@ async function togglePick(key) {
     next = picks.filter((p) => pickKey(p) !== key);
   } else {
     if (picks.length >= PICKS_MAX) {
-      setPickStatus('Trois coups de cœur au maximum : retire-en un pour en choisir un autre.');
+      setPickStatus(tr('Trois coups de cœur au maximum : retire-en un pour en choisir un autre.'));
       return;
     }
     const option = pickOptions(picks).find((o) => o.key === key);
@@ -713,7 +713,7 @@ detailEl.addEventListener('click', async (e) => {
   const rev = t.closest('[data-tk-revoke]');
   if (rev) {
     e.preventDefault();
-    if (!window.confirm('Annuler ce billet ? Son lien cessera de fonctionner et le billet redevient libre.')) return;
+    if (!window.confirm(tr('Annuler ce billet ? Son lien cessera de fonctionner et le billet redevient libre.'))) return;
     await run(() => revokeOne(rev.dataset.tkRevoke));
     return;
   }

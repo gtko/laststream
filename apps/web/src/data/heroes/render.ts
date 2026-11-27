@@ -13,14 +13,15 @@ import type {
 import { colorDist, darken, hashStr, lighten, mix, mulberry32, vividness } from './util';
 import { HEAD_PATHS, accessorySvg, beardSvg, earsSvg, eyesSvg, hairBackSvg, hairFrontSvg, headSvg, maskSvg, neckSvg, noseMouthSvg } from './face';
 import { TORSO_PATH, armorSvg, capeBackSvg, capeFrontSvg, emblemSvg, headgearBackSvg, headgearFrontSvg, torsoSvg } from './costume';
+import { t } from '../../i18n';
 
 export type { HeroFamily } from './palettes';
 
 export const HERO_FAMILIES: ReadonlyArray<{ id: HeroFamily; label: string }> = [
-  { id: 'heros', label: 'Héros' },
-  { id: 'vilains', label: 'Vilains' },
-  { id: 'scifi', label: 'Sci-fi' },
-  { id: 'fantasy', label: 'Fantasy' },
+  { id: 'heros', label: t('Héros') },
+  { id: 'vilains', label: t('Vilains') },
+  { id: 'scifi', label: t('Sci-fi') },
+  { id: 'fantasy', label: t('Fantasy') },
 ];
 export const HERO_FAMILY_IDS: readonly HeroFamily[] = HERO_FAMILIES.map((f) => f.id);
 

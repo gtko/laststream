@@ -3,6 +3,7 @@
  * (confirmation par-dessus le panneau). Hors de #detail : les événements du contenu sont gérés par l'appelant. */
 import { esc } from './util.js';
 import { ICON } from './icons.js';
+import { t } from '../i18n';
 
 const stack = [];
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -15,7 +16,7 @@ export function openLayer({ title, html, variant = 'modal', onClose }) {
   el.innerHTML = '<div class="adm-scrim" data-adm-close></div>' +
     '<section class="adm-sheet" role="dialog" aria-modal="true" aria-labelledby="' + id + '-t" tabindex="-1">' +
     '<header class="adm-sheet-h"><h2 id="' + id + '-t">' + esc(title) + '</h2>' +
-    '<button type="button" class="set-icon-btn" data-adm-close aria-label="Fermer">' + ICON.close + '</button></header>' +
+    '<button type="button" class="set-icon-btn" data-adm-close aria-label="' + t('Fermer') + '">' + ICON.close + '</button></header>' +
     '<div class="adm-sheet-b">' + html + '</div></section>';
   const opener = document.activeElement;
   document.body.appendChild(el);
@@ -63,14 +64,14 @@ export const topLayer = () => stack[stack.length - 1] || null;
  * Confirmation explicite. `expect` : texte à recopier pour valider (suppression d'un compte).
  * Se résout par true (confirmé) ou false (annulé, Échap, fond).
  */
-export function confirmDialog({ title, message, confirmLabel = 'Confirmer', danger = false, expect = '' }) {
+export function confirmDialog({ title, message, confirmLabel = t('Confirmer'), danger = false, expect = '' }) {
   return new Promise((resolve) => {
     let ok = false;
     const layer = openLayer({
       title,
       html: '<form class="adm-form" data-adm-confirm autocomplete="off"><p class="adm-lead">' + message + '</p>' +
-        (expect ? '<label class="adm-field">Pour confirmer, tape « <strong>' + esc(expect) + '</strong> »<input class="set-input" name="expect" autocomplete="off" autocapitalize="none" spellcheck="false"></label>' : '') +
-        '<div class="set-actions"><button type="button" class="btn btn-ghost" data-adm-close>Annuler</button>' +
+        (expect ? '<label class="adm-field">' + t('Pour confirmer, tape « <strong>{expect}</strong> »', { expect: esc(expect) }) + '<input class="set-input" name="expect" autocomplete="off" autocapitalize="none" spellcheck="false"></label>' : '') +
+        '<div class="set-actions"><button type="button" class="btn btn-ghost" data-adm-close>' + t('Annuler') + '</button>' +
         '<button type="submit" class="btn ' + (danger ? 'btn-danger' : 'btn-primary') + '"' + (expect ? ' disabled' : '') + '>' + esc(confirmLabel) + '</button></div></form>',
       onClose: () => resolve(ok),
     });
@@ -94,11 +95,11 @@ export function passwordDialog({ error } = {}) {
   return new Promise((resolve) => {
     let value = null;
     const layer = openLayer({
-      title: 'Confirme avec ton mot de passe',
-      html: '<form class="adm-form" data-adm-reauth autocomplete="off"><p class="adm-lead">Cette action est sensible. Après confirmation, tu n’auras plus à retaper ton mot de passe pendant 10 minutes ; le jeton reste en mémoire dans cet onglet et n’est jamais enregistré.</p>' +
-        '<label class="adm-field">Mot de passe<input class="set-input" type="password" name="password" autocomplete="current-password" required></label>' +
+      title: t('Confirme avec ton mot de passe'),
+      html: '<form class="adm-form" data-adm-reauth autocomplete="off"><p class="adm-lead">' + t('Cette action est sensible. Après confirmation, tu n’auras plus à retaper ton mot de passe pendant 10 minutes ; le jeton reste en mémoire dans cet onglet et n’est jamais enregistré.') + '</p>' +
+        '<label class="adm-field">' + t('Mot de passe') + '<input class="set-input" type="password" name="password" autocomplete="current-password" required></label>' +
         '<p class="set-msg" role="alert">' + esc(error || '') + '</p>' +
-        '<div class="set-actions"><button type="button" class="btn btn-ghost" data-adm-close>Annuler</button><button type="submit" class="btn btn-primary">Confirmer</button></div></form>',
+        '<div class="set-actions"><button type="button" class="btn btn-ghost" data-adm-close>' + t('Annuler') + '</button><button type="submit" class="btn btn-primary">' + t('Confirmer') + '</button></div></form>',
       onClose: () => resolve(value),
     });
     const form = layer.el.querySelector('form');

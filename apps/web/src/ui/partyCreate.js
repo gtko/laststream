@@ -10,6 +10,7 @@ import { sortedFriends } from './partyfriends.js';
 import { h } from './socialConvDom.js';
 import { openDialog } from './socialConvDialog.js';
 import { nameOf } from './socialFmt.js';
+import { t as tr } from '../i18n';
 
 const SEARCH_MIN = 2;
 const SEARCH_MAX = 8;
@@ -44,16 +45,16 @@ export function requestOfPick(pick, season = 1, episode = 1) {
 
 /** Phrase sous le choix : qui sera invité. */
 export function inviteNote(names) {
-  if (!names.length) return 'Aucun ami invité : tu pourras partager le lien depuis le salon.';
-  if (names.length === 1) return names[0] + ' sera invité(e) dans le salon d’attente.';
-  return names.length + ' amis seront invités dans le salon d’attente.';
+  if (!names.length) return tr('Aucun ami invité : tu pourras partager le lien depuis le salon.');
+  if (names.length === 1) return tr('{v} sera invité(e) dans le salon d’attente.', { v: names[0] });
+  return tr('{length} amis seront invités dans le salon d’attente.', { length: names.length });
 }
 
 let current = null;
 
 function friendName(pid) {
   const f = sortedFriends().find((x) => x.pid === pid);
-  return f ? nameOf(f) : 'Ton ami';
+  return f ? nameOf(f) : tr('Ton ami');
 }
 
 function numberOptions(select, count, label, value) {
@@ -80,28 +81,28 @@ export function openPartyCreate(pid, create) {
   const st = { pick: null, seasons: [], season: 1, episode: 1, visibility: 'private', seq: 0, timer: 0 };
   let paintNote = () => {};
   const dlg = openDialog({
-    title: 'Proposer une watch party', confirmLabel: 'Ouvrir le salon d’attente', opener,
+    title: tr('Proposer une watch party'), confirmLabel: tr('Ouvrir le salon d’attente'), opener,
     build(body, ctl) {
-      const intro = h('p', 'cvd-hint', 'Choisis un film ou une série. Chacun lit avec sa propre source : seuls les amis Laststream sont invités.');
+      const intro = h('p', 'cvd-hint', tr('Choisis un film ou une série. Chacun lit avec sa propre source : seuls les amis Laststream sont invités.'));
       const search = h('div', 'wpc-search');
-      const input = h('input', 'cvd-input', null, { type: 'search', placeholder: 'Chercher un film ou une série…', autocomplete: 'off', 'aria-label': 'Chercher un film ou une série' });
+      const input = h('input', 'cvd-input', null, { type: 'search', placeholder: tr('Chercher un film ou une série…'), autocomplete: 'off', 'aria-label': tr('Chercher un film ou une série') });
       const status = h('p', 'cvd-hint wpc-status', '', { role: 'status' });
-      const results = h('ul', 'wpc-res', null, { 'aria-label': 'Résultats' });
+      const results = h('ul', 'wpc-res', null, { 'aria-label': tr('Résultats') });
       search.append(input, status, results);
 
       const chosen = h('div', 'wpc-chosen');
       const card = h('div', 'wpc-card');
       const poster = h('span', 'wpc-poster');
       const cardText = h('span', 'wpc-card-t');
-      const change = h('button', 'cvm-btn wpc-change', 'Changer', { type: 'button' });
+      const change = h('button', 'cvm-btn wpc-change', tr('Changer'), { type: 'button' });
       card.append(poster, cardText, change);
       const epRow = h('div', 'wpc-eps');
-      const seasonSel = h('select', 'cvd-input', null, { 'aria-label': 'Saison' });
-      const episodeSel = h('select', 'cvd-input', null, { 'aria-label': 'Épisode' });
+      const seasonSel = h('select', 'cvd-input', null, { 'aria-label': tr('Saison') });
+      const episodeSel = h('select', 'cvd-input', null, { 'aria-label': tr('Épisode') });
       epRow.append(seasonSel, episodeSel);
-      const vis = h('div', 'wpc-vis', null, { role: 'radiogroup', 'aria-label': 'Qui peut rejoindre' });
+      const vis = h('div', 'wpc-vis', null, { role: 'radiogroup', 'aria-label': tr('Qui peut rejoindre') });
       const choices = partyVisibilityChoices(isKidProfile());
-      for (const [value, label, hint] of [['private', 'Privé', 'Amis invités'], ['public', 'Public', 'Listé dans « Watch parties »']]) {
+      for (const [value, label, hint] of [['private', tr('Privé'), tr('Amis invités')], ['public', tr('Public'), tr('Listé dans « Watch parties »')]]) {
         if (!choices.includes(value)) continue;
         const l = h('label', 'wpc-vis-o');
         const r = h('input', null, null, { type: 'radio', name: 'wpc-vis', value });
@@ -140,21 +141,21 @@ export function openPartyCreate(pid, create) {
         poster.textContent = '';
         if (src) { const im = h('img', null, null, { alt: '', loading: 'lazy' }); im.src = src; poster.append(im); }
         cardText.textContent = '';
-        cardText.append(h('b', null, row.name), h('span', 'cvd-hint', (row.type === 'tv' ? 'Série' : 'Film') + (row.year ? ' · ' + row.year : '')));
+        cardText.append(h('b', null, row.name), h('span', 'cvd-hint', (row.type === 'tv' ? tr('Série') : tr('Film')) + (row.year ? ' · ' + row.year : '')));
         epRow.hidden = row.type !== 'tv';
         ctl.setValid(true);
         if (row.type !== 'tv') { change.focus(); return; }
-        numberOptions(seasonSel, 1, 'Saison', 1);
-        numberOptions(episodeSel, 1, 'Épisode', 1);
+        numberOptions(seasonSel, 1, tr('Saison'), 1);
+        numberOptions(episodeSel, 1, tr('Épisode'), 1);
         const my = ++st.seq;
         tmdb('tv/' + row.id).then((d) => {
           if (my !== st.seq || st.pick !== row) return;
           st.seasons = seasonChoices(d);
           if (!st.seasons.length) return;
           seasonSel.textContent = '';
-          for (const s of st.seasons) seasonSel.append(h('option', null, 'Saison ' + s.n, { value: s.n }));
+          for (const s of st.seasons) seasonSel.append(h('option', null, tr('Saison {n}', { n: s.n }), { value: s.n }));
           st.season = st.seasons[0].n;
-          numberOptions(episodeSel, st.seasons[0].episodes, 'Épisode', 1);
+          numberOptions(episodeSel, st.seasons[0].episodes, tr('Épisode'), 1);
         }, () => { /* sans détail : saison 1, épisode 1 */ });
         change.focus();
       };
@@ -163,7 +164,7 @@ export function openPartyCreate(pid, create) {
         st.season = Number(seasonSel.value) || 1;
         st.episode = 1;
         const s = st.seasons.find((x) => x.n === st.season);
-        numberOptions(episodeSel, s ? s.episodes : 1, 'Épisode', 1);
+        numberOptions(episodeSel, s ? s.episodes : 1, tr('Épisode'), 1);
       });
       episodeSel.addEventListener('change', () => { st.episode = Number(episodeSel.value) || 1; });
 
@@ -171,18 +172,18 @@ export function openPartyCreate(pid, create) {
         const q = input.value.trim();
         const my = ++st.seq;
         results.textContent = '';
-        if (q.length < SEARCH_MIN) { status.textContent = q ? 'Tape au moins deux lettres.' : ''; return; }
-        status.textContent = 'Recherche…';
+        if (q.length < SEARCH_MIN) { status.textContent = q ? tr('Tape au moins deux lettres.') : ''; return; }
+        status.textContent = tr('Recherche…');
         let rows;
         try {
           const out = await tmdb('search/multi', { query: q, include_adult: 'false' });
           rows = titleRows(out && out.results);
         } catch {
-          if (my === st.seq) status.textContent = 'Recherche indisponible pour le moment.';
+          if (my === st.seq) status.textContent = tr('Recherche indisponible pour le moment.');
           return;
         }
         if (my !== st.seq) return;
-        status.textContent = rows.length ? '' : 'Aucun résultat.';
+        status.textContent = rows.length ? '' : tr('Aucun résultat.');
         for (const row of rows) {
           const li = h('li');
           const b = h('button', 'wpc-r', null, { type: 'button' });
@@ -190,7 +191,7 @@ export function openPartyCreate(pid, create) {
           const src = safeTmdbImage(row.poster, 'w92');
           if (src) { const im = h('img', null, null, { alt: '', loading: 'lazy' }); im.src = src; p.append(im); }
           const t = h('span', 'wpc-card-t');
-          t.append(h('b', null, row.name), h('span', 'cvd-hint', (row.type === 'tv' ? 'Série' : 'Film') + (row.year ? ' · ' + row.year : '')));
+          t.append(h('b', null, row.name), h('span', 'cvd-hint', (row.type === 'tv' ? tr('Série') : tr('Film')) + (row.year ? ' · ' + row.year : '')));
           b.append(p, t);
           b.addEventListener('click', () => choose(row));
           li.append(b);
@@ -206,7 +207,7 @@ export function openPartyCreate(pid, create) {
       });
     },
     onConfirm: async () => {
-      if (!st.pick) throw new Error('Choisis d’abord un film ou une série.');
+      if (!st.pick) throw new Error(tr('Choisis d’abord un film ou une série.'));
       clearTimeout(st.timer);
       const req = requestOfPick(st.pick, st.season, st.episode);
       const visibility = st.visibility === 'public' && !isKidProfile() ? 'public' : 'private';

@@ -14,12 +14,13 @@ import { describePending } from './rank';
 import { isShellEnvironment } from '../player/shell';
 import { capLabel, currentCapHeight, overCap } from './resolutionCap';
 import { rangeDenied } from './hostRange';
+import { t } from '../i18n';
 
 // Apps Windows (mpv) et Android (libVLC) : tous les formats sont lus tels quels, jamais de transcodage.
 const nativePlayer = () => isShellEnvironment() || !!globalThis.Capacitor?.isNativePlatform?.();
 
 const RES_CHIPS = [['2160p', '4K'], ['1440p', '2K'], ['1080p', '1080p'], ['720p', '720p'], ['SD', 'SD']];
-const LANG_CHIPS = [['fr', 'VF'], ['vo', 'VO'], ['multi', 'Multi']];
+const LANG_CHIPS = [['fr', 'VF'], ['vo', 'VO'], ['multi', t('Multi')]];
 
 let session = null;
 /** Éléments hôtes (panneau du lecteur) déjà équipés de leurs écouteurs. */
@@ -47,29 +48,29 @@ function itemHtml(v, opts) {
   const st = '<span class="s-status st-' + v.status + '">' + esc(v.statusLabel) + '</span>';
   // Pastille d'adéquation : débit de la source contre débit de la connexion (mesuré ou réglé), à chaque rendu.
   const fit = fitBadge(v.bitrateKbps, session ? session.bw : null);
-  const web = v.web === 'direct' ? '<span class="s-web s-web-direct" title="Se lit dans le navigateur sans conversion">Lecture directe</span>'
-    : v.appAudio === 'app' && rangeDenied(v.stream && v.stream.url) ? '<span class="s-web s-web-video" title="L’hébergeur de ce fichier refuse la lecture du son par le navigateur (CORS) : la vidéo se lira sans son">Sans son (hôte)</span>'
-    : v.appAudio === 'app' ? '<span class="s-web s-web-convert" title="Le navigateur ne lit pas ce son (AC-3 / E-AC-3) : l’app le décode elle-même, sans serveur de streaming, si l’hébergeur de la source l’autorise">Son décodé par l’app</span>'
-    : v.appAudio === 'unsupported' ? '<span class="s-web s-web-video" title="Son DTS / TrueHD non pris en charge par le navigateur : la vidéo se lira sans son">Sans son (DTS)</span>'
-    : v.convert === 'video' ? '<span class="s-web s-web-video" title="Le serveur de streaming réencode la vidéo (codec non pris en charge) : démarrage lent">Conversion vidéo</span>'
-    : v.web === 'convert' ? '<span class="s-web s-web-convert" title="La vidéo est copiée, seul l’audio est converti">Conversion audio</span>' : '';
+  const web = v.web === 'direct' ? '<span class="s-web s-web-direct" title="' + t('Se lit dans le navigateur sans conversion') + '">' + t('Lecture directe') + '</span>'
+    : v.appAudio === 'app' && rangeDenied(v.stream && v.stream.url) ? '<span class="s-web s-web-video" title="' + t('L’hébergeur de ce fichier refuse la lecture du son par le navigateur (CORS) : la vidéo se lira sans son') + '">' + t('Sans son (hôte)') + '</span>'
+    : v.appAudio === 'app' ? '<span class="s-web s-web-convert" title="' + t('Le navigateur ne lit pas ce son (AC-3 / E-AC-3) : l’app le décode elle-même, sans serveur de streaming, si l’hébergeur de la source l’autorise') + '">' + t('Son décodé par l’app') + '</span>'
+    : v.appAudio === 'unsupported' ? '<span class="s-web s-web-video" title="' + t('Son DTS / TrueHD non pris en charge par le navigateur : la vidéo se lira sans son') + '">' + t('Sans son (DTS)') + '</span>'
+    : v.convert === 'video' ? '<span class="s-web s-web-video" title="' + t('Le serveur de streaming réencode la vidéo (codec non pris en charge) : démarrage lent') + '">' + t('Conversion vidéo') + '</span>'
+    : v.web === 'convert' ? '<span class="s-web s-web-convert" title="' + t('La vidéo est copiée, seul l’audio est converti') + '">' + t('Conversion audio') + '</span>' : '';
 
-  const langs = v.langs.map((b) => '<span class="s-lang' + (b.verified ? ' is-verified' : '') + '" title="' + (b.verified ? 'Langue vérifiée dans le fichier' : 'Langue annoncée par le nom de la release') + '">' + esc(b.label) + (b.verified ? ' ✓' : '') + '</span>').join('');
+  const langs = v.langs.map((b) => '<span class="s-lang' + (b.verified ? ' is-verified' : '') + '" title="' + (b.verified ? t('Langue vérifiée dans le fichier') : t('Langue annoncée par le nom de la release')) + '">' + esc(b.label) + (b.verified ? ' ✓' : '') + '</span>').join('');
   const l2 = codecBadges(badges, 'audio') + langs;
 
   const l3 = [];
   if (v.bitrateLabel) l3.push(esc(v.bitrateLabel));
   if (v.durationLabel) l3.push('≈ ' + esc(v.durationLabel));
-  if (v.seeders != null) l3.push(v.seeders + ' seeders' + (v.peers != null ? ' / ' + v.peers + ' peers' : ''));
+  if (v.seeders != null) l3.push(v.seeders + ' seeders' + (v.peers != null ? ' ' + t('/ {peers} peers', { peers: v.peers }) : ''));
   if (v.copies > 1) l3.push(v.copies + ' copies');
   if (v.origins.length) l3.push('<span class="s-orig" title="' + esc(v.origins.map((o) => o.name).join(', ')) + '">' + v.origins.slice(0, 2).map((o) => '<span class="s-o">' + originIcon(o) + esc(o.name) + '</span>').join('') + (v.origins.length > 2 ? '<span class="s-o s-o-more">+' + (v.origins.length - 2) + '</span>' : '') + '</span>');
-  if (v.viaDevice) l3.push('<span class="s-dev" title="Trouvée par cet appareil : l’addon refusait le serveur">via ton appareil</span>');
+  if (v.viaDevice) l3.push('<span class="s-dev" title="' + t('Trouvée par cet appareil : l’addon refusait le serveur') + '">' + t('via ton appareil') + '</span>');
 
   const l4 = v.filename
     ? '<code class="s-file" title="' + esc(v.filename) + '">' + esc(truncName(v.filename)) + '</code>' + (v.releaseGroup ? '<span class="s-grp">' + esc(v.releaseGroup) + '</span>' : '')
     : v.releaseGroup ? '<span class="s-grp">' + esc(v.releaseGroup) + '</span>' : '';
 
-  const warn = v.notWebReady && !nativePlayer() ? '<span class="s-warn">Transcodage probable</span>' : '';
+  const warn = v.notWebReady && !nativePlayer() ? '<span class="s-warn">' + t('Transcodage probable') + '</span>' : '';
   // Navigateur seul : une source dont la vidéo ou le son ne passe pas reste visible, grisée et non sélectionnable, avec son motif.
   const compat = webCompatOf(v, compatCtx || webCompatContext());
   const blocked = compat.level === 'blocked';
@@ -77,15 +78,15 @@ function itemHtml(v, opts) {
   const over = overCap(v.group, capHeight);
   const cls = 'src2' + (opts.rec ? ' is-rec' : '') + (opts.current ? ' is-current' : '') + (blocked ? ' is-incompatible' : '') + (over ? ' is-over-cap' : '');
   return '<li><button type="button" class="' + cls + '" data-nav data-row="i-' + v.index + '" data-src="' + v.index + '"' + (v.playable && !blocked ? '' : ' disabled') + '>' +
-    (opts.rec ? '<span class="s-rec"><b>Recommandé</b><span class="s-why">' + esc(opts.reason) + '</span></span>' : '') +
-    (opts.current ? '<span class="s-cur">En cours de lecture</span>' : '') +
+    (opts.rec ? '<span class="s-rec">' + t('<b>Recommandé</b>') + '<span class="s-why">' + esc(opts.reason) + '</span></span>' : '') +
+    (opts.current ? '<span class="s-cur">' + t('En cours de lecture') + '</span>' : '') +
     '<span class="s-l1">' + l1.join('') + web + st + fit + warn + '</span>' +
     (l2 ? '<span class="s-l2">' + l2 + '</span>' : '') +
     (l3.length ? '<span class="s-l3">' + l3.join('<i aria-hidden="true">·</i>') + '</span>' : '') +
     (l4 ? '<span class="s-l4">' + l4 + '</span>' : '') +
-    (over ? '<span class="s-l4 s-cap-tag">Au-dessus du plafond (' + esc(capLabel(capHeight)) + ')</span>' : '') +
+    (over ? '<span class="s-l4 s-cap-tag">' + t('Au-dessus du plafond ({capHeight})', { capHeight: esc(capLabel(capHeight)) }) + '</span>' : '') +
     (compat.level === 'ok' ? '' : '<span class="s-l4 s-compat is-' + compat.level + '">' + esc(compat.reason) + '</span>') +
-    (v.playable ? '' : '<span class="s-l4">Aucun lien lisible.</span>') + '</button></li>';
+    (v.playable ? '' : '<span class="s-l4">' + t('Aucun lien lisible.') + '</span>') + '</button></li>';
 }
 
 /** Contexte de compatibilité web, calculé une fois par rendu. */
@@ -101,8 +102,8 @@ function noCompatibleHtml(views, s) {
   const levels = views.filter((v) => v.playable).map((v) => webCompatOf(v, ctx).level);
   if (!levels.length || levels.includes('ok')) return '';
   const offer = appOffer(currentOs());
-  const manual = levels.includes('check') ? ' Tu peux tenter à la main une source au son Dolby.' : '';
-  return '<div class="s-nocompat" role="status"><b>Aucune source ne se lit correctement dans ce navigateur.</b>' + esc(manual) +
+  const manual = levels.includes('check') ? ' ' + t('Tu peux tenter à la main une source au son Dolby.') : '';
+  return '<div class="s-nocompat" role="status">' + t('<b>Aucune source ne se lit correctement dans ce navigateur.</b>') + esc(manual) +
     '<span>' + esc(offer.text) + '</span>' +
     (offer.link ? '<a class="s-nocompat-link" href="' + esc(offer.link.href) + '" target="_blank" rel="noopener noreferrer">' + esc(offer.link.label) + '</a>' : '') + '</div>';
 }
@@ -122,39 +123,39 @@ function render() {
   const label = s.request.name + (s.request.season != null ? ' · S' + s.request.season + ' É' + s.request.episode : '');
 
   const toolbar =
-    '<div class="s-bar" role="group" aria-label="Filtres">' +
-      '<div class="s-chips" data-label="Résolution">' + RES_CHIPS.filter(([k]) => counts[k]).map(([k, l]) => chipHtml('res', k, l, filters.resolutions.has(k), counts[k])).join('') + '</div>' +
-      '<div class="s-chips" data-label="Langue">' + LANG_CHIPS.map(([k, l]) => chipHtml('lang', k, l, filters.langs.has(k))).join('') + '</div>' +
-      (origins.length > 1 ? '<div class="s-chips" data-label="Origine">' + origins.slice(0, 8).map((o) => originChip(o, filters.origins.has(o.name))).join('') + '</div>' : '') +
-      '<div class="s-chips" data-label="Affichage">' + chipHtml('cache', 'on', 'Cache uniquement ⚡', filters.cachedOnly) + chipHtml('hdr', 'on', 'HDR', filters.hdrOnly) +
-        (filtersActive(filters) ? '<button type="button" class="s-chip s-reset" data-nav data-row="f-reset" data-chip="reset:1">Réinitialiser</button>' : '') + '</div>' +
-      (s.bw == null ? '<div class="s-chips" data-label="Connexion">' + measureChip(s) + '</div>' : '') +
-      '<div class="s-chips" data-label="Trier par">' + SORT_KEYS.map((k) => chipHtml('sort', k, SORT_LABELS[k], sort === k)).join('') + '</div>' +
+    '<div class="s-bar" role="group" aria-label="' + t('Filtres') + '">' +
+      '<div class="s-chips" data-label="' + t('Résolution') + '">' + RES_CHIPS.filter(([k]) => counts[k]).map(([k, l]) => chipHtml('res', k, l, filters.resolutions.has(k), counts[k])).join('') + '</div>' +
+      '<div class="s-chips" data-label="' + t('Langue') + '">' + LANG_CHIPS.map(([k, l]) => chipHtml('lang', k, l, filters.langs.has(k))).join('') + '</div>' +
+      (origins.length > 1 ? '<div class="s-chips" data-label="' + t('Origine') + '">' + origins.slice(0, 8).map((o) => originChip(o, filters.origins.has(o.name))).join('') + '</div>' : '') +
+      '<div class="s-chips" data-label="' + t('Affichage') + '">' + chipHtml('cache', 'on', t('Cache uniquement ⚡'), filters.cachedOnly) + chipHtml('hdr', 'on', 'HDR', filters.hdrOnly) +
+        (filtersActive(filters) ? '<button type="button" class="s-chip s-reset" data-nav data-row="f-reset" data-chip="reset:1">' + t('Réinitialiser') + '</button>' : '') + '</div>' +
+      (s.bw == null ? '<div class="s-chips" data-label="' + t('Connexion') + '">' + measureChip(s) + '</div>' : '') +
+      '<div class="s-chips" data-label="' + t('Trier par') + '">' + SORT_KEYS.map((k) => chipHtml('sort', k, SORT_LABELS[k], sort === k)).join('') + '</div>' +
     '</div>';
 
   let body = '';
   // Sources essayées sans succès (lenteur, erreur) : une ligne par source avec la raison.
   if (s.serverNotice) body += '<p class="s-pending" role="status">' + esc(s.serverNotice) + '</p>';
-  if (s.notice.length) body += '<div class="s-fail" role="alert"><b>Sources essayées sans succès</b><ul>' + s.notice.map((n) => '<li>' + esc(n) + '</li>').join('') + '</ul></div>';
+  if (s.notice.length) body += '<div class="s-fail" role="alert">' + t('<b>Sources essayées sans succès</b>') + '<ul>' + s.notice.map((n) => '<li>' + esc(n) + '</li>').join('') + '</ul></div>';
   // Recherche partielle : indication discrète (la liste se complète seule), puis « +N sources » un instant.
   if (s.pending.length) body += '<p class="s-pending" role="status"><i class="s-spin" aria-hidden="true"></i>' + esc(describePending(s.pending)) + '</p>';
-  else if (s.added > 0) body += '<p class="s-pending is-done" role="status">+' + s.added + ' source' + (s.added > 1 ? 's' : '') + ' trouvée' + (s.added > 1 ? 's' : '') + '</p>';
+  else if (s.added > 0) body += '<p class="s-pending is-done" role="status">' + t('+{added} source{v} trouvée', { added: s.added, v: (s.added > 1 ? 's' : '') }) + (s.added > 1 ? 's' : '') + '</p>';
   body += noCompatibleHtml(views, s);
   const aboveCap = capHeight !== null && views.some((v) => overCap(v.group, capHeight));
-  if (aboveCap) body += '<p class="s-cap">Plafond de résolution : ' + esc(capLabel(capHeight)) + ' · les sources au-dessus restent disponibles. À régler dans Réglages › Lecture.</p>';
+  if (aboveCap) body += '<p class="s-cap">' + t('Plafond de résolution : {capHeight} · les sources au-dessus restent disponibles. À régler dans Réglages › Lecture.', { capHeight: esc(capLabel(capHeight)) }) + '</p>';
   if (rec) body +='<ul class="src-list s-rec-list">' + itemHtml(rec.view, { rec: true, reason: rec.reason, current: s.currentIndex === rec.view.index }) + '</ul>';
-  else if (s.bwPending) body += '<p class="s-note">Mesure de ta connexion pour choisir la meilleure source…</p>';
+  else if (s.bwPending) body += '<p class="s-note">' + t('Mesure de ta connexion pour choisir la meilleure source…') + '</p>';
   const groups = groupViews(rest);
   body += groups.map((g) => '<h3 class="src-group">' + esc(QUALITY_LABEL[g.key]) + ' <span>' + g.views.length + '</span></h3><ul class="src-list">' +
     g.views.map((v) => itemHtml(v, { current: s.currentIndex === v.index })).join('') + '</ul>').join('');
-  if (!shown.length && views.length) body += '<p class="drawer-text">Aucune source ne correspond à ces filtres.</p>';
+  if (!shown.length && views.length) body += '<p class="drawer-text">' + t('Aucune source ne correspond à ces filtres.') + '</p>';
 
   const host = s.host;
   const focusKey = document.activeElement && host.contains(document.activeElement) ? (document.activeElement.dataset.chip || document.activeElement.dataset.src) : null;
   const scroller = host === modalBody ? modalBody.closest('.modal') : host;
   const top = scroller ? scroller.scrollTop : 0;
-  host.innerHTML = '<div class="drawer s-drawer">' + (host === modalBody ? '<h2 id="modal-title" class="drawer-title">Sources</h2>' : '') +
-    '<p class="drawer-text"><strong>' + esc(label) + '</strong> · ' + views.length + ' source' + (views.length > 1 ? 's' : '') + (shown.length !== views.length ? ' (' + shown.length + ' affichées)' : '') + '</p>' +
+  host.innerHTML = '<div class="drawer s-drawer">' + (host === modalBody ? '<h2 id="modal-title" class="drawer-title">' + t('Sources') + '</h2>' : '') +
+    '<p class="drawer-text">' + t('<strong>{label}</strong> · {length} source', { label: esc(label), length: views.length }) + (views.length > 1 ? 's' : '') + (shown.length !== views.length ? ' ' + t('({length} affichées)', { length: shown.length }) : '') + '</p>' +
     toolbar + body + '</div>';
   if (scroller) scroller.scrollTop = top;
   if (focusKey) {
@@ -165,7 +166,7 @@ function render() {
 
 function showMessage(msg) {
   const host = session ? session.host : modalBody;
-  host.innerHTML = '<div class="drawer">' + (host === modalBody ? '<h2 id="modal-title" class="drawer-title">Sources</h2>' : '') + '<p class="drawer-text">' + esc(msg) + '</p></div>';
+  host.innerHTML = '<div class="drawer">' + (host === modalBody ? '<h2 id="modal-title" class="drawer-title">' + t('Sources') + '</h2>' : '') + '<p class="drawer-text">' + esc(msg) + '</p></div>';
 }
 
 /**
@@ -178,7 +179,7 @@ export async function openSourcePicker(request, opener, opts) {
   const token = Symbol('picker');
   const host = opts.host || modalBody;
   session = { token, host, notice: opts.notice || [], pending: opts.pending || [], added: 0, stop: null, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, originalLang: opts.originalLang || undefined, lp: opts.lp || undefined, bw: null, bwPending: false };
-  const skeleton = '<div class="drawer">' + (opts.host ? '' : '<h2 id="modal-title" class="drawer-title">Sources</h2>') + '<ul class="drawer-list" aria-hidden="true"><li class="sk sk-src"></li><li class="sk sk-src"></li><li class="sk sk-src"></li></ul></div>';
+  const skeleton = '<div class="drawer">' + (opts.host ? '' : '<h2 id="modal-title" class="drawer-title">' + t('Sources') + '</h2>') + '<ul class="drawer-list" aria-hidden="true"><li class="sk sk-src"></li><li class="sk sk-src"></li><li class="sk sk-src"></li></ul></div>';
   if (opts.host) { host.innerHTML = skeleton; bindHost(host); } else openModal(skeleton, opener, 'is-drawer is-sources');
   const alive = () => session && session.token === token;
   // Liste chargée ici : son état complet (repli appareil, sources serveur) guide la surveillance.
@@ -195,10 +196,10 @@ export async function openSourcePicker(request, opener, opts) {
       session.notYet = loaded.notYetDigital ? notYetDigitalText(loaded.digitalDate) : '';
     }
   } catch (e) {
-    if (alive()) showMessage(e && e.message === 'no-imdb' ? noImdbMessage(e.tried || []) : 'Les sources n’ont pas pu être chargées. Vérifie que lastAddon répond, puis réessaie.');
+    if (alive()) showMessage(e && e.message === 'no-imdb' ? noImdbMessage(e.tried || []) : t('Les sources n’ont pas pu être chargées. Vérifie que lastAddon répond, puis réessaie.'));
     return;
   }
-  if (!session.views.length && !session.pending.length) { showMessage(session.notYet || session.serverNotice || 'Aucune source trouvée pour le moment.'); return; }
+  if (!session.views.length && !session.pending.length) { showMessage(session.notYet || session.serverNotice || t('Aucune source trouvée pour le moment.')); return; }
   const known = knownBandwidthKbps();
   // La liste se complète toute seule tant que lastAddon interroge d'autres sources (2 s, 20 s au plus), sans toucher à la lecture.
   if (session.pending.length) {
@@ -233,7 +234,7 @@ export async function openSourcePicker(request, opener, opts) {
 /** Bouton de la barre : débit inconnu (pastilles « Débit inconnu »). Désactivé pendant la mesure. */
 function measureChip(s) {
   return '<button type="button" class="s-chip" data-nav data-row="f-bw" data-chip="bw:measure"' + (s.bwPending ? ' disabled' : '') + '>' +
-    (s.bwPending ? 'Mesure en cours…' : 'Mesurer ma connexion') + '</button>';
+    (s.bwPending ? t('Mesure en cours…') : t('Mesurer ma connexion')) + '</button>';
 }
 
 /** « Mesurer » : relance la mesure existante (valable 24 h) puis rafraîchit les pastilles et la recommandation. */
