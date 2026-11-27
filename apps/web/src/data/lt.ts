@@ -1,6 +1,7 @@
 import { ltUrl, requireBase, type QueryValue } from './config';
 import { getRegion, getVideoLang } from './prefs';
 import { cachedRequest, isFicheUrl, requestFiche, requestJson } from './transport';
+import { t } from '../i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /** Les réponses TMDB / MDBList / TVDB gardent la forme du prototype : volontairement non typées ici. */
@@ -122,11 +123,11 @@ function isServerMeta(value: unknown, type: ServerMetaType, tmdbId: number): val
  */
 export async function fetchServerMeta(type: ServerMetaType, tmdbId: number | string): Promise<ServerMeta> {
   const id = Number(tmdbId);
-  if (!Number.isInteger(id) || id <= 0) throw new Error('identifiant TMDB invalide');
+  if (!Number.isInteger(id) || id <= 0) throw new Error(t('identifiant TMDB invalide'));
   // Appel direct à requestFiche : isFicheUrl ne liste que les routes amont (tmdb, mdblist, tvdb).
   const url = ltUrl(`meta/${type}/${id}`);
   const body = await cachedRequest<unknown>(url, () => requestFiche<unknown>(url));
-  if (!isServerMeta(body, type, id)) throw new Error('fiche serveur : forme inattendue');
+  if (!isServerMeta(body, type, id)) throw new Error(t('fiche serveur : forme inattendue'));
   return body;
 }
 export interface RecommendOptions {

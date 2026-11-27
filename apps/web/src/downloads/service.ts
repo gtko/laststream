@@ -22,6 +22,7 @@ import { createDownloadHttp } from './httpSelect';
 import { reportDownloadEvent } from './report';
 import { createShellDownloadStore } from './shellStore';
 import { createWebDownloadStore, type WebDownloadStore } from './webStore';
+import { t as tr } from '../i18n';
 
 export type Availability = { ok: true } | { ok: false; reason: string };
 
@@ -75,7 +76,7 @@ export function platformAvailability(): Availability {
   if (kind === 'shell') return { ok: true }; // magasin de la coque (ODY-201) : une panne du pont se voit à l'ouverture du fichier
   return webStorageAvailable()
     ? { ok: true }
-    : { ok: false, reason: 'Ton navigateur ne peut pas conserver les téléchargements hors ligne.' };
+    : { ok: false, reason: tr('Ton navigateur ne peut pas conserver les téléchargements hors ligne.') };
 }
 
 /**
@@ -176,7 +177,7 @@ async function build(purge: boolean): Promise<DownloadManager | null> {
   index = idx;
   if (purge || isPurgePending()) {
     // Le marqueur n'est effacé qu'une fois l'index vidé ; sinon le gestionnaire ne démarre pas (rien ne reprend) et la purge est refaite.
-    if (!(await wipeStored(idx, store))) throw new Error('purge incomplète');
+    if (!(await wipeStored(idx, store))) throw new Error(tr('purge incomplète'));
     clearPurgePending();
   }
   const created = new DownloadManager({

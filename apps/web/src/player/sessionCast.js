@@ -12,6 +12,7 @@ import { isWatched } from './progress';
 import { serverBase } from './server';
 import { S, headingFor } from './sessionState.js';
 import { markWatched, refreshUI, saveProgress, syncTicks } from './sessionTick.js';
+import { t as tr } from '../i18n';
 
 /** Un appareil Cast est visible sur le réseau (suivi par le SDK une fois chargé). */
 let devices = false;
@@ -52,7 +53,7 @@ function savedProgress(p) {
 async function startCasting() {
   const p = S.P;
   if (!p || !p.view || !p.engine || p.casting || p.castStarting) return;
-  if (partyBridge.isActive()) { S.ui.toast('Chromecast indisponible pendant un salon', 4000); return; }
+  if (partyBridge.isActive()) { S.ui.toast(tr('Chromecast indisponible pendant un salon'), 4000); return; }
   const target = castTarget({ url: p.mediaUrl, proxied: p.mediaProxied === true, offline: isOfflineView(p.view), serverBase: serverBase() });
   if (!target.ok) { S.ui.toast(target.reason, 6000); return; }
   // Pause dès le clic : la position envoyée est celle de l'image affichée, même si le choix de l'appareil prend du temps.
@@ -72,7 +73,7 @@ async function startCasting() {
   } catch (e) {
     // Fenêtre de choix fermée : rien à dire. Sinon le téléviseur n'a pas pu ouvrir la source.
     if (S.P === p && wasPlaying) { try { p.engine.play(); } catch (_) { /* ignoré */ } }
-    if (!(e && e.code === 'cancel') && S.P === p) S.ui.toast('Envoi vers le Chromecast impossible' + (e && e.code === 'load_failed' ? ' : le téléviseur ne lit pas cette source.' : '.'), 6000);
+    if (!(e && e.code === 'cancel') && S.P === p) S.ui.toast(tr('Envoi vers le Chromecast impossible') + (e && e.code === 'load_failed' ? ' ' + tr(': le téléviseur ne lit pas cette source.') : '.'), 6000);
     return;
   } finally {
     p.castStarting = false;
@@ -101,7 +102,7 @@ function onRemoteEnd(p, finished) {
   if (S.P !== p || !p.casting) return;
   const device = p.casting.device;
   endCasting(p, 'pause');
-  S.ui.toast(finished ? 'Lecture terminée sur ' + (device || 'le Chromecast') : 'Chromecast déconnecté : lecture en pause ici', 5000);
+  S.ui.toast(finished ? tr('Lecture terminée sur') + ' ' + (device || tr('le Chromecast')) : tr('Chromecast déconnecté : lecture en pause ici'), 5000);
 }
 
 function showCasting(p) {

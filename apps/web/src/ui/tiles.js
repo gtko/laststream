@@ -27,11 +27,11 @@ let tileIO = null;
 export function freshText(it, info) {
   const age = (d) => (d ? -dayDiff(d) : NaN);
   const a = age(it.date);
-  if (it.type === 'movie') return a >= 0 && a < 14 ? 'Nouveau film' : '';
-  if (a >= 0 && a < 14) return 'Nouvelle série';
+  if (it.type === 'movie') return a >= 0 && a < 14 ? tr('Nouveau film') : '';
+  if (a >= 0 && a < 14) return tr('Nouvelle série');
   if (info) {
     const s = age(info.seasonDate);
-    if (info.seasonNum > 1 && s >= 0 && s < 14) return 'Nouvelle saison';
+    if (info.seasonNum > 1 && s >= 0 && s < 14) return tr('Nouvelle saison');
   }
   return '';
 }
@@ -42,42 +42,42 @@ export function tileCard(it, o) {
   const land = variant !== 'poster';
   const upDate = ''; // « Prochainement » a sa propre carte (upCard)
   const rank = (upDate || o.soon) ? 0 : (o.rank || state.topBadge.get(it.key) || 0);
-  const fresh = o.soon ? 'Prochainement' : (!upDate && !rank ? freshText(it, infoStore.get(it.key)) : '');
+  const fresh = o.soon ? tr('Prochainement') : (!upDate && !rank ? freshText(it, infoStore.get(it.key)) : '');
   const src = land ? it.backdrop || it.poster : it.poster || it.backdrop; // sans affiche : le fond, recadré au centre
   const imdb = (detailOf(it).ratings || {}).imdb;
   const score = imdb != null ? fmtNum(imdb, 1) : it.vote;
   const metaTxt = o.sub || [it.genre, it.year, score ? '★ ' + score : ''].filter(Boolean).join(' · ');
 
   const label = [it.name];
-  if (upDate) label.push('Prochainement, le ' + fmtDate(upDate) + (it.upLabel ? ' (' + it.upLabel + ')' : ''));
-  else if (rank) label.push('Top 10 cette semaine, numéro ' + rank);
+  if (upDate) label.push(tr('Prochainement, le {upDate}', { upDate: fmtDate(upDate) }) + (it.upLabel ? ' (' + it.upLabel + ')' : ''));
+  else if (rank) label.push(tr('Top 10 cette semaine, numéro {rank}', { rank }));
   else if (fresh) label.push(fresh);
   if (o.pct != null) label.push(o.pct + ' % vu');
   // Film entamé (affiche seulement) : pastille et barre de reprise. Masquées en CSS une fois le film vu.
   const rs = !land && it.type === 'movie' && o.pct == null ? progressResume(userStore.getProgress(it.key)) : null;
-  if (rs && !userStore.isWatched(it.key)) label.push('reprise ' + rs.label);
+  if (rs && !userStore.isWatched(it.key)) label.push(tr('reprise {label}', { label: rs.label }));
   if (o.sub) label.push(o.sub);
-  else if (!upDate && score) label.push('note ' + score);
+  else if (!upDate && score) label.push(tr('note {score}', { score }));
 
   const ribbon = upDate
-    ? '<span class="rib-up" aria-hidden="true"><span>Prochainement</span></span>'
-    : rank ? '<span class="rib-top" aria-hidden="true"><b>TOP</b><i>' + rank + '</i><em>cette semaine</em></span>' : '';
+    ? '<span class="rib-up" aria-hidden="true"><span>' + tr('Prochainement') + '</span></span>'
+    : rank ? '<span class="rib-top" aria-hidden="true">' + tr('<b>TOP</b><i>{rank}</i><em>cette semaine</em>', { rank }) + '</span>' : '';
   const badge = fresh ? '<span class="t-badge" aria-hidden="true">' + esc(fresh) + '</span>' : '';
   const dateBar = upDate
-    ? '<span class="t-date" aria-hidden="true"><strong>' + esc((it.upLabel ? it.upLabel + ' · ' : '') + 'Le ' + fmtShort(upDate)) + '</strong><span>' + esc(countdown(upDate)) + '</span></span>' : '';
+    ? '<span class="t-date" aria-hidden="true"><strong>' + esc((it.upLabel ? it.upLabel + ' · ' : '') + tr('Le {upDate}', { upDate: fmtShort(upDate) })) + '</strong><span>' + esc(countdown(upDate)) + '</span></span>' : '';
   const lazy = land || it.type === 'tv' || isKidProfile();
 
-  const cls = 'card tile' + (land ? ' tile-land' : '') + (variant === 'logo' ? ' tile-logo' : '') + (upDate ? ' is-upcoming' : '') + (o.current ? ' is-current' : '') + (o.alwaysMeta ? ' meta-on' : '');
+  const cls = tr('card tile') + (land ? ' tile-land' : '') + (variant === 'logo' ? ' tile-logo' : '') + (upDate ? ' is-upcoming' : '') + (o.current ? ' is-current' : '') + (o.alwaysMeta ? ' meta-on' : '');
   const media =
     '<span class="card-media' + (src ? '' : ' no-img') + '">' +
     (src ? '<img src="' + esc(src) + '" alt="' + (land ? '' : esc(it.name)) + '" data-fb="' + esc(it.poster) + '" loading="lazy" decoding="async">' : '') +
     fallbackHTML(it) + ribbon + badge + dateBar +
     (land ? '<span class="t-shade" aria-hidden="true"></span><span class="t-titlewrap"><span class="t-title">' + esc(it.name) + '</span></span><span class="t-prov"></span>' : '') +
     '<span class="t-meta" aria-hidden="true">' + esc(metaTxt) + '</span>' +
-    (it.cinema ? '<span class="t-cinema" aria-hidden="true">Au cinéma</span>' : '') +
+    (it.cinema ? '<span class="t-cinema" aria-hidden="true">' + tr('Au cinéma') + '</span>' : '') +
     moreButtonHTML(it.name) +
     (o.removable ? removeButtonHTML(it.key, it.name) : '') +
-    ((o.watched || (it.type === 'movie' && userStore.isWatched(it.key))) ? '<span class="t-watched" aria-hidden="true" title="Vu">' + ICON.check + '</span>' : '') +
+    ((o.watched || (it.type === 'movie' && userStore.isWatched(it.key))) ? '<span class="t-watched" aria-hidden="true" title="' + tr('Vu') + '">' + ICON.check + '</span>' : '') +
     (rs ? resumePillHTML(rs.label) : '') +
     (o.pct != null ? '<span class="progress" aria-hidden="true"><span style="width:' + o.pct + '%"></span></span>'
       : rs ? '<span class="progress resume-progress" aria-hidden="true"><span style="width:' + Math.round(rs.ratio * 100) + '%"></span></span>' : '') +
@@ -93,24 +93,25 @@ export function tileCard(it, o) {
 export const posterCard = (it, o) => tileCard(it, o);
 
 export function topCard(it, n) {
-  return '<button type="button" class="top-item" data-open="' + esc(it.key) + '" data-tile="' + esc(it.key) + '"' + (isKidProfile() ? ' data-lazy' : '') + ' aria-label="' + n + '. ' + esc(it.name) + ', Top 10 cette semaine">' +
+  return '<button type="button" class="top-item" data-open="' + esc(it.key) + '" data-tile="' + esc(it.key) + '"' + (isKidProfile() ? ' data-lazy' : '') + ' aria-label="' + n + tr('. {name}, Top 10 cette semaine', { name: esc(it.name) }) + '">' +
     '<span class="rank" aria-hidden="true">' + n + '</span>' +
     '<span class="card-media' + (it.poster ? '' : ' no-img') + '">' +
     (it.poster ? '<img src="' + esc(it.poster) + '" alt="" decoding="async">' : '') +
     fallbackHTML(it) +
-    '<span class="rib-top" aria-hidden="true"><b>TOP</b><i>' + n + '</i><em>cette semaine</em></span></span></button>';
+    '<span class="rib-top" aria-hidden="true">' + tr('<b>TOP</b><i>{n}</i><em>cette semaine</em>', { n }) + '</span></span></button>';
 }
 
 // « Reprendre la lecture » : carte à logo avec la progression réelle.
 export function continueCard(it, pct) {
   const d = detailOf(it);
   const rem = d.minutes ? Math.round(d.minutes * (1 - pct / 100)) : 0;
-  return tileCard(it, { variant: 'logo', pct, alwaysMeta: true, removable: true, sub: typeLabel(it) + (rem ? ' · reste ' + fmtMin(rem) : '') });
+  return tileCard(it, { variant: 'logo', pct, alwaysMeta: true, removable: true, sub: typeLabel(it) + (rem ? ' ' + tr('· reste {rem}', { rem: fmtMin(rem) }) : '') });
 }
 
 // Chargement paresseux (tuiles visibles seulement) : fournisseur FR ou chaîne, logo du titre, fraîcheur.
 import { isKidProfile, kidMaxAge } from '../data/auth';
 import { kidAllows, kidGenreOk } from '../data/kid';
+import { t as tr, intlLocale } from '../i18n';
 
 export function enrich(it, needLogo) {
   const ck = it.key + (needLogo ? '#l' : '');
@@ -191,7 +192,7 @@ function renumberTop() {
       const n = i + 1;
       const title = (state.byKey.get(el.dataset.tile || '') || {}).name || '';
       el.querySelectorAll('.rank, .rib-top i').forEach((x) => { x.textContent = String(n); });
-      el.setAttribute('aria-label', n + '. ' + title + ', Top 10 cette semaine');
+      el.setAttribute('aria-label', n + tr('. {title}, Top 10 cette semaine', { title }));
     });
   });
 }
@@ -218,11 +219,11 @@ export function paintNewBadge(el, it, info) {
         });
       }
       const n = newEpisodeCount(seasons, lastAired, watched);
-      if (n > 0) { text = '+' + n; label = n === 1 ? '1 nouvel épisode' : n + ' nouveaux épisodes'; }
+      if (n > 0) { text = '+' + n; label = n === 1 ? tr('1 nouvel épisode') : tr('{n} nouveaux épisodes', { n }); }
     }
   } else if (it.type === 'movie' && userStore.isFollowing(it.key) && !userStore.isWatched(it.key)) {
     const age = it.date ? -dayDiff(it.date) : NaN;
-    if (age >= 0 && age <= 45) { text = 'Sorti'; label = 'Nouveau film sorti'; }
+    if (age >= 0 && age <= 45) { text = tr('Sorti'); label = tr('Nouveau film sorti'); }
   }
   let badge = media.querySelector('.t-new');
   if (!text) { if (badge) badge.remove(); return; }
@@ -251,7 +252,7 @@ export function applyEnrich(key) {
     const prov = el.querySelector('.t-prov');
     if (prov && info.provider && !prov.firstChild) {
       prov.innerHTML = '<img src="' + esc(info.provider.logo) + '" alt="" title="' + esc(info.provider.name) + '" width="26" height="26">';
-      el.setAttribute('aria-label', el.getAttribute('aria-label') + ', disponible sur ' + info.provider.name);
+      el.setAttribute('aria-label', tr('{v}, disponible sur {name}', { v: el.getAttribute('aria-label'), name: info.provider.name }));
     }
     if (el.dataset.plain === '1' && !el.dataset.badge) {
       const ft = freshText(it, info);
@@ -303,13 +304,13 @@ export function observeTiles(root) {
 export function upCard(it) {
   const d = new Date(String(it.upDate) + 'T00:00:00');
   const day = d.getDate();
-  const mon = d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '').toUpperCase();
+  const mon = d.toLocaleDateString(intlLocale(), { month: 'short' }).replace('.', '').toUpperCase();
   const cd = countdown(it.upDate);
   const cdTxt = cd ? cd.charAt(0).toUpperCase() + cd.slice(1).replace(/^Dans/, 'Dans') : '';
-  const type = it.type === 'tv' ? it.upLabel || 'Série' : 'Film';
+  const type = it.type === 'tv' ? it.upLabel || tr('Série') : tr('Film');
   const on = getRemind().includes(it.key);
   const src = it.backdrop || it.poster;
-  const label = it.name + ', Prochainement, le ' + fmtDate(it.upDate) + (it.upLabel ? ' (' + it.upLabel + ')' : '') + ', ' + cd;
+  const label = tr('{name}, Prochainement, le {upDate}{v}, {cd}', { name: it.name, upDate: fmtDate(it.upDate), v: (it.upLabel ? ' (' + it.upLabel + ')' : ''), cd });
   return '<div class="up-item"><button type="button" class="up-card" data-open="' + esc(it.key) + '" data-tile="' + esc(it.key) + '" data-variant="logo" data-lazy aria-label="' + esc(label) + '">' +
     '<span class="up-media' + (src ? '' : ' no-img') + '">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') +
     '<span class="up-shade" aria-hidden="true"></span>' +
@@ -317,5 +318,5 @@ export function upCard(it) {
     (cdTxt ? '<span class="up-count" aria-hidden="true">' + esc(cdTxt) + '</span>' : '') +
     '<span class="t-titlewrap"><span class="t-title">' + esc(it.name) + '</span></span></span>' +
     '<span class="up-title" aria-hidden="true">' + esc(it.name) + '</span><span class="up-type" aria-hidden="true">' + esc(type) + '</span></button>' +
-    '<button type="button" class="up-bell" data-remindkey="' + esc(it.key) + '" aria-pressed="' + on + '" aria-label="' + (on ? 'Rappel activé : ' : 'Me rappeler : ') + esc(it.name) + '" data-tip="' + (on ? 'Rappel activé' : 'Me rappeler') + '">' + (on ? ICON.check : ICON.bell) + '</button></div>';
+    '<button type="button" class="up-bell" data-remindkey="' + esc(it.key) + '" aria-pressed="' + on + '" aria-label="' + (on ? tr('Rappel activé :') + ' ' : tr('Me rappeler :') + ' ') + esc(it.name) + '" data-tip="' + (on ? tr('Rappel activé') : tr('Me rappeler')) + '">' + (on ? ICON.check : ICON.bell) + '</button></div>';
 }

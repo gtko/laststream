@@ -1,6 +1,7 @@
 /* Cartes « En deux mots » : texte limité à 2 lignes, déployé vers le haut au survol,
  * au focus clavier (Entrée / Espace) ou au toucher, sans décaler les boutons situés dessous. */
 
+import { t } from '../i18n';
 export function setupWhy(card) {
   if (!card || card.dataset.why) return;
   card.dataset.why = '1';
@@ -12,7 +13,7 @@ export function setupWhy(card) {
   const hint = document.createElement('span');
   hint.className = 'f-why-hint';
   hint.setAttribute('aria-hidden', 'true');
-  hint.textContent = 'Lire la suite';
+  hint.textContent = t('Lire la suite');
   inner.appendChild(hint);
   card.classList.add('is-live');
   card.tabIndex = 0;

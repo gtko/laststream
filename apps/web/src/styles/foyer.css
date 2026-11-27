@@ -46,9 +46,9 @@
 }
 .fj-row { display: flex; gap: 18px; width: max-content; }
 .fj-row--a { animation: fjMarq 70s linear infinite; }
-.fj-row--b { margin-left: -120px; animation: fjMarqR 80s linear infinite; }
-.fj-row--c { margin-left: -60px; animation: fjMarq 95s linear infinite; }
-.fj-row--d { margin-left: -200px; animation: fjMarq 70s linear infinite; }
+.fj-row--b { margin-inline-start: -120px; animation: fjMarqR 80s linear infinite; }
+.fj-row--c { margin-inline-start: -60px; animation: fjMarq 95s linear infinite; }
+.fj-row--d { margin-inline-start: -200px; animation: fjMarq 70s linear infinite; }
 .fj-tile {
   flex-shrink: 0;
   width: 340px;
@@ -179,7 +179,7 @@
 }
 .fj-h1:focus { outline: none; }
 .fj-h1--sm { margin: 10px 0 10px; font-size: clamp(28px, 5vw, 30px); line-height: 1.1; }
-.fj-h1--form { margin: 18px 0 4px; font-size: 28px; line-height: 1.1; letter-spacing: -0.03em; text-align: left; }
+.fj-h1--form { margin: 18px 0 4px; font-size: 28px; line-height: 1.1; letter-spacing: -0.03em; text-align: start; }
 .fj-h1--welcome { margin: 8px 0 8px; font-size: 32px; line-height: 1.08; }
 .fj-lead { max-width: 560px; margin: 0; font-size: 17px; line-height: 1.6; color: var(--muted); overflow-wrap: anywhere; }
 .fj-lead--sm { max-width: 300px; font-size: 14px; line-height: 1.55; }
@@ -324,7 +324,7 @@
   width: min(420px, 100%);
   margin: 0 auto;
   padding: 96px 24px 40px;
-  text-align: left;
+  text-align: start;
 }
 .fj-sub { margin: 0 0 8px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
 .fj-sub strong { color: var(--text); }
@@ -347,7 +347,7 @@
 .fj-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(255, 90, 54, 0.18); }
 .fj-input[aria-invalid="true"] { border-color: #ef6b4a; }
 .fj-pwd-wrap { position: relative; }
-.fj-input--pwd { padding-right: 52px; }
+.fj-input--pwd { padding-inline-end: 52px; }
 .fj-eye {
   position: absolute;
   top: 3px;
@@ -375,7 +375,7 @@
 .fj-form[data-level="2"] .fj-strength-label { color: var(--fj-mid); }
 .fj-form[data-level="3"] .fj-strength-label,
 .fj-form[data-level="4"] .fj-strength-label { color: var(--fj-good); }
-.fj-dim { color: var(--dim); text-align: right; overflow-wrap: anywhere; }
+.fj-dim { color: var(--dim); text-align: end; overflow-wrap: anywhere; }
 .fj-err { margin: 0; font-size: 13px; line-height: 1.4; color: #ef6b4a; }
 .fj-field--check { gap: 4px; margin-top: 4px; }
 .fj-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; color: var(--muted); cursor: pointer; }

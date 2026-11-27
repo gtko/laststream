@@ -9,9 +9,10 @@ import { isEpFolded } from './epfold.js';
 import { localDay } from './episodes';
 import { partLabel } from '../data/episodeParts';
 import '../ui/epStill.js'; // repli des vignettes cassées (écouteur global)
+import { t, intlLocale } from '../i18n';
 
 export const head = (title, sub) => '<div class="lp-panel-head"><div><h2>' + esc(title) + '</h2>' + (sub ? '<p class="lp-panel-sub">' + esc(sub) + '</p>' : '') + '</div>' +
-  '<button type="button" class="lp-btn lp-btn-s" data-act="panel-close" aria-label="Fermer le panneau">' + LI.close + '</button></div>';
+  '<button type="button" class="lp-btn lp-btn-s" data-act="panel-close" aria-label="' + t('Fermer le panneau') + '">' + LI.close + '</button></div>';
 
 const attrs = (data) => Object.entries(data).map(([k, v]) => ' data-' + k + '="' + esc(String(v)) + '"').join('');
 
@@ -33,16 +34,16 @@ const field = (label, body) => '<div class="lp-field"><span class="lp-field-l">'
 function syncBlock(s) {
   const sync = s.sync;
   let auto;
-  if (!sync.canAuto) auto = '<p class="lp-hint">' + esc(sync.reason || 'Synchronisation automatique indisponible pour ce flux.') + '</p>';
+  if (!sync.canAuto) auto = '<p class="lp-hint">' + esc(sync.reason || t('Synchronisation automatique indisponible pour ce flux.')) + '</p>';
   else if (sync.state === 'collecting') {
-    auto = '<p class="lp-hint">Analyse de la parole… ' + sync.seconds + ' / ' + sync.target + ' s de lecture</p><div class="lp-bar"><i style="width:' + Math.min(100, Math.round((sync.seconds / sync.target) * 100)) + '%"></i></div>' +
-      '<div class="lp-row-btns">' + chip('autosync-now', {}, 'Terminer maintenant') + chip('autosync-cancel', {}, 'Annuler') + '</div>';
-  } else auto = chip('autosync', {}, 'Synchroniser automatiquement') + (sync.message ? '<p class="lp-hint">' + esc(sync.message) + '</p>' : '<p class="lp-hint">Lance la lecture : le décalage est cherché en comparant la parole aux sous-titres.</p>');
+    auto = '<p class="lp-hint">' + t('Analyse de la parole… {seconds} / {target} s de lecture', { seconds: sync.seconds, target: sync.target }) + '</p><div class="lp-bar"><i style="width:' + Math.min(100, Math.round((sync.seconds / sync.target) * 100)) + '%"></i></div>' +
+      '<div class="lp-row-btns">' + chip('autosync-now', {}, t('Terminer maintenant')) + chip('autosync-cancel', {}, t('Annuler')) + '</div>';
+  } else auto = chip('autosync', {}, t('Synchroniser automatiquement')) + (sync.message ? '<p class="lp-hint">' + esc(sync.message) + '</p>' : '<p class="lp-hint">' + t('Lance la lecture : le décalage est cherché en comparant la parole aux sous-titres.') + '</p>');
   return '<div class="lp-sync">' +
-    field('Synchronisation', '<span class="lp-step">' + chip('suboffset', { by: -1 }, '−1 s', undefined, 'Avancer de 1 s') + chip('suboffset', { by: -0.1 }, '−0,1', undefined, 'Avancer de 0,1 s') +
-      '<output class="lp-val" aria-live="polite">' + esc(offsetLabel(s.offset)) + '</output>' + chip('suboffset', { by: 0.1 }, '+0,1', undefined, 'Retarder de 0,1 s') + chip('suboffset', { by: 1 }, '+1 s', undefined, 'Retarder de 1 s') +
-      chip('suboffset-reset', {}, 'Réinitialiser') + '</span>') +
-    field('Corriger la vitesse (PAL)', '<span class="lp-seg" role="group">' + RATE_CHOICES.map((r) => chip('subrate', { id: r.id }, esc(r.label), s.rate === r.id)).join('') + '</span>') +
+    field(t('Synchronisation'), '<span class="lp-step">' + chip('suboffset', { by: -1 }, '−1 s', undefined, t('Avancer de 1 s')) + chip('suboffset', { by: -0.1 }, '−0,1', undefined, t('Avancer de 0,1 s')) +
+      '<output class="lp-val" aria-live="polite">' + esc(offsetLabel(s.offset)) + '</output>' + chip('suboffset', { by: 0.1 }, '+0,1', undefined, t('Retarder de 0,1 s')) + chip('suboffset', { by: 1 }, '+1 s', undefined, t('Retarder de 1 s')) +
+      chip('suboffset-reset', {}, t('Réinitialiser')) + '</span>') +
+    field(t('Corriger la vitesse (PAL)'), '<span class="lp-seg" role="group">' + RATE_CHOICES.map((r) => chip('subrate', { id: r.id }, esc(r.label), s.rate === r.id)).join('') + '</span>') +
     (s.rateHint ? '<p class="lp-hint">' + esc(s.rateHint) + '</p>' : '') +
     '<div class="lp-auto">' + auto + '</div></div>';
 }
@@ -50,57 +51,57 @@ function syncBlock(s) {
 export function tracksHtml(d) {
   const a = d.audio;
   const s = d.subs;
-  const audioCol = '<section class="lp-col" data-col="audio"><h3>Audio</h3><div class="lp-list" role="menu">' +
+  const audioCol = '<section class="lp-col" data-col="audio"><h3>' + t('Audio') + '</h3><div class="lp-list" role="menu">' +
     (a.groups.length ? a.groups.map((g) => (g.items.length > 1 ? '<h4 class="lp-grp-h">' + esc(g.name) + '</h4>' : '') +
       g.items.map((it) => opt('audio', { id: it.track.id }, it.label, esc(it.detail), it.track.selected, '', it.badges)).join('')).join('')
       : '<p class="lp-empty">' + esc(a.note) + '</p>') +
-    (a.canTranscode ? '<button type="button" class="btn btn-ghost lp-wide" data-act="force-hls">Lire en transcodage (toutes les pistes)</button>' : '') + '</div></section>';
+    (a.canTranscode ? '<button type="button" class="btn btn-ghost lp-wide" data-act="force-hls">' + t('Lire en transcodage (toutes les pistes)') + '</button>' : '') + '</div></section>';
 
   const subRows = (sec) => '<h4 class="lp-sec-h">' + esc(sec.title) + '</h4>' + sec.groups.map((g) =>
     (sec.groups.length > 1 ? '<h5 class="lp-grp-h">' + esc(g.name) + '</h5>' : '') +
     g.items.map((it) => opt('sub', { id: it.track.id }, it.label,
-      (it.unsupported ? '<em>' + esc(it.unsupported) + '</em>' : it.chips.map((c) => '<b class="lp-tag' + (c.startsWith('Synchronisé') ? ' is-sync' : '') + '">' + esc(c) + '</b>').join('')),
+      (it.unsupported ? '<em>' + esc(it.unsupported) + '</em>' : it.chips.map((c) => '<b class="lp-tag' + (c === t('Synchronisé avec ce fichier') ? ' is-sync' : '') + '">' + esc(c) + '</b>').join('')),
       it.track.id === s.selectedId, it.track.renderable ? '' : ' disabled')).join('')).join('');
 
   const st = s.style;
-  const style = '<details class="lp-det"' + (s.styleOpen ? ' open' : '') + '><summary>Style des sous-titres</summary><div class="lp-opts">' +
-    field('Taille', seg('substyle', 'size', [[80, 'S'], [100, 'M'], [130, 'L'], [170, 'XL']].map(([v, l]) => [String(v), l]), String(st.size))) +
-    field('Couleur', seg('substyle', 'color', [['white', 'Blanc'], ['yellow', 'Jaune']], st.color)) +
-    field('Fond', seg('substyle', 'background', [['none', 'Aucun'], ['shadow', 'Ombre'], ['box', 'Boîte']], st.background)) +
-    field('Police', seg('substyle', 'font', [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']], st.font)) +
-    field('Position', seg('substyle', 'edge', [['bottom', 'Bas'], ['top', 'Haut']], st.edge) + '<span class="lp-step">' + chip('substep', { key: 'position', by: 2 }, '↑', undefined, 'Éloigner du bord') + '<output class="lp-val">' + st.position + ' %</output>' + chip('substep', { key: 'position', by: -2 }, '↓', undefined, 'Rapprocher du bord') + '</span>') +
-    field('Par défaut', seg('substyle', 'mode', [['auto', 'Auto'], ['always', 'Toujours'], ['off', 'Jamais']], st.mode)) +
-    field('Langues', '<button type="button" class="lp-more" data-act="langsettings">Régler dans Audio et sous-titres</button>') +
+  const style = '<details class="lp-det"' + (s.styleOpen ? ' open' : '') + '><summary>' + t('Style des sous-titres') + '</summary><div class="lp-opts">' +
+    field(t('Taille'), seg('substyle', 'size', [[80, 'S'], [100, 'M'], [130, 'L'], [170, 'XL']].map(([v, l]) => [String(v), l]), String(st.size))) +
+    field(t('Couleur'), seg('substyle', 'color', [['white', t('Blanc')], ['yellow', t('Jaune')]], st.color)) +
+    field(t('Fond'), seg('substyle', 'background', [['none', t('Aucun')], ['shadow', t('Ombre')], ['box', t('Boîte')]], st.background)) +
+    field(t('Police'), seg('substyle', 'font', [['sans', t('Sans')], ['serif', t('Serif')], ['mono', t('Mono')]], st.font)) +
+    field(t('Position'), seg('substyle', 'edge', [['bottom', t('Bas')], ['top', t('Haut')]], st.edge) + '<span class="lp-step">' + chip('substep', { key: 'position', by: 2 }, '↑', undefined, t('Éloigner du bord')) + '<output class="lp-val">' + st.position + ' %</output>' + chip('substep', { key: 'position', by: -2 }, '↓', undefined, t('Rapprocher du bord')) + '</span>') +
+    field(t('Par défaut'), seg('substyle', 'mode', [['auto', t('Auto')], ['always', t('Toujours')], ['off', t('Jamais')]], st.mode)) +
+    field(t('Langues'), '<button type="button" class="lp-more" data-act="langsettings">' + t('Régler dans Audio et sous-titres') + '</button>') +
     '</div></details>';
 
-  const subCol = '<section class="lp-col" data-col="subs"><h3>Sous-titres</h3><div class="lp-list" role="menu">' +
-    opt('sub', { id: '' }, 'Désactivés', '', s.selectedId === null) +
+  const subCol = '<section class="lp-col" data-col="subs"><h3>' + t('Sous-titres') + '</h3><div class="lp-list" role="menu">' +
+    opt('sub', { id: '' }, t('Désactivés'), '', s.selectedId === null) +
     s.sections.map(subRows).join('') +
-    (s.loading ? '<p class="lp-empty">Recherche de sous-titres…</p>' : '') +
-    (!s.sections.length && !s.loading ? '<p class="lp-empty">Aucun sous-titre trouvé.</p>' : '') +
-    '<button type="button" class="lp-more" data-act="subsearch">' + LI.info + 'Rechercher d’autres sous-titres</button></div>' +
+    (s.loading ? '<p class="lp-empty">' + t('Recherche de sous-titres…') + '</p>' : '') +
+    (!s.sections.length && !s.loading ? '<p class="lp-empty">' + t('Aucun sous-titre trouvé.') + '</p>' : '') +
+    '<button type="button" class="lp-more" data-act="subsearch">' + LI.info + t('Rechercher d’autres sous-titres') + '</button></div>' +
     '<div class="lp-below">' + syncBlock(s) + style + '</div></section>';
-  return head('Audio et sous-titres') + '<div class="lp-cols">' + audioCol + subCol + '</div>';
+  return head(t('Audio et sous-titres')) + '<div class="lp-cols">' + audioCol + subCol + '</div>';
 }
 
 // ---------- Épisodes ----------
 
 export function episodesHtml(d) {
   const cur = d.current;
-  const fmtDate = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso; } };
-  const fmtShort = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }); } catch (_) { return iso; } };
+  const fmtDate = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso; } };
+  const fmtShort = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' }); } catch (_) { return iso; } };
   const today = localDay(new Date());
-  const rows = d.loading ? '<p class="lp-empty">Chargement…</p>' : d.episodes.map((ep) => {
+  const rows = d.loading ? '<p class="lp-empty">' + t('Chargement…') + '</p>' : d.episodes.map((ep) => {
     const on = d.season === cur.season && ep.episode === cur.episode;
     // Diffusé, ou diffusion dans les 14 prochains jours : lisible (la recherche de sources décide), sinon « Bientôt ».
     const open = ep.aired || !!ep.playable;
-    const meta = [ep.runtime ? ep.runtime + ' min' : '', ep.airDate ? fmtDate(ep.airDate) : ''].filter(Boolean).join(' · ');
+    const meta = [ep.runtime ? t('{runtime} min', { runtime: ep.runtime }) : '', ep.airDate ? fmtDate(ep.airDate) : ''].filter(Boolean).join(' · ');
     // Pastille discrète : « Aujourd’hui » pour l’épisode du jour ; « À venir · 21 oct. » pour une diffusion dans la fenêtre
     // (« peut-être déjà en ligne » dans l’infobulle) ; « Bientôt » au-delà ; rien pour un épisode déjà diffusé.
-    const pill = ep.airDate === today ? { text: 'Aujourd’hui', tip: 'Diffusé aujourd’hui', now: true }
+    const pill = ep.airDate === today ? { text: t('Aujourd’hui'), tip: t('Diffusé aujourd’hui'), now: true }
       : ep.aired ? null
-        : open ? { text: 'À venir · ' + fmtShort(ep.airDate), tip: 'Diffusion TV le ' + fmtDate(ep.airDate) + ' · peut-être déjà en ligne', now: false }
-          : { text: 'Bientôt', tip: 'Diffusion TV le ' + fmtDate(ep.airDate), now: false };
+        : open ? { text: t('À venir · {airDate}', { airDate: fmtShort(ep.airDate) }), tip: t('Diffusion TV le {airDate} · peut-être déjà en ligne', { airDate: fmtDate(ep.airDate) }), now: false }
+          : { text: t('Bientôt'), tip: t('Diffusion TV le {airDate}', { airDate: fmtDate(ep.airDate) }), now: false };
     // Repli si la vignette est absente ou ne charge pas : fond de la série (flouté, assombri), sinon dégradé ; numéro en surimpression.
     const fb = !ep.still;
     const bg = d.backdrop || d.poster || '';
@@ -108,63 +109,63 @@ export function episodesHtml(d) {
     const still = '<span class="lp-ep-still' + (fb ? ' is-fb' : '') + '">' +
       (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async" data-still' + (ep.still && bg ? ' data-fb="' + esc(bg) + '"' : '') + '>' : '') +
       '<span class="lp-ep-num" aria-hidden="true">É' + ep.episode + '</span>' +
-      (on ? '<span class="lp-ep-now">En cours</span>' : '') +
+      (on ? '<span class="lp-ep-now">' + t('En cours') + '</span>' : '') +
       (pill ? '<span class="lp-ep-soon' + (pill.now ? ' is-today' : '') + '" title="' + esc(pill.tip) + '">' + esc(pill.text) + '</span>' : '') +
       (ep.progress > 0 && !ep.watched ? '<span class="lp-ep-prog"><i style="width:' + Math.round(ep.progress * 100) + '%"></i></span>' : '') + '</span>';
     // Bouton « vu » : frère (et non enfant) du bouton de lecture, pour ne pas imbriquer des boutons.
-    const seenLabel = ep.watched ? 'Marquer comme non vu' : 'Marquer comme vu';
+    const seenLabel = ep.watched ? t('Marquer comme non vu') : t('Marquer comme vu');
     const seen = ep.aired || ep.watched ? '<button type="button" class="lp-ep-seen' + (ep.watched ? ' is-on' : '') + '" data-act="ep-seen" data-season="' + d.season + '" data-episode="' + ep.episode + '" data-seen="' + (ep.watched ? '0' : '1') + '" title="' + seenLabel + '" aria-label="' + seenLabel + '">' + LI.check + '</button>' : '';
     const folded = !!ep.overview && isEpFolded(d.season, ep.episode);
-    const more = ep.overview ? '<button type="button" class="lp-ep-more" data-season="' + d.season + '" data-episode="' + ep.episode + '" aria-expanded="' + (folded ? 'true' : 'false') + '" aria-label="Afficher le synopsis complet" title="Plus">' + LI.mini + '</button>' : '';
+    const more = ep.overview ? '<button type="button" class="lp-ep-more" data-season="' + d.season + '" data-episode="' + ep.episode + '" aria-expanded="' + (folded ? 'true' : 'false') + '" aria-label="' + t('Afficher le synopsis complet') + '" title="' + t('Plus') + '">' + LI.mini + '</button>' : '';
     return '<div class="lp-ep-row' + (on ? ' is-on' : '') + (open ? '' : ' is-soon') + (ep.overview ? ' has-more' : '') + (folded ? ' is-open' : '') + '" data-ep="' + ep.episode + '">' +
       '<button type="button" class="lp-ep" role="menuitem" data-act="episode" data-season="' + d.season + '" data-episode="' + ep.episode + '"' + (open ? '' : ' disabled') + '>' + still +
-        '<span class="lp-ep-text"><span class="lp-ep-name"><b>É' + ep.episode + '</b> · ' + (ep.part ? '<span class="lp-ep-part">' + esc(partLabel(ep.part)) + '</span> · ' : '') + (ep.filler ? '<span class="lp-ep-part lp-ep-filler">' + (ep.filler === 'recap' ? 'Récap' : 'Filler') + '</span> · ' : '') + esc((ep.part ? ep.part.title : ep.name) || 'Épisode ' + ep.episode) + '</span>' +
+        '<span class="lp-ep-text"><span class="lp-ep-name"><b>É' + ep.episode + '</b> · ' + (ep.part ? '<span class="lp-ep-part">' + esc(partLabel(ep.part)) + '</span> · ' : '') + (ep.filler ? '<span class="lp-ep-part lp-ep-filler">' + (ep.filler === 'recap' ? t('Récap') : t('Filler')) + '</span> · ' : '') + esc((ep.part ? ep.part.title : ep.name) || t('Épisode {episode}', { episode: ep.episode })) + '</span>' +
         '<span class="lp-ep-meta">' + esc(meta) + '</span>' + (ep.overview ? '<span class="lp-ep-syn">' + esc(ep.overview) + '</span>' : '') + '</span></button>' +
       seen + more +
       '</div>';
-  }).join('') + (!d.loading && !d.episodes.length && d.error ? '<p class="lp-empty">Impossible de charger les épisodes. Change de saison ou rouvre le panneau pour réessayer.</p>' : '') + (!d.loading && !d.episodes.length && !d.error ? '<p class="lp-empty">Aucun épisode' + (d.query ? ' ne correspond à « ' + esc(d.query) + ' »' : '') + '.</p>' : '');
+  }).join('') + (!d.loading && !d.episodes.length && d.error ? '<p class="lp-empty">' + t('Impossible de charger les épisodes. Change de saison ou rouvre le panneau pour réessayer.') + '</p>' : '') + (!d.loading && !d.episodes.length && !d.error ? '<p class="lp-empty">' + t('Aucun épisode{v}.', { v: (d.query ? ' ' + t('ne correspond à « {query} »', { query: esc(d.query) }) : '') }) + '</p>' : '');
   const seasons = d.seasons.map((s) => s.season);
   const i = seasons.indexOf(d.season);
-  return head('Épisodes') +
+  return head(t('Épisodes')) +
     '<div class="lp-eps-head">' + (d.logo ? '<img class="lp-eps-logo" src="' + esc(d.logo) + '" alt="' + esc(d.title) + '">' : '<p class="lp-eps-title">' + esc(d.title) + '</p>') +
       '<div class="lp-eps-bar">' +
-        (d.seasons.length ? '<label class="lp-sel"><span class="sr-only">Saison</span><select class="lp-select" aria-label="Saison">' + d.seasons.map((s) => '<option value="' + s.season + '"' + (s.season === d.season ? ' selected' : '') + '>Saison ' + s.season + '</option>').join('') + '</select></label>' : '') +
-        '<span class="lp-eps-sum">Saison ' + d.season + ' · ' + d.total + ' épisode' + (d.total > 1 ? 's' : '') + ' · ' + d.watchedCount + ' vu' + (d.watchedCount > 1 ? 's' : '') + '</span>' +
+        (d.seasons.length ? '<label class="lp-sel"><span class="sr-only">' + t('Saison') + '</span><select class="lp-select" aria-label="' + t('Saison') + '">' + d.seasons.map((s) => '<option value="' + s.season + '"' + (s.season === d.season ? ' selected' : '') + '>' + t('Saison {season}', { season: s.season }) + '</option>').join('') + '</select></label>' : '') +
+        '<span class="lp-eps-sum">' + t('Saison {season} · {total} épisode{v} · {watchedCount} vu', { season: d.season, total: d.total, v: (d.total > 1 ? 's' : ''), watchedCount: d.watchedCount }) + (d.watchedCount > 1 ? 's' : '') + '</span>' +
         // Recherche derrière une loupe (ODY-202) : le champ n'apparaît qu'à l'ouverture (ou tant qu'un filtre est actif).
-        '<button type="button" class="lp-chip lp-chip-icon lp-eps-find' + (d.searchOpen ? ' is-on' : '') + '" data-act="ep-search" aria-expanded="' + !!d.searchOpen + '" title="' + (d.searchOpen ? 'Fermer la recherche' : 'Chercher un épisode') + '" aria-label="' + (d.searchOpen ? 'Fermer la recherche' : 'Chercher un épisode') + '">' + (d.searchOpen ? LI.close : LI.search) + '</button></div>' +
+        '<button type="button" class="lp-chip lp-chip-icon lp-eps-find' + (d.searchOpen ? ' is-on' : '') + '" data-act="ep-search" aria-expanded="' + !!d.searchOpen + '" title="' + (d.searchOpen ? t('Fermer la recherche') : t('Chercher un épisode')) + '" aria-label="' + (d.searchOpen ? t('Fermer la recherche') : t('Chercher un épisode')) + '">' + (d.searchOpen ? LI.close : LI.search) + '</button></div>' +
       '<div class="lp-eps-tools">' +
-        (d.searchOpen ? '<input class="lp-search" type="text" inputmode="search" placeholder="Chercher un épisode" aria-label="Chercher un épisode" value="' + esc(d.query || '') + '" data-input="epsearch">' : '') +
-        chip('ep-next-unseen', {}, 'Prochain non vu') + '</div></div>' +
+        (d.searchOpen ? '<input class="lp-search" type="text" inputmode="search" placeholder="' + t('Chercher un épisode') + '" aria-label="' + t('Chercher un épisode') + '" value="' + esc(d.query || '') + '" data-input="epsearch">' : '') +
+        chip('ep-next-unseen', {}, t('Prochain non vu')) + '</div></div>' +
     '<div class="lp-list lp-eps" role="menu">' + rows + '</div>' +
     '<div class="lp-eps-foot">' +
-      '<span class="lp-step">' + (i > 0 ? chip('season', { season: seasons[i - 1] }, '← Saison ' + seasons[i - 1]) : '') + (i >= 0 && i < seasons.length - 1 ? chip('season', { season: seasons[i + 1] }, 'Saison ' + seasons[i + 1] + ' →') : '') + '</span>' +
+      '<span class="lp-step">' + (i > 0 ? chip('season', { season: seasons[i - 1] }, t('← Saison {v}', { v: seasons[i - 1] })) : '') + (i >= 0 && i < seasons.length - 1 ? chip('season', { season: seasons[i + 1] }, t('Saison {v} →', { v: seasons[i + 1] })) : '') + '</span>' +
       // Bouton compact (icône seule) : le libellé complet reste en infobulle et pour les lecteurs d'écran.
-      '<button type="button" class="lp-chip lp-chip-icon" data-act="ep-season-seen" data-season="' + d.season + '" title="Marquer la saison comme vue" aria-label="Marquer la saison comme vue">' + LI.check + '</button></div>';
+      '<button type="button" class="lp-chip lp-chip-icon" data-act="ep-season-seen" data-season="' + d.season + '" title="' + t('Marquer la saison comme vue') + '" aria-label="' + t('Marquer la saison comme vue') + '">' + LI.check + '</button></div>';
 }
 
 // ---------- Réglages et qualité ----------
 
 export function settingsHtml(d) {
   const row = ([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + (typeof v === 'object' ? v.html : esc(v)) + '</dd></div>';
-  return head('Réglages') + '<div class="lp-scroll">' +
-    '<section class="lp-sec"><h3>Source</h3><dl class="lp-kv">' + d.source.map(row).join('') + '</dl>' +
-      '<button type="button" class="lp-more" data-act="source">' + LI.source + 'Changer de source</button></section>' +
-    '<section class="lp-sec"><h3>Vitesse de lecture</h3><div class="lp-speeds">' + SPEEDS.map((r) => chip('rate', { rate: r }, r === 1 ? 'Normale' : r + '×', Math.abs(d.rate - r) < 0.01)).join('') + '</div></section>' +
-    '<section class="lp-sec"><h3>Image</h3>' + seg('aspect', 'mode', [['contain', 'Ajuster'], ['cover', 'Remplir'], ['fill', '16:9']], d.aspect) +
-      (d.thumbsAvailable === false ? '' : field('Aperçu sur la barre', chip('thumbs', {}, d.thumbs ? 'Activé' : 'Désactivé', d.thumbs))) +
-      (d.autoPipAvailable ? field('Image dans l’image automatique', chip('autopip', {}, d.autoPip ? 'Activée' : 'Désactivée', d.autoPip)) : '') + '</section>' +
-    (d.miniAvailable ? '<section class="lp-sec"><h3>Quitter le lecteur</h3><p class="lp-hint">Le retour réduit la lecture en cours en miniature ; en pause, il ferme le lecteur.</p>' + field('Réduire en miniature en quittant', chip('miniexit', {}, d.miniOnExit ? 'Activé' : 'Désactivé', d.miniOnExit)) + '</section>' : '') +
-    (d.canMark ? '<section class="lp-sec"><h3>Marquer un segment</h3><p class="lp-hint">Aide la communauté : signale où commencent et finissent l’intro, le récap ou le générique de cet épisode. Les poignées se règlent directement sur la barre de progression.</p>' + chip('mark-open', {}, 'Marquer sur la barre') + '</section>' : '') +
+  return head(t('Réglages')) + '<div class="lp-scroll">' +
+    '<section class="lp-sec"><h3>' + t('Source') + '</h3><dl class="lp-kv">' + d.source.map(row).join('') + '</dl>' +
+      '<button type="button" class="lp-more" data-act="source">' + LI.source + t('Changer de source') + '</button></section>' +
+    '<section class="lp-sec"><h3>' + t('Vitesse de lecture') + '</h3><div class="lp-speeds">' + SPEEDS.map((r) => chip('rate', { rate: r }, r === 1 ? t('Normale') : r + '×', Math.abs(d.rate - r) < 0.01)).join('') + '</div></section>' +
+    '<section class="lp-sec"><h3>' + t('Image') + '</h3>' + seg('aspect', 'mode', [['contain', t('Ajuster')], ['cover', t('Remplir')], ['fill', '16:9']], d.aspect) +
+      (d.thumbsAvailable === false ? '' : field(t('Aperçu sur la barre'), chip('thumbs', {}, d.thumbs ? t('Activé') : t('Désactivé'), d.thumbs))) +
+      (d.autoPipAvailable ? field(t('Image dans l’image automatique'), chip('autopip', {}, d.autoPip ? t('Activée') : t('Désactivée'), d.autoPip)) : '') + '</section>' +
+    (d.miniAvailable ? '<section class="lp-sec"><h3>' + t('Quitter le lecteur') + '</h3><p class="lp-hint">' + t('Le retour réduit la lecture en cours en miniature ; en pause, il ferme le lecteur.') + '</p>' + field(t('Réduire en miniature en quittant'), chip('miniexit', {}, d.miniOnExit ? t('Activé') : t('Désactivé'), d.miniOnExit)) + '</section>' : '') +
+    (d.canMark ? '<section class="lp-sec"><h3>' + t('Marquer un segment') + '</h3><p class="lp-hint">' + t('Aide la communauté : signale où commencent et finissent l’intro, le récap ou le générique de cet épisode. Les poignées se règlent directement sur la barre de progression.') + '</p>' + chip('mark-open', {}, t('Marquer sur la barre')) + '</section>' : '') +
     '</div>';
 }
 
 // ---------- Infos ----------
 
 export function infoHtml(d) {
-  return head('Infos') + '<div class="lp-scroll"><section class="lp-sec"><h3 class="lp-info-t">' + esc(d.title) + '</h3>' +
+  return head(t('Infos')) + '<div class="lp-scroll"><section class="lp-sec"><h3 class="lp-info-t">' + esc(d.title) + '</h3>' +
     (d.episode ? '<p class="lp-info-ep">' + esc(d.episode) + '</p>' : '') +
     (d.rating ? '<p class="lp-info-rate">★ ' + esc(d.rating) + '</p>' : '') +
     (d.synopsis ? '<p class="lp-info-syn">' + esc(d.synopsis) + '</p>' : '') + '</section>' +
-    (d.cast.length ? '<section class="lp-sec"><h3>Distribution</h3><div class="lp-cast">' + d.cast.map((p) => '<span class="lp-cast-i">' + (p.photo ? '<img src="' + esc(p.photo) + '" alt="" loading="lazy">' : '<i></i>') + '<b>' + esc(p.name) + '</b><em>' + esc(p.role) + '</em></span>').join('') + '</div></section>' : '') +
-    '<section class="lp-sec"><h3>Lecture</h3><dl class="lp-kv">' + d.rows.map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>').join('') + '</dl></section></div>';
+    (d.cast.length ? '<section class="lp-sec"><h3>' + t('Distribution') + '</h3><div class="lp-cast">' + d.cast.map((p) => '<span class="lp-cast-i">' + (p.photo ? '<img src="' + esc(p.photo) + '" alt="" loading="lazy">' : '<i></i>') + '<b>' + esc(p.name) + '</b><em>' + esc(p.role) + '</em></span>').join('') + '</div></section>' : '') +
+    '<section class="lp-sec"><h3>' + t('Lecture') + '</h3><dl class="lp-kv">' + d.rows.map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>').join('') + '</dl></section></div>';
 }

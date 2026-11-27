@@ -9,6 +9,7 @@ import { EMPTY_DETAIL, GENRE_FR, IMG } from './constants.js';
 import { fetchProviders } from './providers.js';
 import { state } from './state.js';
 import { fmtMin, fmtNum } from './util.js';
+import { t as tr, intlLocale } from '../i18n';
 
 export const detailPromises = new Map();
 export const detailOf = (it) => state.details.get(it.key) || EMPTY_DETAIL;
@@ -18,7 +19,7 @@ export function toItem(raw, forcedType) {
     key: type + ':' + raw.id,
     id: raw.id,
     type,
-    name: raw.title || raw.name || raw.original_title || raw.original_name || 'Sans titre',
+    name: raw.title || raw.name || raw.original_title || raw.original_name || tr('Sans titre'),
     poster: IMG('w342', raw.poster_path),
     posterPath: raw.poster_path || '',
     backdropPath: raw.backdrop_path || '',
@@ -71,7 +72,7 @@ export function certification(raw, type) {
   const r = ((raw.content_ratings && raw.content_ratings.results) || []).find((x) => x.iso_3166_1 === getRegion().code);
   return r ? r.rating || '' : '';
 }
-export const certLabel = (c) => (!c ? '' : /^(U|TP|0)$/i.test(c) ? 'Tous publics' : /^\d+$/.test(c) ? '-' + c : c);
+export const certLabel = (c) => (!c ? '' : /^(U|TP|0)$/i.test(c) ? tr('Tous publics') : /^\d+$/.test(c) ? '-' + c : c);
 
 // Détail léger d'un titre de l'accueil : TMDB (fr-FR, repli en-US pour le synopsis) + notes MDBList.
 /** « Nouvel épisode le 24 oct. » ou « S3 disponible » pour la mise en avant d'une série. */
@@ -83,13 +84,13 @@ export function availOf(raw) {
 
 export function seriesNote(raw) {
   const next = raw.next_episode_to_air;
-  const short = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const short = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' });
   if (next && next.air_date) {
     const d = dayDiff(next.air_date);
-    if (d >= 0 && d <= 45) return 'Nouvel épisode le ' + short(next.air_date);
+    if (d >= 0 && d <= 45) return tr('Nouvel épisode le {air_date}', { air_date: short(next.air_date) });
   }
   const aired = (raw.seasons || []).filter((s) => s.season_number > 1 && s.air_date && dayDiff(s.air_date) <= 0).sort((a, b) => b.season_number - a.season_number)[0];
-  return aired && dayDiff(aired.air_date) >= -120 ? 'S' + aired.season_number + ' disponible' : '';
+  return aired && dayDiff(aired.air_date) >= -120 ? tr('S{season_number} disponible', { season_number: aired.season_number }) : '';
 }
 
 // Notes MDBList : à part du détail TMDB, car chaque appel compte dans le quota quotidien partagé.

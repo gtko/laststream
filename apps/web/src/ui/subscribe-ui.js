@@ -8,6 +8,7 @@ import { connectShell, isShellEnvironment, openExternal } from '../player/shell'
 import { brand } from './fragments.js';
 import { card, rowHTML } from './settings-ui.js';
 import { esc } from './util.js';
+import { t as tr, intlLocale } from '../i18n';
 
 const SOURCE_URL = 'https://github.com/gtko/laststream';
 const SPIN = '<svg class="auth-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9"/></svg>';
@@ -15,13 +16,13 @@ const SPIN = '<svg class="auth-spin" width="18" height="18" viewBox="0 0 24 24" 
 /** Montant Stripe (centimes) en texte : « 24 € ». */
 function money(amount, currency) {
   try {
-    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: (currency || 'eur').toUpperCase(), maximumFractionDigits: amount % 100 === 0 ? 0 : 2 }).format(amount / 100);
+    return new Intl.NumberFormat(intlLocale(), { style: 'currency', currency: (currency || 'eur').toUpperCase(), maximumFractionDigits: amount % 100 === 0 ? 0 : 2 }).format(amount / 100);
   } catch {
     return (amount / 100) + ' ' + (currency || '').toUpperCase();
   }
 }
 
-const day = (iso) => (iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
+const day = (iso) => (iso ? new Date(iso).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 const per = (interval) => (interval === 'month' ? 'mois' : 'an');
 /** Prix annuel affiché (24 € par défaut si Stripe ne répond pas). */
 const priceOf = (b) => b && b.price ? b.price : { amount: 2400, currency: 'eur', interval: 'year' };
@@ -41,28 +42,28 @@ function openStripe(url) {
 
 function errorText(err) {
   if (err instanceof UserApiError) {
-    if (err.code === 'already_subscribed') return 'Ton abonnement est déjà actif.';
-    if (err.code === 'manage_in_portal') return 'Ton abonnement est résilié mais encore en cours : réactive-le depuis les réglages (« Reprendre mon abonnement »).';
-    if (err.code === 'amount_too_low') return 'Le tarif « J’adore » commence au prix de base.';
-    if (err.code === 'amount_too_high' || err.code === 'invalid_amount') return 'Ce montant n’est pas accepté : choisis un nombre entier d’euros.';
-    if (err.code === 'not_subscribed') return 'Aucun abonnement en cours sur ce compte.';
-    if (err.code === 'billing_unavailable' || err.code === 'network') return 'Le paiement est momentanément indisponible. Réessaie dans un instant.';
-    if (err.code === 'profile_locked') return 'Seul le titulaire du compte peut gérer l’abonnement.';
+    if (err.code === 'already_subscribed') return tr('Ton abonnement est déjà actif.');
+    if (err.code === 'manage_in_portal') return tr('Ton abonnement est résilié mais encore en cours : réactive-le depuis les réglages (« Reprendre mon abonnement »).');
+    if (err.code === 'amount_too_low') return tr('Le tarif « J’adore » commence au prix de base.');
+    if (err.code === 'amount_too_high' || err.code === 'invalid_amount') return tr('Ce montant n’est pas accepté : choisis un nombre entier d’euros.');
+    if (err.code === 'not_subscribed') return tr('Aucun abonnement en cours sur ce compte.');
+    if (err.code === 'billing_unavailable' || err.code === 'network') return tr('Le paiement est momentanément indisponible. Réessaie dans un instant.');
+    if (err.code === 'profile_locked') return tr('Seul le titulaire du compte peut gérer l’abonnement.');
   }
-  return 'Une erreur est survenue. Réessaie dans un instant.';
+  return tr('Une erreur est survenue. Réessaie dans un instant.');
 }
 
 /** Écran d'attente pendant la lecture de l'état de l'abonnement. */
 export function subscribeLoadingHTML() {
-  return '<div class="auth-card auth-panel"><div class="auth-brand">' + brand() + '</div><p class="auth-lead">' + SPIN + ' Un instant…</p></div>';
+  return '<div class="auth-card auth-panel"><div class="auth-brand">' + brand() + '</div><p class="auth-lead">' + tr('{SPIN} Un instant…', { SPIN }) + '</p></div>';
 }
 
 /** Lignes communes : ce que couvre l'abonnement, pas d'extensions fournies, code libre. */
 function factsHTML() {
   return '<ul class="sub-facts">' +
-    '<li>Profils, bibliothèque et progression synchronisés sur tous tes écrans, pour tout ton foyer.</li>' +
-    '<li>Laststream ne fournit ni n’installe aucune extension Stremio : tu ajoutes toi-même les sources que tu utilises.</li>' +
-    '<li>Le code est public : tu peux aussi <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">installer Laststream sur ton propre serveur</a>, gratuitement.</li>' +
+    '<li>' + tr('Profils, bibliothèque et progression synchronisés sur tous tes écrans, pour tout ton foyer.') + '</li>' +
+    '<li>' + tr('Laststream ne fournit ni n’installe aucune extension Stremio : tu ajoutes toi-même les sources que tu utilises.') + '</li>' +
+    '<li>' + tr('Le code est public : tu peux aussi') + ' <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">' + tr('installer Laststream sur ton propre serveur') + '</a>' + tr(', gratuitement.') + '</li>' +
     '</ul>';
 }
 
@@ -84,8 +85,8 @@ function chosenCents(p, max) {
 /** Texte du bouton de paiement selon le tarif choisi. */
 function ctaText(p, prefix, max) {
   const cents = chosenCents(p, max);
-  if (cents === null) return prefix + ' · choisis ton montant';
-  return prefix + ' · ' + money(cents === undefined ? p.amount : cents, p.currency) + ' par ' + per(p.interval);
+  if (cents === null) return tr('{prefix} · choisis ton montant', { prefix });
+  return tr('{prefix} · {money} par {interval}', { prefix, money: money(cents === undefined ? p.amount : cents, p.currency), interval: per(p.interval) });
 }
 
 /** Les deux tarifs, sous forme de choix ; `half` : remise filleul (tarif de base seulement). */
@@ -95,17 +96,17 @@ function tiersHTML(p, half) {
     '<button type="button" class="sub-tier' + (tier.kind === kind ? ' is-on' : '') + '" role="radio" aria-checked="' + (tier.kind === kind) + '" data-tier="' + kind + '">' +
       '<span class="sub-tier-k">' + title + '</span><span class="sub-tier-p">' + esc(price) + '</span><span class="sub-tier-s">' + esc(sub) + '</span></button>';
   const base = money(p.amount, p.currency);
-  const monthly = p.interval === 'year' ? 'soit ' + money(Math.round(p.amount / 12), p.currency) + ' par mois' : 'par ' + per(p.interval);
+  const monthly = p.interval === 'year' ? tr('soit {money} par mois', { money: money(Math.round(p.amount / 12), p.currency) }) : tr('par {interval}', { interval: per(p.interval) });
   const chips = QUICK_EUROS.filter((e) => e > minEuros(p)).map((e) => '<button type="button" class="sub-chip" data-tier-pick="' + e + '">' + esc(money(e * 100, p.currency)) + '</button>').join('');
-  return '<div class="sub-tiers" role="radiogroup" aria-label="Tarif">' +
-      opt('standard', 'Soutenir', base + ' par ' + per(p.interval), half ? 'moitié prix la 1re année avec ton billet' : monthly) +
-      opt('jadore', 'Soutenir, J’adore', 'Ton prix, dès ' + base, 'pour aller plus loin, sans plafond') +
+  return '<div class="sub-tiers" role="radiogroup" aria-label="' + tr('Tarif') + '">' +
+      opt('standard', tr('Soutenir'), tr('{base} par {interval}', { base, interval: per(p.interval) }), half ? tr('moitié prix la 1re année avec ton billet') : monthly) +
+      opt('jadore', tr('Soutenir, J’adore'), tr('Ton prix, dès {base}', { base }), tr('pour aller plus loin, sans plafond')) +
     '</div>' +
     '<div class="sub-jadore"' + (tier.kind === 'jadore' ? '' : ' hidden') + '>' +
-      '<label class="sub-jadore-l" for="sub-amount">Ton montant par ' + per(p.interval) + '</label>' +
+      '<label class="sub-jadore-l" for="sub-amount">' + tr('Ton montant par {interval}', { interval: per(p.interval) }) + '</label>' +
       '<div class="sub-jadore-row"><div class="auth-input sub-amount-input"><input id="sub-amount" type="text" inputmode="numeric" autocomplete="off" value="' + esc(tier.euros) + '" data-tier-amount aria-describedby="sub-amount-hint"><span class="sub-cur">€</span></div>' + chips + '</div>' +
-      '<p class="sub-jadore-hint" id="sub-amount-hint">' + esc(base) + ' minimum, en euros entiers. Le même montant est prélevé chaque ' + (p.interval === 'month' ? 'mois' : 'année') + ', résiliable quand tu veux.' +
-        (half ? ' La remise du billet de parrainage vaut pour le tarif de base.' : '') + '</p>' +
+      '<p class="sub-jadore-hint" id="sub-amount-hint">' + tr('{base} minimum, en euros entiers. Le même montant est prélevé chaque {v}, résiliable quand tu veux.', { base: esc(base), v: (p.interval === 'month' ? 'mois' : tr('année')) }) +
+        (half ? ' ' + tr('La remise du billet de parrainage vaut pour le tarif de base.') : '') + '</p>' +
     '</div>';
 }
 
@@ -134,10 +135,10 @@ function subscribeHTML(b, state) {
   const canManage = !b || b.canManage !== false;
   const expired = b && (b.status === 'canceled' || b.status === 'unpaid' || b.status === 'past_due' || b.status === 'incomplete_expired');
   const lead = expired
-    ? 'Ton abonnement de soutien est arrivé à échéance. Renouvelle-le pour retrouver tes profils et ta bibliothèque.'
-    : 'Laststream en ligne est financé par celles et ceux qui l’utilisent. L’abonnement de soutien garde les serveurs allumés.';
+    ? tr('Ton abonnement de soutien est arrivé à échéance. Renouvelle-le pour retrouver tes profils et ta bibliothèque.')
+    : tr('Laststream en ligne est financé par celles et ceux qui l’utilisent. L’abonnement de soutien garde les serveurs allumés.');
   const offer = half
-    ? '<p class="sub-offer"><strong>Invité par un ami :</strong> ta première année est à moitié prix, ' + esc(money(Math.round(p.amount / 2), p.currency)) + ' au lieu de ' + esc(money(p.amount, p.currency)) + '.</p>'
+    ? '<p class="sub-offer">' + tr('<strong>Invité par un ami :</strong> ta première année est à moitié prix, {money} au lieu de {amount}.', { money: esc(money(Math.round(p.amount / 2), p.currency)), amount: esc(money(p.amount, p.currency)) }) + '</p>'
     : '';
   const msg = state.msg ? '<p class="auth-msg' + (state.info ? ' is-info' : '') + '" role="status">' + esc(state.msg) + '</p>' : '';
   const max = b && b.maxAmount;
@@ -145,16 +146,16 @@ function subscribeHTML(b, state) {
   const actions = canManage
     ? tiersHTML(p, half) +
       '<button type="button" class="btn btn-primary auth-btn" data-sub-checkout data-tier-cta="Activer mon accès"' + (state.busy ? ' data-busy' : '') + (state.busy || invalid ? ' disabled' : '') + '>' +
-        (state.busy === 'checkout' ? SPIN + 'Ouverture du paiement…' : esc(ctaText(p, 'Activer mon accès', max))) + '</button>' +
-      (b && b.hasCustomer ? '<button type="button" class="btn auth-btn auth-btn-alt" data-sub-portal' + (state.busy ? ' disabled' : '') + '>Gérer mon abonnement</button>' : '') +
-      '<button type="button" class="auth-link" data-sub-check' + (state.busy ? ' disabled' : '') + '>' + (state.busy === 'check' ? 'Vérification…' : 'J’ai payé, vérifier') + '</button>'
-    : '<p class="auth-note">Seul le titulaire du compte peut activer l’abonnement. Il couvre tout le foyer : demande-lui de le renouveler.</p>' +
-      '<button type="button" class="auth-link" data-sub-check>Vérifier à nouveau</button>';
+        (state.busy === 'checkout' ? SPIN + tr('Ouverture du paiement…') : esc(ctaText(p, tr('Activer mon accès'), max))) + '</button>' +
+      (b && b.hasCustomer ? '<button type="button" class="btn auth-btn auth-btn-alt" data-sub-portal' + (state.busy ? ' disabled' : '') + '>' + tr('Gérer mon abonnement') + '</button>' : '') +
+      '<button type="button" class="auth-link" data-sub-check' + (state.busy ? ' disabled' : '') + '>' + (state.busy === 'check' ? tr('Vérification…') : tr('J’ai payé, vérifier')) + '</button>'
+    : '<p class="auth-note">' + tr('Seul le titulaire du compte peut activer l’abonnement. Il couvre tout le foyer : demande-lui de le renouveler.') + '</p>' +
+      '<button type="button" class="auth-link" data-sub-check>' + tr('Vérifier à nouveau') + '</button>';
   return '<div class="auth-card auth-panel sub-panel" data-tier-host><div class="auth-brand">' + brand() + '</div>' +
-    '<div class="auth-head"><h1 class="auth-title">Activer ton accès</h1><p class="auth-lead">' + esc(lead) + '</p></div>' +
+    '<div class="auth-head"><h1 class="auth-title">' + tr('Activer ton accès') + '</h1><p class="auth-lead">' + esc(lead) + '</p></div>' +
     offer + factsHTML() + msg + '<div class="sub-actions">' + actions + '</div>' +
-    '<button type="button" class="btn btn-ghost" data-auth-signout>Se déconnecter</button>' +
-    '<a class="auth-link" href="#/forum" data-forum-visit>Lire le forum de la communauté</a></div>';
+    '<button type="button" class="btn btn-ghost" data-auth-signout>' + tr('Se déconnecter') + '</button>' +
+    '<a class="auth-link" href="#/forum" data-forum-visit>' + tr('Lire le forum de la communauté') + '</a></div>';
 }
 
 let current = null;
@@ -163,7 +164,7 @@ let host = null;
 let focusBound = false;
 
 function paint() {
-  // eslint-disable-next-line no-restricted-syntax -- gabarit local, textes dynamiques échappés par esc (prix, messages)
+  // eslint-disable-next-line laststream/no-html-sink -- gabarit local, textes dynamiques échappés par esc (prix, messages)
   if (host) host.innerHTML = subscribeHTML(current, state);
 }
 
@@ -181,13 +182,13 @@ async function check(quiet) {
 
 /** Retour de Stripe Checkout (?billing=success) : le webhook peut arriver quelques secondes après ; on relit plusieurs fois. */
 async function pollAfterPayment() {
-  state = { busy: 'check', msg: 'Paiement reçu, activation de ton accès…', info: true };
+  state = { busy: 'check', msg: tr('Paiement reçu, activation de ton accès…'), info: true };
   paint();
   for (let i = 0; i < 8; i++) {
     if (await check(true)) return;
     await new Promise((r) => setTimeout(r, 2000));
   }
-  state = { busy: '', msg: 'Le paiement est en cours de confirmation. Réessaie « J’ai payé, vérifier » dans une minute.', info: true };
+  state = { busy: '', msg: tr('Le paiement est en cours de confirmation. Réessaie « J’ai payé, vérifier » dans une minute.'), info: true };
   paint();
 }
 
@@ -208,7 +209,7 @@ export async function mountSubscribe(root) {
     current = null;
   }
   if (current && current.access) { location.reload(); return; }
-  if (back === 'cancel') state = { busy: '', msg: 'Paiement annulé : rien n’a été prélevé.', info: true };
+  if (back === 'cancel') state = { busy: '', msg: tr('Paiement annulé : rien n’a été prélevé.'), info: true };
   paint();
   if (back === 'success') void pollAfterPayment();
   // Paiement fait dans le navigateur du système : au retour dans l'app, on vérifie.
@@ -225,7 +226,7 @@ async function startCheckout() {
     const cents = chosenCents(priceOf(current), current && current.maxAmount);
     if (cents === null) throw new UserApiError(400, 'invalid_amount');
     const { url } = await billingCheckout(cents);
-    if (openStripe(url) === 'outside') state = { busy: '', msg: 'Termine le paiement dans ton navigateur, puis reviens ici.', info: true };
+    if (openStripe(url) === 'outside') state = { busy: '', msg: tr('Termine le paiement dans ton navigateur, puis reviens ici.'), info: true };
   } catch (err) {
     state = { busy: '', msg: errorText(err), info: false };
   }
@@ -256,14 +257,14 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (t.closest('.sub-panel')) {
-    // Forum : lecture libre sans abonnement (rechargement en mode visiteur, voir main.js).
+    // Forum : lecture et écriture sans abonnement (rechargement sur #/forum, voir main.js).
     if (t.closest('[data-forum-visit]')) { e.preventDefault(); location.hash = '#/forum'; location.reload(); return; }
     if (t.closest('[data-sub-checkout]')) { void startCheckout(); return; }
     if (t.closest('[data-sub-portal]')) { void openPortal((msg) => { state = { busy: '', msg, info: false }; paint(); }); return; }
     if (t.closest('[data-sub-check]')) {
       state = { busy: 'check', msg: '', info: false };
       paint();
-      void check(false).then((ok) => { if (!ok && state.busy) { state = { busy: '', msg: 'Pas encore d’abonnement actif sur ce compte.', info: true }; paint(); } });
+      void check(false).then((ok) => { if (!ok && state.busy) { state = { busy: '', msg: tr('Pas encore d’abonnement actif sur ce compte.'), info: true }; paint(); } });
     }
     return;
   }
@@ -303,14 +304,14 @@ let cardBusy = false;
 async function changeCancel(cancel) {
   if (cardBusy) return;
   cardBusy = true;
-  setCardMsg(cancel ? 'Résiliation…' : 'Reprise de l’abonnement…');
+  setCardMsg(cancel ? tr('Résiliation…') : tr('Reprise de l’abonnement…'));
   try {
     const r = await (cancel ? billingCancel() : billingResume());
     cardConfirm = false;
     await refreshBillingCard();
     setCardMsg(cancel
-      ? 'C’est résilié : plus aucun prélèvement. Ton accès reste ouvert jusqu’au ' + day(r.paidUntil) + '.'
-      : 'Ton abonnement reprend : il sera renouvelé le ' + day(r.paidUntil) + '.');
+      ? tr('C’est résilié : plus aucun prélèvement. Ton accès reste ouvert jusqu’au {paidUntil}.', { paidUntil: day(r.paidUntil) })
+      : tr('Ton abonnement reprend : il sera renouvelé le {paidUntil}.', { paidUntil: day(r.paidUntil) }));
   } catch (err) {
     setCardMsg(errorText(err));
   } finally {
@@ -325,16 +326,16 @@ function setCardMsg(msg) {
 
 /** Phrase d'état de l'abonnement (réglages). */
 function statusText(b) {
-  if (b.reason === 'owner') return 'Compte propriétaire du serveur : accès sans abonnement.';
+  if (b.reason === 'owner') return tr('Compte propriétaire du serveur : accès sans abonnement.');
   if (b.reason === 'paid' && b.subscribed) {
-    if (b.cancelAtPeriodEnd) return 'Abonnement résilié : ton accès reste ouvert jusqu’au ' + day(b.paidUntil) + '.';
-    if (b.status === 'trialing' && b.paidUntil) return 'Abonnement actif. Prochain prélèvement le ' + day(b.paidUntil) + '.';
-    if (b.status === 'past_due') return 'Le dernier paiement a échoué : mets à jour ta carte pour garder ton accès.';
-    return 'Abonnement actif, renouvelé le ' + day(b.paidUntil) + '.';
+    if (b.cancelAtPeriodEnd) return tr('Abonnement résilié : ton accès reste ouvert jusqu’au {paidUntil}.', { paidUntil: day(b.paidUntil) });
+    if (b.status === 'trialing' && b.paidUntil) return tr('Abonnement actif. Prochain prélèvement le {paidUntil}.', { paidUntil: day(b.paidUntil) });
+    if (b.status === 'past_due') return tr('Le dernier paiement a échoué : mets à jour ta carte pour garder ton accès.');
+    return tr('Abonnement actif, renouvelé le {paidUntil}.', { paidUntil: day(b.paidUntil) });
   }
-  if (b.reason === 'comp') return 'Accès offert jusqu’au ' + day(b.compUntil) + '.';
-  if (b.reason === 'free') return 'Accès offert à tous jusqu’au ' + day(b.freeUntil) + ', pendant le lancement de l’abonnement.';
-  return 'Pas d’abonnement en cours.';
+  if (b.reason === 'comp') return tr('Accès offert jusqu’au {compUntil}.', { compUntil: day(b.compUntil) });
+  if (b.reason === 'free') return tr('Accès offert à tous jusqu’au {freeUntil}, pendant le lancement de l’abonnement.', { freeUntil: day(b.freeUntil) });
+  return tr('Pas d’abonnement en cours.');
 }
 
 function billingCardBody(b) {
@@ -345,26 +346,26 @@ function billingCardBody(b) {
   const half = b.referral && b.referral.discount;
   const subscribeRow = canSubscribe
     ? '<div class="sub-card-tiers" data-tier-host>' + tiersHTML(p, half) +
-        '<button type="button" class="btn btn-primary btn-sm" data-bill-checkout data-tier-cta="S’abonner"' + (chosenCents(p, b.maxAmount) === null ? ' disabled' : '') + '>' + esc(ctaText(p, 'S’abonner', b.maxAmount)) + '</button></div>'
+        '<button type="button" class="btn btn-primary btn-sm" data-bill-checkout data-tier-cta="S’abonner"' + (chosenCents(p, b.maxAmount) === null ? ' disabled' : '') + '>' + esc(ctaText(p, tr('S’abonner'), b.maxAmount)) + '</button></div>'
     : '';
-  if (manage && b.hasCustomer) buttons.push('<button type="button" class="btn btn-ghost btn-sm" data-bill-portal>Carte et factures</button>');
+  if (manage && b.hasCustomer) buttons.push('<button type="button" class="btn btn-ghost btn-sm" data-bill-portal>' + tr('Carte et factures') + '</button>');
   const active = manage && b.subscribed && b.reason === 'paid';
   let cancelRow = '';
   if (active && b.cancelAtPeriodEnd) {
-    cancelRow = rowHTML('Résiliation', 'Plus aucun prélèvement. Tu peux changer d’avis jusqu’au ' + day(b.paidUntil) + '.', () => '<button type="button" class="btn btn-primary btn-sm" data-bill-resume>Reprendre mon abonnement</button>');
+    cancelRow = rowHTML(tr('Résiliation'), tr('Plus aucun prélèvement. Tu peux changer d’avis jusqu’au {paidUntil}.', { paidUntil: day(b.paidUntil) }), () => '<button type="button" class="btn btn-primary btn-sm" data-bill-resume>' + tr('Reprendre mon abonnement') + '</button>');
   } else if (active && cardConfirm) {
-    cancelRow = rowHTML('Résilier ?', 'Plus rien ne sera prélevé. Ton accès reste ouvert jusqu’au ' + day(b.paidUntil) + ', puis l’app te proposera de te réabonner. Tes profils et ta bibliothèque sont gardés.',
-      () => '<button type="button" class="btn btn-ghost btn-sm sub-danger" data-bill-cancel-yes>Confirmer la résiliation</button><button type="button" class="btn btn-ghost btn-sm" data-bill-keep>Garder mon abonnement</button>');
+    cancelRow = rowHTML(tr('Résilier ?'), tr('Plus rien ne sera prélevé. Ton accès reste ouvert jusqu’au {paidUntil}, puis l’app te proposera de te réabonner. Tes profils et ta bibliothèque sont gardés.', { paidUntil: day(b.paidUntil) }),
+      () => '<button type="button" class="btn btn-ghost btn-sm sub-danger" data-bill-cancel-yes>' + tr('Confirmer la résiliation') + '</button><button type="button" class="btn btn-ghost btn-sm" data-bill-keep>' + tr('Garder mon abonnement') + '</button>');
   } else if (active) {
-    cancelRow = rowHTML('Résiliation', 'Sans engagement : tu arrêtes quand tu veux, l’accès reste ouvert jusqu’à la fin de la période payée.', () => '<button type="button" class="btn btn-ghost btn-sm" data-bill-cancel>Résilier</button>');
+    cancelRow = rowHTML(tr('Résiliation'), tr('Sans engagement : tu arrêtes quand tu veux, l’accès reste ouvert jusqu’à la fin de la période payée.'), () => '<button type="button" class="btn btn-ghost btn-sm" data-bill-cancel>' + tr('Résilier') + '</button>');
   }
   const r = b.referral;
   const referral = r && r.rewardMonths > 0
-    ? rowHTML('Parrainage', 'Chaque ami qui s’abonne avec un de tes billets t’offre ' + r.rewardMonths + ' mois, et paie sa première année à moitié prix.', () => '<span class="set-val">' + (r.earnedMonths > 0 ? r.earnedMonths + ' mois gagnés' : 'Aucun mois gagné') + '</span>')
+    ? rowHTML(tr('Parrainage'), tr('Chaque ami qui s’abonne avec un de tes billets t’offre {rewardMonths} mois, et paie sa première année à moitié prix.', { rewardMonths: r.rewardMonths }), () => '<span class="set-val">' + (r.earnedMonths > 0 ? tr('{earnedMonths} mois gagnés', { earnedMonths: r.earnedMonths }) : tr('Aucun mois gagné')) + '</span>')
     : '';
-  return rowHTML('État', statusText(b), () => buttons.join('')) + subscribeRow + cancelRow + referral +
+  return rowHTML(tr('État'), statusText(b), () => buttons.join('')) + subscribeRow + cancelRow + referral +
     '<p class="set-hint" data-bill-msg role="status"></p>' +
-    '<p class="set-hint">L’abonnement de soutien couvre tout ton foyer. Laststream ne fournit aucune extension Stremio : tes sources restent les tiennes. Le code est public sur <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">GitHub</a>.</p>';
+    '<p class="set-hint">' + tr('L’abonnement de soutien couvre tout ton foyer. Laststream ne fournit aucune extension Stremio : tes sources restent les tiennes. Le code est public sur') + ' <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">GitHub</a>.</p>';
 }
 
 /** Emplacement de la carte (rempli par refreshBillingCard ; vide sur un serveur sans abonnement). */
@@ -383,6 +384,6 @@ export async function refreshBillingCard() {
   const slot = document.querySelector('[data-bill-slot]');
   if (!slot || !b.enabled) return;
   cardBilling = b;
-  // eslint-disable-next-line no-restricted-syntax -- gabarit local, textes dynamiques échappés par esc (prix, état)
-  slot.innerHTML = card('Abonnement de soutien', billingCardBody(b));
+  // eslint-disable-next-line laststream/no-html-sink -- gabarit local, textes dynamiques échappés par esc (prix, état)
+  slot.innerHTML = card(tr('Abonnement de soutien'), billingCardBody(b));
 }

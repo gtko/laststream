@@ -16,6 +16,7 @@ import { avatarAttrs } from './avatar-art.js';
 import { friendPickerHTML, friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
 import { safeTmdbImage } from './safeImg.js';
 import { handlePartyCreateError } from './partyerrors.js';
+import { t as tr } from '../i18n';
 
 let rootEl = null;
 let panel = null;
@@ -57,7 +58,7 @@ let tickTimer = 0;
 let offBridge = null;
 let listenersAc = null;
 
-const CLOSE_BTN = '<button type="button" class="wp-close" data-wp-close aria-label="Fermer le panneau">' + LI.close + '</button>';
+const CLOSE_BTN = '<button type="button" class="wp-close" data-wp-close aria-label="' + tr('Fermer le panneau') + '">' + LI.close + '</button>';
 const fmtRate =(bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
 const guestCount = (c) => c.participants.filter((p) => p.guest).length;
 
@@ -65,17 +66,17 @@ const guestCount = (c) => c.participants.filter((p) => p.guest).length;
 function rateHTML() {
   const c = partyBridge.client;
   const n = c ? guestCount(c) : 0;
-  const guests = '<span data-wp-guests>' + n + '</span> invité' + (n > 1 ? 's' : '');
+  const guests = '<span data-wp-guests>' + n + '</span> ' + tr('invité') + (n > 1 ? 's' : '');
   if (partyBridge.relayRefused()) {
-    return '<span class="wp-rate-warn" title="Ce lien ne peut pas être partagé depuis le navigateur : les invités ne reçoivent pas la vidéo.">Partage bloqué</span> · ' + guests;
+    return '<span class="wp-rate-warn" title="' + tr('Ce lien ne peut pas être partagé depuis le navigateur : les invités ne reçoivent pas la vidéo.') + '">' + tr('Partage bloqué') + '</span> · ' + guests;
   }
   if (partyBridge.relayUnavailable()) {
-    return '<span class="wp-rate-warn" title="Cette source (torrent ou lien protégé) ne peut pas être envoyée aux invités par lien : choisis une source débridée ou un lien direct.">Partage impossible avec cette source</span> · ' + guests;
+    return '<span class="wp-rate-warn" title="' + tr('Cette source (torrent ou lien protégé) ne peut pas être envoyée aux invités par lien : choisis une source débridée ou un lien direct.') + '">' + tr('Partage impossible avec cette source') + '</span> · ' + guests;
   }
   const s = partyBridge.relayStats();
   // Rien n'est envoyé et personne n'est invité par lien : on dit seulement ce qu'est la watch party (pas de flux partagé).
-  if (!s && n === 0) return 'Chacun lit avec sa propre source';
-  return (s ? '↑ ' + fmtRate(s.rateBps) : 'Partage inactif') + ' · ' + guests;
+  if (!s && n === 0) return tr('Chacun lit avec sa propre source');
+  return (s ? '↑ ' + fmtRate(s.rateBps) : tr('Partage inactif')) + ' · ' + guests;
 }
 
 /** Avertissement de compatibilité des invités, en bandeau discret, avec la bascule ; vide si tous les invités annoncés peuvent tout lire. */
@@ -83,19 +84,19 @@ function compatHTML() {
   const warn = partyBridge.guestWarning();
   return warn
     ? '<div class="wp-banner" role="status"><span>' + esc(warn) + '</span>' +
-      '<button type="button" class="wp-link" data-wp-compat>Passer à une source compatible</button></div>'
+      '<button type="button" class="wp-link" data-wp-compat>' + tr('Passer à une source compatible') + '</button></div>'
     : '';
 }
 
 function inviteHTML() {
   const compat = compatHTML();
   compatShown = compat;
-  return '<section class="wp-invite wp-card"><h4 class="wp-sub">Lien d’invitation</h4>' +
-    (lastInviteUrl ? '<input type="text" class="wp-invite-link" data-wp-invite-link readonly value="' + esc(lastInviteUrl) + '" aria-label="Lien d’invitation">' : '') +
+  return '<section class="wp-invite wp-card"><h4 class="wp-sub">' + tr('Lien d’invitation') + '</h4>' +
+    (lastInviteUrl ? '<input type="text" class="wp-invite-link" data-wp-invite-link readonly value="' + esc(lastInviteUrl) + '" aria-label="' + tr('Lien d’invitation') + '">' : '') +
     '<div class="wp-invite-btns"><button type="button" class="wp-btn is-pri' + (inviteCopied ? ' is-done' : '') + '" data-wp-invite>' +
-    (inviteCopied ? 'Copié' : 'Copier le lien d’invitation') + '</button>' +
-    '<button type="button" class="wp-btn" data-wp-newlink title="L’ancien lien cesse de fonctionner ; les invités déjà dans le salon restent">Nouveau lien</button></div>' +
-    '<p class="wp-rate" data-wp-relay title="Chaque invité consomme ~ le débit du fichier en envoi depuis votre connexion.">' + rateHTML() + '</p>' +
+    (inviteCopied ? tr('Copié') : tr('Copier le lien d’invitation')) + '</button>' +
+    '<button type="button" class="wp-btn" data-wp-newlink title="' + tr('L’ancien lien cesse de fonctionner ; les invités déjà dans le salon restent') + '">' + tr('Nouveau lien') + '</button></div>' +
+    '<p class="wp-rate" data-wp-relay title="' + tr('Chaque invité consomme ~ le débit du fichier en envoi depuis votre connexion.') + '">' + rateHTML() + '</p>' +
     '<div class="wp-compat" data-wp-compatbox>' + compat + '</div></section>';
 }
 
@@ -103,7 +104,7 @@ function inviteHTML() {
 export const roomLink = (id) => shareBase().replace(/\/+$/, '') + '/#/party/' + encodeURIComponent(id);
 
 /** États de la pastille d’un participant, avec leur libellé (infobulle et nom accessible). */
-const STATE_TEXT = new Map([['ready', 'Prêt'], ['buffering', 'Tampon'], ['no-audio', 'Sans son'], ['unplayable', 'Illisible']]);
+const STATE_TEXT = new Map([['ready', tr('Prêt')], ['buffering', tr('Tampon')], ['no-audio', tr('Sans son')], ['unplayable', tr('Illisible')]]);
 
 /**
  * État affiché : `p.state` si le salon le fournit (tampon, etc.), sinon le verdict de compatibilité d’un invité (sans son,
@@ -138,14 +139,14 @@ export function participantsHTML(list, you, youHost, verdicts = new Map(), waitW
   return list.map((p) => {
     const me = you && p.username === you.username;
     const tools = youHost && !me
-      ? '<span class="wp-tools"><button type="button" class="wp-mini" data-wp-mute="' + esc(p.username) + '" data-muted="' + (p.muted ? '1' : '0') + '">' + (p.muted ? 'Rétablir' : 'Muet') + '</button>' +
-        '<button type="button" class="wp-mini" data-wp-host="' + esc(p.username) + '" title="Céder le rôle d’hôte">Hôte</button>' +
-        '<button type="button" class="wp-mini wp-danger" data-wp-kick="' + esc(p.username) + '">Exclure</button></span>'
+      ? '<span class="wp-tools"><button type="button" class="wp-mini" data-wp-mute="' + esc(p.username) + '" data-muted="' + (p.muted ? '1' : '0') + '">' + (p.muted ? tr('Rétablir') : tr('Muet')) + '</button>' +
+        '<button type="button" class="wp-mini" data-wp-host="' + esc(p.username) + '" title="' + tr('Céder le rôle d’hôte') + '">' + tr('Hôte') + '</button>' +
+        '<button type="button" class="wp-mini wp-danger" data-wp-kick="' + esc(p.username) + '">' + tr('Exclure') + '</button></span>'
       : '';
     const state = waitWho.includes(p.username) ? 'buffering' : participantState(p, verdicts);
     const label = STATE_TEXT.get(state);
     return '<li class="wp-user">' + avatarHTML(p) + '<span class="wp-name">' + esc(p.username) + (me ? ' (toi)' : '') + '</span>' +
-      (p.host ? '<em class="wp-badge">Hôte</em>' : '') + (p.muted ? '<em class="wp-badge wp-badge-muted">Muet</em>' : '') +
+      (p.host ? '<em class="wp-badge">' + tr('Hôte</em>') : '') + (p.muted ? '<em class="wp-badge wp-badge-muted">' + tr('Muet</em>') : '') +
       '<span class="wp-state is-' + state + '" role="img" aria-label="' + label + '" title="' + label + '"></span>' + tools + '</li>';
   }).join('');
 }
@@ -165,21 +166,21 @@ export function timeHTML(at) {
  */
 export function stampHTML(l) {
   if (l && typeof l.pos === 'number' && Number.isFinite(l.pos)) {
-    return '<time class="wp-time is-film" title="Position dans le film">' + esc(formatTimecode(l.pos)) + '</time>';
+    return '<time class="wp-time is-film" title="' + tr('Position dans le film') + '">' + esc(formatTimecode(l.pos)) + '</time>';
   }
   return timeHTML(l && l.at);
 }
 
 /** Lignes du chat : messages (avatar, pseudo, horodatage film) et événements du salon (`sys`). `people` : participants pour les avatars. */
 export function chatHTML(lines, you, people = []) {
-  if (!lines.length) return '<p class="wp-empty">Aucun message pour l’instant.</p>';
+  if (!lines.length) return '<p class="wp-empty">' + tr('Aucun message pour l’instant.') + '</p>';
   return lines.map((l) => {
     if (l.sys) return '<p class="wp-sys">' + esc(l.text) + '</p>';
     const mine = you && l.from === you.username;
     const who = people.find((p) => p.username === l.from) || { username: l.from };
     return '<p class="wp-line' + (mine ? ' is-mine' : '') + '" data-wp-line="' + esc(l.id) + '">' + avatarHTML(who) +
-      '<span class="wp-body"><b>' + esc(mine ? 'Moi' : l.from) + '</b> ' + stampHTML(l) + '<span class="wp-text">' + esc(l.text) + '</span></span>' +
-      (mine ? '' : '<button type="button" class="wp-flag" data-wp-report="' + esc(l.id) + '" aria-label="Signaler ce message" title="Signaler">⚑</button>') + '</p>';
+      '<span class="wp-body"><b>' + esc(mine ? tr('Moi') : l.from) + '</b> ' + stampHTML(l) + '<span class="wp-text">' + esc(l.text) + '</span></span>' +
+      (mine ? '' : '<button type="button" class="wp-flag" data-wp-report="' + esc(l.id) + '" aria-label="' + tr('Signaler ce message') + '" title="' + tr('Signaler') + '">⚑</button>') + '</p>';
   }).join('');
 }
 
@@ -193,7 +194,7 @@ function chatLines(c) {
 function waitInnerHTML(w) {
   if (!w) return '';
   return '<span class="wp-spin" aria-hidden="true"></span>' +
-    '<span class="wp-wait-txt" role="status">En attente de <b>' + esc(w.who.join(', ')) + '</b>…</span>' +
+    '<span class="wp-wait-txt" role="status">' + tr('En attente de <b>{v}</b>…', { v: esc(w.who.join(', ')) }) + '</span>' +
     '<span class="wp-countdown" aria-hidden="true" data-wp-countdown>' + countdownText(w) + '</span>';
 }
 
@@ -210,15 +211,15 @@ const countdownText = (w) => Math.ceil(remainingMs(w) / 1000) + ' s';
 
 /** En-tête du chat : titre repliable, badge « nouveaux messages » quand il est replié. */
 function chatHeadHTML() {
-  const badge = !chatOpen && unread > 0 ? '<span class="wp-unread" data-wp-unread>' + (unread > 1 ? unread + ' nouveaux messages' : '1 nouveau message') + '</span>' : '';
+  const badge = !chatOpen && unread > 0 ? '<span class="wp-unread" data-wp-unread>' + (unread > 1 ? tr('{unread} nouveaux messages', { unread }) : tr('1 nouveau message')) + '</span>' : '';
   return '<button type="button" class="wp-sub wp-chat-toggle" data-wp-chat-toggle aria-expanded="' + (chatOpen ? 'true' : 'false') + '" aria-controls="wp-chat-body">' +
-    'Chat' + badge + '<span class="wp-caret" aria-hidden="true">' + (chatOpen ? '▾' : '▸') + '</span></button>';
+    tr('Chat') + badge + '<span class="wp-caret" aria-hidden="true">' + (chatOpen ? '▾' : '▸') + '</span></button>';
 }
 
 /** Invitation ciblée d'un ami (réservée aux comptes : ni profil enfant, ni invité). */
 function friendsHTML(c) {
   if (isKidProfile() || !c.room || (c.you && c.you.guest)) return '';
-  return '<section class="wp-sec" data-wp-friends><h4 class="wp-sub">Inviter des amis</h4>' + friendsListHTML('wp-friend') + '</section>';
+  return '<section class="wp-sec" data-wp-friends><h4 class="wp-sub">' + tr('Inviter des amis') + '</h4>' + friendsListHTML('wp-friend') + '</section>';
 }
 
 /** Réglages du salon (hôte) : trois groupes de choix, comme le salon d’attente. */
@@ -226,8 +227,8 @@ function settingsHTML(c) {
   const s = { ...DEFAULT_SETTINGS, ...(c.settings || {}) };
   const group = (name, label, options) => '<div class="wp-set"><span class="wp-set-l">' + label + '</span><div class="wp-seg" role="radiogroup" aria-label="' + label + '">' +
     options.map(([v, t]) => '<button type="button" role="radio" aria-checked="' + (s[name] === v ? 'true' : 'false') + '" class="' + (s[name] === v ? 'on' : '') + '" data-wp-set="' + name + '" data-value="' + v + '">' + esc(t) + '</button>').join('') + '</div></div>';
-  return '<details class="wp-more-box" data-wp-settings><summary>Réglages du salon</summary>' +
-    group('control', 'Qui contrôle la lecture', CONTROL_OPTIONS) + group('waitLate', 'Attendre les retardataires', WAIT_LATE_OPTIONS) + group('reactions', 'Réactions à l’écran', REACTION_OPTIONS) + '</details>';
+  return '<details class="wp-more-box" data-wp-settings><summary>' + tr('Réglages du salon') + '</summary>' +
+    group('control', tr('Qui contrôle la lecture'), CONTROL_OPTIONS) + group('waitLate', tr('Attendre les retardataires'), WAIT_LATE_OPTIONS) + group('reactions', tr('Réactions à l’écran'), REACTION_OPTIONS) + '</details>';
 }
 
 function createHTML() {
@@ -235,61 +236,61 @@ function createHTML() {
   const choices = partyVisibilityChoices(kid);
   const a = getAdapter();
   const ready = !!(a && a.ready);
-  const name = a && a.req && a.req.name ? String(a.req.name) : 'Ce titre';
+  const name = a && a.req && a.req.name ? String(a.req.name) : tr('Ce titre');
   const poster = a ? safeTmdbImage(a.poster, 'w185') : null;
-  const kind = a && a.req && a.req.type === 'tv' ? 'Série' : 'Film';
+  const kind = a && a.req && a.req.type === 'tv' ? tr('Série') : tr('Film');
   const opt = (value, label, hint, on) => '<label class="wp-vopt"><input type="radio" name="vis" value="' + value + '"' + (on ? ' checked' : '') + '><span><b>' + esc(label) + '</b><i>' + esc(hint) + '</i></span></label>';
   const friends = friendPickerHTML();
-  return '<div class="wp-cbar"><h3 class="wp-title">Watch party</h3>' + CLOSE_BTN + '</div>' +
+  return '<div class="wp-cbar"><h3 class="wp-title">' + tr('Watch party') + '</h3>' + CLOSE_BTN + '</div>' +
     '<form class="wp-cform" data-wp-create><div class="wp-cbody">' +
     '<div class="wp-card wp-title-card">' + (poster ? '<span class="wp-poster-sm"><img src="' + esc(poster) + '" alt=""></span>' : '<span class="wp-poster-sm is-empty" aria-hidden="true"></span>') +
-    '<span class="wp-title-t"><span class="wp-lb">En cours de lecture</span><b>' + esc(name) + '</b><span class="wp-sub-t">' + kind + ' · chacun lit avec sa propre source</span></span></div>' +
-    '<fieldset class="wp-fs"><legend class="wp-lb">Qui peut rejoindre</legend><div class="wp-vopts">' +
-    opt('private', 'Privé', kid ? 'Profil enfant : salon privé uniquement' : 'Amis invités', true) +
-    (choices.includes('public') ? opt('public', 'Public', 'Listé dans « Watch parties »', false) : '') + '</div></fieldset>' +
-    (friends ? '<div class="wp-sec"><div class="wp-lb">Inviter des amis</div>' + friends + '</div>' : '') +
+    '<span class="wp-title-t"><span class="wp-lb">' + tr('En cours de lecture') + '</span><b>' + esc(name) + '</b><span class="wp-sub-t">' + tr('{kind} · chacun lit avec sa propre source', { kind }) + '</span></span></div>' +
+    '<fieldset class="wp-fs"><legend class="wp-lb">' + tr('Qui peut rejoindre') + '</legend><div class="wp-vopts">' +
+    opt('private', tr('Privé'), kid ? tr('Profil enfant : salon privé uniquement') : tr('Amis invités'), true) +
+    (choices.includes('public') ? opt('public', tr('Public'), tr('Listé dans « Watch parties »'), false) : '') + '</div></fieldset>' +
+    (friends ? '<div class="wp-sec"><div class="wp-lb">' + tr('Inviter des amis') + '</div>' + friends + '</div>' : '') +
     '</div><div class="wp-cfoot">' +
-    '<p class="wp-msg" data-wp-msg role="status">' + (ready ? '' : 'Attends que la lecture démarre pour créer le salon.') + '</p>' +
-    '<button type="submit" class="wp-btn is-pri is-lg"' + (ready && !creating ? '' : ' disabled') + '>Créer le salon</button>' +
-    '<p class="wp-fine">Un lien d’invitation est copié à la création. Chacun lit avec sa propre source : aucun flux vidéo n’est partagé.</p></div></form>';
+    '<p class="wp-msg" data-wp-msg role="status">' + (ready ? '' : tr('Attends que la lecture démarre pour créer le salon.')) + '</p>' +
+    '<button type="submit" class="wp-btn is-pri is-lg"' + (ready && !creating ? '' : ' disabled') + '>' + tr('Créer le salon') + '</button>' +
+    '<p class="wp-fine">' + tr('Un lien d’invitation est copié à la création. Chacun lit avec sa propre source : aucun flux vidéo n’est partagé.') + '</p></div></form>';
 }
 
 function roomHTML(c) {
   const you = c.you;
   const host = !!(you && you.host);
   const inviter = host || createdHere;
-  const status = c.status === 'open' ? '' : '<p class="wp-status" role="status">' + (c.status === 'closed' ? 'Déconnecté du salon.' : 'Connexion au salon… reprise automatique.') + '</p>';
+  const status = c.status === 'open' ? '' : '<p class="wp-status" role="status">' + (c.status === 'closed' ? tr('Déconnecté du salon.') : tr('Connexion au salon… reprise automatique.')) + '</p>';
   const room = c.room;
   const wait = c.waiting && Array.isArray(c.waiting.who) && c.waiting.who.length ? c.waiting : null;
   const hostName = (c.participants.find((p) => p.host) || {}).username;
   const menu =
-    '<section class="wp-menu" id="wp-menu" data-wp-menubox aria-label="Réglages du salon"' + (menuOpen ? '' : ' hidden') + '>' +
-    '<div class="wp-sec"><h4 class="wp-sub">Participants · ' + c.participants.length + '</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host, partyBridge.guestVerdicts(), wait ? wait.who : []) + '</ul></div>' +
+    '<section class="wp-menu" id="wp-menu" data-wp-menubox aria-label="' + tr('Réglages du salon') + '"' + (menuOpen ? '' : ' hidden') + '>' +
+    '<div class="wp-sec"><h4 class="wp-sub">' + tr('Participants · {length}', { length: c.participants.length }) + '</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host, partyBridge.guestVerdicts(), wait ? wait.who : []) + '</ul></div>' +
     (inviter ? inviteHTML() : '') + friendsHTML(c) + (host ? settingsHTML(c) : '') +
-    (host ? '' : '<p class="wp-note">La lecture est partagée : pause, reprise et sauts valent pour tout le salon. Seul l’hôte change d’épisode.</p>') +
-    '<div class="wp-actions">' + (inviter ? '' : '<button type="button" class="wp-btn" data-wp-copy>Copier le lien</button>') +
-    '<button type="button" class="wp-btn" data-wp-leave>Quitter</button>' +
-    (host ? '<button type="button" class="wp-btn is-danger" data-wp-end>Terminer pour tous</button>' : '') + '</div>' +
+    (host ? '' : '<p class="wp-note">' + tr('La lecture est partagée : pause, reprise et sauts valent pour tout le salon. Seul l’hôte change d’épisode.') + '</p>') +
+    '<div class="wp-actions">' + (inviter ? '' : '<button type="button" class="wp-btn" data-wp-copy>' + tr('Copier le lien') + '</button>') +
+    '<button type="button" class="wp-btn" data-wp-leave>' + tr('Quitter') + '</button>' +
+    (host ? '<button type="button" class="wp-btn is-danger" data-wp-end>' + tr('Terminer pour tous') + '</button>' : '') + '</div>' +
     '</section>';
   const muted = !!(you && you.muted);
   const hostPerson = c.participants.find((p) => p.host);
   return '<div class="wp-head">' + (hostPerson ? avatarHTML(hostPerson).replace('class="wp-av', 'class="wp-av wp-head-av') : '') +
-    '<div class="wp-head-t"><h3 class="wp-title">' + esc(hostName ? 'Salon de ' + hostName : 'Salon') + '</h3>' +
+    '<div class="wp-head-t"><h3 class="wp-title">' + esc(hostName ? tr('Salon de {hostName}', { hostName }) : tr('Salon')) + '</h3>' +
     '<p class="wp-film">' + esc(room ? room.title : '') + '</p></div>' +
-    '<button type="button" class="wp-head-btn wp-head-menu" data-wp-menu aria-label="Réglages du salon" aria-expanded="' + (menuOpen ? 'true' : 'false') + '" aria-controls="wp-menu">' +
+    '<button type="button" class="wp-head-btn wp-head-menu" data-wp-menu aria-label="' + tr('Réglages du salon') + '" aria-expanded="' + (menuOpen ? 'true' : 'false') + '" aria-controls="wp-menu">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>' + CLOSE_BTN + '</div>' +
-    '<div class="wp-subrow"><span class="wp-vis">' + (room && room.visibility === 'public' ? 'Public' : 'Privé') + '</span><span class="wp-hint">Chacun lit avec sa propre source</span>' +
-    (inviter ? '<button type="button" class="wp-head-btn wp-head-invite" data-wp-open-invite>Inviter</button>' : '') + '</div>' + status +
+    '<div class="wp-subrow"><span class="wp-vis">' + (room && room.visibility === 'public' ? tr('Public') : tr('Privé')) + '</span><span class="wp-hint">' + tr('Chacun lit avec sa propre source') + '</span>' +
+    (inviter ? '<button type="button" class="wp-head-btn wp-head-invite" data-wp-open-invite>' + tr('Inviter') + '</button>' : '') + '</div>' + status +
     menu +
     '<div class="wp-wait" data-wp-wait' + (wait ? '' : ' hidden') + '>' + waitInnerHTML(wait) + '</div>' +
     '<div class="wp-chatsec">' + chatHeadHTML() +
     '<div class="wp-chat-body" id="wp-chat-body" data-wp-chat-body' + (chatOpen ? '' : ' hidden') + '>' +
     '<div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(chatLines(c), you, c.participants) + '</div>' +
     '<div class="wp-foot">' +
-    '<div class="wp-react" role="group" aria-label="Réactions">' + STAGE_EMOJIS.map((e) => '<button type="button" data-wp-react="' + e + '" aria-label="Réaction ' + e + '">' + e + '</button>').join('') + '</div>' +
-    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX_CHARS + '" autocomplete="off" aria-label="Message" placeholder="' + (muted ? 'Tu es muet' : 'Écrire… (Entrée pour envoyer)') + '"' + (muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
+    '<div class="wp-react" role="group" aria-label="' + tr('Réactions') + '">' + STAGE_EMOJIS.map((e) => '<button type="button" data-wp-react="' + e + '" aria-label="' + tr('Réaction {e}', { e }) + '">' + e + '</button>').join('') + '</div>' +
+    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX_CHARS + '" autocomplete="off" aria-label="' + tr('Message') + '" placeholder="' + (muted ? tr('Tu es muet') : tr('Écrire… (Entrée pour envoyer)')) + '"' + (muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
     '<span class="wp-chars" data-wp-chars>' + chatDraft.length + '/' + CHAT_MAX_CHARS + '</span>' +
-    '<button type="submit" class="btn btn-primary btn-sm" aria-label="Envoyer"' + (muted ? ' disabled' : '') + '>Envoyer</button></form></div>' +
+    '<button type="submit" class="btn btn-primary btn-sm" aria-label="' + tr('Envoyer') + '"' + (muted ? ' disabled' : '') + '>' + tr('Envoyer') + '</button></form></div>' +
     '</div></div>';
 }
 
@@ -424,7 +425,7 @@ function showEvent(c, ev) {
   if (!eventEl || !isPlaybackEvent(ev.kind)) return;
   const who = (c.participants || []).find((p) => p.username === ev.by) || { username: ev.by };
   eventEl.innerHTML = avatarHTML(who) + '<span class="ps-event-t"></span>';
-  eventEl.querySelector('.ps-event-t').textContent = eventText(ev) + ' · pour tout le monde';
+  eventEl.querySelector('.ps-event-t').textContent = tr('{ev} · pour tout le monde', { ev: eventText(ev) });
   eventEl.hidden = false;
   requestWake(eventEl);
   clearTimeout(eventTimer);
@@ -448,7 +449,7 @@ const CHIP_AVS = 3;
 
 /** Texte lu par un lecteur d'écran sur la pastille : le détail visible (nombre, synchro) sans l'ouvrir. */
 function chipLabel(n, sync) {
-  return 'Salon : ' + n + ' en salle, ' + sync.text.toLowerCase();
+  return tr('Salon : {n} en salle, {text}', { n, text: sync.text.toLowerCase() });
 }
 
 /** Ouvre ou ferme le détail de la pastille (aria-expanded suit). `refocus` rend le focus au bouton à la fermeture. */
@@ -478,15 +479,15 @@ function renderBand() {
   const more = list.length - shown.length;
   const sync = syncText(partyBridge.controller ? partyBridge.controller.drift : null);
   const label = chipLabel(list.length, sync);
-  const chatLbl = open ? 'Masquer la discussion' : 'Afficher la discussion';
+  const chatLbl = open ? tr('Masquer la discussion') : tr('Afficher la discussion');
   band.innerHTML = '<button type="button" class="ps-chip" data-ps-chip aria-expanded="false" aria-controls="ps-pop" aria-label="' + esc(label) + '" title="' + esc(label) + '">' +
     '<span class="ps-avs" aria-hidden="true">' + shown.map((p) => avatarHTML(p).replace('class="wp-av', 'class="wp-av ps-av')).join('') +
     (more > 0 ? '<span class="wp-av ps-av ps-more">+' + more + '</span>' : '') + '</span>' +
     '<span class="ps-dot' + (sync.ok ? '' : ' is-off') + '" data-ps-dot aria-hidden="true"></span></button>' +
-    '<div class="ps-pop" id="ps-pop" role="group" aria-label="Salon" hidden>' +
-    '<div class="ps-n">' + list.length + ' en salle</div>' +
+    '<div class="ps-pop" id="ps-pop" role="group" aria-label="' + tr('Salon') + '" hidden>' +
+    '<div class="ps-n">' + tr('{length} en salle', { length: list.length }) + '</div>' +
     '<div class="ps-sync' + (sync.ok ? '' : ' is-off') + '" data-ps-sync role="status">' + esc(sync.text) + '</div>' +
-    '<div class="ps-row"><button type="button" class="ps-btn" disabled aria-label="Micro (bientôt disponible)" title="Micro : bientôt">' +
+    '<div class="ps-row"><button type="button" class="ps-btn" disabled aria-label="' + tr('Micro (bientôt disponible)') + '" title="' + tr('Micro : bientôt') + '">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M4 4l16 16"/></svg></button>' +
     '<button type="button" class="ps-btn" data-ps-chat aria-pressed="' + (open ? 'true' : 'false') + '" aria-label="' + chatLbl + '" title="' + chatLbl + '">' +
     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button></div></div>';
@@ -565,9 +566,9 @@ function attach() {
   c.on('event', (ev) => onEvent(c, ev));
   c.on('settings', () => renderSoon());
   c.on('participants', () => renderSoon());
-  c.on('host', (user) => { toast(user + ' est maintenant l’hôte'); render(); });
+  c.on('host', (user) => { toast(tr('{user} est maintenant l’hôte', { user })); render(); });
   c.on('muted', () => render());
-  c.on('reported', (r) => { if (r.against) toast('Signalement reçu : ' + r.against); else toast('Message signalé, merci'); });
+  c.on('reported', (r) => { if (r.against) toast(tr('Signalement reçu : {against}', { against: r.against })); else toast(tr('Message signalé, merci')); });
   c.on('error', (code) => { const t = partyErrorText(code); if (t) toast(t); });
   c.on('end', (reason) => { toast(endReasonText(reason)); render(); });
 }
@@ -579,7 +580,7 @@ export function mountPartyPanel(root, opts) {
   getAdapter = opts.adapter;
   panel = document.createElement('aside');
   panel.className = 'lp-party';
-  panel.setAttribute('aria-label', 'Watch party');
+  panel.setAttribute('aria-label', tr('Watch party'));
   panel.hidden = true;
   floats = document.createElement('div');
   floats.className = 'lp-party-floats';
@@ -716,7 +717,7 @@ async function inviteChosen(roomId, pids) {
     if (!(await inviteInto(roomId, pid))) break;
     n += 1;
   }
-  if (n) toast(n === 1 ? 'Invitation envoyée' : n + ' invitations envoyées');
+  if (n) toast(n === 1 ? tr('Invitation envoyée') : tr('{n} invitations envoyées', { n }));
   render();
 }
 
@@ -725,12 +726,12 @@ async function copyText(url, okText) {
     toast(okText);
     return true;
   }
-  toast('Copie impossible : ' + url, { ms: 6000 });
+  toast(tr('Copie impossible : {url}', { url }), { ms: 6000 });
   return false;
 }
 
 export function copyLink(id) {
-  return copyText(roomLink(id), 'Lien du salon copié');
+  return copyText(roomLink(id), tr('Lien du salon copié'));
 }
 
 /**
@@ -740,7 +741,7 @@ export function copyLink(id) {
 async function inviteLink(rotate = false) {
   const inv = await partyBridge.createInvite(rotate);
   lastInviteUrl = joinLinkOf(shareBase(), inv.roomId, inv.token);
-  return copyText(lastInviteUrl, rotate ? 'Nouveau lien copié : l’ancien ne fonctionne plus' : 'Lien d’invitation copié');
+  return copyText(lastInviteUrl, rotate ? tr('Nouveau lien copié : l’ancien ne fonctionne plus') : tr('Lien d’invitation copié'));
 }
 
 /**
@@ -751,10 +752,10 @@ async function renewLinkAfterKick() {
   try {
     const inv = await partyBridge.createInvite(false);
     lastInviteUrl = joinLinkOf(shareBase(), inv.roomId, inv.token);
-    toast('Lien renouvelé après exclusion');
+    toast(tr('Lien renouvelé après exclusion'));
   } catch {
     lastInviteUrl = '';
-    toast('Lien renouvelé après exclusion : recopie-le avec « Copier le lien d’invitation ».', { ms: 6000 });
+    toast(tr('Lien renouvelé après exclusion : recopie-le avec « Copier le lien d’invitation ».'), { ms: 6000 });
   }
   render();
 }
@@ -766,7 +767,7 @@ let compatBusy = false;
 async function switchCompatible() {
   if (compatBusy) return;
   compatBusy = true;
-  toast('Recherche d’une source compatible…', { ms: 4000 });
+  toast(tr('Recherche d’une source compatible…'), { ms: 4000 });
   let r = { status: 'none' };
   try {
     r = await partyBridge.switchToCompatible();
@@ -776,9 +777,9 @@ async function switchCompatible() {
     compatBusy = false;
   }
   if (r.status === 'switched') {
-    toast('Lecture sur une source compatible avec tous les invités' + (r.audioUnverified ? ' (son non vérifié)' : ''), { ms: 6000 });
+    toast(tr('Lecture sur une source compatible avec tous les invités') + (r.audioUnverified ? ' ' + tr('(son non vérifié)') : ''), { ms: 6000 });
   } else {
-    toast('Aucune source compatible avec tous les invités', { ms: 6000 });
+    toast(tr('Aucune source compatible avec tous les invités'), { ms: 6000 });
   }
   render();
 }
@@ -787,7 +788,7 @@ async function invite(rotate = false) {
   try {
     if (await inviteLink(rotate)) flashCopied();
   } catch (err) {
-    toast(err instanceof UserApiError && err.code === 'not_host' ? 'Seul l’hôte peut inviter.' : 'Invitation impossible pour le moment.');
+    toast(err instanceof UserApiError && err.code === 'not_host' ? tr('Seul l’hôte peut inviter.') : tr('Invitation impossible pour le moment.'));
   }
   render();
 }
@@ -810,7 +811,7 @@ async function inviteAfterCreate() {
       }
     }
   }
-  toast('Salon créé. Lien d’invitation indisponible : utilise « Copier le lien d’invitation » dans le panneau.', { ms: 6000 });
+  toast(tr('Salon créé. Lien d’invitation indisponible : utilise « Copier le lien d’invitation » dans le panneau.'), { ms: 6000 });
   render();
 }
 
@@ -854,9 +855,9 @@ function onClick(e) {
   if (t.closest('[data-wp-copy]') && c && c.room) { copyLink(c.room.id); return; }
   if (t.closest('[data-wp-chat-toggle]')) { toggleChat(); return; }
   // Quitter ferme le panneau : sans salon, il n'affichait que le formulaire de création.
-  if (t.closest('[data-wp-leave]')) { partyBridge.leave(); togglePartyPanel(false); toast('Tu as quitté le salon'); return; }
+  if (t.closest('[data-wp-leave]')) { partyBridge.leave(); togglePartyPanel(false); toast(tr('Tu as quitté le salon')); return; }
   if (t.closest('[data-wp-end]')) {
-    if (window.confirm('Terminer le salon pour tous les participants ?')) partyBridge.end();
+    if (window.confirm(tr('Terminer le salon pour tous les participants ?'))) partyBridge.end();
     return;
   }
   const react = t.closest('[data-wp-react]');
@@ -873,15 +874,15 @@ function onClick(e) {
   const friend = t.closest('[data-wp-friend]');
   if (friend && c && c.room) {
     friend.disabled = true;
-    void inviteInto(c.room.id, friend.dataset.wpFriend).then((ok) => { if (ok) toast('Invitation envoyée'); render(); });
+    void inviteInto(c.room.id, friend.dataset.wpFriend).then((ok) => { if (ok) toast(tr('Invitation envoyée')); render(); });
     return;
   }
   const mute = t.closest('[data-wp-mute]');
   if (mute && c) { c.mute(mute.dataset.wpMute, mute.dataset.muted !== '1'); return; }
   const host = t.closest('[data-wp-host]');
-  if (host && c) { if (window.confirm('Céder le rôle d’hôte à ' + host.dataset.wpHost + ' ?')) c.transfer(host.dataset.wpHost); return; }
+  if (host && c) { if (window.confirm(tr('Céder le rôle d’hôte à {wpHost} ?', { wpHost: host.dataset.wpHost }))) c.transfer(host.dataset.wpHost); return; }
   const kick = t.closest('[data-wp-kick]');
-  if (kick && c) { if (window.confirm('Exclure ' + kick.dataset.wpKick + ' du salon ?')) c.kick(kick.dataset.wpKick); return; }
+  if (kick && c) { if (window.confirm(tr('Exclure {wpKick} du salon ?', { wpKick: kick.dataset.wpKick }))) c.kick(kick.dataset.wpKick); return; }
   const rep = t.closest('[data-wp-report]');
   if (rep && c) { c.report(rep.dataset.wpReport, 'chat'); }
 }

@@ -30,12 +30,12 @@
 .sv-zone { display: flex; flex-direction: column; gap: 44px; padding: 28px 0 96px; }
 .sv-sec { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .sv-zone .lib-grid { padding: 16px var(--gutter) 0; }
-.shows-count { margin-left: 10px; font-size: 14px; font-weight: 400; opacity: 0.6; }
+.shows-count { margin-inline-start: 10px; font-size: 14px; font-weight: 400; opacity: 0.6; }
 .shows-more { display: flex; justify-content: center; padding: 20px var(--gutter) 0; }
 
 /* Incontournables : tuiles paysage 16:10 */
 .sv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 20px 18px; padding: 16px var(--gutter) 0; }
-.sv-tile { position: relative; display: block; width: 100%; aspect-ratio: 16 / 10; margin: 0; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: transform 0.2s; }
+.sv-tile { position: relative; display: block; width: 100%; aspect-ratio: 16 / 10; margin: 0; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--surface); color: var(--text); font: inherit; text-align: start; cursor: pointer; transition: transform 0.2s; }
 .sv-tile:hover, .sv-tile:focus-visible { transform: scale(1.02); }
 .sv-tile:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .sv-tile-media { position: absolute; inset: 0; background: linear-gradient(160deg, #2b2440, #15121d); }
@@ -123,7 +123,7 @@
 
 /* Derniers épisodes : grille de vignettes 16:9 */
 .sf-eps { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr)); gap: 20px 16px; }
-.sf-ep { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.sf-ep { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: start; cursor: pointer; }
 .sf-ep-media { position: relative; display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: var(--surface); }
 .sf-ep-media > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
 .sf-ep:hover .sf-ep-media > img { transform: scale(1.04); }

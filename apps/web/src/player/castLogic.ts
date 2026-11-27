@@ -1,19 +1,20 @@
 import { shouldSave } from './progress';
+import { t as tr } from '../i18n';
 
 /* Chromecast (LAST-347) : décisions sans le SDK Google Cast, testées. Le branchement au SDK est dans ./cast, celui à la session
  * dans ./sessionCast.js. Le Chromecast va chercher la source lui-même : il ne voit ni l'appareil, ni son serveur de streaming. */
 
 /** Messages de refus, affichés tels quels. */
 export const CAST_REFUSED = {
-  local: 'Ce fichier est lu depuis cet appareil : le Chromecast ne peut pas y accéder.',
-  proxied: 'Cette source passe par notre serveur : le Chromecast ne peut pas la lire. Essaie une autre source.',
-  loopback: 'Cette source n’est joignable que depuis cet appareil : le Chromecast ne peut pas la lire.',
-  scheme: 'Ce lien ne peut pas être envoyé au Chromecast.',
+  local: tr('Ce fichier est lu depuis cet appareil : le Chromecast ne peut pas y accéder.'),
+  proxied: tr('Cette source passe par notre serveur : le Chromecast ne peut pas la lire. Essaie une autre source.'),
+  loopback: tr('Cette source n’est joignable que depuis cet appareil : le Chromecast ne peut pas la lire.'),
+  scheme: tr('Ce lien ne peut pas être envoyé au Chromecast.'),
 } as const;
 
 /** Conteneurs que le récepteur par défaut lit souvent mal (pistes audio AC3/DTS, sous-titres intégrés) : envoi permis, avec un avis. */
 const RISKY = /\.(mkv|avi|wmv|flv)$/i;
-export const CAST_RISKY_NOTE = 'Format peu courant sur Chromecast : l’image ou le son peuvent manquer.';
+export const CAST_RISKY_NOTE = tr('Format peu courant sur Chromecast : l’image ou le son peuvent manquer.');
 
 export type CastTarget =
   | { ok: true; url: string; contentType: string; warn: string }
@@ -115,4 +116,4 @@ export function createCastProgress(save: (time: number, duration: number) => voi
 }
 
 /** Libellé de l'écran de diffusion. */
-export const castingLabel = (device: string): string => 'Lecture sur ' + (device.trim() || 'le Chromecast');
+export const castingLabel = (device: string): string => tr('Lecture sur') + ' ' + (device.trim() || tr('le Chromecast'));

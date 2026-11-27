@@ -30,7 +30,7 @@
 .soc-add-f input { flex: 1 1 220px; min-width: 0; }
 .soc-sec { display: flex; flex-direction: column; gap: 10px; }
 .soc-sec .row-title { margin: 0; }
-.soc-sec .row-title em { font-style: normal; font-size: 14px; color: var(--dim); margin-left: 6px; }
+.soc-sec .row-title em { font-style: normal; font-size: 14px; color: var(--dim); margin-inline-start: 6px; }
 .soc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .soc-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
 .soc-av { flex: none; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: var(--on-accent); font-family: var(--ff-title); }
@@ -43,7 +43,7 @@ a.soc-name:hover { color: var(--accent); }
 .soc-presence.is-watching i { background: var(--accent); }
 .soc-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 @media (max-width: 720px) {
-  .soc-body { padding-left: 16px; padding-right: 16px; }
+  .soc-body { padding-inline-start: 16px; padding-inline-end: 16px; }
   .soc-row { flex-wrap: wrap; }
   .soc-acts { width: 100%; justify-content: flex-start; }
 }
@@ -82,7 +82,7 @@ a.soc-name:hover { color: var(--accent); }
 .wp-seg-btn { min-height: 41px; padding: 0 16px; font-weight: 700; font-size: 14px; color: var(--muted); background: transparent; }
 .wp-seg-btn:hover { color: #fff; }
 .wp-seg-btn[aria-pressed="true"] { background: var(--text); color: var(--bg); }
-.wp-count { margin-left: auto; font-size: 14px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.wp-count { margin-inline-start: auto; font-size: 14px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .wp-refresh { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; border: 1.5px solid #3a3646; background: transparent; color: var(--soft); }
 .wp-refresh:hover { border-color: var(--muted); color: #fff; }
 .wp-refresh svg { width: 20px; height: 20px; }
@@ -115,7 +115,7 @@ a.soc-name:hover { color: var(--accent); }
 @media (max-width: 720px) {
   .wp-head { flex-direction: column; align-items: stretch; }
   .wp-head-acts .btn { flex: 1 1 100%; }
-  .wp-count { margin-left: 0; }
+  .wp-count { margin-inline-start: 0; }
   .wp-seg { max-width: 100%; }
   .wp-empty-acts .btn { flex: 1 1 100%; }
 }
@@ -129,22 +129,22 @@ a.soc-name:hover { color: var(--accent); }
 .wp-dlg-t { margin: 0 0 8px; font-family: var(--ff-title); }
 
 /* ---------- Panneau du lecteur ---------- */
-.lp-party { position: absolute; top: 0; right: 0; bottom: 0; z-index: 7; width: min(360px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 18px 16px 14px; overflow-y: auto; background: rgba(12, 11, 17, 0.94); border-left: 1px solid var(--line-2); color: var(--text); backdrop-filter: blur(10px); }
+.lp-party { position: absolute; top: 0; right: 0; bottom: 0; z-index: 7; width: min(360px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 18px 16px 14px; overflow-y: auto; background: rgba(12, 11, 17, 0.94); border-inline-start: 1px solid var(--line-2); color: var(--text); backdrop-filter: blur(10px); }
 .lp-party[hidden] { display: none; }
 .lp.is-mini .lp-party, .lp.is-mini .lp-party-floats { display: none; }
 /* Panneau sorti sur la page (lecteur natif Android en vignette, partypanel.setPartyPanelDocked) : colonne à droite, feuille en portrait. */
-.lp-party.lp-party.is-docked { position: fixed; top: 0; right: 0; bottom: 0; left: auto; width: min(360px, 100%); height: auto; z-index: 640; border-top: 0; border-left: 1px solid var(--line-2); }
+.lp-party.lp-party.is-docked { position: fixed; top: 0; right: 0; bottom: 0; left: auto; width: min(360px, 100%); height: auto; z-index: 640; border-top: 0; border-inline-start: 1px solid var(--line-2); }
 .lp-party.lp-party.is-docked[hidden] { display: none; }
 .lp-party.is-docked .wp-close { display: inline-flex; }
 @media (orientation: portrait) {
-  .lp-party.lp-party.is-docked { top: auto; left: 0; width: 100%; height: 70%; border-left: 0; border-top: 1px solid var(--line-2); }
+  .lp-party.lp-party.is-docked { top: auto; left: 0; width: 100%; height: 70%; border-inline-start: 0; border-top: 1px solid var(--line-2); }
 }
 .wp-close { flex: none; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--soft); padding: 0; display: grid; place-items: center; cursor: pointer; }
 .wp-close svg { width: 20px; height: 20px; display: block; }
 .wp-close:hover { background: var(--line-2); }
 .wp-head { display: flex; align-items: center; gap: 8px; }
 .wp-title { margin: 0; font-family: var(--ff-title); font-size: 17px; line-height: 1.2; }
-.wp-head .wp-title { padding-right: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-head .wp-title { padding-inline-end: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wp-vis, .wp-badge { font-size: 11px; font-weight: 700; font-style: normal; padding: 2px 8px; border-radius: 999px; background: var(--line-2); color: var(--soft); white-space: nowrap; }
 .wp-badge { background: var(--accent); color: var(--on-accent); }
 .wp-badge-muted { background: #7b5bf5; color: #fff; }
@@ -167,7 +167,7 @@ a.soc-name:hover { color: var(--accent); }
 .wp-invite-btns .btn.is-done { color: #19c3a6; border-color: #19c3a6; }
 .wp-rate { margin: 0; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .wp-rate-warn { color: #f5b700; }
-.wp-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 10px; border-radius: 10px; background: rgba(245, 183, 0, 0.1); border-left: 3px solid #f5b700; font-size: 12px; line-height: 1.4; color: var(--soft); }
+.wp-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 10px; border-radius: 10px; background: rgba(245, 183, 0, 0.1); border-inline-start: 3px solid #f5b700; font-size: 12px; line-height: 1.4; color: var(--soft); }
 .wp-link { border: 0; padding: 2px 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .wp-compat:empty { display: none; }
 .wp-sub { margin: 6px 0 0; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
@@ -181,7 +181,7 @@ a.soc-name:hover { color: var(--accent); }
 .wp-state.is-buffering { background: #f5b700; }
 .wp-state.is-no-audio { background: #f97316; }
 .wp-state.is-unplayable { background: #ef4444; }
-.wp-tools { display: flex; gap: 4px; width: 100%; padding-left: 36px; }
+.wp-tools { display: flex; gap: 4px; width: 100%; padding-inline-start: 36px; }
 .wp-mini { border: 1px solid var(--line-2); background: var(--surface); color: var(--soft); border-radius: 8px; font-size: 12px; padding: 3px 8px; cursor: pointer; }
 .wp-mini:hover { border-color: var(--accent); color: var(--text); }
 .wp-danger { color: #ff7a7a; }
@@ -195,13 +195,13 @@ a.soc-name:hover { color: var(--accent); }
 @media (hover: none) { .wp-flag { opacity: 0.7; } }
 .wp-empty { margin: 0; font-size: 13px; color: var(--dim); }
 .wp-chatsec { display: flex; flex-direction: column; gap: 8px; }
-.wp-chat-toggle { display: flex; align-items: center; gap: 8px; width: 100%; margin: 6px 0 0; padding: 0; border: 0; background: transparent; color: var(--dim); font: inherit; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; text-align: left; cursor: pointer; }
+.wp-chat-toggle { display: flex; align-items: center; gap: 8px; width: 100%; margin: 6px 0 0; padding: 0; border: 0; background: transparent; color: var(--dim); font: inherit; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; text-align: start; cursor: pointer; }
 .wp-chat-toggle:hover, .wp-chat-toggle:focus-visible { color: var(--soft); }
-.wp-caret { margin-left: auto; font-size: 12px; }
+.wp-caret { margin-inline-start: auto; font-size: 12px; }
 .wp-unread { padding: 2px 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none; white-space: nowrap; }
 .wp-chat-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .wp-chat-body[hidden] { display: none; }
-.wp-time { flex: none; margin-right: 4px; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.wp-time { flex: none; margin-inline-end: 4px; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .wp-chars { flex: none; align-self: center; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .wp-send { display: flex; gap: 6px; }
 .wp-send input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; }
@@ -213,13 +213,13 @@ a.soc-name:hover { color: var(--accent); }
 .wp-float { position: absolute; bottom: 0; font-size: 34px; animation: wp-rise 3.2s ease-out forwards; }
 @keyframes wp-rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-260px); opacity: 0; } }
 @media (max-width: 720px) {
-  .lp-party { width: 100%; top: auto; height: 62%; border-left: 0; border-top: 1px solid var(--line-2); }
+  .lp-party { width: 100%; top: auto; height: 62%; border-inline-start: 0; border-top: 1px solid var(--line-2); }
 }
 @media (prefers-reduced-motion: reduce) { .wp-float { animation-duration: 1.2s; } }
 
 /* ---------- Barre latérale des amis (socialSidebar.js, socialCard.js) : Social v3 ---------- */
 .ss { position: fixed; top: 0; right: 0; bottom: 0; z-index: 60; width: 380px; max-width: 100%; display: flex; flex-direction: column;
-  background: var(--surface); border-left: 1px solid var(--line); color: var(--text); font-size: 14px;
+  background: var(--surface); border-inline-start: 1px solid var(--line); color: var(--text); font-size: 14px;
   box-shadow: -18px 0 40px rgba(0, 0, 0, 0.45); animation: ss-in 0.22s ease-out; }
 .ss[hidden] { display: none; }
 .ss [hidden] { display: none !important; }
@@ -255,7 +255,7 @@ body.lp-open .ss { z-index: 620; }
 .ss-me-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; position: relative; }
 .ss-handle { align-self: flex-start; max-width: 100%; display: flex; align-items: center; gap: 0; padding: 0; border: 0; background: none; font-family: var(--ff-title); font-size: 16px; font-weight: 700; cursor: copy; overflow: hidden; white-space: nowrap; }
 .ss-handle:hover { color: var(--accent); }
-.ss-copy { display: inline-flex; margin-left: 6px; color: var(--dim); }
+.ss-copy { display: inline-flex; margin-inline-start: 6px; color: var(--dim); }
 .ss-copy svg { width: 14px; height: 14px; }
 .ss-stat { align-self: flex-start; max-width: 100%; display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; font-size: 13px; color: var(--muted); cursor: pointer; }
 .ss-stat:hover { color: var(--text); }
@@ -281,7 +281,7 @@ body.lp-open .ss { z-index: 620; }
 /* Menus (statut, ⋯) */
 .ss-menu { position: absolute; z-index: 5; width: 250px; padding: 6px; background: var(--line); border: 1px solid #33303f; border-radius: 12px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5); }
 .ss-stat-menu { left: 0; top: 52px; width: 220px; }
-.ss-mi { display: flex; align-items: center; gap: 10px; width: 100%; height: 38px; padding: 0 12px; border: 0; border-radius: 8px; background: none; text-align: left; font-size: 13px; cursor: pointer; }
+.ss-mi { display: flex; align-items: center; gap: 10px; width: 100%; height: 38px; padding: 0 12px; border: 0; border-radius: 8px; background: none; text-align: start; font-size: 13px; cursor: pointer; }
 .ss-mi:hover, .ss-mi:focus-visible { background: #2f2b3b; }
 .ss-mi[aria-checked="true"] { color: var(--accent); }
 .ss-mi.is-danger { color: #ff8a95; }
@@ -314,7 +314,7 @@ body.lp-open .ss { z-index: 620; }
 /* Groupes et lignes */
 .ss-group { display: flex; flex-direction: column; }
 .ss-hd { margin: 0; font-family: var(--ff-title); font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
-.ss-fold { width: 100%; display: flex; align-items: center; gap: 8px; padding: 12px 10px 4px; border: 0; background: none; color: var(--dim); font: inherit; letter-spacing: inherit; text-transform: inherit; text-align: left; cursor: pointer; }
+.ss-fold { width: 100%; display: flex; align-items: center; gap: 8px; padding: 12px 10px 4px; border: 0; background: none; color: var(--dim); font: inherit; letter-spacing: inherit; text-transform: inherit; text-align: start; cursor: pointer; }
 .ss-fold:hover { color: var(--text); }
 .ss-chev { flex: none; display: inline-flex; transition: transform 0.18s ease; }
 .ss-chev svg { width: 12px; height: 12px; }
@@ -324,7 +324,7 @@ body.lp-open .ss { z-index: 620; }
 .ss-count.is-hot { color: #ff7a5c; }
 .ss-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .ss-item { margin: 0; }
-.ss-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+.ss-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; border: 0; background: none; color: var(--text); text-align: start; cursor: pointer; }
 .ss-row:hover, .ss-row:focus-visible { background: var(--line); }
 .ss-row.ss-req { cursor: default; background: #1d1a28; }
 .ss-row-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -340,7 +340,7 @@ body.lp-open .ss { z-index: 620; }
 
 /* Carte « en train de regarder » */
 .ss-wcard { display: flex; flex-direction: column; gap: 12px; padding: 12px; border-radius: 14px; background: var(--line); }
-.ss-wcard-top { display: flex; flex-direction: column; gap: 12px; width: 100%; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; color: inherit; }
+.ss-wcard-top { display: flex; flex-direction: column; gap: 12px; width: 100%; padding: 0; border: 0; background: none; text-align: start; cursor: pointer; color: inherit; }
 .ss-whead { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .ss-state { display: flex; align-items: center; gap: 6px; font-weight: 600; }
 .ss-state svg { flex: none; width: 10px; height: 10px; }
@@ -423,7 +423,7 @@ body.lp-open .ss { z-index: 620; }
 .ss-notes { display: flex; flex-direction: column; gap: 8px; }
 .ss-nlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .ss-note { display: flex; flex-direction: column; border-radius: 14px; background: var(--line); }
-.ss-note-open, .ss-note-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px; border: 0; border-radius: 14px; background: none; color: inherit; text-align: left; }
+.ss-note-open, .ss-note-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px; border: 0; border-radius: 14px; background: none; color: inherit; text-align: start; }
 .ss-note-open { cursor: pointer; }
 .ss-note-open:hover, .ss-note-open:focus-visible { background: #2f2b3b; }
 .ss-poster-n { width: 48px; height: 72px; padding: 4px; font-size: 7px; }
@@ -485,7 +485,7 @@ body.lp-open .ss { z-index: 620; }
 
 /* Bureau : la barre réserve sa largeur, le contenu (pages et fiches) n'est pas masqué ; le lecteur plein écran reste en superposition. */
 @media (min-width: 768px) {
-  body.ss-open #app, body.ss-open #detail { padding-right: 380px; }
+  body.ss-open #app, body.ss-open #detail { padding-inline-end: 380px; }
   body.ss-open .topbar { right: 380px; }
 }
 /* Barre des amis ouverte : la barre du haut perd 380 px (456 px avec le rail d'amis). Les entrées du menu principal
@@ -497,7 +497,7 @@ body.lp-open .ss { z-index: 620; }
 
 /* Mobile < 768 px : page « Amis » de la barre de navigation du bas */
 @media (max-width: 767px) {
-  .ss { left: 0; width: auto; border-left: 0; box-shadow: none; background: var(--bg); }
+  .ss { left: 0; width: auto; border-inline-start: 0; box-shadow: none; background: var(--bg); }
   .ss.ss-tabbed { bottom: 72px; }
   .ss-d-only { display: none !important; }
   .ss-m-only { display: flex !important; }

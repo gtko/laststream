@@ -19,11 +19,12 @@ import { ensFriendsBadgeHTML, socialAvailable } from './socialButton.js';
 import { state } from './state.js';
 import { mainNavHTML, topActionsHTML } from './topnav.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Suffixe des ids des menus de cette barre : la barre de l'accueil (masquée) garde les siens. */
 const BAR_ID = '-ens';
 
-const SUBTITLE = 'Tout ce qui se regarde à plusieurs : salons ouverts, soirées planifiées, amis disponibles.';
+const SUBTITLE = tr('Tout ce qui se regarde à plusieurs : salons ouverts, soirées planifiées, amis disponibles.');
 
 /**
  * Adresse du salon désigné par la saisie de « Rejoindre avec un code » : lien d'invitation complet (avec ou sans jeton d'invité),
@@ -40,11 +41,11 @@ export function roomHashOfCode(raw) {
 }
 
 const barHTML = (social) =>
-  '<header class="topbar">' + brand() + '<nav class="nav" aria-label="Principale">' + mainNavHTML({ current: 'ensemble', idSuffix: BAR_ID, social }) + '</nav>' +
+  '<header class="topbar">' + brand() + '<nav class="nav" aria-label="' + tr('Principale') + '">' + mainNavHTML({ current: 'ensemble', idSuffix: BAR_ID, social }) + '</nav>' +
   topActionsHTML({ social, server: isServerMode(), owner: canAdmin(), idSuffix: BAR_ID }) + '</header>';
 
 const tabsHTML = (tab) =>
-  '<nav class="ens-tabs" aria-label="Sections d’Ensemble">' +
+  '<nav class="ens-tabs" aria-label="' + tr('Sections d’Ensemble') + '">' +
   ENSEMBLE_TABS.map(([id, label]) =>
     '<a class="ens-tab' + (id === tab ? ' is-on' : '') + '" href="' + ensembleHash(id) + '" data-go' + (id === tab ? ' aria-current="page"' : '') + '>' + esc(label) + '</a>').join('') + '</nav>';
 
@@ -54,15 +55,15 @@ const PANES = { maintenant: 'now', 'salons-publics': 'public' };
 const JOIN_MSG_ID = 'ens-join-msg';
 
 const headHTML = () =>
-  '<header class="ens-head"><div class="ens-head-t"><h1 class="ens-title" id="ens-title" tabindex="-1">Ensemble</h1><p class="ens-sub">' + SUBTITLE + '</p></div>' +
-  '<div class="ens-acts"><a class="btn btn-ghost" href="#/friends" data-go>' + ICON.users + 'Amis' + ensFriendsBadgeHTML() + '</a>' +
-  '<button type="button" class="btn btn-ghost" data-ens-join aria-expanded="false" aria-controls="ens-join">Rejoindre avec un code</button>' +
-  '<button type="button" class="btn btn-ghost" data-ens-plan>' + ICON.calendar + 'Planifier une soirée</button>' +
-  '<button type="button" class="btn btn-primary" data-ens-create>' + ICON.plus + 'Créer un salon</button></div></header>' +
+  '<header class="ens-head"><div class="ens-head-t"><h1 class="ens-title" id="ens-title" tabindex="-1">' + tr('Ensemble') + '</h1><p class="ens-sub">' + SUBTITLE + '</p></div>' +
+  '<div class="ens-acts"><a class="btn btn-ghost" href="#/friends" data-go>' + ICON.users + tr('Amis') + ensFriendsBadgeHTML() + '</a>' +
+  '<button type="button" class="btn btn-ghost" data-ens-join aria-expanded="false" aria-controls="ens-join">' + tr('Rejoindre avec un code') + '</button>' +
+  '<button type="button" class="btn btn-ghost" data-ens-plan>' + ICON.calendar + tr('Planifier une soirée') + '</button>' +
+  '<button type="button" class="btn btn-primary" data-ens-create>' + ICON.plus + tr('Créer un salon') + '</button></div></header>' +
   '<form class="ens-join" id="ens-join" data-ens-join-form hidden novalidate>' +
-  '<label class="sr-only" for="ens-join-input">Code ou lien d’invitation du salon</label>' +
-  '<input id="ens-join-input" class="ens-join-input" type="text" name="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Code ou lien d’invitation du salon">' +
-  '<button type="submit" class="btn btn-primary">Rejoindre</button>' +
+  '<label class="sr-only" for="ens-join-input">' + tr('Code ou lien d’invitation du salon') + '</label>' +
+  '<input id="ens-join-input" class="ens-join-input" type="text" name="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="' + tr('Code ou lien d’invitation du salon') + '">' +
+  '<button type="submit" class="btn btn-primary">' + tr('Rejoindre') + '</button>' +
   '<p class="ens-join-msg" id="' + JOIN_MSG_ID + '" data-ens-join-msg role="status"></p></form>';
 
 /** Affiche la page `tab` (identifiant d'onglet ; défaut : Maintenant). */
@@ -70,17 +71,17 @@ export function showEnsemble(tab = 'maintenant') {
   teardownFiche();
   state.kind = 'ensemble';
   const current = ensembleTabOf(tab) || 'maintenant';
-  document.title = 'Ensemble · Laststream';
+  document.title = tr('Ensemble · Laststream');
   if (!socialAvailable()) {
-    // eslint-disable-next-line no-restricted-syntax -- contenu dynamique échappé par esc (nom du profil, libellés)
+    // eslint-disable-next-line laststream/no-html-sink -- contenu dynamique échappé par esc (nom du profil, libellés)
     detailEl.innerHTML = '<div class="s-a ens-root">' + barHTML(false) + '<article class="svc-page ens-page" aria-labelledby="ens-title">' +
-      '<header class="ens-head"><div class="ens-head-t"><h1 class="ens-title" id="ens-title" tabindex="-1">Ensemble</h1></div></header>' +
-      '<p class="row-msg" role="status">' + (isKidProfile() ? 'Les salons ne sont pas disponibles sur un profil enfant.' : 'Connecte-toi à un compte Laststream pour regarder à plusieurs.') + '</p></article>' + tabbar() + '</div>';
+      '<header class="ens-head"><div class="ens-head-t"><h1 class="ens-title" id="ens-title" tabindex="-1">' + tr('Ensemble') + '</h1></div></header>' +
+      '<p class="row-msg" role="status">' + (isKidProfile() ? tr('Les salons ne sont pas disponibles sur un profil enfant.') : tr('Connecte-toi à un compte Laststream pour regarder à plusieurs.')) + '</p></article>' + tabbar() + '</div>';
   } else {
-    // eslint-disable-next-line no-restricted-syntax -- contenu dynamique échappé par esc (nom du profil, libellés)
+    // eslint-disable-next-line laststream/no-html-sink -- contenu dynamique échappé par esc (nom du profil, libellés)
     detailEl.innerHTML = '<div class="s-a ens-root">' + barHTML(true) + '<article class="svc-page ens-page" aria-labelledby="ens-title">' + headHTML() + tabsHTML(current) +
       '<div class="ens-grid"><section class="ens-panel" id="ens-panel" aria-label="' + esc(ENSEMBLE_TABS.find(([id]) => id === current)[1]) + '">' +
-      '</section><aside class="ens-side" id="ens-side" aria-label="Amis, activité et billets"></aside></div></article>' + tabbar('ensemble') + '</div>';
+      '</section><aside class="ens-side" id="ens-side" aria-label="' + tr('Amis, activité et billets') + '"></aside></div></article>' + tabbar('ensemble') + '</div>';
     const panel = detailEl.querySelector('#ens-panel');
     if (PANES[current] && panel) mountPartiesPane(panel, PANES[current]);
     else if (EVENING_TABS.includes(current) && panel) mountEveningsPane(panel, current);
@@ -134,7 +135,7 @@ detailEl.addEventListener('submit', (e) => {
     if (input) markJoinInvalid(input, false);
     location.hash = hash;
   } else {
-    if (msg) msg.textContent = 'Code non reconnu : colle le lien d’invitation ou l’identifiant du salon.';
+    if (msg) msg.textContent = tr('Code non reconnu : colle le lien d’invitation ou l’identifiant du salon.');
     if (input) {
       markJoinInvalid(input, true);
       input.focus({ preventScroll: true });

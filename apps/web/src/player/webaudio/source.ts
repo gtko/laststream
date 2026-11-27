@@ -3,6 +3,7 @@ import { isAc3Codec, loadAc3Decoder, type Ac3Loader } from '../../relay/player/a
 import type { RangeReader } from '../../relay/player/types';
 import { PREFETCH_TARGET_S } from './timing';
 import { PrefetchReader, type PrefetchStats } from './reader';
+import { t } from '../../i18n';
 
 /* Piste audio d'un fichier distant lue par plages (mediabunny) et décodée : AudioDecoder natif, ou @mediabunny/ac3 pour
  * AC-3 / E-AC-3. Rend des segments PCM horodatés (AudioBuffer) prêts pour WebAudio. */
@@ -48,7 +49,7 @@ export async function inspectAudio(reader: RangeReader, opts: InspectOptions = {
   try {
     const format = await input.getFormat();
     const track: InputAudioTrack | null = await input.getPrimaryAudioTrack();
-    if (!track) return { info: null, canDecode: false, createSource: () => { throw new Error('aucune piste audio'); }, close };
+    if (!track) return { info: null, canDecode: false, createSource: () => { throw new Error(t('aucune piste audio')); }, close };
     const codec = track.codec ?? '';
     if (isAc3Codec(codec)) {
       try { await (opts.loadAc3 ?? loadAc3Decoder)(); } catch { /* décodeur indisponible : canDecode dira non */ }

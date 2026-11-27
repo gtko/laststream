@@ -3,6 +3,7 @@
  * plugin natif, balise vidéo) ; ce module ne fait que transformer ces objets en options et en libellés. */
 import { audioTrackLabel, langName, trackLang } from '../player/tracks';
 import { channelNumber } from '../data/tvRank';
+import { t as tr } from '../i18n';
 
 /** Délai sans activité au-delà duquel la barre, l'en-tête et le cartouche se masquent. */
 export const UI_IDLE_MS = 3000;
@@ -99,13 +100,13 @@ export function hlsSubtitleOptions(h) {
   const list = (h && h.subtitleTracks) || [];
   if (!list.length) return [];
   const cur = h.subtitleDisplay ? h.subtitleTrack : -1;
-  return [opt(NONE, 'Désactivés', cur < 0)].concat(list.map((t, i) => opt(i, langOr(t.lang, t.name, 'Sous-titres'), i === cur)));
+  return [opt(NONE, tr('Désactivés'), cur < 0)].concat(list.map((t, i) => opt(i, langOr(t.lang, t.name, tr('Sous-titres')), i === cur)));
 }
 
 function levelLabel(l) {
   if (l && l.height) return l.height + 'p';
   if (l && l.bitrate) return Math.round(l.bitrate / 1000) + ' kb/s';
-  return 'Niveau';
+  return tr('Niveau');
 }
 
 /** Qualités d'un flux hls.js : Auto puis un niveau par hauteur (le plus fort débit gagne). Rien si un seul niveau. */
@@ -123,7 +124,7 @@ export function hlsLevelOptions(h) {
     seen.add(label);
     rows.push(opt(i, label, !auto && h.currentLevel === i));
   });
-  return [opt(NONE, 'Auto', auto)].concat(rows);
+  return [opt(NONE, tr('Auto'), auto)].concat(rows);
 }
 
 /** Pistes d'une balise vidéo (`audioTracks`, Safari) : liste indexée, `enabled` pour la piste active. */
@@ -142,7 +143,7 @@ export function htmlTextOptions(list) {
   const tracks = htmlTextList(list);
   if (!tracks.length) return [];
   const cur = tracks.findIndex((t) => t.mode === 'showing');
-  return [opt(NONE, 'Désactivés', cur < 0)].concat(tracks.map((t, i) => opt(i, langOr(t.language, t.label, 'Sous-titres'), i === cur)));
+  return [opt(NONE, tr('Désactivés'), cur < 0)].concat(tracks.map((t, i) => opt(i, langOr(t.language, t.label, tr('Sous-titres')), i === cur)));
 }
 
 /** Libellé d'un codec vidéo (chaîne hls.js « avc1.64001f » ou nom mpv « h264 »). */
@@ -203,7 +204,7 @@ export function techFromTracks(list) {
 /** Fournisseur de la chaîne, tel qu'affiché dans le panneau « Infos ». */
 function sourceLabel(c) {
   if (!c || !c.source) return '';
-  return c.source === 'user' ? 'Ma playlist' : String(c.source);
+  return c.source === 'user' ? tr('Ma playlist') : String(c.source);
 }
 
 /**
@@ -220,11 +221,11 @@ export function infoModel(c, programs, now, tech) {
   const pct = dur > 0 ? Math.max(0, Math.min(100, Math.round(((now - cur.start) / dur) * 100))) : 0;
   const t = tech || {};
   const rows = [];
-  if (t.width && t.height) rows.push(['Résolution', t.width + ' × ' + t.height]);
-  if (t.videoCodec) rows.push(['Vidéo', videoCodecLabel(t.videoCodec)]);
-  if (t.audioCodec) rows.push(['Audio', audioCodecLabel(t.audioCodec)]);
-  if (t.bitrate) rows.push(['Débit', Math.round(t.bitrate / 1000) + ' kb/s']);
-  if (sourceLabel(c)) rows.push(['Source', sourceLabel(c)]);
+  if (t.width && t.height) rows.push([tr('Résolution'), t.width + ' × ' + t.height]);
+  if (t.videoCodec) rows.push([tr('Vidéo'), videoCodecLabel(t.videoCodec)]);
+  if (t.audioCodec) rows.push([tr('Audio'), audioCodecLabel(t.audioCodec)]);
+  if (t.bitrate) rows.push([tr('Débit'), Math.round(t.bitrate / 1000) + ' kb/s']);
+  if (sourceLabel(c)) rows.push([tr('Source'), sourceLabel(c)]);
   return {
     name: c.name || '',
     logo: c.logo || '',
@@ -243,7 +244,7 @@ export function infoModel(c, programs, now, tech) {
 const FLAG_RULES = [
   [/\b(ad|audio ?desc\w*|audiodesc\w*|malvoy\w*|descriptive)\b/, 'AD'],
   [/\b(sme|sdh|hearing|sourds?|malentendants?|cc)\b/, 'SME'],
-  [/\b(forces?|forced)\b/, 'Forcés'],
+  [/\b(forces?|forced)\b/, tr('Forcés')],
   [/\b(vo|vost|vostfr|original)\b/, 'VO'],
 ];
 const VARIANT = /\b(vff|vfq|vfi|vf)\b/i;
@@ -264,7 +265,7 @@ export function trackRow(o, kind) {
   const tech = rest.join(' · ');
   if (!code) {
     const raw = head.trim();
-    return { id: o.id, selected: o.selected, text: raw || (kind === 'sub' ? 'Sous-titres' : 'Piste audio'), detail: tech, special: false };
+    return { id: o.id, selected: o.selected, text: raw || (kind === 'sub' ? tr('Sous-titres') : tr('Piste audio')), detail: tech, special: false };
   }
   const flagTxt = flags.length ? ' (' + flags.join(', ') + ')' : '';
   return { id: o.id, selected: o.selected, text: langName(code) + flagTxt, detail: [variant, tech].filter(Boolean).join(' · '), special: false };
@@ -287,11 +288,11 @@ function trackRows(list, kind) {
 function qualityDetail(label) {
   const m = /^(\d{3,4})p$/.exec(String(label));
   const h = m ? Number(m[1]) : 0;
-  if (!h) return label === 'Auto' ? 'Selon la connexion' : '';
-  if (h >= 2000) return 'Ultra HD 4K';
-  if (h >= 1000) return 'Full HD';
+  if (!h) return label === 'Auto' ? tr('Selon la connexion') : '';
+  if (h >= 2000) return tr('Ultra HD 4K');
+  if (h >= 1000) return tr('Full HD');
   if (h >= 700) return 'HD';
-  return 'Qualité standard';
+  return tr('Qualité standard');
 }
 
 /**

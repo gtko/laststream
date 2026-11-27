@@ -8,19 +8,20 @@ import { fieldRow, switchRow } from '../settings-ui.js';
 import { esc } from '../util.js';
 import { admCard, attempt, badge, bindPager, empty, loaded, pager, sectionHead, table } from './common.js';
 import { loadInto } from './view-state.js';
+import { t as tr } from '../../i18n';
 
 // ---------- Réglages du serveur ----------
 function settingsHTML(S) {
-  return sectionHead('Réglages et maintenance', 'Ces réglages s’appliquent à tout le serveur et à tous les comptes.') +
+  return sectionHead(tr('Réglages et maintenance'), tr('Ces réglages s’appliquent à tout le serveur et à tous les comptes.')) +
     loaded(S.settings, (s) =>
       '<form id="adm-settings" class="set-form adm-settings" autocomplete="off">' +
-      '<p class="adm-banner is-warn" role="note"><strong>Attention.</strong> Fermer les inscriptions bloque les nouveaux comptes (les liens ne sont pas consommés). Activer la maintenance fait répondre « 503 » à tout le monde sauf toi : tous les utilisateurs perdent l’accès tant qu’elle est active.</p>' +
-      admCard('Inscriptions', fieldRow('Quota par défaut', 'Nombre de liens d’invitation donné aux nouveaux comptes (0 à 100). Les comptes existants gardent le leur.', (id) => '<input class="set-input set-input-sm" id="' + id + '" type="number" name="quota" min="0" max="100" value="' + esc(s.inviteDefaultQuota) + '" required data-adm-focus="set:quota">') +
-        switchRow('Inscriptions par invitation ouvertes', 'Désactivé : les liens d’invitation sont refusés.', !!s.invitesOpen, 'name="invitesOpen"')) +
-      admCard('Mode maintenance', switchRow('Activer la maintenance', 'Le serveur répond 503 à tous sauf à l’administration. Exige ton mot de passe.', !!s.maintenance.enabled, 'name="maintenance"') +
-        fieldRow('Message affiché', 'Montré aux utilisateurs pendant la maintenance.', (id) => '<textarea class="set-input adm-textarea" id="' + id + '" name="message" rows="3" maxlength="300" data-adm-focus="set:message">' + esc(s.maintenance.message || '') + '</textarea>', { stack: true }),
-      { aside: s.maintenance.enabled ? badge('Maintenance active', 'warn') : '' }) +
-      '<p class="set-msg" id="adm-settings-msg" role="status"></p><div class="set-actions"><button type="submit" class="btn btn-primary">Enregistrer</button></div></form>');
+      '<p class="adm-banner is-warn" role="note">' + tr('<strong>Attention.</strong> Fermer les inscriptions bloque les nouveaux comptes (les liens ne sont pas consommés). Activer la maintenance fait répondre « 503 » à tout le monde sauf toi : tous les utilisateurs perdent l’accès tant qu’elle est active.') + '</p>' +
+      admCard(tr('Inscriptions'), fieldRow(tr('Quota par défaut'), tr('Nombre de liens d’invitation donné aux nouveaux comptes (0 à 100). Les comptes existants gardent le leur.'), (id) => '<input class="set-input set-input-sm" id="' + id + '" type="number" name="quota" min="0" max="100" value="' + esc(s.inviteDefaultQuota) + '" required data-adm-focus="set:quota">') +
+        switchRow(tr('Inscriptions par invitation ouvertes'), tr('Désactivé : les liens d’invitation sont refusés.'), !!s.invitesOpen, 'name="invitesOpen"')) +
+      admCard(tr('Mode maintenance'), switchRow(tr('Activer la maintenance'), tr('Le serveur répond 503 à tous sauf à l’administration. Exige ton mot de passe.'), !!s.maintenance.enabled, 'name="maintenance"') +
+        fieldRow(tr('Message affiché'), tr('Montré aux utilisateurs pendant la maintenance.'), (id) => '<textarea class="set-input adm-textarea" id="' + id + '" name="message" rows="3" maxlength="300" data-adm-focus="set:message">' + esc(s.maintenance.message || '') + '</textarea>', { stack: true }),
+      { aside: s.maintenance.enabled ? badge(tr('Maintenance active'), 'warn') : '' }) +
+      '<p class="set-msg" id="adm-settings-msg" role="status"></p><div class="set-actions"><button type="submit" class="btn btn-primary">' + tr('Enregistrer') + '</button></div></form>');
 }
 
 /** Enregistre les réglages modifiés ; les changements sensibles (fermeture des inscriptions, maintenance) demandent confirmation. */
@@ -29,7 +30,7 @@ async function saveSettings(ctx, root, f) {
   const old = ctx.S.settings.value;
   if (!old) return;
   const quota = Number(f.elements.quota.value);
-  if (!Number.isInteger(quota) || quota < 0 || quota > 100) { say('Le quota par défaut va de 0 à 100.'); return; }
+  if (!Number.isInteger(quota) || quota < 0 || quota > 100) { say(tr('Le quota par défaut va de 0 à 100.')); return; }
   const on = (n) => f.elements[n].getAttribute('aria-checked') === 'true';
   const patch = {};
   if (quota !== old.inviteDefaultQuota) patch.inviteDefaultQuota = quota;
@@ -37,16 +38,16 @@ async function saveSettings(ctx, root, f) {
   const mEnabled = on('maintenance');
   const mMsg = f.elements.message.value.trim();
   if (mEnabled !== !!old.maintenance.enabled || mMsg !== (old.maintenance.message || '')) patch.maintenance = { enabled: mEnabled, message: mMsg };
-  if (!Object.keys(patch).length) { say('Rien à enregistrer.'); return; }
-  if (patch.invitesOpen === false && !(await confirmDialog({ title: 'Fermer les inscriptions', message: 'Les liens d’invitation seront refusés : personne ne pourra créer de compte tant que les inscriptions sont fermées.', confirmLabel: 'Fermer les inscriptions', danger: true }))) return;
-  if (patch.maintenance && patch.maintenance.enabled && !old.maintenance.enabled && !(await confirmDialog({ title: 'Activer la maintenance', message: '<strong>Tout le serveur répondra « 503 »</strong> à tous les utilisateurs sauf à l’administration. Tu devras confirmer avec ton mot de passe.', confirmLabel: 'Activer la maintenance', danger: true }))) return;
-  say('Enregistrement…');
+  if (!Object.keys(patch).length) { say(tr('Rien à enregistrer.')); return; }
+  if (patch.invitesOpen === false && !(await confirmDialog({ title: tr('Fermer les inscriptions'), message: tr('Les liens d’invitation seront refusés : personne ne pourra créer de compte tant que les inscriptions sont fermées.'), confirmLabel: tr('Fermer les inscriptions'), danger: true }))) return;
+  if (patch.maintenance && patch.maintenance.enabled && !old.maintenance.enabled && !(await confirmDialog({ title: tr('Activer la maintenance'), message: tr('<strong>Tout le serveur répondra « 503 »</strong> à tous les utilisateurs sauf à l’administration. Tu devras confirmer avec ton mot de passe.'), confirmLabel: tr('Activer la maintenance'), danger: true }))) return;
+  say(tr('Enregistrement…'));
   let res;
   if (await attempt(async () => { res = await api.putSettings(patch); }, say)) {
     ctx.S.settings = { status: 'ready', error: '', value: res && res.maintenance ? res : { ...old, ...patch, maintenance: { ...old.maintenance, ...(patch.maintenance || {}) } } };
     ctx.paint();
-    say('Réglages enregistrés (' + fmtDateTime(Date.now()) + ').');
-    toast('Réglages du serveur enregistrés');
+    say(tr('Réglages enregistrés ({fmtDateTime}).', { fmtDateTime: fmtDateTime(Date.now()) }));
+    toast(tr('Réglages du serveur enregistrés'));
   }
 }
 
@@ -58,8 +59,8 @@ function bindSettings(root, ctx) {
 // ---------- Annonces ----------
 const ANNOUNCEMENT_TITLE_MAX = 80;
 const ANNOUNCEMENT_MESSAGE_MAX = 500;
-const LEVEL_LABEL = { info: 'Information', warning: 'Attention' };
-const STATE_BADGE = { active: ['Active', 'ok'], planned: ['Planifiée', ''], expired: ['Expirée', ''], off: ['Désactivée', ''] };
+const LEVEL_LABEL = { info: tr('Information'), warning: tr('Attention') };
+const STATE_BADGE = { active: [tr('Active'), 'ok'], planned: [tr('Planifiée'), ''], expired: [tr('Expirée'), ''], off: [tr('Désactivée'), ''] };
 
 /** État d'une annonce à l'instant `now` : désactivée (sans regarder les dates), planifiée, expirée ou active. */
 export function announcementState(a, now = Date.now()) {
@@ -76,9 +77,9 @@ export function announcementWindow(a) {
   const s = a.startsAt ? fmtDateTime(a.startsAt) : null;
   const e = a.endsAt ? fmtDateTime(a.endsAt) : null;
   if (s && e) return s + ' → ' + e;
-  if (s) return 'Dès ' + s;
-  if (e) return 'Jusqu’au ' + e;
-  return 'Sans limite';
+  if (s) return tr('Dès {s}', { s });
+  if (e) return tr('Jusqu’au {e}', { e });
+  return tr('Sans limite');
 }
 
 /** Valeur d'un champ datetime-local (heure locale, sans fuseau) pour un instant ISO ; vide si absent. */
@@ -105,11 +106,11 @@ export function announcementInput(raw) {
   const startsAt = fromLocalInput(raw.startsAt);
   const endsAt = fromLocalInput(raw.endsAt);
   let error = null;
-  if (!title || title.length > ANNOUNCEMENT_TITLE_MAX) error = 'Le titre est requis (' + ANNOUNCEMENT_TITLE_MAX + ' caractères au plus).';
-  else if (!message || message.length > ANNOUNCEMENT_MESSAGE_MAX) error = 'Le message est requis (' + ANNOUNCEMENT_MESSAGE_MAX + ' caractères au plus).';
-  else if (!Object.hasOwn(LEVEL_LABEL, raw.level)) error = 'Choisis un niveau.';
-  else if (startsAt === undefined || endsAt === undefined) error = 'Date invalide.';
-  else if (startsAt && endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) error = 'La fin doit être postérieure au début.';
+  if (!title || title.length > ANNOUNCEMENT_TITLE_MAX) error = tr('Le titre est requis ({ANNOUNCEMENT_TITLE_MAX} caractères au plus).', { ANNOUNCEMENT_TITLE_MAX });
+  else if (!message || message.length > ANNOUNCEMENT_MESSAGE_MAX) error = tr('Le message est requis ({ANNOUNCEMENT_MESSAGE_MAX} caractères au plus).', { ANNOUNCEMENT_MESSAGE_MAX });
+  else if (!Object.hasOwn(LEVEL_LABEL, raw.level)) error = tr('Choisis un niveau.');
+  else if (startsAt === undefined || endsAt === undefined) error = tr('Date invalide.');
+  else if (startsAt && endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) error = tr('La fin doit être postérieure au début.');
   return { error, body: error ? null : { title, message, level: raw.level, startsAt, endsAt } };
 }
 
@@ -118,27 +119,27 @@ const annList = (S) => (S.announcements && S.announcements.status === 'ready' &&
 function formHTML(a) {
   const v = a || {};
   const levelOptions = Object.entries(LEVEL_LABEL).map(([k, l]) => '<option value="' + k + '"' + ((v.level || 'info') === k ? ' selected' : '') + '>' + esc(l) + '</option>').join('');
-  return admCard(a ? 'Modifier l’annonce' : 'Nouvelle annonce',
+  return admCard(a ? tr('Modifier l’annonce') : tr('Nouvelle annonce'),
     '<form id="adm-ann-form" class="adm-form" data-ann-id="' + esc(a ? a.id : '') + '" novalidate>' +
-    '<label class="adm-field"><span>Titre</span><input class="set-input" name="title" maxlength="' + ANNOUNCEMENT_TITLE_MAX + '" required autocomplete="off" value="' + esc(v.title || '') + '" data-adm-focus="ann:title"></label>' +
-    '<label class="adm-field"><span>Message</span><textarea class="set-input adm-textarea" name="message" rows="3" maxlength="' + ANNOUNCEMENT_MESSAGE_MAX + '" required data-adm-focus="ann:message">' + esc(v.message || '') + '</textarea></label>' +
-    '<label class="adm-field"><span>Niveau</span><select class="set-input" name="level" data-adm-focus="ann:level">' + levelOptions + '</select></label>' +
+    '<label class="adm-field"><span>' + tr('Titre') + '</span><input class="set-input" name="title" maxlength="' + ANNOUNCEMENT_TITLE_MAX + '" required autocomplete="off" value="' + esc(v.title || '') + '" data-adm-focus="ann:title"></label>' +
+    '<label class="adm-field"><span>' + tr('Message') + '</span><textarea class="set-input adm-textarea" name="message" rows="3" maxlength="' + ANNOUNCEMENT_MESSAGE_MAX + '" required data-adm-focus="ann:message">' + esc(v.message || '') + '</textarea></label>' +
+    '<label class="adm-field"><span>' + tr('Niveau') + '</span><select class="set-input" name="level" data-adm-focus="ann:level">' + levelOptions + '</select></label>' +
     '<div class="adm-ann-dates">' +
-    '<label class="adm-field"><span>Début (facultatif)</span><input class="set-input" type="datetime-local" name="startsAt" value="' + esc(toLocalInput(v.startsAt)) + '" data-adm-focus="ann:startsAt"></label>' +
-    '<label class="adm-field"><span>Fin (facultatif)</span><input class="set-input" type="datetime-local" name="endsAt" value="' + esc(toLocalInput(v.endsAt)) + '" data-adm-focus="ann:endsAt"></label>' +
+    '<label class="adm-field"><span>' + tr('Début (facultatif)') + '</span><input class="set-input" type="datetime-local" name="startsAt" value="' + esc(toLocalInput(v.startsAt)) + '" data-adm-focus="ann:startsAt"></label>' +
+    '<label class="adm-field"><span>' + tr('Fin (facultatif)') + '</span><input class="set-input" type="datetime-local" name="endsAt" value="' + esc(toLocalInput(v.endsAt)) + '" data-adm-focus="ann:endsAt"></label>' +
     '</div>' +
-    '<p class="adm-dim">Sans début, l’annonce part dès qu’elle est active. Sans fin, elle reste affichée.</p>' +
+    '<p class="adm-dim">' + tr('Sans début, l’annonce part dès qu’elle est active. Sans fin, elle reste affichée.') + '</p>' +
     '<p class="set-msg" id="adm-ann-msg" role="status"></p>' +
-    '<div class="set-actions"><button type="submit" class="btn btn-primary">Enregistrer</button><button type="button" class="btn btn-ghost" data-adm-annclose>Annuler</button></div>' +
-    '</form>', { desc: a ? 'Les changements s’appliquent dès l’enregistrement.' : 'Titre 80 caractères au plus, message 500 au plus.' });
+    '<div class="set-actions"><button type="submit" class="btn btn-primary">' + tr('Enregistrer') + '</button><button type="button" class="btn btn-ghost" data-adm-annclose>' + tr('Annuler') + '</button></div>' +
+    '</form>', { desc: a ? tr('Les changements s’appliquent dès l’enregistrement.') : tr('Titre 80 caractères au plus, message 500 au plus.') });
 }
 
 export function announcementsHTML(S) {
   const list = annList(S);
   const editing = S.annEdit ? (S.annEdit === 'new' ? { id: '' } : list.find((a) => a.id === S.annEdit) || null) : null;
   const form = S.annEdit && (S.annEdit === 'new' || editing) ? formHTML(S.annEdit === 'new' ? null : editing) : '';
-  return sectionHead('Annonces', 'Messages affichés aux utilisateurs dans l’application, avec début et fin facultatifs.',
-    '<button type="button" class="btn btn-primary btn-sm" data-adm-annnew data-adm-focus="annnew">Nouvelle annonce</button>') +
+  return sectionHead(tr('Annonces'), tr('Messages affichés aux utilisateurs dans l’application, avec début et fin facultatifs.'),
+    '<button type="button" class="btn btn-primary btn-sm" data-adm-annnew data-adm-focus="annnew">' + tr('Nouvelle annonce') + '</button>') +
     form +
     loaded(S.announcements, (r) => {
       const rows = (r.announcements || []).map((a) => {
@@ -149,15 +150,15 @@ export function announcementsHTML(S) {
           esc(announcementWindow(a)),
           badge(st[0], st[1]),
           '<div class="adm-row-act">' +
-            '<button type="button" class="btn btn-ghost btn-sm" data-adm-annedit="' + esc(a.id) + '" data-adm-focus="edit:' + esc(a.id) + '">Modifier</button>' +
-            '<button type="button" class="btn btn-ghost btn-sm" data-adm-anntoggle="' + esc(a.id) + '" data-adm-focus="tog:' + esc(a.id) + '">' + (a.active ? 'Désactiver' : 'Activer') + '</button>' +
-            '<button type="button" class="btn btn-danger btn-sm" data-adm-anndel="' + esc(a.id) + '" data-adm-focus="del:' + esc(a.id) + '">Supprimer</button>' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-adm-annedit="' + esc(a.id) + '" data-adm-focus="edit:' + esc(a.id) + '">' + tr('Modifier') + '</button>' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-adm-anntoggle="' + esc(a.id) + '" data-adm-focus="tog:' + esc(a.id) + '">' + (a.active ? tr('Désactiver') : tr('Activer')) + '</button>' +
+            '<button type="button" class="btn btn-danger btn-sm" data-adm-anndel="' + esc(a.id) + '" data-adm-focus="del:' + esc(a.id) + '">' + tr('Supprimer') + '</button>' +
           '</div>',
         ] };
       });
-      return admCard('Annonces publiées', rows.length
-        ? table('Annonces', ['Annonce', 'Niveau', 'Fenêtre', 'État', 'Actions'], rows, 'is-ann')
-        : empty('Aucune annonce pour l’instant.'), { desc: 'Seules les annonces actives et dans leur fenêtre sont montrées aux utilisateurs.' });
+      return admCard(tr('Annonces publiées'), rows.length
+        ? table(tr('Annonces'), [tr('Annonce'), tr('Niveau'), tr('Fenêtre'), tr('État'), tr('Actions')], rows, 'is-ann')
+        : empty(tr('Aucune annonce pour l’instant.')), { desc: tr('Seules les annonces actives et dans leur fenêtre sont montrées aux utilisateurs.') });
     });
 }
 
@@ -171,23 +172,23 @@ async function saveAnnouncement(ctx, root, form) {
   const { error, body } = announcementInput({ title: f.title.value, message: f.message.value, level: f.level.value, startsAt: f.startsAt.value, endsAt: f.endsAt.value });
   if (error) { say(error); return; }
   const id = form.dataset.annId;
-  say('Enregistrement…');
+  say(tr('Enregistrement…'));
   if (!(await attempt(() => (id ? api.updateAnnouncement(id, body) : api.createAnnouncement(body)), say))) return;
   ctx.S.annEdit = null;
   if (ctx.isCurrent()) ctx.paint();
-  toast('Annonce enregistrée');
+  toast(tr('Annonce enregistrée'));
   await refreshAnnouncements(ctx);
 }
 
 async function toggleAnnouncement(ctx, a) {
-  if (await attempt(() => api.updateAnnouncement(a.id, { active: !a.active }), toast)) toast(a.active ? 'Annonce désactivée' : 'Annonce activée');
+  if (await attempt(() => api.updateAnnouncement(a.id, { active: !a.active }), toast)) toast(a.active ? tr('Annonce désactivée') : tr('Annonce activée'));
   await refreshAnnouncements(ctx);
 }
 
 async function removeAnnouncement(ctx, a) {
-  const ok = await confirmDialog({ title: 'Supprimer l’annonce', message: 'L’annonce <strong>' + esc(a.title) + '</strong> ne sera plus affichée. Cette suppression est définitive.', confirmLabel: 'Supprimer', danger: true });
+  const ok = await confirmDialog({ title: tr('Supprimer l’annonce'), message: tr('L’annonce <strong>{title}</strong> ne sera plus affichée. Cette suppression est définitive.', { title: esc(a.title) }), confirmLabel: tr('Supprimer'), danger: true });
   if (!ok) return;
-  if (await attempt(() => api.deleteAnnouncement(a.id), toast)) toast('Annonce supprimée');
+  if (await attempt(() => api.deleteAnnouncement(a.id), toast)) toast(tr('Annonce supprimée'));
   if (ctx.S.annEdit === a.id) ctx.S.annEdit = null;
   await refreshAnnouncements(ctx);
 }
@@ -214,10 +215,10 @@ function detailText(d) {
 }
 
 function auditHTML(S) {
-  const filter = '<form class="adm-toolbar" data-adm-auditform data-nav><label class="adm-field adm-grow"><span class="sr-only">Filtrer par action</span><input class="set-input" name="action" value="' + esc(S.auditAction) + '" placeholder="Filtrer par action (ex. elevate.failed)" autocomplete="off" autocapitalize="none" data-adm-focus="audit:action"></label><button type="submit" class="btn btn-ghost btn-sm">Filtrer</button></form>';
-  return sectionHead('Journal d’audit', 'Toutes les actions d’administration, y compris les ré-authentifications échouées. Jamais de mot de passe ni de jeton.', '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') + filter +
-    loaded(S.audit, (r) => (!r.entries.length ? empty('Aucune entrée.') :
-      table('Journal d’audit', ['Date', 'Acteur', 'Action', 'Cible', 'Détail'],
+  const filter = '<form class="adm-toolbar" data-adm-auditform data-nav><label class="adm-field adm-grow"><span class="sr-only">' + tr('Filtrer par action') + '</span><input class="set-input" name="action" value="' + esc(S.auditAction) + '" placeholder="' + tr('Filtrer par action (ex. elevate.failed)') + '" autocomplete="off" autocapitalize="none" data-adm-focus="audit:action"></label><button type="submit" class="btn btn-ghost btn-sm">' + tr('Filtrer') + '</button></form>';
+  return sectionHead(tr('Journal d’audit'), tr('Toutes les actions d’administration, y compris les ré-authentifications échouées. Jamais de mot de passe ni de jeton.'), '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>' + tr('Actualiser') + '</button>') + filter +
+    loaded(S.audit, (r) => (!r.entries.length ? empty(tr('Aucune entrée.')) :
+      table(tr('Journal d’audit'), [tr('Date'), tr('Acteur'), tr('Action'), tr('Cible'), tr('Détail')],
         r.entries.map((e) => ({ cells: [esc(fmtDateTime(e.at)), esc(e.actor), '<code>' + esc(e.action) + '</code>', esc(e.target || '—'), esc(detailText(e.detail))] })), 'is-audit') +
       pager('audit', S.auditPager.hasPrev, !!r.nextBefore)));
 }
@@ -242,15 +243,15 @@ function bindAudit(root, ctx) {
 
 export const systemSections = [
   {
-    id: 'settings', group: 'system', label: 'Réglages', icon: 'sliders', render: settingsHTML, bind: bindSettings,
+    id: 'settings', group: 'system', label: tr('Réglages'), icon: 'sliders', render: settingsHTML, bind: bindSettings,
     load: (ctx, quiet) => ctx.fetch('settings', () => api.getSettings(), quiet),
   },
   {
-    id: 'announcements', group: 'system', label: 'Annonces', icon: 'megaphone', render: announcementsHTML, bind: bindAnnouncements,
+    id: 'announcements', group: 'system', label: tr('Annonces'), icon: 'megaphone', render: announcementsHTML, bind: bindAnnouncements,
     load: (ctx, quiet) => loadInto(ctx, 'announcements', () => api.listAnnouncements(), quiet),
   },
   {
-    id: 'audit', group: 'system', label: 'Journal d’audit', icon: 'scroll', render: auditHTML, bind: bindAudit,
+    id: 'audit', group: 'system', label: tr('Journal d’audit'), icon: 'scroll', render: auditHTML, bind: bindAudit,
     load: (ctx, quiet) => ctx.fetch('audit', () => api.listAudit({ limit: 50, before: ctx.S.auditPager.cursor, action: ctx.S.auditAction || undefined }), quiet),
   },
 ];

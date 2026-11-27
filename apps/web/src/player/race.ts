@@ -1,6 +1,7 @@
 /* Course entre candidats pour la préparation d'une lecture (lien, sonde, session HLS) : délai doux, délai dur, plafond total.
  * Logique pure (minuteries injectées par setTimeout), testée avec des fausses horloges. */
 
+import { t } from '../i18n';
 const SOFT_MS = 6_000;
 const HARD_MS = 12_000;
 const TOTAL_MS = 25_000;
@@ -90,7 +91,7 @@ export function raceCandidates<C, T>(cfg: RaceConfig<C, T>): { promise: Promise<
     running.add(run);
     cfg.onProgress?.({ attempt: tried.length, max: maxAttempts, slow, candidate });
     run.timers.push(setTimeout(() => { if (!done && running.has(run)) startNext(false); }, softMs));
-    run.timers.push(setTimeout(() => fail(run, 'timeout', 'trop long (' + Math.round(hardMs / 1000) + ' s)'), hardMs));
+    run.timers.push(setTimeout(() => fail(run, 'timeout', t('trop long ({v} s)', { v: Math.round(hardMs / 1000) })), hardMs));
     cfg.run(candidate, run.ctl.signal).then(
       (value) => {
         if (done || !running.has(run)) return;
@@ -98,7 +99,7 @@ export function raceCandidates<C, T>(cfg: RaceConfig<C, T>): { promise: Promise<
         running.delete(run);
         run.timers.forEach(clearTimeout);
         const lost: Failure<C>[] = [];
-        running.forEach((other) => { lost.push({ candidate: other.candidate, reason: 'lost', message: 'abandonnée : une autre source était prête avant' }); stopRun(other); });
+        running.forEach((other) => { lost.push({ candidate: other.candidate, reason: 'lost', message: t('abandonnée : une autre source était prête avant') }); stopRun(other); });
         resolve({ candidate, value, lost, failures });
       },
       (err: unknown) => fail(run, 'error', err instanceof Error ? err.message : String(err)),
@@ -123,7 +124,7 @@ export function raceCandidates<C, T>(cfg: RaceConfig<C, T>): { promise: Promise<
   totalTimer = setTimeout(() => {
     if (done) return;
     finish();
-    running.forEach((r) => { failures.push({ candidate: r.candidate, reason: 'timeout', message: 'toujours en préparation après ' + Math.round((cfg.totalMs ?? TOTAL_MS) / 1000) + ' s' }); stopRun(r); });
+    running.forEach((r) => { failures.push({ candidate: r.candidate, reason: 'timeout', message: t('toujours en préparation après {v} s', { v: Math.round((cfg.totalMs ?? TOTAL_MS) / 1000) }) }); stopRun(r); });
     reject(new RaceFailure('total-timeout', failures));
   }, cfg.totalMs ?? TOTAL_MS);
 

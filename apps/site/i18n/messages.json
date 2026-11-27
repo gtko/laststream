@@ -1,0 +1,2109 @@
+{
+ ".deb package": [
+  "/en/"
+ ],
+ "01 · Home": [
+  "/en/"
+ ],
+ "02 · Title page and sources": [
+  "/en/"
+ ],
+ "03 · Family": [
+  "/en/"
+ ],
+ "04 · Everywhere": [
+  "/en/"
+ ],
+ "1 min": [
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "2 min": [
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/invite-someone/",
+  "/en/guides/playback-comfort/"
+ ],
+ "20 MB": [
+  "/en/guides/live-tv/"
+ ],
+ "3 min": [
+  "/en/guides/add-a-source/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/kids-profile/",
+  "/en/guides/watch-party/"
+ ],
+ "5 min": [
+  "/en/guides/live-tv/"
+ ],
+ "64-bit installer · <span id=\"win-meta\">Windows 10 and 11</span>": [
+  "/en/"
+ ],
+ "64-bit · <span id=\"linux-meta\">AppImage or .deb</span>": [
+  "/en/"
+ ],
+ "<img src=\"/assets/logo.svg\" alt=\"\" width=\"24\" height=\"24\"><span>Laststream</span>": [
+  "/en/"
+ ],
+ "<img src=\"/assets/logo.svg\" alt=\"\" width=\"28\" height=\"28\"> <span>Laststream</span>": [
+  "/en/"
+ ],
+ "<img src=\"/assets/logo.svg\" width=\"28\" height=\"28\" alt=\"\"><span>Laststream</span>": [
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "<img src=\"/assets/logo.svg\" width=\"36\" height=\"36\" alt=\"\"> <span>Laststream</span>": [
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "<img src=\"/assets/shots/movies-600.webp\" width=\"600\" height=\"375\" alt=\"\" loading=\"lazy\"> <span class=\"party-sync\"><i></i>Synchronized playback</span>": [
+  "/en/"
+ ],
+ "<small>Contents</small> <strong>← All guides</strong>": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "<small>Next guide</small> <strong>Add a source (Stremio extension)</strong>": [
+  "/en/guides/kids-profile/"
+ ],
+ "<small>Next guide</small> <strong>Add friends</strong>": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "<small>Next guide</small> <strong>Clean up your recommendations</strong>": [
+  "/en/guides/playback-comfort/"
+ ],
+ "<small>Next guide</small> <strong>Create a kids profile</strong>": [
+  "/en/guides/create-a-profile/"
+ ],
+ "<small>Next guide</small> <strong>Import your Stremio library</strong>": [
+  "/en/guides/invite-someone/"
+ ],
+ "<small>Next guide</small> <strong>Invite someone</strong>": [
+  "/en/guides/live-tv/"
+ ],
+ "<small>Next guide</small> <strong>Playback comfort</strong>": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "<small>Next guide</small> <strong>Set up live TV (M3U playlist)</strong>": [
+  "/en/guides/add-a-source/"
+ ],
+ "<small>Next guide</small> <strong>Share your library</strong>": [
+  "/en/guides/watch-party/"
+ ],
+ "<small>Next guide</small> <strong>Start a watch party</strong>": [
+  "/en/guides/add-friends/"
+ ],
+ "<small>Next guide</small> <strong>Subtitles and languages</strong>": [
+  "/en/guides/share-your-library/"
+ ],
+ "<small>Previous guide</small> <strong>Add a source (Stremio extension)</strong>": [
+  "/en/guides/live-tv/"
+ ],
+ "<small>Previous guide</small> <strong>Add friends</strong>": [
+  "/en/guides/watch-party/"
+ ],
+ "<small>Previous guide</small> <strong>Create a kids profile</strong>": [
+  "/en/guides/add-a-source/"
+ ],
+ "<small>Previous guide</small> <strong>Create a profile</strong>": [
+  "/en/guides/kids-profile/"
+ ],
+ "<small>Previous guide</small> <strong>Import your Stremio library</strong>": [
+  "/en/guides/add-friends/"
+ ],
+ "<small>Previous guide</small> <strong>Invite someone</strong>": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "<small>Previous guide</small> <strong>Playback comfort</strong>": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "<small>Previous guide</small> <strong>Set up live TV (M3U playlist)</strong>": [
+  "/en/guides/invite-someone/"
+ ],
+ "<small>Previous guide</small> <strong>Share your library</strong>": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "<small>Previous guide</small> <strong>Start a watch party</strong>": [
+  "/en/guides/share-your-library/"
+ ],
+ "<small>Previous guide</small> <strong>Subtitles and languages</strong>": [
+  "/en/guides/playback-comfort/"
+ ],
+ "<span class=\"dot\" aria-hidden=\"true\"></span>Invitation only": [
+  "/en/"
+ ],
+ "<span class=\"hero-line\"><span class=\"hero-word\" style=\"--d:1\">Your</span> <span class=\"hero-word\" style=\"--d:2\">cinema,</span></span> <span class=\"hero-line\"><span class=\"hero-word grad\" style=\"--d:3\">everywhere.</span></span>": [
+  "/en/"
+ ],
+ "<span class=\"inv-n\">Link 1</span><code>laststream…/?invite=••••</code><span class=\"pill pill-free\">Free</span>": [
+  "/en/"
+ ],
+ "<span class=\"inv-n\">Link 2</span><code>Link used · +6 months</code><span class=\"pill pill-used\">Used</span>": [
+  "/en/"
+ ],
+ "<span class=\"sr-only\">Open menu</span> <span class=\"menu-bars\" aria-hidden=\"true\"><i></i><i></i></span>": [
+  "/en/"
+ ],
+ "<span class=\"stat-num\"><span class=\"count\" data-to=\"0\" data-from=\"100\">0</span></span><span class=\"stat-label\">content hosted, ever</span>": [
+  "/en/"
+ ],
+ "<span class=\"stat-num\"><span class=\"count\" data-to=\"15\">15</span></span><span class=\"stat-label\">features, nothing you don't need</span>": [
+  "/en/"
+ ],
+ "<span class=\"stat-num\"><span class=\"count\" data-to=\"5\">5</span></span><span class=\"stat-label\">screens: Windows, Mac, Linux, Android, browser</span>": [
+  "/en/"
+ ],
+ "<span class=\"stat-num\">€<span class=\"count\" data-to=\"24\">24</span></span><span class=\"stat-label\">a year for the online service, free self-hosted</span>": [
+  "/en/"
+ ],
+ "<span>€24</span> per year": [
+  "/en/"
+ ],
+ "<strong>.deb (Debian, Ubuntu):</strong> <code>sudo apt install ./Laststream-*.deb</code>. Updates then come with the next .deb.": [
+  "/en/"
+ ],
+ "<strong>2 tickets per account.</strong> You'll find them in Settings, under \"My invitations\".": [
+  "/en/"
+ ],
+ "<strong>A cinema-style home screen</strong> Poster rows and the Top 10 of the day.": [
+  "/en/"
+ ],
+ "<strong>A clear title page</strong> Everything is there before you hit play.": [
+  "/en/"
+ ],
+ "<strong>A code to get out.</strong> The kids profile opens neither extensions nor settings, and you can only leave it with the code.": [
+  "/en/"
+ ],
+ "<strong>A gift on both sides.</strong> Your invitee pays half price for their first year, and you get 6 months free when they subscribe.": [
+  "/en/"
+ ],
+ "<strong>A kids profile.</strong> Content is filtered by age, based on age ratings when they are available.": [
+  "/en/"
+ ],
+ "<strong>AppImage:</strong> make the file executable (Properties, or <code>chmod +x</code>), then run it.": [
+  "/en/"
+ ],
+ "<strong>Clear tracking.</strong> Each link is free, sent or used. You can copy it, share it or revoke it.": [
+  "/en/"
+ ],
+ "<strong>Discover</strong> Filters by genre, decade, country or service.": [
+  "/en/"
+ ],
+ "<strong>In a browser</strong> → a web browser cannot reach most playlists: use the Windows or Android app.": [
+  "/en/guides/live-tv/"
+ ],
+ "<strong>Invitation only.</strong> You need an invitation code to create your account. Laststream hosts no content: it reads the extensions you configure.": [
+  "/en/"
+ ],
+ "<strong>Laststream does not provide or install any Stremio add-ons.</strong> The subscription pays for the service (accounts, sync, apps), not for content: you add the sources you use yourself.": [
+  "/en/"
+ ],
+ "<strong>No account?</strong> A guest can join without an account, through an invitation link.": [
+  "/en/"
+ ],
+ "<strong>No link yet?</strong> Ask the person who told you about Laststream.": [
+  "/en/"
+ ],
+ "<strong>Not from a kids profile.</strong> Friends, messages and watch party are not available from a kids profile.": [
+  "/en/"
+ ],
+ "<strong>One profile per person.</strong> Library, playback progress and settings are separate; extensions are shared.": [
+  "/en/"
+ ],
+ "<strong>Popular series</strong> New-season badges and the weekly top 10.": [
+  "/en/"
+ ],
+ "<strong>Private by default.</strong> Your library stays private until you choose to share it.": [
+  "/en/"
+ ],
+ "<strong>Recommendations for everyone.</strong> A daily list for each profile.": [
+  "/en/"
+ ],
+ "<strong>Safari:</strong> tap Share, then \"Add to Home Screen\".": [
+  "/en/"
+ ],
+ "<strong>Themes</strong> A customizable accent color.": [
+  "/en/"
+ ],
+ "<strong>With an account.</strong> Social features require a Laststream account; only a watch party guest can do without one.": [
+  "/en/"
+ ],
+ "<strong>Your own sources.</strong> Each participant watches with their own sources: nothing is shared between accounts.": [
+  "/en/"
+ ],
+ "<strong>“Address unreachable”</strong> → check the address and your connection (and your box’s network for a Freebox).": [
+  "/en/guides/live-tv/"
+ ],
+ "<strong>“No channel found in this playlist.”</strong> → empty or malformed file.": [
+  "/en/guides/live-tv/"
+ ],
+ "<strong>“This address does not return an M3U playlist.”</strong> → the address points to a web page or a file in another format.": [
+  "/en/guides/live-tv/"
+ ],
+ "A card’s “…” menu: edit, open the configuration, copy the URL, enable or disable, remove.": [
+  "/en/guides/add-a-source/"
+ ],
+ "A cinema-style home screen": [
+  "/en/"
+ ],
+ "A cinema-style home screen, sources sorted for you, and playback that starts on its own. Profiles for the whole family, your friends close at hand, and your progress follows you from one screen to the next.": [
+  "/en/"
+ ],
+ "A cinema-style home screen.": [
+  "/en/"
+ ],
+ "A circle that grows by word of mouth.": [
+  "/en/"
+ ],
+ "A clear title page. The best source, on its own.": [
+  "/en/"
+ ],
+ "A daily list for each profile, based on what you've watched and liked.": [
+  "/en/"
+ ],
+ "A few titles in your library if you want to suggest favourites.": [
+  "/en/guides/invite-someone/"
+ ],
+ "A friend who is already a member sends you their referral link. Open it, pick a username, and your account is created.": [
+  "/en/"
+ ],
+ "A kids profile for Léo, with its own recommendations.": [
+  "/en/"
+ ],
+ "A kids profile only shows titles whose age rating is known and at or below the chosen age. The parental code is needed to leave it.": [
+  "/en/guides/kids-profile/"
+ ],
+ "A kids profile protected by a code, content filtered by age and its own recommendations.": [
+  "/en/"
+ ],
+ "A large featured poster, rows to browse, trailers, collections and a clear page for each title.": [
+  "/en/"
+ ],
+ "A large featured poster, rows to browse, trailers, collections. Open the app, pick something.": [
+  "/en/"
+ ],
+ "A movie’s “Sources” panel: the link provided by “Mon addon” is framed.": [
+  "/en/guides/add-a-source/"
+ ],
+ "A native app is planned. In the meantime, the web version installs like an app and works very well.": [
+  "/en/"
+ ],
+ "A profile for everyone. Even the youngest.": [
+  "/en/"
+ ],
+ "A real built-in player": [
+  "/en/"
+ ],
+ "A signed-in account, on an adult profile (kids profiles share nothing).": [
+  "/en/guides/share-your-library/"
+ ],
+ "A signed-in account, on an adult profile.": [
+  "/en/guides/add-friends/",
+  "/en/guides/invite-someone/",
+  "/en/guides/watch-party/"
+ ],
+ "A signed-in account, on the main profile.": [
+  "/en/guides/add-a-source/"
+ ],
+ "A signed-in account.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "A source that finds the title (see <a href=\"/en/guides/add-a-source/\">Add a Stremio source</a>).": [
+  "/en/guides/watch-party/"
+ ],
+ "A title page with synopsis, ratings and the Play button.": [
+  "/en/"
+ ],
+ "A title page: synopsis, ratings, availability and the Play button.": [
+  "/en/"
+ ],
+ "A title with no age rating is hidden.": [
+  "/en/guides/kids-profile/"
+ ],
+ "A title you add later stays private until you open its eye.": [
+  "/en/guides/share-your-library/"
+ ],
+ "AI recommendations": [
+  "/en/"
+ ],
+ "APK file · <span id=\"apk-meta\">Phone, tablet and Android TV</span>": [
+  "/en/"
+ ],
+ "Activity feed": [
+  "/en/"
+ ],
+ "Add a profile for everyone at home, with their name, colour and an optional PIN code.": [
+  "/en/guides/"
+ ],
+ "Add a source (Stremio extension)": [
+  "/en/guides/",
+  "/en/guides/add-a-source/"
+ ],
+ "Add a source (Stremio extension) - Laststream guides": [
+  "/en/guides/add-a-source/"
+ ],
+ "Add friends": [
+  "/en/guides/",
+  "/en/guides/add-friends/"
+ ],
+ "Add friends - Laststream guides": [
+  "/en/guides/add-friends/"
+ ],
+ "Add your friends, chat with them, follow their activity feed, share your library and watch together with synchronized playback. <a class=\"card-link\" href=\"#ensemble\">See Together <span aria-hidden=\"true\">→</span></a>": [
+  "/en/"
+ ],
+ "Allowed sections": [
+  "/en/guides/kids-profile/"
+ ],
+ "An extension is a small web service that exposes two addresses: <code>/manifest.json</code> and <code>/stream/{type}/{id}.json</code>.": [
+  "/en/guides/add-a-source/"
+ ],
+ "An interface built for the couch as much as for your phone, fast from the moment you open it.": [
+  "/en/"
+ ],
+ "Android": [
+  "/en/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Anime card: the “Anime-specific settings” switch is framed.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Anime for kids": [
+  "/en/guides/kids-profile/"
+ ],
+ "Anime: “Skip filler episodes” skips filler episodes when playing back to back.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "AppImage": [
+  "/en/"
+ ],
+ "Apple Silicon Mac (M1 and later)": [
+  "/en/"
+ ],
+ "Are friends and watch party available?": [
+  "/en/"
+ ],
+ "At least one friend (see <a href=\"/en/guides/add-friends/\">Add friends</a>), or the room link to share.": [
+  "/en/guides/watch-party/"
+ ],
+ "At the end, the summary gives the items imported, skipped and failed. Tap “See my library”.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "At the top of the panel, your own Name#TAG (1): tap it to copy it and send it to your friend. The field below (2) is for adding theirs.": [
+  "/en/guides/add-friends/"
+ ],
+ "Audio and subtitles settings: the main and secondary audio languages are framed in yellow": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Automatic playback": [
+  "/en/"
+ ],
+ "Automatic refresh": [
+  "/en/guides/live-tv/"
+ ],
+ "Avatar menu open: the “Settings” entry is framed.": [
+  "/en/guides/add-a-source/"
+ ],
+ "Before you start": [
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/live-tv/",
+  "/en/guides/share-your-library/",
+  "/en/guides/watch-party/"
+ ],
+ "Bottom of the “New profile” window: the 4 PIN boxes and the “Create profile” button are framed.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "Breadcrumb": [
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Bring your Stremio library, watched titles and progress into Laststream.": [
+  "/en/guides/"
+ ],
+ "Bring your Stremio library, watched titles and progress into your Laststream profile. The import reads your account and never changes it.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Browser": [
+  "/en/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Buffer card: the “Large” choice is framed.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "By invitation": [
+  "/en/"
+ ],
+ "Camille’s Friends panel: Léo shows in the “Online” section.": [
+  "/en/guides/add-friends/"
+ ],
+ "Cartoons": [
+  "/en/guides/kids-profile/"
+ ],
+ "Catalog, live TV, built-in player, profiles, friends and watch party.": [
+  "/en/"
+ ],
+ "Catalog, live TV, built-in player, profiles, friends and watch party. On Windows, Mac, Linux, Android and in your browser.": [
+  "/en/"
+ ],
+ "Chat with your friends right in the app and plan your next movie night.": [
+  "/en/"
+ ],
+ "Choose the “Maximum age” (1): 10, 12, 16 or 18 (12 by default). Tick the “Allowed sections” (2), see the table below.": [
+  "/en/guides/kids-profile/"
+ ],
+ "Choose your platform.": [
+  "/en/"
+ ],
+ "Clean up your recommendations": [
+  "/en/guides/",
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Clean up your recommendations - Laststream guides": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Close": [
+  "/en/",
+  "app.js"
+ ],
+ "Close menu": [
+  "/en/"
+ ],
+ "Confirm the installation, then open Laststream.": [
+  "/en/"
+ ],
+ "Connect the Stremio extensions you want to use in Laststream.": [
+  "/en/guides/"
+ ],
+ "Create a kids profile": [
+  "/en/guides/",
+  "/en/guides/kids-profile/"
+ ],
+ "Create a kids profile - Laststream guides": [
+  "/en/guides/kids-profile/"
+ ],
+ "Create a profile": [
+  "/en/guides/",
+  "/en/guides/create-a-profile/"
+ ],
+ "Create a profile - Laststream guides": [
+  "/en/guides/create-a-profile/"
+ ],
+ "Demo": [
+  "/en/"
+ ],
+ "Details of the programme on now, with the “Watch” button, framed above the programme grid.": [
+  "/en/guides/live-tv/"
+ ],
+ "Detected: Android": [
+  "app.js"
+ ],
+ "Detected: Linux": [
+  "app.js"
+ ],
+ "Detected: Windows": [
+  "app.js"
+ ],
+ "Detected: iPhone or iPad": [
+  "app.js"
+ ],
+ "Detected: macOS": [
+  "app.js"
+ ],
+ "Discover page with filters by genre, decade and country.": [
+  "/en/"
+ ],
+ "Disk image · <span id=\"mac-meta\">macOS 11 or later</span>": [
+  "/en/"
+ ],
+ "Disney and Pixar classics": [
+  "/en/guides/kids-profile/"
+ ],
+ "Do I need an account to join a watch party?": [
+  "/en/"
+ ],
+ "Do I need an extra service to watch?": [
+  "/en/"
+ ],
+ "Do my Stremio add-ons work?": [
+  "/en/"
+ ],
+ "Does Laststream provide movies and TV shows?": [
+  "/en/"
+ ],
+ "Does my data follow me from one device to another?": [
+  "/en/"
+ ],
+ "Does the subscription include add-ons or content?": [
+  "/en/"
+ ],
+ "Done: your friend is in your list, with their status (“Online”…).": [
+  "/en/guides/add-friends/"
+ ],
+ "Download": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Download Laststream": [
+  "/en/"
+ ],
+ "Download for Linux": [
+  "app.js"
+ ],
+ "Download for Mac": [
+  "app.js"
+ ],
+ "Download for Windows": [
+  "/en/",
+  "app.js"
+ ],
+ "Download the APK": [
+  "/en/"
+ ],
+ "Download the APK file to your phone or tablet.": [
+  "/en/"
+ ],
+ "Download the Android APK": [
+  "app.js"
+ ],
+ "Download the app, then add the extensions you choose. Laststream provides no content: it reads whatever you configure.": [
+  "/en/"
+ ],
+ "Download your titles before you leave and watch them without a connection, on the train or on vacation.": [
+  "/en/"
+ ],
+ "Duration and platforms": [
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "During playback, the player’s Audio track and Subtitles buttons change the track for that film only.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "EN": [
+  "/en/"
+ ],
+ "Each playlist can be disabled, refreshed or removed from its row, under “M3U playlists”.": [
+  "/en/guides/live-tv/"
+ ],
+ "Each poster has an eye at the top right. Crossed out, the title is private.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Each profile has a Name#TAG. Swap it with your friends to see who’s online, chat and start watch parties.": [
+  "/en/guides/add-friends/"
+ ],
+ "Each ticket works once. The link is valid for 14 days after sending; if nobody uses it, the ticket comes back to you.": [
+  "/en/guides/invite-someone/"
+ ],
+ "Enlarged screenshot": [
+  "/en/",
+  "app.js"
+ ],
+ "Everyone at home gets their own profile: their library, progress and settings follow them on all their devices.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "Everyone has their own profile. The youngest ones have theirs, well protected.": [
+  "/en/"
+ ],
+ "Everyone watches with their own source and language: if your source is not in the room’s language, the room tells you.": [
+  "/en/guides/watch-party/"
+ ],
+ "Everything you need. Nothing you don't.": [
+  "/en/"
+ ],
+ "Example: a basic extension": [
+  "/en/guides/add-a-source/"
+ ],
+ "Expected format": [
+  "/en/guides/live-tv/"
+ ],
+ "FAQ": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "FR": [
+  "/en/"
+ ],
+ "Family movies": [
+  "/en/guides/kids-profile/"
+ ],
+ "Features": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Filled “Add an M3U playlist” form: name, playlist address, XMLTV guide and “Add playlist” button numbered 1 to 4.": [
+  "/en/guides/live-tv/"
+ ],
+ "Films watched or played to 90% and series watched in full are no longer suggested on Home. They stay in your library, search and their page.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Focused on the picture.": [
+  "/en/"
+ ],
+ "Follow what your friends are watching, and find your next idea.": [
+  "/en/"
+ ],
+ "Footer links": [
+  "/en/"
+ ],
+ "For a child, follow the <a href=\"/en/guides/kids-profile/\">Create a kids profile</a> guide instead.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "For anime, turn on “Anime-specific settings”: for example Japanese audio with subtitles in your language, without changing other titles.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "For series: “Skip intro” (1) skips the opening credits when they’re detected, “Play next episode” (2) starts the next one after the end credits. “Skip recap” skips the “previously on”.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "For the family": [
+  "/en/"
+ ],
+ "For the whole family.": [
+  "/en/"
+ ],
+ "For your device": [
+  "app.js"
+ ],
+ "Free": [
+  "/en/"
+ ],
+ "Freebox subscriber: “Detect my Freebox” adds the box’s channels without typing anything.": [
+  "/en/guides/live-tv/"
+ ],
+ "Frequently asked questions.": [
+  "/en/"
+ ],
+ "Friends": [
+  "/en/"
+ ],
+ "Friends panel open: the Camille#TAG handle and the “Search or add Name#TAG” field are numbered 1 and 2.": [
+  "/en/guides/add-friends/"
+ ],
+ "Friends panel: the “Search or add Name#TAG” field, filled in, and the add button are framed in yellow": [
+  "/en/guides/add-friends/"
+ ],
+ "Friends, import and settings": [
+  "/en/guides/"
+ ],
+ "Friends, messages and watch party": [
+  "/en/"
+ ],
+ "Friends, messages, shared libraries and watch party: available now. Simple, and under your control.": [
+  "/en/"
+ ],
+ "Friends, movie nights and watch parties.": [
+  "/en/"
+ ],
+ "From a title’s page, it’s the “…” button next to Play…": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Full native player (mpv) and mini player. The AppImage updates itself.": [
+  "/en/"
+ ],
+ "Full native player (mpv), mini player and automatic updates.": [
+  "/en/"
+ ],
+ "Get an invitation": [
+  "/en/"
+ ],
+ "Get live TV ready to watch your channels in Laststream.": [
+  "/en/guides/"
+ ],
+ "Getting started": [
+  "/en/",
+  "/en/guides/"
+ ],
+ "Give one of your invitation tickets, with a personal note and three titles to discover.": [
+  "/en/guides/"
+ ],
+ "Going further": [
+  "/en/guides/"
+ ],
+ "Good to know": [
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Guides": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Guides - Laststream": [
+  "/en/guides/"
+ ],
+ "Hit play": [
+  "/en/"
+ ],
+ "Home of the kids profile Lina, with the animated film “Petit Renard et la forêt”; its avatar is framed.": [
+  "/en/guides/kids-profile/"
+ ],
+ "Home, Explore menu open: “Explore” and “My list” are numbered 1 and 2.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Home, poster menu open: the “Don’t suggest again” entry is framed.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "How are sources chosen?": [
+  "/en/"
+ ],
+ "How are the apps updated?": [
+  "/en/"
+ ],
+ "How do I get an account?": [
+  "/en/"
+ ],
+ "How does the kids profile work?": [
+  "/en/"
+ ],
+ "How it works": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "How it works <span aria-hidden=\"true\">→</span>": [
+  "/en/"
+ ],
+ "How much does Laststream cost?": [
+  "/en/"
+ ],
+ "How to install it": [
+  "/en/"
+ ],
+ "If Windows SmartScreen appears: More info, then Run anyway. Have the old app? Install this one: your sign-in and settings carry over, then uninstall the old one.": [
+  "/en/"
+ ],
+ "If it does not work": [
+  "/en/guides/live-tv/"
+ ],
+ "If playback stutters on a slow source, raise the “Buffer size”: “Large” or “Maximum”.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "If the main profile has no parental code yet, type a 4-digit one (1). It protects leaving the kids profile.": [
+  "/en/guides/kids-profile/"
+ ],
+ "Import preview: four ticked categories with their count and the “Import 12 items” button.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Import sources list: “Stremio account” and “Stremio export file” are numbered 1 and 2.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Import your Stremio library": [
+  "/en/guides/",
+  "/en/guides/import-from-stremio/"
+ ],
+ "Import your Stremio library - Laststream guides": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "In the left column, choose “Sources” (1), then “Add a Stremio addon” (2).": [
+  "/en/guides/add-a-source/"
+ ],
+ "In the waiting room, everyone sees their source getting ready. Share the link (1) with someone who has no account, or invite more friends (2).": [
+  "/en/guides/watch-party/"
+ ],
+ "In your main language, only forced subtitles (signs, foreign dialogue) stay on.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "In “Add an M3U playlist”, fill in a name (1, optional), the “Playlist address” (2) and, if you have it, the “Programme guide (XMLTV)” (3, <code>.xml</code> or <code>.xml.gz</code>).": [
+  "/en/guides/live-tv/"
+ ],
+ "In “New profile”, type their name (1, 20 characters max). If you like, pick an avatar with “Change avatar” (2), then a colour from the 8 swatches (3).": [
+  "/en/guides/create-a-profile/"
+ ],
+ "In “Settings”, “Home” category: “Hidden titles” (1) counts the titles you removed, and “Manage” brings them back.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Install and add your sources": [
+  "/en/"
+ ],
+ "Install the web version": [
+  "/en/",
+  "app.js"
+ ],
+ "Install the web version: it opens like a real app, full screen.": [
+  "/en/"
+ ],
+ "Installable web version · Native app coming soon": [
+  "/en/"
+ ],
+ "Instant start, quality suited to your connection, skipped intros, back-to-back episodes: the settings that make playback easier.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "Intel Mac": [
+  "/en/"
+ ],
+ "Invitation ticket open: the note, the three favourites and the “Copy link” button are framed in yellow": [
+  "/en/guides/invite-someone/"
+ ],
+ "Invite someone": [
+  "/en/guides/",
+  "/en/guides/invite-someone/"
+ ],
+ "Invite someone - Laststream guides": [
+  "/en/guides/invite-someone/"
+ ],
+ "Invited by a friend: your first year is €12.": [
+  "/en/"
+ ],
+ "Is there an app for iPhone or iPad?": [
+  "/en/"
+ ],
+ "It depends on the extensions you configure. Laststream does not provide any such service: it's up to you to choose your sources and, if they require them, the accounts that go with them.": [
+  "/en/"
+ ],
+ "Keep “Private” (1) for your guests only, or pick “Public” to list the room under “Watch parties”.": [
+  "/en/guides/watch-party/"
+ ],
+ "Kids TV": [
+  "/en/guides/kids-profile/"
+ ],
+ "Kids profiles have no friends or messages.": [
+  "/en/guides/add-friends/"
+ ],
+ "Kids series": [
+  "/en/guides/kids-profile/"
+ ],
+ "Laststream - Your cinema, everywhere": [
+  "/en/"
+ ],
+ "Laststream accepts Stremio extensions (addons): paste the address of their manifest and their links show up when you play a title.": [
+  "/en/guides/add-a-source/"
+ ],
+ "Laststream asks you to confirm, then tells you how many titles your friends can see.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Laststream brings together your catalog, live TV, a built-in player, profiles, friends and watch party in a single app. Windows, Mac, Linux, Android and web. Invitation only.": [
+  "/en/"
+ ],
+ "Laststream demo video: home, title page, sources, profiles and playback.": [
+  "/en/"
+ ],
+ "Laststream home screen on a phone.": [
+  "/en/"
+ ],
+ "Laststream home screen with a large featured poster.": [
+  "/en/"
+ ],
+ "Laststream home screen: rows of movie and series posters, with the Top 10 of the day.": [
+  "/en/"
+ ],
+ "Laststream home, avatar menu open: the avatar and the “Switch profile” entry are framed.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "Laststream hosts no content: it reads the extensions you configure. Invitation only.": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Laststream hosts nothing: you add your extensions, and the app reads them with built-in protections.": [
+  "/en/"
+ ],
+ "Laststream in numbers": [
+  "/en/"
+ ],
+ "Laststream is not affiliated with Stremio.": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Laststream logo and the tagline Your cinema, everywhere": [
+  "/en/",
+  "/en/guides/"
+ ],
+ "Laststream measures your connection and starts the best source that works, on its own.": [
+  "/en/"
+ ],
+ "Laststream on video, with voiceover and subtitles. Pick the demo language.": [
+  "/en/"
+ ],
+ "Laststream shows what can be imported: “Library”, “Watchlist”, “Watched”, “Playback progress”. Untick what you don’t want (1), then “Import” (2).": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Laststream's code is public on GitHub.": [
+  "/en/"
+ ],
+ "Laststream, back to top": [
+  "/en/"
+ ],
+ "Laststream, home": [
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Leaving the kids profile": [
+  "/en/guides/kids-profile/"
+ ],
+ "Let your friends see the titles you choose, or your whole library.": [
+  "/en/guides/"
+ ],
+ "Library page: the Friends button, top right, is framed.": [
+  "/en/guides/add-friends/"
+ ],
+ "Library: the crossed-out eye on the “La Maison des brumes” poster is framed.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Limit": [
+  "/en/guides/live-tv/"
+ ],
+ "Linux": [
+  "/en/"
+ ],
+ "Live TV and guide": [
+  "/en/"
+ ],
+ "Live TV reads M3U playlists from your provider or IPTV service, and optionally an XMLTV programme guide.": [
+  "/en/guides/live-tv/"
+ ],
+ "Loading timeout": [
+  "/en/guides/live-tv/"
+ ],
+ "Léo's kids profile with its recommendations.": [
+  "/en/"
+ ],
+ "Léo's kids profile, with its own recommendations.": [
+  "/en/"
+ ],
+ "Léo’s Friends panel: Camille’s request, “wants to be your friend”, and the framed accept tick.": [
+  "/en/guides/add-friends/"
+ ],
+ "MB": [
+  "app.js"
+ ],
+ "Mac": [
+  "/en/"
+ ],
+ "Made for the couch. And for your pocket.": [
+  "/en/"
+ ],
+ "Main navigation": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Messages and chats": [
+  "/en/"
+ ],
+ "My invitations": [
+  "/en/"
+ ],
+ "My list page: the eye on a poster is framed in yellow": [
+  "/en/guides/share-your-library/"
+ ],
+ "Native libVLC player, mini player and one-tap updates.": [
+  "/en/"
+ ],
+ "Need a walkthrough? <a href=\"/en/guides/\">Read the guides <span aria-hidden=\"true\">→</span></a>": [
+  "/en/"
+ ],
+ "New addon card: the filled “Upstream addon URL” field is framed.": [
+  "/en/guides/add-a-source/"
+ ],
+ "New for kids": [
+  "/en/guides/kids-profile/"
+ ],
+ "No": [
+  "/en/guides/kids-profile/"
+ ],
+ "No installation · All devices": [
+  "/en/"
+ ],
+ "No subscription, no account limit.": [
+  "/en/"
+ ],
+ "No. A guest can join a watch party without an account, through the invitation link you send them. They watch with their own sources.": [
+  "/en/"
+ ],
+ "No. Laststream does not provide or install any Stremio add-ons and hosts no content. The subscription pays for the service: accounts, sync, apps and servers. You add the sources you use yourself.": [
+  "/en/"
+ ],
+ "No. Laststream hosts no content: it is a player and catalog that read the extensions you configure yourself. You are responsible for what you add and for respecting copyright laws in your country.": [
+  "/en/"
+ ],
+ "Not interested in a title or a genre? Remove it from Home. It can still be found through search and on its page.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Nothing changes on your Stremio account: you can keep using it as before.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Offline downloads": [
+  "/en/"
+ ],
+ "On Android, a large buffer slightly delays the start and seeking (up to 30 s on Maximum). It applies from the next playback.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "On Home, tap a poster’s “…” (or right-click, or long-press), then “Don’t suggest again”.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "On Windows, Mac and Linux (AppImage), updates are automatic. On Android, the app offers you the new version and installs it in one tap. The web version is always up to date.": [
+  "/en/"
+ ],
+ "On each screenshot, the yellow frame shows where to tap or click; the numbers give the order. The app is in French: the screenshots show its English translation.": [
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "On the screenshots the address starts with <code>http://localhost</code>: it is the example extension below, run locally for the guide. You paste the address given by the extension you want to install.": [
+  "/en/guides/add-a-source/"
+ ],
+ "On the “Who’s watching?” screen, tap the “Add a profile” tile.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "On their side, your friend sees your request in their Friends panel and accepts it with the tick.": [
+  "/en/guides/add-friends/"
+ ],
+ "Once the “… channels added, guide updated” message shows, go back home and open the “Live” tab.": [
+  "/en/guides/live-tv/"
+ ],
+ "One profile per person, and a kids profile protected by a code.": [
+  "/en/"
+ ],
+ "One subscription for the whole household.": [
+  "/en/"
+ ],
+ "Only the main profile (or someone who knows its code) can add profiles.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "Open Laststream": [
+  "/en/"
+ ],
+ "Open a movie and tap “Play”: the addon’s links appear in the “Sources” panel.": [
+  "/en/guides/add-a-source/"
+ ],
+ "Open in browser": [
+  "/en/",
+  "app.js"
+ ],
+ "Open in browser <span aria-hidden=\"true\">→</span>": [
+  "/en/"
+ ],
+ "Open it. Android will ask you to allow installation from this source: choose \"Allow from unknown sources\" (or \"Allow from this source\") for your browser.": [
+  "/en/"
+ ],
+ "Open menu": [
+  "/en/"
+ ],
+ "Open the .dmg file, then drag Laststream to Applications.": [
+  "/en/"
+ ],
+ "Open the film’s page and tap the “…” button next to Play.": [
+  "/en/guides/watch-party/"
+ ],
+ "Open the “Explore” menu (1), then “My list” (2). On a phone, it’s the “My list” tab at the bottom of the screen.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Open “New profile” as in the <a href=\"/en/guides/create-a-profile/\">Create a profile</a> guide (avatar, “Switch profile”, “Add a profile”), then type their name.": [
+  "/en/guides/kids-profile/"
+ ],
+ "Open “Settings” (your avatar at the top right), “Audio” category (1). Pick your “Main audio language” (2), then the “Secondary audio language” (3), used when the main one is missing from the source.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Open “Settings” (your avatar at the top right), “Profile” category. Tap “My invitation tickets” to unfold your tickets.": [
+  "/en/guides/invite-someone/"
+ ],
+ "Open “Settings”, “Playback” category (1). “Start the best source” (2) starts playback without going through the source list.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "Open “Settings”, “Profile” category, and scroll down to “Import from another app”.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Optional: a 4-digit “Profile PIN code” (1), asked from then on to open this profile.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "Order matters: source 1 is queried first. Change it with the ⋮⋮ handle or the ↑ ↓ arrows.": [
+  "/en/guides/add-a-source/"
+ ],
+ "Other guides": [
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Page menu open: the “Don’t suggest on Home” entry is framed.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Page menu open: the “Watch with…” entry is framed.": [
+  "/en/guides/watch-party/"
+ ],
+ "Paste an add-on's URL: its catalogs and sources get added.": [
+  "/en/"
+ ],
+ "Paste the address into “Upstream addon URL”. <code>stremio://</code> links are accepted, and <code>/manifest.json</code> is added if missing.": [
+  "/en/guides/add-a-source/"
+ ],
+ "Pick a title: sources are sorted for you and the best one starts automatically, based on your connection.": [
+  "/en/"
+ ],
+ "Pick an available ticket: “Give this ticket”.": [
+  "/en/guides/invite-someone/"
+ ],
+ "Pick my amount": [
+  "/en/"
+ ],
+ "Pick your audio and subtitle languages once, for every playback.": [
+  "/en/guides/"
+ ],
+ "Pick your audio and subtitle languages once: Laststream applies them at the start of every playback on this profile.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Pick “Stremio account” (1). Without signing in to your account, “Stremio export file” (2) reads a file on this device.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Pick “Watch with…”.": [
+  "/en/guides/watch-party/"
+ ],
+ "Platforms (Disney+, Netflix)": [
+  "/en/guides/kids-profile/"
+ ],
+ "Play, pause and seek are mirrored for everyone. Rooms for friends or public, with a link to join.": [
+  "/en/"
+ ],
+ "Playback comfort": [
+  "/en/guides/",
+  "/en/guides/playback-comfort/"
+ ],
+ "Playback comfort - Laststream guides": [
+  "/en/guides/playback-comfort/"
+ ],
+ "Playback progress, lists and settings are synced across Windows, Mac, Linux, Android and the browser. And for the train, download your titles for offline viewing.": [
+  "/en/"
+ ],
+ "Playback settings: “Skip intro” and “Play next episode” are framed in yellow": [
+  "/en/guides/playback-comfort/"
+ ],
+ "Playlist size": [
+  "/en/guides/live-tv/"
+ ],
+ "Playlists per account": [
+  "/en/guides/live-tv/"
+ ],
+ "Popular series with new-season badges.": [
+  "/en/"
+ ],
+ "Poster menu on Home: the “Don’t suggest again” entry is framed in yellow": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Poster rows with the Top 10 of the day.": [
+  "/en/"
+ ],
+ "Preview": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Pricing": [
+  "/en/"
+ ],
+ "Profiles and kids mode": [
+  "/en/"
+ ],
+ "Profiles, library and progress synced across all your screens.": [
+  "/en/"
+ ],
+ "Programme guide": [
+  "/en/guides/live-tv/"
+ ],
+ "Progress, lists and settings follow you across PC, phone and browser.": [
+  "/en/"
+ ],
+ "Read the notice, then tap “Got it, continue”.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Real screenshots of the app: dark and readable. Click to enlarge.": [
+  "/en/"
+ ],
+ "Release calendar": [
+  "/en/"
+ ],
+ "Remove titles and genres you don’t want to see on Home.": [
+  "/en/guides/"
+ ],
+ "Resolution and Connection cards: “Automatic (screen-based)” and “Automatic (measured)” are numbered 1 and 2.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "Response of <code>/stream/movie/tt0000001.json</code>:": [
+  "/en/guides/add-a-source/"
+ ],
+ "Room settings: “Who controls playback” (everyone or the host), “Wait for latecomers” and “On-screen reactions”.": [
+  "/en/guides/watch-party/"
+ ],
+ "Rows of movies in Laststream.": [
+  "/en/"
+ ],
+ "Screenshots made with a demo catalogue: made-up titles and AI-generated posters.": [
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Section": [
+  "/en/guides/kids-profile/"
+ ],
+ "See it all in a minute.": [
+  "/en/"
+ ],
+ "See the code on GitHub": [
+  "/en/"
+ ],
+ "Self-hosted": [
+  "/en/"
+ ],
+ "Send and accept requests, see who's online and find your friends in one place.": [
+  "/en/"
+ ],
+ "Send the link however you like (message, email…). The ticket shows “Sent, pending” until they create their account.": [
+  "/en/guides/invite-someone/"
+ ],
+ "Series and episodes card: “Skip intro” and “Play next episode” are numbered 1 and 2.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "Set up a profile for the youngest, next to the other profiles at home.": [
+  "/en/guides/"
+ ],
+ "Set up live TV (M3U playlist)": [
+  "/en/guides/",
+  "/en/guides/live-tv/"
+ ],
+ "Set up live TV (M3U playlist) - Laststream guides": [
+  "/en/guides/live-tv/"
+ ],
+ "Settings, Audio category: the main audio language (French) and the secondary one (Original version) are numbered 2 and 3.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Settings, Home and recommendations: “Hidden titles — 2 titles” and the ticked Horror genre are numbered 1 and 2.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Settings, Live TV: the M3U playlist fields are numbered 1 to 4": [
+  "/en/guides/live-tv/"
+ ],
+ "Settings, Playback category: the menu entry and the “Start the best source” row are numbered 1 and 2.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "Settings, Profile and account: the “My invitation tickets” card (4 tickets available) is framed.": [
+  "/en/guides/invite-someone/"
+ ],
+ "Settings, Sources: the manifest URL field is framed in yellow": [
+  "/en/guides/add-a-source/"
+ ],
+ "Settings: the “Import from another app, Stremio, Nuvio, Simkl, Plex” card is framed.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Settings: the “Live TV” category is framed.": [
+  "/en/guides/live-tv/"
+ ],
+ "Settings: the “Sources” category and the “Add a Stremio addon” button are numbered 1 and 2.": [
+  "/en/guides/add-a-source/"
+ ],
+ "Several ready-made themes and a customizable accent color.": [
+  "/en/"
+ ],
+ "Share your library": [
+  "/en/guides/",
+  "/en/guides/share-your-library/"
+ ],
+ "Share your library - Laststream guides": [
+  "/en/guides/share-your-library/"
+ ],
+ "Shared libraries": [
+  "/en/"
+ ],
+ "Short step-by-step guides to get started with Laststream, from your first profile to a watch party with friends. Every screenshot shows where to click.": [
+  "/en/guides/"
+ ],
+ "Short step-by-step guides to get started with Laststream: profiles, Stremio sources, live TV, friends, watch parties and settings.": [
+  "/en/guides/"
+ ],
+ "Sign-up is by invitation. Ask the person who told you about Laststream for a referral ticket: each account has 2.": [
+  "/en/"
+ ],
+ "Sign-up is by invitation. Give one of your invitation tickets: a personal link, with your note and three titles for them to discover.": [
+  "/en/guides/invite-someone/"
+ ],
+ "Skip to content": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Someone you invited with one of your tickets can become your friend in one click, without swapping Name#TAGs.": [
+  "/en/guides/add-friends/"
+ ],
+ "Sorted by language, then quality, then size. You can see them all and pick one by hand.": [
+  "/en/"
+ ],
+ "Sources, sorted for you": [
+  "/en/"
+ ],
+ "Start a watch party": [
+  "/en/guides/",
+  "/en/guides/watch-party/"
+ ],
+ "Start a watch party - Laststream guides": [
+  "/en/guides/watch-party/"
+ ],
+ "Start right away, match quality to your connection, skip intros.": [
+  "/en/guides/"
+ ],
+ "Steps": [
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Stremio import finished: 12 imported, 0 skipped, 0 failed; the “See my library” button is framed.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Stremio import preview: the ticked categories and the “Import 12 items” button are framed in yellow": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Subtitles and languages": [
+  "/en/guides/",
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Subtitles and languages - Laststream guides": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Subtitles card: the switch turned on and the language “Same as main language” are numbered 1 and 2.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Subtitles come from the file first, then from external subtitles. An anime is a title classed as Animation and of Japanese origin.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Support": [
+  "/en/"
+ ],
+ "Support, I love it": [
+  "/en/"
+ ],
+ "Swap your Name#TAG with your friends to see who’s online and watch together.": [
+  "/en/guides/"
+ ],
+ "Switch between your channels and check the program guide, in one tap.": [
+  "/en/"
+ ],
+ "Sync": [
+  "/en/"
+ ],
+ "Synopsis, ratings, availability. Sources are sorted by language, quality then size, and Laststream starts the one that plays best on your connection.": [
+  "/en/"
+ ],
+ "Tap a programme to see its details, then “Watch”.": [
+  "/en/guides/live-tv/"
+ ],
+ "Tap its avatar, then “Switch profile”: the parental code is asked.": [
+  "/en/guides/kids-profile/"
+ ],
+ "Tap the eye: it opens, and your friends can see the title. Tap it again to make it private.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Tap the “Friends” button at the top right.": [
+  "/en/guides/add-friends/"
+ ],
+ "Tap your avatar at the top right (1), then “Switch profile” (2).": [
+  "/en/guides/create-a-profile/"
+ ],
+ "Tap your avatar, then “Settings”, then “Live TV” in the left column.": [
+  "/en/guides/live-tv/"
+ ],
+ "Tap your avatar, then “Settings”.": [
+  "/en/guides/add-a-source/"
+ ],
+ "Tap your status under your name to switch to “Away”, “Do not disturb” or “Invisible”.": [
+  "/en/guides/add-friends/"
+ ],
+ "Tap “Add playlist” (4). You can also “Import a file” (<code>.m3u</code>) from the device.": [
+  "/en/guides/live-tv/"
+ ],
+ "Tap “Copy link” (3), or “Share…” to send it straight from your phone.": [
+  "/en/guides/invite-someone/"
+ ],
+ "Tap “Create profile” (2).": [
+  "/en/guides/kids-profile/"
+ ],
+ "Tap “Create profile” at the top right (2).": [
+  "/en/guides/create-a-profile/"
+ ],
+ "Tap “Done”, then the kids profile: its home only shows titles for its age.": [
+  "/en/guides/kids-profile/"
+ ],
+ "The 4 filled parental code boxes and the “Create profile” button are framed.": [
+  "/en/guides/kids-profile/"
+ ],
+ "The Laststream library with six imported titles.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "The Laststream profile that should get the titles, open.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "The Windows or Android app: a browser cannot reach most playlists.": [
+  "/en/guides/live-tv/"
+ ],
+ "The account’s playlists are managed by the main profile.": [
+  "/en/guides/live-tv/"
+ ],
+ "The address of the extension’s manifest (it usually ends with <code>/manifest.json</code>).": [
+  "/en/guides/add-a-source/"
+ ],
+ "The app is not notarized by Apple yet: if macOS refuses to open it, go to System Settings, Privacy &amp; Security, then \"Open Anyway\".": [
+  "/en/"
+ ],
+ "The app shows these messages in French.": [
+  "/en/guides/live-tv/"
+ ],
+ "The child does not see Settings, Statistics, friends or library sharing.": [
+  "/en/guides/kids-profile/"
+ ],
+ "The debrid key is not entered in Laststream: each addon handles debrid in its own configuration.": [
+  "/en/guides/add-a-source/"
+ ],
+ "The demo": [
+  "/en/"
+ ],
+ "The essential guides": [
+  "/en/guides/"
+ ],
+ "The experience": [
+  "/en/"
+ ],
+ "The eye, now open and orange, is framed; the message “Visible to your friends” shows at the bottom.": [
+  "/en/guides/share-your-library/"
+ ],
+ "The field contains Léo#TAG; the field and the add button are numbered 1 and 2.": [
+  "/en/guides/add-friends/"
+ ],
+ "The first line must be <code>#EXTM3U</code>. Each <code>#EXTINF</code> is followed by the stream address (http, https, rtsp, rtp or udp). <code>group-title</code> gives the category, <code>tvg-chno</code> the number (1 to 9999), <code>tvg-id</code> links to the XMLTV guide.": [
+  "/en/guides/live-tv/"
+ ],
+ "The first ticket shows “Pending”, with the note sent and the “Copy again” and “Cancel ticket” buttons.": [
+  "/en/guides/invite-someone/"
+ ],
+ "The four orange “Give this ticket” tickets; the first one is framed.": [
+  "/en/guides/invite-someone/"
+ ],
+ "The ground rules": [
+  "/en/"
+ ],
+ "The manifest is read right away: the addon’s name, logo and status appear (1). Tap “Save” at the bottom of Settings (2).": [
+  "/en/guides/add-a-source/"
+ ],
+ "The manifest:": [
+  "/en/guides/add-a-source/"
+ ],
+ "The maximum resolution never stops you from picking another source by hand.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "The new profile shows up next to the others. Tap “Done” to go back to “Who’s watching?”, then tap the profile to open it.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "The online service costs €24 per year (€2 a month), as a supporter subscription that covers your whole household. Love it? With \"Support, I love it\" you pick your own yearly amount, from €24 with no ceiling. Invited by a friend, your first year is €12. You can also run Laststream for free on your own server: its code is public on <a href=\"https://github.com/gtko/laststream\" rel=\"noopener\">GitHub</a>.": [
+  "/en/"
+ ],
+ "The online service is funded by the people who use it. The code stays public: anyone can run it at home.": [
+  "/en/"
+ ],
+ "The other platforms are just below.": [
+  "app.js"
+ ],
+ "The panel’s “Messages” and “Activity” tabs are for chatting and seeing what your friends are watching.": [
+  "/en/guides/add-friends/"
+ ],
+ "The person you invite can become your friend in one click. Quicker, without a note: the Friends panel, “Invite someone”, “Copy a link”.": [
+  "/en/guides/invite-someone/"
+ ],
+ "The request shows under “Requests”, “request sent”.": [
+  "/en/guides/add-friends/"
+ ],
+ "The room link also lets in people without an account: 4 seats, valid for 12 h. A room takes up to 20 people.": [
+  "/en/guides/watch-party/"
+ ],
+ "The same amount every year, cancel anytime.": [
+  "/en/"
+ ],
+ "The same card also imports a Nuvio backup, a Simkl export or a Plex server’s history. The import goes into the open profile: do it again for each profile.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "The sources from your extensions are sorted by language, then by quality, then by size. Laststream automatically starts the best one that suits your current connection speed, and you can always pick another one from the list.": [
+  "/en/"
+ ],
+ "The whole app in a tab, with the same sync. Great for trying it out.": [
+  "/en/"
+ ],
+ "The whole online service, just like the supporter subscription.": [
+  "/en/"
+ ],
+ "The “Maximum age” menu (12 years) and the list of allowed sections are numbered 1 and 2.": [
+  "/en/guides/kids-profile/"
+ ],
+ "The “Mon addon” card with its logo and status, and the “Save” button, are numbered 1 and 2.": [
+  "/en/guides/add-a-source/"
+ ],
+ "The “Share with my friends” and “Keep everything private” buttons are numbered 1 and 2.": [
+  "/en/guides/share-your-library/"
+ ],
+ "The “Together” page gathers open rooms, “Join with a code” and “Plan an evening” for later.": [
+  "/en/guides/watch-party/"
+ ],
+ "Theme and accent color settings.": [
+  "/en/"
+ ],
+ "Themes that fit you": [
+  "/en/"
+ ],
+ "These choices apply to the open profile only.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "This is exactly the extension used for this guide’s screenshots.": [
+  "/en/guides/add-a-source/"
+ ],
+ "This product uses the TMDB API but is not endorsed or certified by TMDB.": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Three steps. A few minutes.": [
+  "/en/"
+ ],
+ "Three ways to use Laststream.": [
+  "/en/"
+ ],
+ "Tick the friends to invite (2), then “Open the waiting room” (3).": [
+  "/en/guides/watch-party/"
+ ],
+ "Ticked by default": [
+  "/en/guides/kids-profile/"
+ ],
+ "Ticket being personalised: the note, three ticked posters and the “Copy link” button are numbered 1 to 3.": [
+  "/en/guides/invite-someone/"
+ ],
+ "Time watched, favorite genres, monthly trends. Everything stays on your account.": [
+  "/en/"
+ ],
+ "Titles in your library, and friends to see them.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Titles with no match (TV channels, addon-only titles) are skipped, and the report says why. You can copy or download it.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "To change everything at once: “Share with my friends” (1) or “Keep everything private” (2). With the “Movies” or “Series” filter, only those titles change.": [
+  "/en/guides/share-your-library/"
+ ],
+ "To check your Mac: Apple menu, \"About This Mac\". \"Chip Apple\" means Apple Silicon, \"Processor Intel\" means Intel.": [
+  "/en/"
+ ],
+ "To delete a profile: same path, then the danger zone at the bottom (type its name to confirm). The main profile cannot be deleted.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "To edit a profile: “Manage profiles”, then tap the profile. You can change its name, avatar, colour or PIN code.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "To give access to one of your profiles (same household), use the “Household invitations” card just below.": [
+  "/en/guides/invite-someone/"
+ ],
+ "To uninstall: remove, then “Save”.": [
+  "/en/guides/add-a-source/"
+ ],
+ "Together": [
+  "/en/",
+  "/en/guides/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Top bar of the home screen: the “Live” tab is framed.": [
+  "/en/guides/live-tv/"
+ ],
+ "Turn on “Subtitles outside the main language” (1) to get subtitles when the audio isn’t in your language, and pick their language (2).": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "Type your Stremio email (1) and password (2), then “Read my library” (3).": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Type your friend’s Name#TAG exactly, tag letters included (1), then tap the add button (2).": [
+  "/en/guides/add-friends/"
+ ],
+ "Under the buttons, the text “4 titles visible to your friends.” is framed.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Under “Genres never to suggest”, tap a genre (2) to take all its titles off Home. “Reset all” brings them all back.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "Under “Parental controls”, turn on “Kids profile”.": [
+  "/en/guides/kids-profile/"
+ ],
+ "Upcoming releases and TV shows, day by day, so you don't miss a thing.": [
+  "/en/"
+ ],
+ "Value": [
+  "/en/guides/live-tv/"
+ ],
+ "Video language": [
+  "/en/"
+ ],
+ "Video of the whole walkthrough, no sound": [
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Viewing statistics": [
+  "/en/"
+ ],
+ "Waiting room: the link’s “Copy” button, the “Invite friends” tab and the “Start” button are numbered 1 to 3.": [
+  "/en/guides/watch-party/"
+ ],
+ "Watch party": [
+  "/en/"
+ ],
+ "Watch party waiting room: the link to share, the “Invite friends” tab and the start button are framed in yellow": [
+  "/en/guides/watch-party/"
+ ],
+ "Watch party window: “Private”, Léo’s ticked box and the “Open the waiting room” button are numbered 1 to 3.": [
+  "/en/guides/watch-party/"
+ ],
+ "Watch the same film at the same time, each at home.": [
+  "/en/guides/"
+ ],
+ "Watch the same film at the same time, each at home. Everyone plays their own source: the watch party keeps your playback in sync, no video stream is shared.": [
+  "/en/guides/watch-party/"
+ ],
+ "Watch with the people you love.": [
+  "/en/"
+ ],
+ "When everyone is ready, start playback (3): playback stays in sync.": [
+  "/en/guides/watch-party/"
+ ],
+ "Windows": [
+  "/en/",
+  "/en/guides/add-a-source/",
+  "/en/guides/add-friends/",
+  "/en/guides/clean-up-recommendations/",
+  "/en/guides/create-a-profile/",
+  "/en/guides/import-from-stremio/",
+  "/en/guides/invite-someone/",
+  "/en/guides/kids-profile/",
+  "/en/guides/live-tv/",
+  "/en/guides/playback-comfort/",
+  "/en/guides/share-your-library/",
+  "/en/guides/subtitles-and-languages/",
+  "/en/guides/watch-party/"
+ ],
+ "Windows, Android, browser, iPhone, Mac and Linux.": [
+  "/en/"
+ ],
+ "Windows, Mac, Linux, Android and browser. Laststream hosts no content: it reads the extensions you configure. Works with Stremio add-ons.": [
+  "/en/"
+ ],
+ "Without “Kids TV”, the TV tab is hidden for the child.": [
+  "/en/guides/kids-profile/"
+ ],
+ "Works with Stremio": [
+  "/en/"
+ ],
+ "Write your note (1, 280 characters max): it shows on their welcome page. Pick up to 3 favourites from your library (2).": [
+  "/en/guides/invite-someone/"
+ ],
+ "Yes": [
+  "/en/guides/kids-profile/"
+ ],
+ "Yes. Friends, messages, activity feed, shared libraries and watch party are available with an account, but not from a kids profile. Your library stays private by default and each participant watches with their own sources: nothing is shared between accounts.": [
+  "/en/"
+ ],
+ "Yes. Laststream reads add-ons in the Stremio format: paste the URL of the add-on's manifest, and its catalogs and sources are added to the app.": [
+  "/en/"
+ ],
+ "Yes: playback progress, lists and settings are synced with your account.": [
+  "/en/"
+ ],
+ "You can't sign up freely: each account has 2 referral tickets to give away.": [
+  "/en/"
+ ],
+ "You choose which titles your friends can see, one by one or all at once.": [
+  "/en/"
+ ],
+ "You create a kids profile alongside yours. It only shows content suited to its age, based on the age ratings available, it doesn't open extensions or settings, and you can only leave it with a code.": [
+  "/en/"
+ ],
+ "You install and run it yourself.": [
+  "/en/"
+ ],
+ "You pick your amount at checkout.": [
+  "/en/"
+ ],
+ "Your M3U playlist address (and, if you have one, the XMLTV guide address).": [
+  "/en/guides/live-tv/"
+ ],
+ "Your Stremio email and password, or a Stremio export file.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Your Stremio titles are in your library, with their watched state and progress.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Your browser cannot play this video. <a href=\"/assets/demo/demo-en.mp4\">Download the demo (MP4)</a>.": [
+  "/en/"
+ ],
+ "Your channels appear with the “Box” badge, with their programmes. The left column filters by category.": [
+  "/en/guides/live-tv/"
+ ],
+ "Your cinema, everywhere.": [
+  "/en/"
+ ],
+ "Your email and password go straight from your device to Stremio. Neither Laststream nor your server receives them, and they are not kept.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "Your extensions, your rules": [
+  "/en/"
+ ],
+ "Your friends see your shared titles in their Friends panel: they tap your name, then “See their whole library”. They can add them to their own library.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Your friend’s Name#TAG (they find it in the same place).": [
+  "/en/guides/add-friends/"
+ ],
+ "Your library is private by default. Let your friends see the titles you choose, or your whole library at once.": [
+  "/en/guides/share-your-library/"
+ ],
+ "Your online friends are listed, with “Invite”. To bring several people together, tap “Open a room for this title”.": [
+  "/en/guides/watch-party/"
+ ],
+ "Your platform was not recognized": [
+  "app.js"
+ ],
+ "Your price": [
+  "/en/"
+ ],
+ "Your progress follows you, from PC to phone.": [
+  "/en/"
+ ],
+ "every 24 h": [
+  "/en/guides/live-tv/"
+ ],
+ "from now to +24 h": [
+  "/en/guides/live-tv/"
+ ],
+ "from €24 a year, no ceiling": [
+  "/en/"
+ ],
+ "iPhone and iPad": [
+  "/en/"
+ ],
+ "mpv or libVLC: audio tracks, subtitles, picture-in-picture and a mini player.": [
+  "/en/"
+ ],
+ "on your own server": [
+  "/en/"
+ ],
+ "that's €2 a month · Laststream online": [
+  "/en/"
+ ],
+ "“Cancel ticket” gets it back right away if you picked the wrong person.": [
+  "/en/guides/invite-someone/"
+ ],
+ "“Les Gardiens du phare” film page: the “…” button is framed.": [
+  "/en/guides/watch-party/"
+ ],
+ "“Live TV” page: the playlist’s first channel and its programmes are framed.": [
+  "/en/guides/live-tv/"
+ ],
+ "“Manage profiles” screen: the new Léo profile is framed, next to Camille.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "“Maximum resolution” (1) caps the quality picked for you, to save data. “My connection speed” (2) leaves out sources too heavy for your connection: keep “Automatic (measured)” or pick a speed.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "“New profile” window: the name field (Léo), the “Change avatar” button and the colour swatches are numbered 1 to 3.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "“New profile” window: the name, avatar and colour are framed in yellow": [
+  "/en/guides/create-a-profile/"
+ ],
+ "“New profile” window: the “Kids profile” switch is framed in yellow": [
+  "/en/guides/kids-profile/"
+ ],
+ "“Original version” as the secondary language picks the title’s original language.": [
+  "/en/guides/subtitles-and-languages/"
+ ],
+ "“Parental code” keypad shown over the kids profile home.": [
+  "/en/guides/kids-profile/"
+ ],
+ "“Parental controls” section: the “Kids profile” switch is on and framed.": [
+  "/en/guides/kids-profile/"
+ ],
+ "“Read-only, from this device” form: the email, the password and the “Read my library” button are numbered 1 to 3.": [
+  "/en/guides/import-from-stremio/"
+ ],
+ "“Requests” section: Léo, “request sent”, is framed.": [
+  "/en/guides/add-friends/"
+ ],
+ "“Rivages de cendre” film page: the “…” button is framed.": [
+  "/en/guides/clean-up-recommendations/"
+ ],
+ "“Test my connection” measures your speed right away.": [
+  "/en/guides/playback-comfort/"
+ ],
+ "“Watch with…” window: Léo, online, and the framed “Open a room for this title” link.": [
+  "/en/guides/watch-party/"
+ ],
+ "“Who’s watching?” screen: the “Add a profile” tile is framed, next to the Camille profile.": [
+  "/en/guides/create-a-profile/"
+ ],
+ "…then “Don’t suggest on Home”.": [
+  "/en/guides/clean-up-recommendations/"
+ ]
+}

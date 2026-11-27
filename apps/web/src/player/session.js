@@ -28,6 +28,7 @@ import { pollMoreSources, syncNative } from './sessionNative.js';
 import { continueWith, initSession, loaderExtra } from './sessionOpen.js';
 import { partyAdapter } from './sessionSocial.js';
 import { S, badKey, langPrefsOf, originalLangOf, sourceLine } from './sessionState.js';
+import { t } from '../i18n';
 
 // API publique du lecteur : `startSession`, `playBest` et `playSource` ci-dessous, la fermeture dans sessionClose.js.
 export { closePlayer, isPlayerOpen } from './sessionClose.js';
@@ -60,7 +61,7 @@ export async function playBest(request, opener, opts = {}) {
   p.noLaunchCache = !!opts.prefer; // salon : chacun suit la version de l'hôte, sans toucher à la source mémorisée
   // Salon : la source choisie dans le salon d'attente est lancée telle quelle, sans seconde recherche (le failover habituel reste).
   if (opts.chosen && (await playChosen(p, request, opts))) return;
-  S.ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
+  S.ui.setLoading(p.meta.title || t('Lecture'), t('Recherche de la meilleure source…'), loaderExtra(0));
   // Titre téléchargé : lu depuis l'appareil, sans recherche de source ni serveur de streaming (sauf salon : chacun suit la version de l'hôte).
   if (!opts.prefer && !opts.picker && !p.addon && (await playDownloaded(p, request))) return;
   await searchAndPlay(p, request, opts);
@@ -84,8 +85,8 @@ async function playChosen(p, request, opts) {
   p.loaded = loaded;
   p.ranked = [...views];
   const roomLang = opts.partyLang ? roomLangOf(opts.partyLang, originalLangOf(p)) : null;
-  const notice = languageChanged(view, roomLang) ? 'Lecture hors langue du salon : ' + sourceLabel(view) : '';
-  S.ui.setLoading(p.meta.title || 'Lecture', 'Source choisie dans le salon…', loaderExtra(2, { source: sourceLine(view) + (view.status === 'cached' ? ' ⚡' : '') }));
+  const notice = languageChanged(view, roomLang) ? t('Lecture hors langue du salon : {view}', { view: sourceLabel(view) }) : '';
+  S.ui.setLoading(p.meta.title || t('Lecture'), t('Source choisie dans le salon…'), loaderExtra(2, { source: sourceLine(view) + (view.status === 'cached' ? ' ⚡' : '') }));
   await continueWith(view, { resume: p.resumeMode, notice });
   return true;
 }
@@ -111,12 +112,12 @@ async function playDownloaded(p, request) {
   p.views = [view];
   p.ranked = [view];
   p.pending = [];
-  S.ui.setLoading(p.meta.title || 'Lecture', 'Lecture du fichier téléchargé…', loaderExtra(2, { source: 'Téléchargé · hors ligne', steps: ['Fichier téléchargé trouvé', 'Lecture depuis l’appareil', 'Préparation du fichier'] }));
+  S.ui.setLoading(p.meta.title || t('Lecture'), t('Lecture du fichier téléchargé…'), loaderExtra(2, { source: t('Téléchargé · hors ligne'), steps: [t('Fichier téléchargé trouvé'), t('Lecture depuis l’appareil'), t('Préparation du fichier')] }));
   await continueWith(view, { resume: p.resumeMode });
   return true;
 }
 
-export const MEMORY_STEPS = ['Dernière source retrouvée', 'Choix de la meilleure source', 'Préparation du lien'];
+export const MEMORY_STEPS = [t('Dernière source retrouvée'), t('Choix de la meilleure source'), t('Préparation du lien')];
 
 /** Fiche de `view` dans la liste chargée (même source), sinon `view` : la vue reconstruite de la mémoire n'a pas l'indice du panneau. */
 export const listed = (p, view) => p.views.find((v) => sourceKey(v) === sourceKey(view)) || view;
@@ -155,7 +156,7 @@ async function playRemembered(p, request) {
   p.memStart = true; // jusqu'au premier démarrage réussi
   p.fromCache = true; // jusqu'à l'arrivée de la liste complète
   p.cacheMerge = view;
-  S.ui.setLoading(p.meta.title || 'Lecture', 'Reprise de la dernière source…', loaderExtra(2, { source: sourceLine(view) + (view.status === 'cached' ? ' ⚡' : ''), steps: MEMORY_STEPS }));
+  S.ui.setLoading(p.meta.title || t('Lecture'), t('Reprise de la dernière source…'), loaderExtra(2, { source: sourceLine(view) + (view.status === 'cached' ? ' ⚡' : ''), steps: MEMORY_STEPS }));
   const started = continueWith(view, { resume: p.resumeMode });
   loadSources(request).then((loaded) => mergeRemembered(p, loaded)).catch(() => undefined);
   await started;
@@ -200,7 +201,7 @@ export function searchInstead(p, startAt) {
     if (p.engine.kind === 'native') p.engine.closeNow(); // sinon l'image figée du lecteur natif reste sous le chargeur
   }
   S.ui.root.classList.add('is-searching');
-  S.ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
+  S.ui.setLoading(p.meta.title || t('Lecture'), t('Recherche de la meilleure source…'), loaderExtra(0));
   return searchAndPlay(p, p.req, { ...p.launchOpts, noCache: true });
 }
 
@@ -208,7 +209,7 @@ export function searchInstead(p, startAt) {
 async function loadAddonLoaded(p, request) {
   const a = p.addon;
   // Repli hors registre : nom générique, jamais l'adresse de l'addon (elle peut porter un jeton).
-  const entry = readAddonCatalogs()[addonKeyOf(a.base)] || { manifestUrl: a.base + '/manifest.json', name: 'Addon' };
+  const entry = readAddonCatalogs()[addonKeyOf(a.base)] || { manifestUrl: a.base + '/manifest.json', name: t('Addon') };
   const views = await loadAddonSources(entry, a.type, addonStreamIdOf(request));
   return { imdb: '', views, pending: [] };
 }
@@ -241,7 +242,7 @@ export async function searchAndPlay(p, request, opts) {
   p.loaded = loaded;
   p.ranked = [...loaded.views];
   if (opts.picker || (!getAutoplay() && !opts.force)) { showSourcesPanel(); return; }
-  S.ui.setLoading(p.meta.title || 'Lecture', 'Choix de la meilleure source…', loaderExtra(1));
+  S.ui.setLoading(p.meta.title || t('Lecture'), t('Choix de la meilleure source…'), loaderExtra(1));
   const t0 = Date.now();
   const bw = await measureBandwidthKbps().catch(() => null);
   if (!alive()) return;
@@ -261,7 +262,7 @@ export async function searchAndPlay(p, request, opts) {
     }
     // Navigateur : la version de l'hôte n'est suivie que si elle passe ici (sinon la meilleure source compatible).
     const same = opts.prefer ? opts.prefer(usable.filter((v) => webCompatOf(v, compatCtx).level === 'ok')) : null;
-    return same ? { view: same, reason: 'Même version que l’hôte du salon', party: true } : recommendFor(usable, bw, originalLangOf(p) || undefined, undefined, langPrefsOf(p));
+    return same ? { view: same, reason: t('Même version que l’hôte du salon'), party: true } : recommendFor(usable, bw, originalLangOf(p) || undefined, undefined, langPrefsOf(p));
   };
   const good = (r) => !!r && (r.party === true || isGoodMatch(r));
   // Lancement sans attendre tous les addons : voir awaitLaunchable. Les addons restants alimentent le panneau Sources.
@@ -280,14 +281,14 @@ export async function searchAndPlay(p, request, opts) {
       p.ranked = [...next.views];
     },
     onWait: (next, r) => S.ui.setLoading(
-      p.meta.title || 'Lecture',
+      p.meta.title || t('Lecture'),
       r ? describeLaunch(next.views.length, next.pending) : describePending(next.pending),
       loaderExtra(r ? 1 : 0, { slow: true }),
     ),
   });
   if (!alive() || p.pickMine) return;
   if (!rec) { showSourcesPanel(); return; }
-  S.ui.setLoading(p.meta.title || 'Lecture', rec.reason, loaderExtra(2, { source: sourceLine(rec.view) + (rec.view.status === 'cached' ? ' ⚡' : '') }));
+  S.ui.setLoading(p.meta.title || t('Lecture'), rec.reason, loaderExtra(2, { source: sourceLine(rec.view) + (rec.view.status === 'cached' ? ' ⚡' : '') }));
   await continueWith(rec.view, { resume: p.resumeMode, notice: rec.languageFallback ? rec.reason : '' });
 }
 

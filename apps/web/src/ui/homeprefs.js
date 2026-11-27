@@ -6,15 +6,16 @@ import {
 import { isKidProfile } from '../data/auth';
 import { toast } from './dom.js';
 import { card, chipHTML, chipsHTML } from './settings-ui.js';
+import { t as tr, tn } from '../i18n';
 
 /** Retire un titre de l'accueil, avec annulation dans le message. */
 function hideFromHome(key, title, poster) {
   if (isKidProfile()) return;
   if (!hideTitle({ key, title: title || key, poster: poster || '' })) {
-    toast('Liste pleine : réaffiche des titres dans les réglages');
+    toast(tr('Liste pleine : réaffiche des titres dans les réglages'));
     return;
   }
-  toast('Masqué de l’accueil', { ms: 5000, action: { label: 'Annuler', run: () => { unhideTitle(key); toast('Réaffiché sur l’accueil'); } } });
+  toast(tr('Masqué de l’accueil'), { ms: 5000, action: { label: tr('Annuler'), run: () => { unhideTitle(key); toast(tr('Réaffiché sur l’accueil')); } } });
 }
 
 /** Bascule « Ne plus proposer » / « Réafficher » (menu contextuel). */
@@ -22,25 +23,24 @@ export function toggleHidden(key, title, poster) {
   if (isKidProfile()) return;
   if (isHiddenKey(key)) {
     unhideTitle(key);
-    toast('Réaffiché sur l’accueil');
+    toast(tr('Réaffiché sur l’accueil'));
   } else {
     hideFromHome(key, title, poster);
   }
 }
 
-const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
 /** Clé d'un genre depuis l'attribut `data-ban-genre` : identifiant TMDB (nombre) ou clé d'une catégorie dérivée (« anime »). */
 const genreKeyOf = (s) => (/^\d+$/.test(s) ? Number(s) : s);
 
 /** Titres masqués : une seule ligne compacte avec « Gérer » (vue dédiée #/hidden), ou l'état vide sans bouton. */
 function hiddenLineHTML(n) {
-  if (!n) return '<div class="hm-line is-empty" data-home-hidden><p class="hm-line-t">Aucun titre masqué</p></div>';
-  return '<div class="hm-line" data-home-hidden><p class="hm-line-t">Titres masqués — <span data-hidden-count>' + plural(n, 'titre', 'titres') + '</span></p>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-hidden-nav aria-label="Gérer les titres masqués">Gérer</button></div>';
+  if (!n) return '<div class="hm-line is-empty" data-home-hidden><p class="hm-line-t">' + tr('Aucun titre masqué') + '</p></div>';
+  return '<div class="hm-line" data-home-hidden><p class="hm-line-t">' + tr('Titres masqués —') + ' <span data-hidden-count>' + tn(n, '{n} titre', '{n} titres') + '</span></p>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-hidden-nav aria-label="' + tr('Gérer les titres masqués') + '">' + tr('Gérer') + '</button></div>';
 }
 
 const genreCount = () => { const b = bannedGenreIds(); return GENRE_OPTIONS.filter((g) => g.ids.some((id) => b.has(id))).length; };
-const genreCountText = (n) => (n ? plural(n, 'genre exclu', 'genres exclus') : 'Aucun genre exclu');
+const genreCountText = (n) => (n ? tn(n, '{n} genre exclu', '{n} genres exclus') : tr('Aucun genre exclu'));
 
 /** Contenu du panneau « Accueil et recommandations » (sans l'en-tête de panneau). Vide pour un profil enfant. */
 export function homePanelHTML() {
@@ -48,15 +48,14 @@ export function homePanelHTML() {
   const f = currentFilters();
   const banned = bannedGenreIds();
   const n = genreCount();
-  const chips = chipsHTML('Genres à ne jamais proposer', GENRE_OPTIONS.map((g) =>
+  const chips = chipsHTML(tr('Genres à ne jamais proposer'), GENRE_OPTIONS.map((g) =>
     chipHTML(g.label, g.ids.some((id) => banned.has(id)), 'data-ban-genre="' + g.ids.join(',') + '"')).join(''));
-  const info = card('', '<p class="hm-info">Les films vus ou regardés à 90 % et les séries vues en entier ne sont plus proposés sur l’accueil. ' +
-    'Ils restent dans la bibliothèque, la recherche et la fiche.</p>');
+  const info = card('', '<p class="hm-info">' + tr('Les films vus ou regardés à 90 % et les séries vues en entier ne sont plus proposés sur l’accueil. Ils restent dans la bibliothèque, la recherche et la fiche.') + '</p>');
   const hidden = card('', hiddenLineHTML(f.hidden.length));
-  const genres = card('Genres à ne jamais proposer', chips, {
-    desc: 'Les titres de ces genres sortent de l’accueil (films et séries).',
+  const genres = card(tr('Genres à ne jamais proposer'), chips, {
+    desc: tr('Les titres de ces genres sortent de l’accueil (films et séries).'),
     aside: '<div class="hm-aside"><span class="set-badge' + (n ? ' is-on' : '') + '" data-genre-count aria-live="polite">' + genreCountText(n) + '</span>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-genres-reset' + (n ? '' : ' disabled') + '>Tout réinitialiser</button></div>',
+      '<button type="button" class="btn btn-ghost btn-sm" data-genres-reset' + (n ? '' : ' disabled') + '>' + tr('Tout réinitialiser') + '</button></div>',
   });
   return info + hidden + genres;
 }
@@ -91,7 +90,7 @@ document.addEventListener('click', (e) => {
     setGenreBanned([...bannedGenreIds()], false);
     if (panel) panel.querySelectorAll('[data-ban-genre]').forEach((c) => c.setAttribute('aria-checked', 'false'));
     refreshHome(panel);
-    toast('Genres réinitialisés');
+    toast(tr('Genres réinitialisés'));
     return;
   }
 });

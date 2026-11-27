@@ -7,13 +7,14 @@ import { ICON } from './icons.js';
 import { LI } from '../player/icons.js';
 import { tracksModel } from './tvControls.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Hauteur d'une ligne de la liste des chaînes (px à 15 px de police) : fixe, pour fenêtrer. */
 const ROW_H = 68;
 
 const shellHead = (title, sub, extra) => '<div class="pn-top"><div class="pn-ttl"><h2 id="pn-title">' + esc(title) + '</h2>' +
   (sub ? '<p class="pn-sub">' + esc(sub) + '</p>' : '') + '</div>' + (extra || '') +
-  '<button type="button" class="lp-btn pn-x" data-pclose-panel aria-label="Fermer">' + LI.close + '</button></div>';
+  '<button type="button" class="lp-btn pn-x" data-pclose-panel aria-label="' + tr('Fermer') + '">' + LI.close + '</button></div>';
 
 // ---------- Audio et sous-titres ----------
 
@@ -34,15 +35,15 @@ function colHTML(id, title, rows, kind, empty) {
 /** Contenu du panneau « Audio et sous-titres » : deux colonnes, puis la ligne « Qualité » s'il y a plusieurs niveaux. */
 function tracksHTML(model, channelName) {
   const q = model.quality.length
-    ? '<section class="tp-quality" data-col="quality"><h3 id="tp-h-quality">Qualité</h3><div class="tp-chips" role="radiogroup" aria-labelledby="tp-h-quality">' +
+    ? '<section class="tp-quality" data-col="quality"><h3 id="tp-h-quality">' + tr('Qualité') + '</h3><div class="tp-chips" role="radiogroup" aria-labelledby="tp-h-quality">' +
       model.quality.map((r) => '<button type="button" class="tp-chip' + (r.selected ? ' is-on' : '') + '" role="radio" aria-checked="' + (r.selected ? 'true' : 'false') +
         '" data-pitem="quality" data-pid="' + esc(r.id) + '" tabindex="' + (r.selected ? '0' : '-1') + '">' + (r.selected ? '<span class="tp-chk" aria-hidden="true">' + LI.check + '</span>' : '') +
         '<span class="tp-lbl">' + esc(r.text) + '</span>' + (r.detail ? '<span class="tp-det">' + esc(r.detail) + '</span>' : '') + '</button>').join('') +
       '</div></section>'
     : '';
-  return shellHead('Audio et sous-titres', channelName) + '<div class="pn-body"><div class="tp-cols">' +
-    colHTML('audio', 'Audio', model.audio, 'audio', 'Une seule piste audio sur cette chaîne.') +
-    colHTML('sub', 'Sous-titres', model.subs, 'sub', 'Aucun sous-titre sur cette chaîne.') + '</div>' + q + '</div>';
+  return shellHead(tr('Audio et sous-titres'), channelName) + '<div class="pn-body"><div class="tp-cols">' +
+    colHTML('audio', tr('Audio'), model.audio, 'audio', tr('Une seule piste audio sur cette chaîne.')) +
+    colHTML('sub', tr('Sous-titres'), model.subs, 'sub', tr('Aucun sous-titre sur cette chaîne.')) + '</div>' + q + '</div>';
 }
 
 /**
@@ -128,11 +129,11 @@ export function mountChannelsPanel(el, deps) {
   const favSet = () => new Set(deps.favs());
 
   el.dataset.html = '';
-  el.innerHTML = shellHead('Chaînes', '', '<span class="cp-count" id="cp-count" aria-live="polite"></span>') +
-    '<div class="cp-tools"><label class="cp-search"><span class="sr-only">Rechercher une chaîne</span>' + ICON.search +
-    '<input type="search" class="cp-q" placeholder="Chaîne, numéro ou programme" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-controls="cp-list"></label>' +
-    '<div class="cp-chips" role="group" aria-label="Catégories"></div></div>' +
-    '<div class="cp-list" id="cp-list" role="list" aria-label="Chaînes"><div class="cp-spacer"></div></div>' +
+  el.innerHTML = shellHead(tr('Chaînes'), '', '<span class="cp-count" id="cp-count" aria-live="polite"></span>') +
+    '<div class="cp-tools"><label class="cp-search"><span class="sr-only">' + tr('Rechercher une chaîne') + '</span>' + ICON.search +
+    '<input type="search" class="cp-q" placeholder="' + tr('Chaîne, numéro ou programme') + '" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-controls="cp-list"></label>' +
+    '<div class="cp-chips" role="group" aria-label="' + tr('Catégories') + '"></div></div>' +
+    '<div class="cp-list" id="cp-list" role="list" aria-label="' + tr('Chaînes') + '"><div class="cp-spacer"></div></div>' +
     '<p class="cp-empty" role="status" hidden></p>';
   const input = el.querySelector('.cp-q');
   const chipsEl = el.querySelector('.cp-chips');
@@ -161,16 +162,16 @@ export function mountChannelsPanel(el, deps) {
     const fav = favs.has(c.id);
     const num = c.num || (c.box && c.box.num) || '';
     const title = nn && nn.cur ? nn.cur.title : '';
-    const label = (num ? 'Chaîne ' + num + ', ' : '') + c.name + (title ? ', en cours : ' + title : '') + (cur ? ', chaîne actuelle' : '');
+    const label = (num ? tr('Chaîne {num},', { num }) + ' ' : '') + c.name + (title ? tr(', en cours : {title}', { title }) : '') + (cur ? tr(', chaîne actuelle') : '');
     return '<div class="cp-row' + (cur ? ' is-cur' : '') + (i === active ? ' is-active' : '') + '" role="listitem" aria-setsize="' + shown.length + '" aria-posinset="' + (i + 1) +
       '" style="top:' + i * h + 'px;height:' + h + 'px" data-i="' + i + '">' +
       '<button type="button" class="cp-main" data-pitem="chan" data-pid="' + esc(c.id) + '" data-i="' + i + '" tabindex="' + (i === active ? '0' : '-1') + '"' +
       (cur ? ' aria-current="true"' : '') + ' aria-label="' + esc(label) + '">' +
       deps.logoHTML(c, 'cp-logo') + '<span class="cp-num" aria-hidden="true">' + esc(num) + '</span>' +
-      '<span class="cp-t" aria-hidden="true"><span class="cp-name">' + esc(c.name) + (cur ? '<em>En cours</em>' : '') + '</span>' +
-      '<span class="cp-prog">' + (title ? esc(title) : '<i>Programme non communiqué</i>') + '</span>' +
+      '<span class="cp-t" aria-hidden="true"><span class="cp-name">' + esc(c.name) + (cur ? tr('<em>En cours</em>') : '') + '</span>' +
+      '<span class="cp-prog">' + (title ? esc(title) : tr('<i>Programme non communiqué</i>')) + '</span>' +
       (nn && nn.cur ? '<span class="cp-bar"><i style="width:' + progressOf(nn, now) + '%"></i></span>' : '') + '</span></button>' +
-      '<button type="button" class="cp-fav" data-pfav="' + esc(c.id) + '" aria-pressed="' + fav + '" tabindex="-1" aria-label="' + (fav ? 'Retirer des favoris : ' : 'Ajouter aux favoris : ') + esc(c.name) + '">' +
+      '<button type="button" class="cp-fav" data-pfav="' + esc(c.id) + '" aria-pressed="' + fav + '" tabindex="-1" aria-label="' + (fav ? tr('Retirer des favoris :') + ' ' : tr('Ajouter aux favoris :') + ' ') + esc(c.name) + '">' +
       (fav ? ICON.starOn : ICON.star) + '</button></div>';
   }
 
@@ -214,10 +215,10 @@ export function mountChannelsPanel(el, deps) {
     const favs = favSet();
     shown = filterChannels(all, { chip, q, favs });
     if (!keepActive) active = Math.min(active, Math.max(0, shown.length - 1));
-    countEl.textContent = shown.length + (shown.length > 1 ? ' chaînes' : ' chaîne');
+    countEl.textContent = shown.length + (shown.length > 1 ? ' ' + tr('chaînes') : ' ' + tr('chaîne'));
     emptyEl.hidden = shown.length > 0;
     if (!shown.length) {
-      emptyEl.textContent = chip === 'fav' && !q ? 'Aucun favori pour le moment : touche l’étoile d’une chaîne pour la garder ici.' : 'Aucune chaîne ne correspond' + (q ? ' à « ' + q + ' »' : '') + '.';
+      emptyEl.textContent = chip === 'fav' && !q ? tr('Aucun favori pour le moment : touche l’étoile d’une chaîne pour la garder ici.') : tr('Aucune chaîne ne correspond{v}.', { v: (q ? ' à « ' + q + ' »' : '') });
     }
     lastKey = '';
     drawRows(true);

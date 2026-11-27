@@ -22,6 +22,7 @@ import { showService, showServices } from './services.js';
 import { state } from './state.js';
 import { showShow, showShowsPage, renderTvRows } from './shows.js';
 import { renderLive, showTvLive } from './tv.js';
+import { t as tr } from '../i18n';
 
 // Vues chargées à la première ouverture (import dynamique) : hors du premier chargement de l'application (LAST-129).
 const loaded = {}; // modules déjà chargés : leurs fonctions de démontage ne s'appellent que s'ils le sont
@@ -54,7 +55,7 @@ let navToken = 0;
 function cancelPendingView() { navToken++; }
 /** Page qui n'a pas pu être chargée (réseau, module introuvable) : message et bouton pour réessayer. */
 function showLoadError() {
-  detailEl.innerHTML = '<div class="load-error" role="alert"><p>Impossible de charger cette page.</p><button type="button" class="btn" data-load-retry>Réessayer</button></div>';
+  detailEl.innerHTML = '<div class="load-error" role="alert"><p>' + tr('Impossible de charger cette page.') + '</p><button type="button" class="btn" data-load-retry>' + tr('Réessayer') + '</button></div>';
   const b = detailEl.querySelector('[data-load-retry]');
   if (b) { b.addEventListener('click', () => route()); b.focus({ preventScroll: true }); }
 }
@@ -65,7 +66,7 @@ function open(load, run) {
   load().then((m) => { if (token === navToken && m) run(m); }, () => { if (token === navToken) showLoadError(); });
 }
 /** Barre des amis par-dessus la page en cours : le Social est chargé au besoin. */
-const openSidebar = () => { void ensureSocial().then(() => import('./socialSidebar.js')).then((m) => m.openSidebar()).catch((e) => toastError('Impossible de charger les amis.', e, 'amis')); };
+const openSidebar = () => { void ensureSocial().then(() => import('./socialSidebar.js')).then((m) => m.openSidebar()).catch((e) => toastError(tr('Impossible de charger les amis.'), e, 'amis')); };
 const teardownDownloads = () => loaded.downloads?.teardownDownloads();
 const teardownPartyJoin = () => loaded.partyjoin?.teardownPartyJoin();
 const teardownForum = () => loaded.forum?.teardownForum();

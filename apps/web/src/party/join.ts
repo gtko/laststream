@@ -2,6 +2,7 @@
  * messages affichés. Fonctions pures (testées) : aucune URL n'est journalisée, et les messages ne contiennent aucune donnée
  * de la source (seulement des libellés fixes). */
 
+import { t as tr } from '../i18n';
 export interface JoinRoute {
   roomId: string;
   token: string;
@@ -60,61 +61,61 @@ export function guestWsPath(roomId: string, token: string, name: string): string
 
 /** Message du refus : le navigateur ne montre pas le code HTTP de l'échec du WebSocket, donc on énumère les causes. */
 export function refusedText(): string {
-  return 'Le salon n’a pas accepté la connexion : lien expiré ou remplacé, salon complet, ou pseudo déjà pris.';
+  return tr('Le salon n’a pas accepté la connexion : lien expiré ou remplacé, salon complet, ou pseudo déjà pris.');
 }
 
 /** Message de fin de salon, selon le motif reçu du client de salon (invité, panneau et salon d’attente). */
 export function endReasonText(reason: string): string {
   switch (reason) {
-    case 'replaced': return 'Connexion reprise depuis un autre appareil.';
-    case 'expired': return 'Lien expiré ou invalide : demande une nouvelle invitation à l’hôte.';
-    case 'banned': return 'Tu ne peux pas rejoindre ce salon.';
-    case 'kicked': return 'Tu as été exclu du salon.';
-    case 'name_taken': return 'Ce pseudo est déjà pris dans le salon : choisis-en un autre.';
-    case 'name_changed': return 'Cette invitation est liée à un autre pseudo : rejoins avec le pseudo d’origine.';
-    case 'full': return 'Le salon est complet.';
-    case 'ended': return 'Le salon est terminé.';
-    default: return 'Connexion au salon perdue.';
+    case 'replaced': return tr('Connexion reprise depuis un autre appareil.');
+    case 'expired': return tr('Lien expiré ou invalide : demande une nouvelle invitation à l’hôte.');
+    case 'banned': return tr('Tu ne peux pas rejoindre ce salon.');
+    case 'kicked': return tr('Tu as été exclu du salon.');
+    case 'name_taken': return tr('Ce pseudo est déjà pris dans le salon : choisis-en un autre.');
+    case 'name_changed': return tr('Cette invitation est liée à un autre pseudo : rejoins avec le pseudo d’origine.');
+    case 'full': return tr('Le salon est complet.');
+    case 'ended': return tr('Le salon est terminé.');
+    default: return tr('Connexion au salon perdue.');
   }
 }
 
 /** Message d'une erreur du relais (code seulement : jamais de texte de la source). */
 export function relayErrorText(code: string): string {
   switch (code) {
-    case 'timeout': return 'L’hôte ne répond pas : sa lecture doit être en cours.';
-    case 'unavailable': return 'Connexion à l’hôte impossible (réseau bloqué ?).';
-    case 'source': return 'L’hôte n’arrive pas à lire le fichier pour le moment.';
-    case 'unshareable': return 'Ce lien ne peut pas être partagé depuis le navigateur de l’hôte.';
-    case 'busy': return 'L’hôte est très sollicité : nouvel essai en cours.';
-    case 'closed': return 'La liaison avec l’hôte a été coupée.';
-    case 'protocol': return 'Réponse inattendue de l’hôte.';
-    default: return 'Lecture partagée impossible sur cet appareil.';
+    case 'timeout': return tr('L’hôte ne répond pas : sa lecture doit être en cours.');
+    case 'unavailable': return tr('Connexion à l’hôte impossible (réseau bloqué ?).');
+    case 'source': return tr('L’hôte n’arrive pas à lire le fichier pour le moment.');
+    case 'unshareable': return tr('Ce lien ne peut pas être partagé depuis le navigateur de l’hôte.');
+    case 'busy': return tr('L’hôte est très sollicité : nouvel essai en cours.');
+    case 'closed': return tr('La liaison avec l’hôte a été coupée.');
+    case 'protocol': return tr('Réponse inattendue de l’hôte.');
+    default: return tr('Lecture partagée impossible sur cet appareil.');
   }
 }
 
 /** Message affiché quand la liaison avec l’hôte tombe en pleine lecture. */
 export function hostLostText(): string {
-  return 'La liaison avec l’hôte est coupée. L’hôte doit rester en lecture.';
+  return tr('La liaison avec l’hôte est coupée. L’hôte doit rester en lecture.');
 }
 
 /** Message de l’invité quand l’hôte n’a pas encore de lecture partagée. */
 export function waitingHostText(): string {
-  return 'En attente de l’hôte : la lecture partagée démarre quand il lit le titre.';
+  return tr('En attente de l’hôte : la lecture partagée démarre quand il lit le titre.');
 }
 
 /** Message de l’invité quand l’hôte a répondu mais que la liaison directe n’aboutit pas (réseau ou pare-feu) : nouvel essai. */
 export function directLinkText(): string {
-  return 'La liaison directe avec l’hôte n’aboutit pas (réseau ou pare-feu) : nouvel essai en cours.';
+  return tr('La liaison directe avec l’hôte n’aboutit pas (réseau ou pare-feu) : nouvel essai en cours.');
 }
 
 /** Message de l’invité quand l’hôte ne répond pas à plusieurs essais : sa source ne peut sans doute pas être partagée par lien. */
 export function hostNotSharingText(): string {
-  return 'L’hôte ne partage pas sa lecture : sa source ne peut peut-être pas être envoyée par lien (torrent ou lien protégé). Nouvel essai en cours.';
+  return tr('L’hôte ne partage pas sa lecture : sa source ne peut peut-être pas être envoyée par lien (torrent ou lien protégé). Nouvel essai en cours.');
 }
 
 /** Message après « Quitter » : l’invité peut rejoindre à nouveau avec la même invitation. */
 export function leftText(): string {
-  return 'Tu as quitté le salon.';
+  return tr('Tu as quitté le salon.');
 }
 
 /* ---- Séance d'invité (lien partagé) ----
@@ -184,17 +185,17 @@ export function clearGuestSession(roomId: string, storage = tabStorage()): void 
 /** Message d'un refus à l'entrée par le lien partagé (code d'erreur du serveur, jamais de texte du serveur). */
 export function entryErrorText(code: string): string {
   switch (code) {
-    case 'invite_revoked': return 'Ce lien a été remplacé : demande le nouveau lien à l’hôte.';
-    case 'invite_invalid': return 'Lien d’invitation invalide ou expiré : demande une nouvelle invitation à l’hôte.';
+    case 'invite_revoked': return tr('Ce lien a été remplacé : demande le nouveau lien à l’hôte.');
+    case 'invite_invalid': return tr('Lien d’invitation invalide ou expiré : demande une nouvelle invitation à l’hôte.');
     case 'room_full':
-    case 'guest_limit': return 'Le salon est complet.';
-    case 'banned': return 'Tu ne peux pas rejoindre ce salon avec ce pseudo.';
-    case 'name_taken': return 'Ce pseudo est déjà pris dans le salon : choisis-en un autre.';
-    case 'room_not_found': return 'Ce salon n’existe plus.';
+    case 'guest_limit': return tr('Le salon est complet.');
+    case 'banned': return tr('Tu ne peux pas rejoindre ce salon avec ce pseudo.');
+    case 'name_taken': return tr('Ce pseudo est déjà pris dans le salon : choisis-en un autre.');
+    case 'room_not_found': return tr('Ce salon n’existe plus.');
     case 'too_many_entries':
-    case 'rate_limited': return 'Trop d’entrées sur ce lien : réessaie dans quelques minutes.';
-    case 'invalid_name': return 'Pseudo refusé : choisis-en un autre.';
-    case 'network': return 'Serveur injoignable : vérifie ta connexion et réessaie.';
-    default: return 'Entrée dans le salon impossible pour le moment.';
+    case 'rate_limited': return tr('Trop d’entrées sur ce lien : réessaie dans quelques minutes.');
+    case 'invalid_name': return tr('Pseudo refusé : choisis-en un autre.');
+    case 'network': return tr('Serveur injoignable : vérifie ta connexion et réessaie.');
+    default: return tr('Entrée dans le salon impossible pour le moment.');
   }
 }

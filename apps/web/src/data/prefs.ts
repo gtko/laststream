@@ -1,5 +1,6 @@
 /** Préférences de l'utilisateur (localStorage). Clés conservées de l'application précédente. */
 
+import { t } from '../i18n';
 function read(key: string): string | null {
   try {
     return globalThis.localStorage?.getItem(key) ?? null;
@@ -94,11 +95,11 @@ export interface Region {
   where: string;
 }
 export const REGIONS: readonly Region[] = [
-  { code: 'FR', label: 'France', where: 'en France' },
-  { code: 'CH', label: 'Suisse', where: 'en Suisse' },
-  { code: 'BE', label: 'Belgique', where: 'en Belgique' },
-  { code: 'CA', label: 'Canada', where: 'au Canada' },
-  { code: 'LU', label: 'Luxembourg', where: 'au Luxembourg' },
+  { code: 'FR', label: t('France'), where: t('en France') },
+  { code: 'CH', label: t('Suisse'), where: t('en Suisse') },
+  { code: 'BE', label: t('Belgique'), where: t('en Belgique') },
+  { code: 'CA', label: t('Canada'), where: t('au Canada') },
+  { code: 'LU', label: t('Luxembourg'), where: t('au Luxembourg') },
 ];
 const DEFAULT_REGION = 'FR';
 
@@ -113,7 +114,7 @@ export const setRegion = (code: string): void => {
 // ---- Langue des bandes-annonces et des textes TMDB ----
 const VIDEO_LANG_KEY = 'laststream.videolang';
 export const VIDEO_LANGS: ReadonlyArray<readonly [string, string]> = [
-  ['fr', 'Français'], ['en', 'English'], ['es', 'Español'], ['de', 'Deutsch'], ['it', 'Italiano'],
+  ['fr', t('Français')], ['en', t('English')], ['es', t('Español')], ['de', t('Deutsch')], ['it', t('Italiano')],
 ];
 export interface VideoLang {
   /** Code ISO 639-1 (fr). */

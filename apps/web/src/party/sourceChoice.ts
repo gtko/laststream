@@ -4,6 +4,7 @@ import type { Fingerprint } from '../data/socialApi';
 import { langName } from '../player/tracks';
 import type { SourceView } from '../sources/info';
 import { pickByFingerprint } from './fingerprint';
+import { t } from '../i18n';
 
 /* Choix de la source dans une watch party : la version de l'hôte d'abord, puis la langue du salon, jamais une autre langue
  * en silence. Fonctions pures, testées. Hors salon, rien de ce module ne s'applique. */
@@ -62,7 +63,7 @@ export function sourceLangCode(v: SourceView): string | null {
 
 /** Avis d'une source de repli hors de la langue du salon (même texte que le repli de failover), ou null si elle suit la langue du salon. */
 export function partyFallbackNotice(v: SourceView, roomLanguage: Lang | null): string | null {
-  return languageChanged(v, roomLanguage) ? 'Source indisponible, essai de la suivante : ' + sourceLabel(v) + ' · hors langue du salon' : null;
+  return languageChanged(v, roomLanguage) ? t('Source indisponible, essai de la suivante : {v} · hors langue du salon', { v: sourceLabel(v) }) : null;
 }
 
 /** Code de langue du salon (`vo` ou `original` : la langue d'origine du titre) vers la langue des sources. Null si le salon n'en a pas. */
@@ -114,7 +115,7 @@ export function chooseSource(views: readonly SourceView[], opts: SourceChoiceOpt
 
 /** Raison affichée d'un choix de salon : la version de l'hôte (empreinte ou même libellé), sinon la langue du salon. */
 export function choiceReason(motif: ChoiceMotif): string {
-  return motif === 'fingerprint' || motif === 'host' ? 'Même version que l’hôte du salon' : 'Source dans la langue du salon';
+  return motif === 'fingerprint' || motif === 'host' ? t('Même version que l’hôte du salon') : t('Source dans la langue du salon');
 }
 
 /** Vrai si la source ne suit pas la langue du salon (failover hors langue). Hors salon (`roomLanguage` null) : faux. */
@@ -127,5 +128,5 @@ export function languageChanged(v: SourceView, roomLanguage: Lang | null): boole
 export function languageFallbackNotice(v: SourceView, roomLanguage: string): string {
   const code = roomLanguage.trim().toLowerCase();
   const room = code === 'vo' || code === 'original' ? 'VO' : langName(code);
-  return 'Pas de source en ' + room + ' : lecture en ' + sourceLangTag(v);
+  return t('Pas de source en {room} : lecture en', { room }) + ' ' + sourceLangTag(v);
 }

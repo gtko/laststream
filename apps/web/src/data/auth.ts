@@ -17,6 +17,7 @@ import * as api from './userApi';
 import { authEvents, UserApiError, type ProfileDto, type ProfileInput } from './userApi';
 import { LocalUserStore, setUserStore, type Profile } from './userStore';
 import { claimDownloadsOwner, markPurgePending, setDownloadsOwner } from '../downloads/settings';
+import { t as tr } from '../i18n';
 
 /*
  * Orchestration des comptes : détection de l'API /user, connexion, choix du profil, bascule du `userStore`
@@ -381,7 +382,7 @@ export async function adoptSession(s: { token: string; expiresAt: string; profil
     claimLocalConfig(username);
     claimDownloads(username);
     const status = await loadProfiles(lockedId);
-    if (status !== 'ready') throw new Error('adoptSession : session non ouverte (' + status + ')');
+    if (status !== 'ready') throw new Error(tr('adoptSession : session non ouverte ({status})', { status }));
     return status;
   } catch (err) {
     // Le lien est déjà consommé : une session à moitié ouverte ne reste pas en place.

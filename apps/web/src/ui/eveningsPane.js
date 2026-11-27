@@ -13,6 +13,7 @@ import { openEveningForm } from './eveningForm.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
 import { esc, rewriteKeepingFocus } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Onglets de cette page. */
 export const EVENING_TABS = ['ce-soir', 'a-venir', 'passees'];
@@ -26,17 +27,17 @@ const MAX_AGE_MS = 10_000;
 
 /** [titre, texte] de l'état vide de chaque onglet. */
 const EMPTY = {
-  'ce-soir': ['Rien de prévu ce soir', 'Les soirées planifiées pour ce soir apparaîtront ici, avec les réponses de tes amis.'],
-  'a-venir': ['Aucune soirée à venir', 'Les prochaines soirées et les invitations en attente apparaîtront ici.'],
-  passees: ['Aucune soirée passée', 'Les soirées terminées resteront ici pour que tu puisses les retrouver.'],
+  'ce-soir': [tr('Rien de prévu ce soir'), tr('Les soirées planifiées pour ce soir apparaîtront ici, avec les réponses de tes amis.')],
+  'a-venir': [tr('Aucune soirée à venir'), tr('Les prochaines soirées et les invitations en attente apparaîtront ici.')],
+  passees: [tr('Aucune soirée passée'), tr('Les soirées terminées resteront ici pour que tu puisses les retrouver.')],
 };
 
 const ERRORS = {
-  evening_closed: 'Cette soirée est annulée ou a déjà commencé.',
-  evening_not_found: 'Cette soirée n’existe plus.',
-  evening_not_open: 'Le salon s’ouvre 15 minutes avant le début et jusqu’à 2 heures après.',
-  too_many_rooms: 'Tu as déjà trop de salons ouverts.',
-  party_unavailable: 'Les salons ne sont pas disponibles sur ce serveur.',
+  evening_closed: tr('Cette soirée est annulée ou a déjà commencé.'),
+  evening_not_found: tr('Cette soirée n’existe plus.'),
+  evening_not_open: tr('Le salon s’ouvre 15 minutes avant le début et jusqu’à 2 heures après.'),
+  too_many_rooms: tr('Tu as déjà trop de salons ouverts.'),
+  party_unavailable: tr('Les salons ne sont pas disponibles sur ce serveur.'),
 };
 
 let tab = '';
@@ -50,7 +51,7 @@ const lastHtml = new WeakMap();
 const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const isToday = (ts, now) => startOfDay(ts) === startOfDay(now);
 
-const retryBtn = (scope) => '<button type="button" class="btn btn-ghost ev-btn" data-evening-act="' + scope + ':retry">Réessayer</button>';
+const retryBtn = (scope) => '<button type="button" class="btn btn-ghost ev-btn" data-evening-act="' + scope + ':retry">' + tr('Réessayer') + '</button>';
 const message = (text) => '<p class="row-msg" role="status">' + esc(text) + '</p>';
 
 function emptyHTML(t) {
@@ -63,8 +64,8 @@ const listHTML = (items, now) =>
 
 function moreHTML(scope) {
   const l = getEveningList(scope);
-  if (l.error && l.loaded) return message('Impossible de charger la suite pour l’instant.') + '<button type="button" class="btn btn-ghost ev-btn" data-evening-act="' + scope + ':more">Réessayer</button>';
-  return l.nextCursor ? '<button type="button" class="btn btn-ghost ev-btn ev-more-btn" data-evening-act="' + scope + ':more"' + (l.loading ? ' aria-disabled="true"' : '') + '>Voir plus</button>' : '';
+  if (l.error && l.loaded) return message(tr('Impossible de charger la suite pour l’instant.')) + '<button type="button" class="btn btn-ghost ev-btn" data-evening-act="' + scope + ':more">' + tr('Réessayer') + '</button>';
+  return l.nextCursor ? '<button type="button" class="btn btn-ghost ev-btn ev-more-btn" data-evening-act="' + scope + ':more"' + (l.loading ? ' aria-disabled="true"' : '') + '>' + tr('Voir plus') + '</button>' : '';
 }
 
 const section = (id, title, body) => '<section class="ev-sec" aria-labelledby="ev-h-' + id + '"><h2 class="ev-h" id="ev-h-' + id + '">' + esc(title) + '</h2>' + body + '</section>';
@@ -82,8 +83,8 @@ function tonight(now) {
 export function paneHTML(t, now = Date.now()) {
   const scopes = SCOPES[t];
   const failed = scopes.find((s) => !getEveningList(s).loaded && getEveningList(s).error && !getEveningList(s).loading);
-  if (failed) return message('Impossible de charger les soirées pour l’instant.') + retryBtn(failed);
-  if (scopes.some((s) => !getEveningList(s).loaded)) return message('Chargement…');
+  if (failed) return message(tr('Impossible de charger les soirées pour l’instant.')) + retryBtn(failed);
+  if (scopes.some((s) => !getEveningList(s).loaded)) return message(tr('Chargement…'));
   if (t === 'ce-soir') {
     const items = tonight(now);
     return items.length ? listHTML(items, now) : emptyHTML(t);
@@ -96,8 +97,8 @@ export function paneHTML(t, now = Date.now()) {
   const ids = new Set(invites.map((e) => e.id));
   const later = getEveningList('upcoming').items.filter((e) => !isToday(e.startsAt, now) && !ids.has(e.id));
   if (!invites.length && !later.length) return emptyHTML(t);
-  return (invites.length ? section('inv', 'Invitations reçues', listHTML(invites, now)) : '') +
-    (later.length ? section('next', invites.length ? 'Prochaines soirées' : 'À venir', listHTML(later, now) + moreHTML('upcoming')) : '');
+  return (invites.length ? section('inv', tr('Invitations reçues'), listHTML(invites, now)) : '') +
+    (later.length ? section('next', invites.length ? tr('Prochaines soirées') : tr('À venir'), listHTML(later, now) + moreHTML('upcoming')) : '');
 }
 
 function paint() {
@@ -134,7 +135,7 @@ function answer(id, response, g) {
   void answerEvening(id, response, (err) => { reason = eveningErrorText(err); }).then((ok) => {
     if (g !== mountGen) return;
     busy.delete(id);
-    if (!ok) toast(reason && reason !== EVENING_FALLBACK ? reason : 'Ta réponse n’a pas pu être enregistrée.');
+    if (!ok) toast(reason && reason !== EVENING_FALLBACK ? reason : tr('Ta réponse n’a pas pu être enregistrée.'));
     paint();
   });
 }
@@ -148,13 +149,13 @@ function openRoom(id, g) {
       busy.delete(id);
       putEvening(e);
       if (e.party && e.party.partyId && state.kind === 'ensemble') location.hash = '#/party/' + encodeURIComponent(e.party.partyId);
-      else toast('Le salon n’a pas pu s’ouvrir.');
+      else toast(tr('Le salon n’a pas pu s’ouvrir.'));
       paint();
     },
     (err) => {
       if (g !== mountGen) return;
       busy.delete(id);
-      failure(err, 'Le salon n’a pas pu s’ouvrir.');
+      failure(err, tr('Le salon n’a pas pu s’ouvrir.'));
       paint();
     },
   );

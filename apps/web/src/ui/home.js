@@ -40,6 +40,7 @@ import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
 import { renderTvRows } from './shows.js';
 import { renderLive } from './tv.js';
 import { cut, esc } from './util.js';
+import { t } from '../i18n';
 
 /**
  * Complète une liste visible (`first`) avec les pages suivantes de `path` jusqu'à `want` titres retenus par `ok`.
@@ -86,11 +87,11 @@ export async function loadHome() {
   const day = dayRow ? dayRow.items : [];
   // « Pour bien commencer » : tendances de la semaine, filtrées comme avant (disponibilité des films récents).
   const week = keepVisible(await filterAvailable((listOf(val(1)) || []).filter(isReleasedItem)));
-  if ([0, 1, 2, 3].every((i) => settled[i].status === 'rejected')) throw new Error('catalogue indisponible');
+  if ([0, 1, 2, 3].every((i) => settled[i].status === 'rejected')) throw new Error(t('catalogue indisponible'));
 
   // Mise en avant : les tendances de la semaine ayant un fond (rang d'origine conservé pour le badge).
-  const films = keepVisible((await filterAvailable((listOf(val(2), 'movie') || []).filter(isReleasedItem))).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Film' })));
-  const series = keepVisible((listOf(val(3), 'tv') || []).filter(isReleasedItem).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Série' })));
+  const films = keepVisible((await filterAvailable((listOf(val(2), 'movie') || []).filter(isReleasedItem))).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: t('Film') })));
+  const series = keepVisible((listOf(val(3), 'tv') || []).filter(isReleasedItem).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: t('Série') })));
   const heroes = [];
   const taken = new Set();
   for (let i = 0; i < Math.max(films.length, series.length) && heroes.length < HERO_MAX; i++) {
@@ -126,7 +127,7 @@ export async function loadHome() {
 /** « Parce que tu as noté X ★★★★★ » quand la raison de l'IA cite un titre que tu as noté. */
 function ratedReason(text) {
   const hit = userStore.getRatings().find((r) => r.title && r.title.length > 2 && text.toLowerCase().includes(r.title.toLowerCase()));
-  return hit ? 'Parce que tu as noté ' + hit.title + ' ' + starsText(hit.rating) : text;
+  return hit ? t('Parce que tu as noté {title}', { title: hit.title }) + ' ' + starsText(hit.rating) : text;
 }
 
 function useRecs(recs) {
@@ -165,7 +166,7 @@ export async function loadAI() {
     }
     const json = await recommend(seed.history, seed.liked, { count: RECS_COUNT, exclude: excludeList(), ratings: seed.ratings });
     const fresh = { date: todayLocal(), items: compactItems(json.items || []) };
-    if (!fresh.items.length) throw new Error('liste vide');
+    if (!fresh.items.length) throw new Error(t('liste vide'));
     await saveRecs(fresh);
     useRecs(fresh);
   } catch (_) {
@@ -222,7 +223,7 @@ export async function loadUpcoming() {
   details.forEach((d, i) => {
     if (d.status !== 'fulfilled') return;
     const n = d.value.next_episode_to_air;
-    if (n && n.episode_number === 1 && n.season_number >= 2) add(airing[i], 'tv', n.air_date, 'Saison ' + n.season_number);
+    if (n && n.episode_number === 1 && n.season_number >= 2) add(airing[i], 'tv', n.air_date, t('Saison {n}', { n: n.season_number }));
   });
   state.upcoming = Array.from(out.values()).sort((a, b) => String(a.upDate).localeCompare(String(b.upDate))).slice(0, 20);
   return state.upcoming;
@@ -233,7 +234,7 @@ export async function renderUpcoming() {
     const list = keepVisible(await loadUpcoming());
     const slot = document.getElementById('up-slot');
     if (!slot || !list.length || state.status !== 'ready') return;
-    slot.innerHTML = '<section class="row-section" id="prochainement" aria-labelledby="h-prochainement"><h2 class="row-title" id="h-prochainement">Prochainement</h2>' +
+    slot.innerHTML = '<section class="row-section" id="prochainement" aria-labelledby="h-prochainement"><h2 class="row-title" id="h-prochainement">' + t('Prochainement') + '</h2>' +
       row(list.map(upCard).join('')) + '</section>';
     observeTiles(slot);
   } catch (_) { /* rangée absente */ }
@@ -242,7 +243,7 @@ export async function renderUpcoming() {
 
 // ---------- Recommandations IA ----------
 export function aiSkeleton() {
-  return '<section class="row-section" aria-busy="true"><h2 class="row-title">Recommandé pour toi par l’IA</h2>' +
+  return '<section class="row-section" aria-busy="true"><h2 class="row-title">' + t('Recommandé pour toi par l’IA') + '</h2>' +
     '<div class="row">' + '<span class="sk sk-card"></span>'.repeat(5) + '</div></section>';
 }
 
@@ -253,7 +254,7 @@ export function renderAI() {
   if (ai.status === 'none') {
     const start = state.data && keepVisible(state.data.rows.start);
     slot.innerHTML = start && start.length
-      ? section('commencer', 'Pour bien commencer', start, (l) => row(l.map((it) => posterCard(it)).join('')))
+      ? section('commencer', t('Pour bien commencer'), start, (l) => row(l.map((it) => posterCard(it)).join('')))
       : '';
     observeTiles(slot);
     return;
@@ -267,8 +268,8 @@ export function renderAI() {
     slot.innerHTML = aiSkeleton();
     return;
   }
-  slot.innerHTML = '<section class="row-section" id="ai" aria-labelledby="h-ai"><h2 class="row-title" id="h-ai">Recommandé pour toi par l’IA ' +
-    '<a class="row-link" href="#/browse/ai" data-browse="ai">Tout voir</a></h2>' +
+  slot.innerHTML = '<section class="row-section" id="ai" aria-labelledby="h-ai"><h2 class="row-title" id="h-ai">' + t('Recommandé pour toi par l’IA') + ' ' +
+    '<a class="row-link" href="#/browse/ai" data-browse="ai">' + t('Tout voir') + '</a></h2>' +
     row(items.slice(0, HOME_ROW_COUNT).map((it) => posterCard(it)).join('')) + '</section>';
 }
 
@@ -279,7 +280,7 @@ export const socialEnabled = socialAvailable;
 /** Barre du haut : logo (accueil), Séries, Films, Direct, Émissions TV, Documentaires, menu Explorer ; Ensemble (compte connecté) ; à droite recherche, Amis, profil. */
 export function headerA() {
   return '<header class="topbar">' + brand() +
-    '<nav class="nav" aria-label="Principale">' + mainNavHTML({ social: socialEnabled() }) + '</nav>' +
+    '<nav class="nav" aria-label="' + t('Principale') + '">' + mainNavHTML({ social: socialEnabled() }) + '</nav>' +
     topActionsHTML({ kid: isKidProfile(), social: socialEnabled(), server: isServerMode(), owner: canAdmin() }) + '</header>';
 }
 
@@ -292,7 +293,7 @@ export function viewA(d) {
     homeSocialSlotHTML() +
     '<div id="follow-slot"></div>' +
     '<div id="ai-slot"></div>' +
-    section('top10', 'Top 10 aujourd’hui', r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
+    section('top10', t('Top 10 aujourd’hui'), r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
     '<div id="feat-slot"></div>' +
     '<div id="up-slot"></div>' +
     '<div id="live-slot"></div>' +
@@ -321,13 +322,13 @@ export function tabbar(current = 'home') {
     const badge = '<span class="soc-badge tab-badge" data-ens-badge' + (n > 0 ? '' : ' hidden') + '>' + (n > 99 ? '99+' : n) + '</span>';
     const here = (id) => (current === id ? ' is-current' : '');
     const curAttr = (id) => (current === id ? ' aria-current="page"' : '');
-    return '<nav class="tabbar" aria-label="Navigation principale">' +
+    return '<nav class="tabbar" aria-label="' + t('Navigation principale') + '">' +
       // Accueil : inerte sur l'accueil, lien ordinaire (data-go) depuis les autres pages (Ensemble...).
-      tab(here('home'), { href: true, html: ' href="#/"' + (current === 'home' ? ' data-noop' : ' data-go') + curAttr('home') }, 'home', 'Accueil') +
-      tab('', { html: ' data-search aria-label="Rechercher"' }, 'search', 'Rechercher') +
-      tab(here('ensemble'), { href: true, html: ' href="#/ensemble" data-go' + curAttr('ensemble') }, 'users', 'Ensemble', badge) +
-      tab('', { href: true, html: ' href="#/library" data-libnav' }, 'list', 'Ma liste') +
-      tab('', { href: true, html: ' href="#/downloads" data-go data-dl-nav' }, 'download', 'Téléchargés', downloadsTabBadgeHTML()) + '</nav>';
+      tab(here('home'), { href: true, html: ' href="#/"' + (current === 'home' ? ' data-noop' : ' data-go') + curAttr('home') }, 'home', t('Accueil')) +
+      tab('', { html: ' data-search aria-label="' + t('Rechercher') + '"' }, 'search', t('Rechercher')) +
+      tab(here('ensemble'), { href: true, html: ' href="#/ensemble" data-go' + curAttr('ensemble') }, 'users', t('Ensemble'), badge) +
+      tab('', { href: true, html: ' href="#/library" data-libnav' }, 'list', t('Ma liste')) +
+      tab('', { href: true, html: ' href="#/downloads" data-go data-dl-nav' }, 'download', t('Téléchargés'), downloadsTabBadgeHTML()) + '</nav>';
   }
   const items = TABS.map(([label, icon, isHome]) => {
     // Accueil : courant et inerte sur l'accueil seulement, lien ordinaire (data-go) depuis les autres pages (LAST-488).
@@ -335,18 +336,17 @@ export function tabbar(current = 'home') {
     const nav = isHome ? (on ? ' data-noop' : ' data-go') : tabData(label);
     return '<a href="' + tabHref(label) + '"' + nav + ' class="tab' + (on ? ' is-current' : '') + '"' + (on ? ' aria-current="page"' : '') + '>' +
       (icon ? ICON[icon] : '<span class="avatar avatar-tab" aria-hidden="true">' + esc(initialOf()) + '</span>') +
-      '<span class="tab-label">' + label + '</span></a>';
+      '<span class="tab-label">' + t(label) /* i18n: N_ (TABS) */ + '</span></a>';
   }).join('');
-  return '<nav class="tabbar" aria-label="Navigation principale">' + items + '</nav>';
+  return '<nav class="tabbar" aria-label="' + t('Navigation principale') + '">' + items + '</nav>';
 }
 
 export const footer = () =>
-  '<footer class="foot"><p>Données films et séries : TMDb. Ce produit utilise l’API TMDb mais n’est ni approuvé ni certifié par TMDb. ' +
-  'Notes : MDBList. Recommandations : OpenRouter. ' + creditsLinkHTML() + '</p></footer>';
+  '<footer class="foot"><p>' + t('Données films et séries : TMDb. Ce produit utilise l’API TMDb mais n’est ni approuvé ni certifié par TMDb. Notes : MDBList. Recommandations : OpenRouter.') + ' ' + creditsLinkHTML() + '</p></footer>';
 
 export function skeletonView() {
   const cards = '<div class="row">' + '<span class="sk sk-card"></span>'.repeat(6) + '</div>';
-  return '<main id="main" class="sk-page"><p class="sr-only" role="status">Chargement du catalogue…</p>' +
+  return '<main id="main" class="sk-page"><p class="sr-only" role="status">' + t('Chargement du catalogue…') + '</p>' +
     '<div class="sk sk-hero"></div><div class="rows"><div class="sk sk-line"></div>' + cards +
     '<div class="sk sk-line short"></div>' + cards + '</div></main>';
 }
@@ -354,10 +354,10 @@ export function skeletonView() {
 export function errorView() {
   return '<main id="main" class="state-page">' + brand() +
     '<div class="state" role="alert"><p>' + (isConfigured()
-      ? 'Impossible de charger le catalogue. Vérifie la connexion à lastAddon, puis réessaie.'
-      : 'lastAddon n’est pas configuré. Renseigne son adresse dans les réglages.') + '</p>' +
-    '<button type="button" class="btn btn-primary" data-retry>Réessayer</button>' +
-    '<button type="button" class="btn btn-ghost" data-settings>Réglages</button></div></main>';
+      ? t('Impossible de charger le catalogue. Vérifie la connexion à lastAddon, puis réessaie.')
+      : t('lastAddon n’est pas configuré. Renseigne son adresse dans les réglages.')) + '</p>' +
+    '<button type="button" class="btn btn-primary" data-retry>' + t('Réessayer') + '</button>' +
+    '<button type="button" class="btn btn-ghost" data-settings>' + t('Réglages') + '</button></div></main>';
 }
 
 export function renderHome() {
@@ -436,7 +436,7 @@ function continueList() {
 export function continueSection() {
   const real = continueList();
   if (!real.length) return '';
-  return section('reprendre', 'Reprendre la lecture', real, (l) => row(l.map(continueCardHTML).join('')));
+  return section('reprendre', t('Reprendre la lecture'), real, (l) => row(l.map(continueCardHTML).join('')));
 }
 
 const cardOf = (html) => {

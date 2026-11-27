@@ -6,6 +6,7 @@
 import { avatarCredits, LICENSE_LABEL, LICENSE_URL } from '../data/avatars';
 import { esc } from './util.js';
 import { ICON } from './icons.js';
+import { t } from '../i18n';
 
 const EXT = 'target="_blank" rel="noopener noreferrer"';
 const FOCUSABLE = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
@@ -15,14 +16,14 @@ export function creditsHTML() {
   return '<ul class="av-credits">' + avatarCredits().map((c) =>
     '<li><strong>' + esc(c.creator) + '</strong> : ' + c.styles.map((st) => '<a href="' + esc(st.source) + '" ' + EXT + '>' + esc(st.label) + '</a>').join(', ') +
     ' · <a href="' + esc(LICENSE_URL[c.license]) + '" ' + EXT + '>' + esc(LICENSE_LABEL[c.license]) + '</a></li>').join('') +
-    '</ul><p class="av-credits">Avatars « Héros » : dessins originaux laststream, générés en local.</p><p class="av-credits">Avatars générés avec <a href="https://www.dicebear.com" ' + EXT + '>DiceBear</a> (MIT), en local sur ton appareil.</p>';
+    '</ul><p class="av-credits">' + t('Avatars « Héros » : dessins originaux laststream, générés en local.') + '</p><p class="av-credits">' + t('Avatars générés avec') + ' <a href="https://www.dicebear.com" ' + EXT + '>DiceBear</a> ' + t('(MIT), en local sur ton appareil.') + '</p>';
 }
 
 /** Sources de métadonnées de repli (ODY-248) : TVmaze impose l'attribution (CC BY-SA 4.0). */
-const METADATA_CREDITS = '<p class="av-credits">Identifiants et fiches d’émissions : <a href="https://www.tvmaze.com" ' + EXT + '>TVmaze</a> (<a href="https://creativecommons.org/licenses/by-sa/4.0/" ' + EXT + '>CC BY-SA 4.0</a>) et <a href="https://www.wikidata.org" ' + EXT + '>Wikidata</a> (CC0).</p>';
+const METADATA_CREDITS = '<p class="av-credits">' + t('Identifiants et fiches d’émissions :') + ' <a href="https://www.tvmaze.com" ' + EXT + '>TVmaze</a> (<a href="https://creativecommons.org/licenses/by-sa/4.0/" ' + EXT + '>' + t('CC BY-SA 4.0') + '</a>) et <a href="https://www.wikidata.org" ' + EXT + '>' + t('Wikidata') + '</a> (CC0).</p>';
 
 /** Lien discret « Crédits » des pieds de page ; le clic est géré globalement (data-credits). */
-export const creditsLinkHTML = () => '<button type="button" class="cr-link" data-credits>Crédits</button>';
+export const creditsLinkHTML = () => '<button type="button" class="cr-link" data-credits>' + t('Crédits') + '</button>';
 
 let current = null;
 
@@ -34,8 +35,8 @@ function openCredits(opener) {
   el.className = 'cr-layer';
   el.innerHTML = '<div class="cr-scrim" data-cr-close></div>' +
     '<section class="cr-sheet" role="dialog" aria-modal="true" aria-labelledby="cr-title" tabindex="-1">' +
-    '<header class="cr-head"><h2 id="cr-title">Crédits</h2><button type="button" class="cr-x" data-cr-close aria-label="Fermer">' + ICON.close + '</button></header>' +
-    '<div class="cr-body"><p class="cr-lead">Les avatars illustrés sont l’œuvre de leurs auteurs, utilisés selon leurs licences.</p>' + METADATA_CREDITS + creditsHTML() + '</div></section>';
+    '<header class="cr-head"><h2 id="cr-title">' + t('Crédits') + '</h2><button type="button" class="cr-x" data-cr-close aria-label="' + t('Fermer') + '">' + ICON.close + '</button></header>' +
+    '<div class="cr-body"><p class="cr-lead">' + t('Les avatars illustrés sont l’œuvre de leurs auteurs, utilisés selon leurs licences.') + '</p>' + METADATA_CREDITS + creditsHTML() + '</div></section>';
   document.body.appendChild(el);
   const addedModal = !document.body.classList.contains('modal-open');
   if (addedModal) document.body.classList.add('modal-open');

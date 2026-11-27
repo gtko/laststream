@@ -7,15 +7,16 @@ import { isVoVideo, sortVideos, trailerLang } from '../data/trailers';
 import { availOf, certLabel, certification, pickLogo, register, toItem, trailerFields, videoLanguages, videosOf } from './catalog.js';
 import { IMG } from './constants.js';
 import { names } from './util.js';
+import { t } from '../i18n';
 
 export const fullCache = new Map();
 export const STATUS_FR = {
-  Released: 'Sorti', 'Returning Series': 'En cours', Ended: 'Terminée', Canceled: 'Annulée',
-  'In Production': 'En production', 'Post Production': 'En postproduction', Planned: 'Prévu', Rumored: 'Rumeur',
+  Released: t('Sorti'), 'Returning Series': t('En cours'), Ended: t('Terminée'), Canceled: t('Annulée'),
+  'In Production': t('En production'), 'Post Production': t('En postproduction'), Planned: t('Prévu'), Rumored: t('Rumeur'),
 };
 export const VIDEO_TYPE = {
-  Trailer: ['Bande-annonce', 0], Teaser: ['Teaser', 1], Featurette: ['Featurette', 2],
-  'Behind the Scenes': ['Making-of', 3], Clip: ['Extrait', 4], Bloopers: ['Bêtisier', 5], 'Opening Credits': ['Générique', 6],
+  Trailer: [t('Bande-annonce'), 0], Teaser: [t('Teaser'), 1], Featurette: [t('Featurette'), 2],
+  'Behind the Scenes': [t('Making-of'), 3], Clip: [t('Extrait'), 4], Bloopers: [t('Bêtisier'), 5], 'Opening Credits': [t('Générique'), 6],
 };
 
 export function frReleaseDate(raw) {
@@ -47,7 +48,7 @@ export function buildModel(type, id, raw, en, canon) {
   const spoken = uniq([origLang, ...((raw.spoken_languages || []).map((l) => l.iso_639_1))].filter(Boolean));
   return {
     type, id: String(id), key: type + ':' + id,
-    name: raw.title || raw.name || raw.original_title || raw.original_name || 'Sans titre',
+    name: raw.title || raw.name || raw.original_title || raw.original_name || t('Sans titre'),
     original: raw.original_title || raw.original_name || '',
     tagline: raw.tagline || (en && en.tagline) || '',
     overview: raw.overview || (en && en.overview) || '',
@@ -83,7 +84,7 @@ export function buildModel(type, id, raw, en, canon) {
     vote: raw.vote_average || 0,
     cast: ((raw.credits && raw.credits.cast) || []).slice(0, 15).map((p) => ({ id: p.id, name: p.name, role: p.character || '', photo: IMG('w185', p.profile_path) })),
     directors: isTv ? (raw.created_by || []).map((p) => ({ id: p.id, name: p.name })) : crew.filter((p) => p.job === 'Director').map((p) => ({ id: p.id, name: p.name })),
-    writers: isTv ? [] : (() => { const seen = new Set(); return crew.filter((p) => ['Screenplay', 'Writer', 'Story'].includes(p.job)).filter((p) => !seen.has(p.id) && seen.add(p.id)).slice(0, 3).map((p) => ({ id: p.id, name: p.name })); })(),
+    writers: isTv ? [] : (() => { const seen = new Set(); return crew.filter((p) => [t('Screenplay'), t('Writer'), t('Story')].includes(p.job)).filter((p) => !seen.has(p.id) && seen.add(p.id)).slice(0, 3).map((p) => ({ id: p.id, name: p.name })); })(),
     countries: (raw.production_countries || []).map((c) => names('region', c.iso_3166_1)).concat(!(raw.production_countries || []).length ? (raw.origin_country || []).map((c) => names('region', c)) : []),
     origLang: origLang ? names('language', origLang) : '',
     spoken: spoken.map((c) => names('language', c)),

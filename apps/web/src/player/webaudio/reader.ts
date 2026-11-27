@@ -1,4 +1,5 @@
 import type { RangeReader } from '../../relay/player/types';
+import { t } from '../../i18n';
 
 /* Lecteur de plages avec préchargement borné : le moteur audio de repli lit la piste son d'un fichier entrelacé avec la vidéo
  * (mediabunny demande de petites plages éparses). Les octets sont rangés par blocs alignés dans un cache à mémoire bornée, et
@@ -69,7 +70,7 @@ export class PrefetchReader implements RangeReader {
   }
 
   async read(start: number, end: number): Promise<Uint8Array> {
-    if (this.closed) throw new Error('lecteur fermé');
+    if (this.closed) throw new Error(t('lecteur fermé'));
     const total = await this.size();
     const to = Math.min(end, total);
     if (start >= to) return new Uint8Array(0);

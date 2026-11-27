@@ -11,6 +11,7 @@ import { inviteToParty } from './socialHooks.js';
 import { state } from './state.js';
 import { detailEl } from './dom.js';
 import { esc, rewriteKeepingFocus } from './util.js';
+import { t } from '../i18n';
 
 const FRIENDS_MAX = 5;
 const ACTIVITY_MAX = 4;
@@ -34,27 +35,27 @@ function friendsCard() {
   const rows = online.slice(0, FRIENDS_MAX).map((f) => {
     const name = shortName(f);
     return '<li class="ens-frow">' + avatarHTML(f, 'ss-av-m', f.status) + '<span class="ens-fnm"><b>' + esc(name) + '</b><small>' +
-      (f.watching ? 'En ligne · regarde ' + esc(f.watching.title) : esc(SEEN_LABEL[f.status] || '')) + '</small></span>' +
-      '<button type="button" class="btn btn-ghost ens-sbtn" data-ens-invite="' + esc(f.pid) + '" aria-label="Inviter ' + esc(name) + ' dans un salon">Inviter</button></li>';
+      (f.watching ? t('En ligne · regarde {title}', { title: esc(f.watching.title) }) : esc(SEEN_LABEL[f.status] || '')) + '</small></span>' +
+      '<button type="button" class="btn btn-ghost ens-sbtn" data-ens-invite="' + esc(f.pid) + '" aria-label="' + t('Inviter {name} dans un salon', { name: esc(name) }) + '">' + t('Inviter') + '</button></li>';
   });
-  return '<section class="ens-card" aria-labelledby="ens-h-friends"><h2 id="ens-h-friends">Disponibles maintenant</h2>' +
-    (rows.length ? '<ul class="ens-flist">' + rows.join('') + '</ul>' : '<p class="ens-note">' + (all.length ? 'Personne n’est en ligne pour l’instant.' : 'Aucun ami pour l’instant.') + '</p>') +
-    '<a class="btn btn-ghost ens-sbtn ens-all" href="#/friends" data-go>' + (all.length ? 'Tout voir (' + plural(all.length, 'ami') + ')' : 'Trouver des amis') + '</a></section>';
+  return '<section class="ens-card" aria-labelledby="ens-h-friends"><h2 id="ens-h-friends">' + t('Disponibles maintenant') + '</h2>' +
+    (rows.length ? '<ul class="ens-flist">' + rows.join('') + '</ul>' : '<p class="ens-note">' + (all.length ? t('Personne n’est en ligne pour l’instant.') : t('Aucun ami pour l’instant.')) + '</p>') +
+    '<a class="btn btn-ghost ens-sbtn ens-all" href="#/friends" data-go>' + (all.length ? t('Tout voir ({length})', { length: plural(all.length, 'ami') }) : t('Trouver des amis')) + '</a></section>';
 }
 
 function activityCard() {
   const items = [...getState().activity].sort((a, b) => b.at - a.at).slice(0, ACTIVITY_MAX);
   const body = items.length
     ? '<ul class="ens-act-list">' + items.map((it) => '<li><b>' + esc(shortName(it)) + '</b> ' + esc(activityText(it)) + (ago(it.at) ? ' · ' + esc(ago(it.at)) : '') + '</li>').join('') + '</ul>'
-    : '<p class="ens-note" role="status">' + (activityStatus === 'loading' ? 'Chargement…' : activityStatus === 'error' ? 'Activité indisponible pour le moment.' : 'Rien pour l’instant. Ce que regardent et notent tes amis apparaîtra ici.') + '</p>';
-  return '<section class="ens-card" aria-labelledby="ens-h-act"><h2 id="ens-h-act">Activité récente</h2>' + body + '</section>';
+    : '<p class="ens-note" role="status">' + (activityStatus === 'loading' ? t('Chargement…') : activityStatus === 'error' ? t('Activité indisponible pour le moment.') : t('Rien pour l’instant. Ce que regardent et notent tes amis apparaîtra ici.')) + '</p>';
+  return '<section class="ens-card" aria-labelledby="ens-h-act"><h2 id="ens-h-act">' + t('Activité récente') + '</h2>' + body + '</section>';
 }
 
 function ticketsCard() {
   if (!freeTickets) return '';
-  return '<section class="ens-card ens-tkt" aria-labelledby="ens-h-tkt"><h2 id="ens-h-tkt">Il te reste ' + plural(freeTickets, 'billet') + '</h2>' +
-    '<p class="ens-note">Invite quelqu’un à regarder avec toi. Le billet peut déjà contenir un mot et 3 coups de cœur.</p>' +
-    '<a class="btn btn-primary ens-sbtn" href="#/settings" data-go>Envoyer un billet</a></section>';
+  return '<section class="ens-card ens-tkt" aria-labelledby="ens-h-tkt"><h2 id="ens-h-tkt">' + t('Il te reste {freeTickets}', { freeTickets: plural(freeTickets, 'billet') }) + '</h2>' +
+    '<p class="ens-note">' + t('Invite quelqu’un à regarder avec toi. Le billet peut déjà contenir un mot et 3 coups de cœur.') + '</p>' +
+    '<a class="btn btn-primary ens-sbtn" href="#/settings" data-go>' + t('Envoyer un billet') + '</a></section>';
 }
 
 function paint() {

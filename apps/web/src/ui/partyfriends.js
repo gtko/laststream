@@ -9,6 +9,7 @@ import { avatarAttrs } from './avatar-art.js';
 import { toast } from './dom.js';
 import { avatarHTML, nameOf, SEEN_LABEL } from './socialFmt.js';
 import { esc } from './util.js';
+import { t, intlLocale } from '../i18n';
 
 /** Amis déjà invités dans le salon affiché (pid). */
 export const invitedPids = new Set();
@@ -17,19 +18,19 @@ export const invitedPids = new Set();
 export function sortedFriends() {
   const st = socialState();
   const rank = { online: 0, away: 1, dnd: 2, offline: 3 };
-  return [...st.friends, ...st.household].sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3) || a.handle.full.localeCompare(b.handle.full, 'fr'));
+  return [...st.friends, ...st.household].sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3) || a.handle.full.localeCompare(b.handle.full, intlLocale()));
 }
 
 /** Liste des amis à inviter (HTML) ; message si le social n'est pas disponible. `attr` : nom de l'attribut des boutons (sans « data- »). */
 export function friendsListHTML(attr) {
-  if (isKidProfile() || !isServerMode()) return '<p class="pl-empty">Les invitations d’amis ne sont pas disponibles ici.</p>';
+  if (isKidProfile() || !isServerMode()) return '<p class="pl-empty">' + t('Les invitations d’amis ne sont pas disponibles ici.') + '</p>';
   const friends = sortedFriends();
-  if (!friends.length) return '<p class="pl-empty">Aucun ami pour l’instant. Ajoute-en depuis la barre des amis.</p>';
+  if (!friends.length) return '<p class="pl-empty">' + t('Aucun ami pour l’instant. Ajoute-en depuis la barre des amis.') + '</p>';
   return '<ul class="pl-friends">' + friends.map((f) => {
     const done = invitedPids.has(f.pid);
     return '<li class="pl-friend"><span class="pl-av"' + avatarAttrs(f.avatar, f.avatarColor) + ' aria-hidden="true"><span class="pl-av-ini">' + esc(initialsOf(f.handle.name)) + '</span></span>' +
-      '<span class="pl-friend-t"><b>' + esc(f.handle.full) + '</b><span>' + (f.status === 'offline' ? 'Hors ligne' : f.watching ? 'Regarde ' + esc(f.watching.title) : 'En ligne') + '</span></span>' +
-      '<button type="button" class="pl-btn is-sec is-sm" data-' + attr + '="' + esc(f.pid) + '"' + (done ? ' disabled' : '') + '>' + (done ? 'Invité' : 'Inviter') + '</button></li>';
+      '<span class="pl-friend-t"><b>' + esc(f.handle.full) + '</b><span>' + (f.status === 'offline' ? t('Hors ligne') : f.watching ? t('Regarde {title}', { title: esc(f.watching.title) }) : t('En ligne')) + '</span></span>' +
+      '<button type="button" class="pl-btn is-sec is-sm" data-' + attr + '="' + esc(f.pid) + '"' + (done ? ' disabled' : '') + '>' + (done ? t('Invité') : t('Inviter')) + '</button></li>';
   }).join('') + '</ul>';
 }
 
@@ -37,11 +38,11 @@ export function friendsListHTML(attr) {
 export function friendPickerHTML() {
   if (isKidProfile() || !isServerMode()) return '';
   const friends = sortedFriends();
-  if (!friends.length) return '<p class="pl-empty">Aucun ami pour l’instant : tu pourras partager le lien une fois le salon créé.</p>';
+  if (!friends.length) return '<p class="pl-empty">' + t('Aucun ami pour l’instant : tu pourras partager le lien une fois le salon créé.') + '</p>';
   return '<ul class="pld-friends">' + friends.map((f) =>
     '<li><label class="pld-friend">' + avatarHTML(f, 'ss-av-m', f.status === 'offline' ? '' : f.status) +
-    '<span class="pld-friend-t"><b>' + esc(nameOf(f)) + '</b><span>' + (f.watching ? 'Regarde ' + esc(f.watching.title) : esc(SEEN_LABEL[f.status] || 'Hors ligne')) + '</span></span>' +
-    '<input type="checkbox" name="friend" value="' + esc(f.pid) + '" aria-label="Inviter ' + esc(nameOf(f)) + '"><span class="pld-check" aria-hidden="true"></span></label></li>').join('') + '</ul>';
+    '<span class="pld-friend-t"><b>' + esc(nameOf(f)) + '</b><span>' + (f.watching ? t('Regarde {title}', { title: esc(f.watching.title) }) : esc(SEEN_LABEL[f.status] || t('Hors ligne'))) + '</span></span>' +
+    '<input type="checkbox" name="friend" value="' + esc(f.pid) + '" aria-label="' + t('Inviter {f}', { f: esc(nameOf(f)) }) + '"><span class="pld-check" aria-hidden="true"></span></label></li>').join('') + '</ul>';
 }
 
 /** Invite l'ami `pid` dans le salon `roomId` (message dans la discussion directe et alerte en direct) ; vrai si l'invitation est partie. */
@@ -53,8 +54,8 @@ export async function inviteInto(roomId, pid) {
     return true;
   } catch (err) {
     const code = err instanceof UserApiError ? err.code : '';
-    toast(code === 'not_friend' ? 'Cette personne n’est pas dans tes amis.' : code === 'rate_limited' ? 'Trop d’invitations : réessaie dans un instant.'
-      : code === 'not_member' ? 'Rejoins d’abord le salon pour inviter.' : 'Invitation impossible pour le moment.');
+    toast(code === 'not_friend' ? t('Cette personne n’est pas dans tes amis.') : code === 'rate_limited' ? t('Trop d’invitations : réessaie dans un instant.')
+      : code === 'not_member' ? t('Rejoins d’abord le salon pour inviter.') : t('Invitation impossible pour le moment.'));
     return false;
   }
 }

@@ -32,7 +32,7 @@
 .lp.has-panel .lp-video { filter: brightness(0.55); transition: filter 0.3s; }
 .lp-panel {
   width: min(460px, 100%); background: rgba(17, 15, 24, 0.82); backdrop-filter: blur(26px) saturate(1.3); -webkit-backdrop-filter: blur(26px) saturate(1.3);
-  border-left: 1px solid rgba(255, 255, 255, 0.1); box-shadow: -24px 0 70px rgba(0, 0, 0, 0.55); animation: lp-slide 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.1); box-shadow: -24px 0 70px rgba(0, 0, 0, 0.55); animation: lp-slide 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .lp-panel.is-wide, .lp-panel.is-host { width: min(780px, 100%); }
 .lp-panel.is-eps { width: min(480px, 100%); }
@@ -52,7 +52,7 @@
 .lp-opt-detail em { font-style: normal; color: #fbbf24; }
 .lp-opt.is-on { background: rgba(255, 255, 255, 0.08); }
 .lp-opt.is-on .lp-opt-label { color: var(--text); }
-.lp-badges { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.lp-badges { margin-inline-start: auto; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .lp-badges i { font-style: normal; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; color: var(--muted); border: 1px solid var(--line-2); white-space: nowrap; }
 .lp-tag { padding: 1px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; font-style: normal; color: var(--muted); background: rgba(255, 255, 255, 0.1); }
 .lp-tag.is-sync { color: #4ade80; background: rgba(74, 222, 128, 0.14); }
@@ -75,14 +75,14 @@
 .lp-det { border-radius: 14px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.03); }
 .lp-det > summary { min-height: 48px; display: flex; align-items: center; padding: 0 16px; font-weight: 800; font-size: 14px; cursor: pointer; list-style: none; }
 .lp-det > summary::-webkit-details-marker { display: none; }
-.lp-det > summary::after { content: "▾"; margin-left: auto; color: var(--dim); transition: transform 0.2s; }
+.lp-det > summary::after { content: "▾"; margin-inline-start: auto; color: var(--dim); transition: transform 0.2s; }
 .lp-det[open] > summary::after { transform: rotate(180deg); }
 .lp-det > summary:focus-visible { outline: var(--focus-ring-key); outline-offset: -3px; border-radius: 14px; }
 .lp-det .lp-opts { border-top: 1px solid var(--line); max-height: none; padding: 14px 16px 18px; }
 .lp-kv { margin: 0 0 12px; display: flex; flex-direction: column; gap: 10px; }
 .lp-kv > div { display: flex; justify-content: space-between; gap: 16px; }
 .lp-kv dt { font-size: 13px; font-weight: 700; color: var(--dim); flex: none; }
-.lp-kv dd { margin: 0; font-size: 14px; font-weight: 700; text-align: right; word-break: break-word; }
+.lp-kv dd { margin: 0; font-size: 14px; font-weight: 700; text-align: end; word-break: break-word; }
 .lp-speeds { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Épisodes */
@@ -91,7 +91,7 @@
 .lp-eps-title { margin: 0; font-family: var(--ff-title); font-weight: 800; font-size: 20px; }
 .lp-eps-bar { padding: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .lp-eps-sum { font-size: 13px; font-weight: 700; color: var(--dim); }
-.lp-eps-find { margin-left: auto; min-height: 36px; width: 36px; padding: 0; display: grid; place-items: center; flex: none; }
+.lp-eps-find { margin-inline-start: auto; min-height: 36px; width: 36px; padding: 0; display: grid; place-items: center; flex: none; }
 .lp-eps-find svg { width: 16px; height: 16px; }
 .lp-eps-tools { display: flex; gap: 8px; align-items: center; }
 .lp-search { flex: 1; min-width: 0; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; font-size: 14px; }
@@ -103,7 +103,7 @@
 .lp-ep-row:hover, .lp-ep-row:focus-within { background: rgba(255, 255, 255, 0.1); box-shadow: inset 0 0 0 1px var(--accent); }
 .lp-ep-row.is-on { background: rgba(255, 255, 255, 0.07); box-shadow: inset 0 0 0 2px var(--accent); }
 .lp-ep-row.is-on:hover, .lp-ep-row.is-on:focus-within { background: rgba(255, 255, 255, 0.1); box-shadow: inset 0 0 0 2px var(--accent); }
-.lp-ep { display: flex; gap: 12px; width: 100%; padding: 8px; border: 0; border-radius: 12px; text-align: left; color: var(--soft); background: transparent; cursor: pointer; }
+.lp-ep { display: flex; gap: 12px; width: 100%; padding: 8px; border: 0; border-radius: 12px; text-align: start; color: var(--soft); background: transparent; cursor: pointer; }
 .lp-ep:focus-visible { outline: none; }
 .lp-ep:disabled { opacity: 0.55; cursor: default; }
 .lp-ep-still { position: relative; flex: none; width: var(--ep-still); aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--surface-2); }
@@ -125,7 +125,7 @@
 .lp-ep-prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.3); }
 .lp-ep-prog i { display: block; height: 100%; background: var(--accent); }
 .lp-ep-text { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
-.lp-ep-row.has-more .lp-ep-text { padding-right: 28px; }
+.lp-ep-row.has-more .lp-ep-text { padding-inline-end: 28px; }
 .lp-ep-name, .lp-ep-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lp-ep-name { font-size: 15px; font-weight: 700; color: var(--text); }
 .lp-ep-meta { font-size: 12px; color: var(--dim); font-weight: 600; }
@@ -169,7 +169,7 @@
 
 /* Mobile : feuille en bas de l'écran */
 @media (max-width: 700px) {
-  .lp-panel, .lp-panel.is-wide, .lp-panel.is-eps, .lp-panel.is-host { top: auto; left: 0; right: 0; width: 100%; max-height: 82%; border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); border-radius: 22px 22px 0 0; box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.55); animation: lp-rise 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .lp-panel, .lp-panel.is-wide, .lp-panel.is-eps, .lp-panel.is-host { top: auto; left: 0; right: 0; width: 100%; max-height: 82%; border-inline-start: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); border-radius: 22px 22px 0 0; box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.55); animation: lp-rise 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
   .lp-eps { --ep-still: 120px; }
   .lp-below { padding-inline: 14px; }
 }

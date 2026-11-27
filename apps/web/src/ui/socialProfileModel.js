@@ -1,6 +1,7 @@
 /* Modèle de l'édition du profil social (Social v3, lot F2) : brouillon, validation, différences à envoyer, cooldown du tag,
  * réordonnancement des favoris. Fonctions pures, sans DOM ni réseau : le formulaire (socialProfile.js) les appelle. */
 import { validateHandle } from '../data/socialV2Api';
+import { t as tr } from '../i18n';
 
 export const BIO_MAX = 140;
 export const STATUS_TEXT_MAX = 60;
@@ -9,18 +10,18 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
 /** Couleurs d'avatar proposées (maquette). */
-export const COLORS = [['#ff5a36', 'Corail'], ['#7b5cff', 'Violet'], ['#1f9d77', 'Vert'], ['#3b82c4', 'Bleu'], ['#e0912f', 'Ambre'], ['#c2417f', 'Rose']];
-export const PRESENCE = [['online', 'En ligne', '#3ddc84'], ['away', 'Absent', '#f5b700'], ['dnd', 'Ne pas déranger', '#ff5a6a'], ['invisible', 'Invisible', '#6b6778']];
-export const EXPIRIES = [['4h', 'dans 4 h'], ['tonight', 'ce soir'], ['never', 'jamais']];
+export const COLORS = [['#ff5a36', tr('Corail')], ['#7b5cff', tr('Violet')], ['#1f9d77', tr('Vert')], ['#3b82c4', tr('Bleu')], ['#e0912f', tr('Ambre')], ['#c2417f', tr('Rose')]];
+export const PRESENCE = [['online', tr('En ligne'), '#3ddc84'], ['away', tr('Absent'), '#f5b700'], ['dnd', tr('Ne pas déranger'), '#ff5a6a'], ['invisible', tr('Invisible'), '#6b6778']];
+export const EXPIRIES = [['4h', tr('dans 4 h')], ['tonight', tr('ce soir')], ['never', 'jamais']];
 /** Emojis proposés pour le statut personnalisé (écran Profil et éditeur de la sidebar). */
 export const EMOJIS = ['🍿', '🎬', '🎥', '📺', '🛋️', '🌙', '☕', '🎧', '😴', '🤩', '😎', '🥳', '🤔', '🔥', '❤️', '👀', '🧠', '👾', '🚀', '🦇', '🧙', '🐉', '🎮', '🌧️'];
 
 export const PREF_CHOICES = {
-  activityVisibility: [['friends', 'Amis'], ['favorites', 'Favoris'], ['nobody', 'Personne']],
-  watchWith: [['open', 'Libre'], ['ask', 'Me demander'], ['never', 'Jamais']],
-  libraryVisibility: [['friends', 'Amis'], ['household', 'Foyer'], ['private', 'Privée']],
-  messagesFrom: [['friends', 'Amis'], ['favorites', 'Favoris'], ['household', 'Foyer']],
-  playbackSocial: [['all', 'Tout'], ['messages', 'Messages seuls'], ['cinema', 'Mode cinéma']],
+  activityVisibility: [['friends', tr('Amis')], ['favorites', tr('Favoris')], ['nobody', tr('Personne')]],
+  watchWith: [['open', tr('Libre')], ['ask', tr('Me demander')], ['never', tr('Jamais')]],
+  libraryVisibility: [['friends', tr('Amis')], ['household', tr('Foyer')], ['private', tr('Privée')]],
+  messagesFrom: [['friends', tr('Amis')], ['favorites', tr('Favoris')], ['household', tr('Foyer')]],
+  playbackSocial: [['all', tr('Tout')], ['messages', tr('Messages seuls')], ['cinema', tr('Mode cinéma')]],
 };
 
 /** Nombre de caractères (graphèmes) d'un texte. */
@@ -71,10 +72,10 @@ function expiryAt(choice, now = Date.now()) {
 export function validateDraft(d) {
   const errors = {};
   const name = d.name.trim();
-  if (!validateHandle(name + '#AAAA')) errors.name = 'Le pseudo fait de 2 à 20 caractères : lettres, chiffres, espace, _ ou -.';
-  if (charCount(d.bio) > BIO_MAX) errors.bio = 'La bio fait ' + BIO_MAX + ' caractères au plus.';
-  if (charCount(d.statusText) > STATUS_TEXT_MAX) errors.status = 'Le statut fait ' + STATUS_TEXT_MAX + ' caractères au plus.';
-  if (d.favorites.length > FAVORITES_MAX) errors.favorites = 'Quatre favoris au plus.';
+  if (!validateHandle(name + '#AAAA')) errors.name = tr('Le pseudo fait de 2 à 20 caractères : lettres, chiffres, espace, _ ou -.');
+  if (charCount(d.bio) > BIO_MAX) errors.bio = tr('La bio fait {BIO_MAX} caractères au plus.', { BIO_MAX });
+  if (charCount(d.statusText) > STATUS_TEXT_MAX) errors.status = tr('Le statut fait {STATUS_TEXT_MAX} caractères au plus.', { STATUS_TEXT_MAX });
+  if (d.favorites.length > FAVORITES_MAX) errors.favorites = tr('Quatre favoris au plus.');
   return errors;
 }
 
@@ -133,7 +134,7 @@ export function tagCooldown(profile, now = Date.now()) {
   if (!at || at <= now) return { locked: false, ms: 0, label: '' };
   const ms = at - now;
   const days = Math.ceil(ms / DAY_MS);
-  const label = days > 1 ? 'Nouveau tag possible dans ' + days + ' jours' : ms > HOUR_MS ? 'Nouveau tag possible dans ' + Math.ceil(ms / HOUR_MS) + ' h' : 'Nouveau tag possible dans moins d’une heure';
+  const label = days > 1 ? tr('Nouveau tag possible dans {days} jours', { days }) : ms > HOUR_MS ? tr('Nouveau tag possible dans {v} h', { v: Math.ceil(ms / HOUR_MS) }) : tr('Nouveau tag possible dans moins d’une heure');
   return { locked: true, ms, label };
 }
 
@@ -159,7 +160,7 @@ export function bannerPosY(banner) {
 }
 
 /** Valeur CSS de `background-position` pour une bannière. */
-export const bannerPosCss = (banner) => 'center ' + bannerPosY(banner) + '%';
+export const bannerPosCss = (banner) => tr('center {banner}%', { banner: bannerPosY(banner) });
 
 /** Nouveau cadrage après un glissé de `dy` px (l'image suit le doigt) sur une zone `w`×`h` ; les backdrops TMDB sont en 16/9. */
 export function panBannerY(startY, dy, w, h) {

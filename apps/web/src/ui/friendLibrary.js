@@ -20,6 +20,7 @@ import { playDirect } from './sources-ui.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const PAGE = 100; // maximum accepté par le serveur
 const MAX_ITEMS = 1000;
@@ -40,12 +41,12 @@ const itemOf = (x) => {
 function nameOfPid(pid) {
   const s = store.getState();
   const f = s.friends.find((x) => x.pid === pid) || s.household.find((x) => x.pid === pid);
-  return f ? f.nickname || f.handle.name : 'Un ami';
+  return f ? f.nickname || f.handle.name : tr('Un ami');
 }
 
 function unavailable(title) {
   return topBar(false) + '<article class="svc-page soc-page"><header class="svc-head svc-head-plain"><div class="svc-head-t"><h1 class="svc-title" id="svc-title" tabindex="-1">' + esc(title) + '</h1></div></header>' +
-    '<div class="soc-body"><p class="row-msg">' + (isKidProfile() ? 'Cette page n’est pas disponible sur un profil enfant.' : 'Connecte-toi à un compte Laststream pour utiliser les fonctions sociales.') + '</p></div></article>';
+    '<div class="soc-body"><p class="row-msg">' + (isKidProfile() ? tr('Cette page n’est pas disponible sur un profil enfant.') : tr('Connecte-toi à un compte Laststream pour utiliser les fonctions sociales.')) + '</p></div></article>';
 }
 
 function tileHTML(x) {
@@ -54,11 +55,11 @@ function tileHTML(x) {
   const c = ctx();
   const have = c.have(it.key);
   const seen = c.seen(it.key);
-  const badge = have ? '<span class="fl-badge is-common">En commun</span>' : seen ? '<span class="fl-badge">Déjà vu</span>' : '';
+  const badge = have ? '<span class="fl-badge is-common">' + tr('En commun') + '</span>' : seen ? '<span class="fl-badge">' + tr('Déjà vu') + '</span>' : '';
   return '<div class="soc-tile fl-tile" data-fr-key="' + k + '"><div class="fl-media">' + posterCard(it) + badge + '</div>' +
-    '<div class="soc-tile-acts"><button type="button" class="btn btn-ghost btn-sm" data-fr-play="' + k + '">Lire</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-fr-save="' + k + '"' + (have ? ' disabled' : '') + '>' + (have ? 'Dans ma bibliothèque' : 'Ajouter à ma bibliothèque') + '</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-fr-send="' + k + '">Envoyer</button></div></div>';
+    '<div class="soc-tile-acts"><button type="button" class="btn btn-ghost btn-sm" data-fr-play="' + k + '">' + tr('Lire') + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-fr-save="' + k + '"' + (have ? ' disabled' : '') + '>' + (have ? tr('Dans ma bibliothèque') : tr('Ajouter à ma bibliothèque')) + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-fr-send="' + k + '">' + tr('Envoyer') + '</button></div></div>';
 }
 
 function pill(attr, value, label, count, on) {
@@ -68,33 +69,33 @@ function pill(attr, value, label, count, on) {
 function headHTML() {
   const n = usable(fl.lib.items).length;
   const common = fl.lib.status === 'ok' ? countsOf(fl.lib.items, ctx()).common : 0;
-  const sub = fl.lib.status === 'ok' && n ? n + ' titre' + (n > 1 ? 's' : '') + (common ? ' · ' + common + ' déjà dans ta bibliothèque' : '') : '';
-  return '<p class="svc-eyebrow">Bibliothèque partagée</p><h1 class="svc-title" id="svc-title" tabindex="-1">Bibliothèque de ' + esc(fl.name) + '</h1>' +
+  const sub = fl.lib.status === 'ok' && n ? tr('{n} titre', { n }) + (n > 1 ? 's' : '') + (common ? ' ' + tr('· {common} déjà dans ta bibliothèque', { common }) : '') : '';
+  return '<p class="svc-eyebrow">' + tr('Bibliothèque partagée') + '</p><h1 class="svc-title" id="svc-title" tabindex="-1">' + tr('Bibliothèque de {name}', { name: esc(fl.name) }) + '</h1>' +
     (sub ? '<p class="fl-sub" id="fl-sub">' + esc(sub) + '</p>' : '<p class="fl-sub" id="fl-sub" hidden></p>');
 }
 
 function controlsHTML() {
   const c = countsOf(fl.lib.items, ctx());
   const v = fl.view;
-  return '<div class="fl-bar"><label class="fl-search"><span class="sr-only">Rechercher dans sa bibliothèque</span>' +
-    '<input type="search" id="fl-q" placeholder="Rechercher dans sa bibliothèque" autocomplete="off" value="' + esc(v.q) + '"></label>' +
-    '<div class="pills" role="group" aria-label="Filtrer par type">' + pill('data-fl-type', 'all', 'Tout', c.all, v.type === 'all') +
-    pill('data-fl-type', 'movie', 'Films', c.movie, v.type === 'movie') + pill('data-fl-type', 'tv', 'Séries', c.tv, v.type === 'tv') + '</div>' +
-    '<label class="fl-sort">Trier <select id="fl-sort"><option value="recent"' + (v.sort === 'recent' ? ' selected' : '') + '>Ajoutés récemment</option>' +
-    '<option value="az"' + (v.sort === 'az' ? ' selected' : '') + '>Titre A → Z</option><option value="za"' + (v.sort === 'za' ? ' selected' : '') + '>Titre Z → A</option></select></label></div>' +
-    '<div class="pills fl-modes" role="group" aria-label="Vues rapides">' + pill('data-fl-mode', 'common', 'En commun avec moi', c.common, v.mode === 'common') +
-    pill('data-fl-mode', 'unseen', 'Pas encore vus par moi', c.unseen, v.mode === 'unseen') + '</div>';
+  return '<div class="fl-bar"><label class="fl-search"><span class="sr-only">' + tr('Rechercher dans sa bibliothèque') + '</span>' +
+    '<input type="search" id="fl-q" placeholder="' + tr('Rechercher dans sa bibliothèque') + '" autocomplete="off" value="' + esc(v.q) + '"></label>' +
+    '<div class="pills" role="group" aria-label="' + tr('Filtrer par type') + '">' + pill('data-fl-type', 'all', tr('Tout'), c.all, v.type === 'all') +
+    pill('data-fl-type', 'movie', tr('Films'), c.movie, v.type === 'movie') + pill('data-fl-type', 'tv', tr('Séries'), c.tv, v.type === 'tv') + '</div>' +
+    '<label class="fl-sort">' + tr('Trier') + ' <select id="fl-sort"><option value="recent"' + (v.sort === 'recent' ? ' selected' : '') + '>' + tr('Ajoutés récemment') + '</option>' +
+    '<option value="az"' + (v.sort === 'az' ? ' selected' : '') + '>' + tr('Titre A → Z') + '</option><option value="za"' + (v.sort === 'za' ? ' selected' : '') + '>' + tr('Titre Z → A') + '</option></select></label></div>' +
+    '<div class="pills fl-modes" role="group" aria-label="' + tr('Vues rapides') + '">' + pill('data-fl-mode', 'common', tr('En commun avec moi'), c.common, v.mode === 'common') +
+    pill('data-fl-mode', 'unseen', tr('Pas encore vus par moi'), c.unseen, v.mode === 'unseen') + '</div>';
 }
 
 function gridHTML() {
   const rows = applyView(fl.lib.items, fl.view, ctx());
   if (!rows.length) {
     const filtered = fl.view.q.trim() || fl.view.type !== 'all' || fl.view.mode !== 'all';
-    return '<div class="fl-empty row-msg" role="status"><p>' + (filtered ? 'Aucun résultat. Essaie un autre titre ou retire un filtre.' : 'Rien à voir ici pour l’instant.') + '</p>' +
-      (filtered ? '<button type="button" class="btn btn-ghost" data-fl-reset>Réinitialiser</button>' : '') + '</div>';
+    return '<div class="fl-empty row-msg" role="status"><p>' + (filtered ? tr('Aucun résultat. Essaie un autre titre ou retire un filtre.') : tr('Rien à voir ici pour l’instant.')) + '</p>' +
+      (filtered ? '<button type="button" class="btn btn-ghost" data-fl-reset>' + tr('Réinitialiser') + '</button>' : '') + '</div>';
   }
   const shown = rows.slice(0, fl.shown).map(tileHTML).join('');
-  const more = rows.length > fl.shown ? '<div class="fl-more"><button type="button" class="btn btn-ghost" data-fl-more>Afficher plus (' + (rows.length - fl.shown) + ')</button></div>' : '';
+  const more = rows.length > fl.shown ? '<div class="fl-more"><button type="button" class="btn btn-ghost" data-fl-more>' + tr('Afficher plus ({v})', { v: (rows.length - fl.shown) }) + '</button></div>' : '';
   return shown + more;
 }
 
@@ -111,13 +112,13 @@ function paintBody() {
   if (!body || !head) return;
   head.innerHTML = headHTML();
   const l = fl.lib;
-  if (l.status === 'loading') { body.innerHTML = '<p class="row-msg" role="status">Chargement…</p>'; return; }
+  if (l.status === 'loading') { body.innerHTML = '<p class="row-msg" role="status">' + tr('Chargement…') + '</p>'; return; }
   if (l.status === 'error') {
-    body.innerHTML = '<p class="row-msg" role="alert">Bibliothèque indisponible. <button type="button" class="btn btn-ghost" data-fl-retry>Réessayer</button></p>';
+    body.innerHTML = '<p class="row-msg" role="alert">' + tr('Bibliothèque indisponible.') + ' <button type="button" class="btn btn-ghost" data-fl-retry>' + tr('Réessayer') + '</button></p>';
     return;
   }
-  if (l.status === 'gone') { body.innerHTML = '<p class="row-msg">Cette bibliothèque n’est pas partagée avec toi.</p>'; return; }
-  if (!usable(l.items).length) { body.innerHTML = '<p class="row-msg">' + esc(fl.name) + ' n’a rien partagé avec toi pour l’instant.</p>'; return; }
+  if (l.status === 'gone') { body.innerHTML = '<p class="row-msg">' + tr('Cette bibliothèque n’est pas partagée avec toi.') + '</p>'; return; }
+  if (!usable(l.items).length) { body.innerHTML = '<p class="row-msg">' + tr('{name} n’a rien partagé avec toi pour l’instant.', { name: esc(fl.name) }) + '</p>'; return; }
   body.innerHTML = controlsHTML() + '<div class="lib-grid soc-grid" id="fl-grid" data-nav></div>';
   paintGrid();
 }
@@ -149,12 +150,12 @@ export function showFriendLibrary(pid) {
   stopInfinite();
   state.kind = 'friend';
   const name = nameOfPid(pid);
-  document.title = 'Bibliothèque de ' + name + ' · Laststream';
+  document.title = tr('Bibliothèque de {name} · Laststream', { name });
   if (!isServerMode() || isKidProfile()) { detailEl.innerHTML = unavailable(name); return; }
   fl = { pid, name, lib: { status: 'loading', items: [] }, view: { ...DEFAULT_VIEW }, shown: CHUNK, seq: fl.seq };
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page soc-page fl-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t" id="fl-head"></div>' +
-    '<button type="button" class="btn btn-ghost fl-send" data-fl-send-friend>Envoyer un titre à ' + esc(name) + '</button></header>' +
+    '<button type="button" class="btn btn-ghost fl-send" data-fl-send-friend>' + tr('Envoyer un titre à {name}', { name: esc(name) }) + '</button></header>' +
     '<div class="soc-body fl-body" id="fl-body"></div></article>';
   paintBody();
   const h1 = detailEl.querySelector('#svc-title');
@@ -226,21 +227,21 @@ detailEl.addEventListener('click', (e) => {
     if (!it) return;
     userStore.addToLibrary({ id: it.id, type: it.type, title: it.name, poster: it.posterPath || '', year: it.year || '' });
     save.disabled = true;
-    save.textContent = 'Dans ma bibliothèque';
-    toast('Ajouté à ta bibliothèque');
+    save.textContent = tr('Dans ma bibliothèque');
+    toast(tr('Ajouté à ta bibliothèque'));
     const tile = save.closest('.fl-tile');
     const media = tile && tile.querySelector('.fl-media');
     if (media) {
       media.querySelectorAll('.fl-badge').forEach((b) => b.remove());
-      media.insertAdjacentHTML('beforeend', '<span class="fl-badge is-common">En commun</span>');
+      media.insertAdjacentHTML('beforeend', '<span class="fl-badge is-common">' + tr('En commun') + '</span>');
     }
     const commonPill = detailEl.querySelector('[data-fl-mode="common"]');
-    if (commonPill) commonPill.textContent = 'En commun avec moi · ' + countsOf(fl.lib.items, ctx()).common;
+    if (commonPill) commonPill.textContent = tr('En commun avec moi · {common}', { common: countsOf(fl.lib.items, ctx()).common });
     const sub = detailEl.querySelector('#fl-sub');
     if (sub && fl.lib.status === 'ok') {
       const n = usable(fl.lib.items).length;
       const common = countsOf(fl.lib.items, ctx()).common;
-      sub.textContent = n + ' titre' + (n > 1 ? 's' : '') + (common ? ' · ' + common + ' déjà dans ta bibliothèque' : '');
+      sub.textContent = tr('{n} titre', { n }) + (n > 1 ? 's' : '') + (common ? ' ' + tr('· {common} déjà dans ta bibliothèque', { common }) : '');
       sub.hidden = false;
     }
   }

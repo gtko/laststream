@@ -1,6 +1,7 @@
 /* Discussions Social v3 (lot F3) : petite boîte de dialogue modale (création de groupe, de sondage). Échap annule, Tab reste
  * dans la boîte, le focus revient au déclencheur. `build(body, ctl)` remplit la boîte et appelle ctl.setValid(bool). */
 import { h } from './socialConvDom.js';
+import { t } from '../i18n';
 
 let seq = 0;
 
@@ -17,7 +18,7 @@ export function openDialog(o) {
   const body = h('div', 'cvd-body');
   const err = h('p', 'cvd-err', '', { role: 'alert' });
   const foot = h('div', 'cvd-foot');
-  const cancel = h('button', 'cvm-btn', 'Annuler', { type: 'button' });
+  const cancel = h('button', 'cvm-btn', t('Annuler'), { type: 'button' });
   const ok = h('button', 'cvm-btn is-accent', o.confirmLabel, { type: 'button' });
   ok.disabled = true;
   foot.append(cancel, ok);
@@ -48,7 +49,7 @@ export function openDialog(o) {
     } catch (e) {
       busy = false;
       refresh();
-      ctl.setError(e && e.message ? e.message : 'Impossible pour le moment.');
+      ctl.setError(e && e.message ? e.message : t('Impossible pour le moment.'));
     }
   }
   function onKey(e) {

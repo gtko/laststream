@@ -1,4 +1,5 @@
 import { codecLabel, langName, normalizeLang, type AudioTrack, type SubtitleTrack } from './tracks';
+import { t as tr } from '../i18n';
 
 /* Présentation des pistes : regroupement par langue (langue préférée d'abord), libellés lisibles, pastilles.
  * Fonctions pures, testées. */
@@ -49,11 +50,11 @@ export function groupAudioTracks(tracks: readonly AudioTrack[], preferred: reado
     const lang = track.lang || '';
     const title = titles[track.id] ?? '';
     const variant = variantOf(title);
-    const name = lang ? langName(lang) : 'Langue inconnue';
+    const name = lang ? langName(lang) : tr('Langue inconnue');
     const badges: string[] = [];
-    if (track.id === defaultId || (defaultId === undefined && i === 0)) badges.push('Par défaut');
-    if (isCommentary(title)) badges.push('Commentaire');
-    if (isDescriptive(title)) badges.push('Audiodescription');
+    if (track.id === defaultId || (defaultId === undefined && i === 0)) badges.push(tr('Par défaut'));
+    if (isCommentary(title)) badges.push(tr('Commentaire'));
+    if (isDescriptive(title)) badges.push(tr('Audiodescription'));
     const item: AudioItem = { track, label: variant ? name + ' (' + variant + ')' : name, detail: audioDetail(track, title), badges };
     const g = groups.get(lang) ?? { lang, name, items: [] };
     g.items.push(item);
@@ -88,9 +89,9 @@ export interface SubtitleSection {
 const FORMAT: Record<string, string> = { subrip: 'SRT', srt: 'SRT', ass: 'ASS', ssa: 'SSA', webvtt: 'VTT', mov_text: 'TXT', hdmv_pgs_subtitle: 'PGS', dvd_subtitle: 'VobSub', dvb_subtitle: 'DVB' };
 
 export function subtitleLabel(t: SubtitleTrack, title = ''): string {
-  const base = t.lang ? langName(t.lang) : title || 'Sous-titres';
-  const sdh = /\b(sdh|cc|hearing|malentendant)/.test(strip(title)) ? ' — SDH/malentendants' : '';
-  const forced = t.forced ? ' — forcés' : '';
+  const base = t.lang ? langName(t.lang) : title || tr('Sous-titres');
+  const sdh = /\b(sdh|cc|hearing|malentendant)/.test(strip(title)) ? ' ' + tr('— SDH/malentendants') : '';
+  const forced = t.forced ? ' ' + tr('— forcés') : '';
   return base + forced + sdh;
 }
 
@@ -102,11 +103,11 @@ function groupSubs(tracks: readonly SubtitleTrack[], prefs: readonly string[], t
     const fmt = FORMAT[track.codec];
     if (fmt) chips.push(fmt);
     if (track.origin === 'external' && track.source) chips.push(track.source);
-    if (track.hashMatch) chips.push('Synchronisé avec ce fichier');
-    if (track.downloads) chips.push(track.downloads >= 1000 ? String(Math.round(track.downloads / 100) / 10).replace('.', ',') + ' k téléch.' : track.downloads + ' téléch.');
+    if (track.hashMatch) chips.push(tr('Synchronisé avec ce fichier'));
+    if (track.downloads) chips.push(track.downloads >= 1000 ? tr('{v} k téléch.', { v: String(Math.round(track.downloads / 100) / 10).replace('.', ',') }) : tr('{downloads} téléch.', { downloads: track.downloads }));
     if (track.rating) chips.push('★ ' + track.rating.toFixed(1));
-    const item: SubtitleItem = { track, label: subtitleLabel(track, title), chips, unsupported: track.renderable ? '' : 'Image (PGS) : non pris en charge dans le navigateur' };
-    const g = groups.get(track.lang) ?? { lang: track.lang, name: track.lang ? langName(track.lang) : 'Langue inconnue', items: [] };
+    const item: SubtitleItem = { track, label: subtitleLabel(track, title), chips, unsupported: track.renderable ? '' : tr('Image (PGS) : non pris en charge dans le navigateur') };
+    const g = groups.get(track.lang) ?? { lang: track.lang, name: track.lang ? langName(track.lang) : tr('Langue inconnue'), items: [] };
     g.items.push(item);
     groups.set(track.lang, g);
   }
@@ -120,8 +121,8 @@ export function sectionSubtitleTracks(tracks: readonly SubtitleTrack[], preferre
   const out: SubtitleSection[] = [];
   const emb = tracks.filter((t) => t.origin === 'embedded');
   const ext = tracks.filter((t) => t.origin === 'external');
-  if (emb.length) out.push({ id: 'embedded', title: 'Intégrés au fichier', groups: groupSubs(emb, prefs, titles) });
-  if (ext.length) out.push({ id: 'external', title: 'Externes', groups: groupSubs(ext, prefs, titles) });
+  if (emb.length) out.push({ id: 'embedded', title: tr('Intégrés au fichier'), groups: groupSubs(emb, prefs, titles) });
+  if (ext.length) out.push({ id: 'external', title: tr('Externes'), groups: groupSubs(ext, prefs, titles) });
   return out;
 }
 

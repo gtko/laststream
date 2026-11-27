@@ -13,9 +13,10 @@ import { openProfileEditor, PROFILE_COLORS as COLORS } from './profile-editor.js
 import { mountReferral, referralReasonText } from './referral-join.js';
 import { mountSubscribe, subscribeLoadingHTML } from './subscribe-ui.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Message de l'écran de connexion quand le serveur ne répond pas et qu'aucune session n'existe. */
-const OFFLINE_MSG = 'Serveur Laststream injoignable. Vérifie ta connexion puis réessaie.';
+const OFFLINE_MSG = tr('Serveur Laststream injoignable. Vérifie ta connexion puis réessaie.');
 
 let root = null;
 let resolveFlow = null;
@@ -49,24 +50,24 @@ const initialOfName = (name) => (name || '?').trim().slice(0, 1).toUpperCase();
 
 /** Message lisible d'une erreur de l'API utilisateur. */
 export function errorText(err) {
-  if (!(err instanceof UserApiError)) return 'Une erreur est survenue.';
-  const wait = err.retryAfterSec ? ' Réessaie dans ' + (err.retryAfterSec > 90 ? Math.ceil(err.retryAfterSec / 60) + ' min' : err.retryAfterSec + ' s') + '.' : '';
+  if (!(err instanceof UserApiError)) return tr('Une erreur est survenue.');
+  const wait = err.retryAfterSec ? ' ' + tr('Réessaie dans {v}.', { v: (err.retryAfterSec > 90 ? tr('{v} min', { v: Math.ceil(err.retryAfterSec / 60) }) : err.retryAfterSec + ' s') }) : '';
   switch (err.code) {
-    case 'network': return 'lastAddon est injoignable.';
-    case 'invalid_credentials': return 'Nom d’utilisateur ou mot de passe incorrect.';
-    case 'username_taken': return 'Ce nom d’utilisateur est déjà pris.';
-    case 'signup_disabled': return 'Inscription sur invitation : demande un lien de parrainage à un ami déjà inscrit.';
-    case 'invite_invalid': return 'Ce lien d’invitation est invalide, déjà utilisé ou révoqué.';
-    case 'bootstrap_token_invalid': return 'Jeton d’amorçage invalide.';
-    case 'invalid_body': return 'Nom : 3 à 32 caractères (a-z, 0-9, _ . -). Mot de passe : 8 caractères minimum.';
-    case 'invalid_pin': return 'Code incorrect.';
-    case 'pin_locked': return 'Trop d’essais : profil bloqué.' + wait;
-    case 'rate_limited': return 'Trop de tentatives.' + wait;
-    case 'stremio_login_failed': return 'Identifiants refusés par Stremio : rien n’a été ajouté. Vérifie l’e-mail et le mot de passe.';
-    case 'invalid_config': return 'Configuration lastAddon invalide : enregistre-la d’abord dans les réglages.';
-    case 'avatar_not_allowed_for_kid': return 'Cet avatar n’est pas autorisé sur un profil enfant : choisis-en un autre.';
-    case 'invalid_avatar': return 'Cet avatar n’est plus disponible : choisis-en un autre.';
-    default: return 'Erreur (' + err.code + ').' + wait;
+    case 'network': return tr('lastAddon est injoignable.');
+    case 'invalid_credentials': return tr('Nom d’utilisateur ou mot de passe incorrect.');
+    case 'username_taken': return tr('Ce nom d’utilisateur est déjà pris.');
+    case 'signup_disabled': return tr('Inscription sur invitation : demande un lien de parrainage à un ami déjà inscrit.');
+    case 'invite_invalid': return tr('Ce lien d’invitation est invalide, déjà utilisé ou révoqué.');
+    case 'bootstrap_token_invalid': return tr('Jeton d’amorçage invalide.');
+    case 'invalid_body': return tr('Nom : 3 à 32 caractères (a-z, 0-9, _ . -). Mot de passe : 8 caractères minimum.');
+    case 'invalid_pin': return tr('Code incorrect.');
+    case 'pin_locked': return tr('Trop d’essais : profil bloqué.') + wait;
+    case 'rate_limited': return tr('Trop de tentatives.') + wait;
+    case 'stremio_login_failed': return tr('Identifiants refusés par Stremio : rien n’a été ajouté. Vérifie l’e-mail et le mot de passe.');
+    case 'invalid_config': return tr('Configuration lastAddon invalide : enregistre-la d’abord dans les réglages.');
+    case 'avatar_not_allowed_for_kid': return tr('Cet avatar n’est pas autorisé sur un profil enfant : choisis-en un autre.');
+    case 'invalid_avatar': return tr('Cet avatar n’est plus disponible : choisis-en un autre.');
+    default: return tr('Erreur ({code}).', { code: err.code }) + wait;
   }
 }
 
@@ -167,7 +168,7 @@ function fieldHTML(o) {
   const id = 'auth-f-' + o.name;
   return '<div class="auth-field"><label class="auth-label" for="' + id + '">' + o.label + '</label><span class="auth-input">' +
     '<input id="' + id + '" type="' + o.type + '" name="' + o.name + '" autocomplete="' + o.auto + '"' + (o.attrs || '') + (o.invalid ? ' aria-invalid="true" aria-describedby="auth-msg"' : '') + '>' +
-    (o.toggle ? '<button type="button" class="auth-eye" data-pw-toggle aria-label="Afficher le mot de passe">' + EYE_SVG + '</button>' : '') + '</span></div>';
+    (o.toggle ? '<button type="button" class="auth-eye" data-pw-toggle aria-label="' + tr('Afficher le mot de passe') + '">' + EYE_SVG + '</button>' : '') + '</span></div>';
 }
 
 /** Étape 1 de « Rejoindre Laststream » : coller le lien (ou le code), puis valider. Le lien est vérifié auprès du serveur. */
@@ -175,32 +176,32 @@ function inviteCodeHTML(msg) {
   const st = invite.status;
   const checking = !msg && st === 'checking';
   const err = msg || (st === 'invalid'
-    ? (referralReasonText(invite.reason) || 'Ce lien d’invitation est invalide, déjà utilisé ou révoqué. Demande un nouveau lien à la personne qui t’invite.')
+    ? (referralReasonText(invite.reason) || tr('Ce lien d’invitation est invalide, déjà utilisé ou révoqué. Demande un nouveau lien à la personne qui t’invite.'))
     : '');
   return '<form class="auth-form auth-invite" data-invite-form>' +
-    fieldHTML({ label: 'Colle ton lien ou code d’invitation', type: 'text', name: 'code', auto: 'off', invalid: !!err,
-      attrs: ' autocapitalize="none" spellcheck="false" placeholder="Lien ou code d’invitation" value="' + esc(st === 'invalid' ? '' : invite.code) + '"' }) +
-    msgHTML(checking ? 'Vérification du lien…' : err, checking) +
-    '<p class="auth-note">Le lien entier ou seulement son code : les deux fonctionnent.</p>' +
-    '<button type="submit" class="btn btn-primary auth-btn">Valider</button></form>' +
-    (isOfficialBase(getBase()) ? '' : '<button type="button" class="link-btn auth-link" data-invite-first>C’est le premier compte de ce serveur</button>');
+    fieldHTML({ label: tr('Colle ton lien ou code d’invitation'), type: 'text', name: 'code', auto: 'off', invalid: !!err,
+      attrs: ' autocapitalize="none" spellcheck="false" placeholder="' + tr('Lien ou code d’invitation') + '" value="' + esc(st === 'invalid' ? '' : invite.code) + '"' }) +
+    msgHTML(checking ? tr('Vérification du lien…') : err, checking) +
+    '<p class="auth-note">' + tr('Le lien entier ou seulement son code : les deux fonctionnent.') + '</p>' +
+    '<button type="submit" class="btn btn-primary auth-btn">' + tr('Valider') + '</button></form>' +
+    (isOfficialBase(getBase()) ? '' : '<button type="button" class="link-btn auth-link" data-invite-first>' + tr('C’est le premier compte de ce serveur') + '</button>');
 }
 
 /** Étape 2 : l'invitation est reconnue (qui invite). Rien à afficher pour le premier compte du serveur. */
 function inviteStatusHTML() {
   if (invite.first) return '';
-  if (invite.status === 'valid') return '<p class="auth-invite-ok" role="status">' + (invite.inviter ? 'Invité par <strong>' + esc(invite.inviter) + '</strong>' : 'Lien d’invitation valide') + '</p>';
-  return '<p class="auth-invite-ok" role="status">Lien d’invitation enregistré (vérifié à l’inscription).</p>';
+  if (invite.status === 'valid') return '<p class="auth-invite-ok" role="status">' + (invite.inviter ? tr('Invité par <strong>{inviter}</strong>', { inviter: esc(invite.inviter) }) : tr('Lien d’invitation valide')) + '</p>';
+  return '<p class="auth-invite-ok" role="status">' + tr('Lien d’invitation enregistré (vérifié à l’inscription).') + '</p>';
 }
 
 /** Nom d’utilisateur et mot de passe ; à l’inscription, le jeton d’amorçage du premier compte si le serveur l’exige. */
 function credentialsFormHTML(reg, msg) {
   return '<form id="auth-form" class="auth-form" autocomplete="on">' +
-    fieldHTML({ label: 'Nom d’utilisateur', type: 'text', name: 'username', auto: 'username', attrs: ' autocapitalize="none" placeholder="ex. camille" required' }) +
-    fieldHTML({ label: 'Mot de passe', type: 'password', name: 'password', auto: reg ? 'new-password' : 'current-password', attrs: ' required', toggle: true }) +
-    (reg && invite.first ? fieldHTML({ label: 'Jeton d’amorçage (premier compte, si le serveur l’exige)', type: 'password', name: 'bootstrap', auto: 'off' }) : '') +
+    fieldHTML({ label: tr('Nom d’utilisateur'), type: 'text', name: 'username', auto: 'username', attrs: ' autocapitalize="none" placeholder="' + tr('ex. camille') + '" required' }) +
+    fieldHTML({ label: tr('Mot de passe'), type: 'password', name: 'password', auto: reg ? 'new-password' : 'current-password', attrs: ' required', toggle: true }) +
+    (reg && invite.first ? fieldHTML({ label: tr('Jeton d’amorçage (premier compte, si le serveur l’exige)'), type: 'password', name: 'bootstrap', auto: 'off' }) : '') +
     msgHTML(msg) +
-    '<button type="submit" class="btn btn-primary auth-btn" data-auth-submit>' + (reg ? 'Créer mon compte' : 'Se connecter') + '</button></form>';
+    '<button type="submit" class="btn btn-primary auth-btn" data-auth-submit>' + (reg ? tr('Créer mon compte') : tr('Se connecter')) + '</button></form>';
 }
 
 /** Titre et sous-titre court d'une vue. */
@@ -208,24 +209,24 @@ const headHTML = (title, lead) => '<div class="auth-head"><h1 class="auth-title"
 
 /** Vue « Connexion » (par défaut) : le formulaire, « ou », puis « Pas encore de compte ? » pour ouvrir l’invitation. */
 function loginViewHTML(msg) {
-  return headHTML('Connexion', 'Retrouve tes profils, ta bibliothèque et ta progression.') + credentialsFormHTML(false, msg) +
-    '<div class="auth-sep" aria-hidden="true">ou</div>' +
-    '<section class="auth-new" aria-labelledby="auth-new-title"><p class="auth-note" id="auth-new-title">Pas encore de compte ? Les comptes se créent sur invitation : demande un lien à un ami déjà inscrit.</p>' +
-    '<button type="button" class="btn auth-btn auth-btn-alt" data-auth-mode="invite">J’ai un lien d’invitation</button></section>';
+  return headHTML(tr('Connexion'), tr('Retrouve tes profils, ta bibliothèque et ta progression.')) + credentialsFormHTML(false, msg) +
+    '<div class="auth-sep" aria-hidden="true">' + tr('ou') + '</div>' +
+    '<section class="auth-new" aria-labelledby="auth-new-title"><p class="auth-note" id="auth-new-title">' + tr('Pas encore de compte ? Les comptes se créent sur invitation : demande un lien à un ami déjà inscrit.') + '</p>' +
+    '<button type="button" class="btn auth-btn auth-btn-alt" data-auth-mode="invite">' + tr('J’ai un lien d’invitation') + '</button></section>';
 }
 
 /** Vue « Rejoindre Laststream » : coller le lien (étape 1), puis créer son compte (étape 2). */
 function inviteViewHTML(msg) {
   const ready = invite.first || invite.status === 'valid' || invite.status === 'unknown';
-  return headHTML('Rejoindre Laststream', ready ? 'Choisis ton nom d’utilisateur et ton mot de passe.' : 'Colle le lien que ton ami t’a envoyé pour créer ton compte.') +
+  return headHTML(tr('Rejoindre Laststream'), ready ? tr('Choisis ton nom d’utilisateur et ton mot de passe.') : tr('Colle le lien que ton ami t’a envoyé pour créer ton compte.')) +
     (ready ? inviteStatusHTML() + credentialsFormHTML(true, msg) : inviteCodeHTML(msg)) +
-    '<button type="button" class="auth-back" data-auth-mode="login">' + BACK_SVG + 'J’ai déjà un compte</button>';
+    '<button type="button" class="auth-back" data-auth-mode="login">' + BACK_SVG + tr('J’ai déjà un compte') + '</button>';
 }
 
 function loginHTML(msg) {
   const body = mode === 'invite' ? inviteViewHTML(msg) : loginViewHTML(msg);
   return '<div class="auth-card auth-panel"><div class="auth-brand">' + brand() + '</div>' + body +
-    (isOfficialBase(getBase()) ? '' : '<p class="auth-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés.</p>') +
+    (isOfficialBase(getBase()) ? '' : '<p class="auth-note">' + tr('Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés.') + '</p>') +
     '</div>';
 }
 
@@ -264,7 +265,7 @@ function setBusy(form, on) {
   btn.disabled = on;
   if (on) {
     btn.dataset.label = btn.textContent;
-    btn.innerHTML = SPIN_SVG + (mode === 'invite' ? 'Création du compte…' : 'Connexion en cours…');
+    btn.innerHTML = SPIN_SVG + (mode === 'invite' ? tr('Création du compte…') : tr('Connexion en cours…'));
   } else if (btn.dataset.label) btn.textContent = btn.dataset.label;
 }
 
@@ -287,7 +288,7 @@ function maskPasswords(form) {
     const input = eye.parentElement && eye.parentElement.querySelector('input');
     if (input) input.type = 'password';
     eye.innerHTML = EYE_SVG;
-    eye.setAttribute('aria-label', 'Afficher le mot de passe');
+    eye.setAttribute('aria-label', tr('Afficher le mot de passe'));
   });
 }
 
@@ -317,11 +318,11 @@ async function submitLogin(form) {
 let manage = false;
 
 function profileTile(p) {
-  return '<button type="button" class="pf" data-pf="' + esc(p.id) + '" aria-label="' + esc(p.name + (p.isKid ? ', profil enfant' : '') + (p.hasPin ? ', verrouillé' : '') + (manage ? ', modifier' : '')) + '">' +
+  return '<button type="button" class="pf" data-pf="' + esc(p.id) + '" aria-label="' + esc(p.name + (p.isKid ? tr(', profil enfant') : '') + (p.hasPin ? tr(', verrouillé') : '') + (manage ? tr(', modifier') : '')) + '">' +
     '<span class="pf-av"' + avatarAttrs(p.avatar, p.avatarColor || COLORS[0]) + '>' + esc(initialOfName(p.name)) +
     (p.hasPin ? '<span class="pf-lock" aria-hidden="true">' + ICON.lock + '</span>' : '') +
     (manage ? '<span class="pf-edit" aria-hidden="true">' + ICON.pencil + '</span>' : '') + '</span>' +
-    '<span class="pf-name">' + esc(p.name) + '</span>' + (p.isKid ? '<em class="pf-kid">Enfant</em>' : '') + '</button>';
+    '<span class="pf-name">' + esc(p.name) + '</span>' + (p.isKid ? '<em class="pf-kid">' + tr('Enfant</em>') : '') + '</button>';
 }
 
 /**
@@ -334,13 +335,13 @@ const offerManage = () => mayManage() || !auth.profile;
 function pickerHTML(note) {
   if (manage && !mayManage()) manage = false;
   return '<div class="auth-card auth-wide"><div class="auth-brand">' + brand() + '</div>' +
-    '<h1 class="auth-title">' + (manage ? 'Gérer les profils' : 'Qui regarde ?') + '</h1>' +
+    '<h1 class="auth-title">' + (manage ? tr('Gérer les profils') : tr('Qui regarde ?')) + '</h1>' +
     '<div class="pf-grid" role="list">' + auth.profiles.map(profileTile).join('') +
-    (mayManage() ? '<button type="button" class="pf pf-add" data-pf-add aria-label="Ajouter un profil"><span class="pf-av">+</span><span class="pf-name">Ajouter un profil</span></button>' : '') + '</div>' +
+    (mayManage() ? '<button type="button" class="pf pf-add" data-pf-add aria-label="' + tr('Ajouter un profil') + '"><span class="pf-av">+</span><span class="pf-name">' + tr('Ajouter un profil') + '</span></button>' : '') + '</div>' +
     '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(note || '') + '</p>' +
-    '<div class="tv-form-actions auth-actions">' + (offerManage() ? '<button type="button" class="btn btn-ghost" data-pf-manage aria-pressed="' + manage + '">' + (manage ? 'Terminé' : 'Gérer les profils') + '</button>' : '') +
-    '<button type="button" class="btn btn-ghost" data-auth-signout>Se déconnecter</button>' +
-    (resolveFlow ? '' : '<button type="button" class="btn btn-ghost" data-auth-close>Fermer</button>') + '</div></div>';
+    '<div class="tv-form-actions auth-actions">' + (offerManage() ? '<button type="button" class="btn btn-ghost" data-pf-manage aria-pressed="' + manage + '">' + (manage ? tr('Terminé') : tr('Gérer les profils')) + '</button>' : '') +
+    '<button type="button" class="btn btn-ghost" data-auth-signout>' + tr('Se déconnecter') + '</button>' +
+    (resolveFlow ? '' : '<button type="button" class="btn btn-ghost" data-auth-close>' + tr('Fermer') + '</button>') + '</div></div>';
 }
 
 export function openPicker(note) {
@@ -366,7 +367,7 @@ async function pick(id) {
     await afterChoice();
   } catch (err) {
     if (err instanceof UserApiError && err.code === 'pin_required') {
-      pinPad({ title: 'Code de ' + p.name, profile: p, onOk: async () => { await chooseProfile(id); hidePad(); await afterChoice(); } });
+      pinPad({ title: tr('Code de {name}', { name: p.name }), profile: p, onOk: async () => { await chooseProfile(id); hidePad(); await afterChoice(); } });
     } else {
       const m = el().querySelector('#auth-msg');
       if (m) m.textContent = errorText(err);
@@ -395,13 +396,13 @@ export function pinPad({ title, profile = null, choices = null, onOk, onCancel =
   const state = { digits: '', busy: false, profile: profile || (choices && choices[0]) };
   const render = (msg) => {
     node.innerHTML = '<div class="pin" role="dialog" aria-modal="true" aria-labelledby="pin-title"><h2 id="pin-title" class="pin-title">' + esc(title) + '</h2>' +
-      (choices && choices.length > 1 ? '<div class="pills pin-choices" role="group" aria-label="Profil adulte">' + choices.map((c) =>
+      (choices && choices.length > 1 ? '<div class="pills pin-choices" role="group" aria-label="' + tr('Profil adulte') + '">' + choices.map((c) =>
         '<button type="button" class="pill" data-pin-who="' + esc(c.id) + '" aria-pressed="' + (c.id === state.profile.id) + '">' + esc(c.name) + '</button>').join('') + '</div>' : '') +
-      '<div class="pin-dots" aria-label="' + state.digits.length + ' chiffres saisis">' + [0, 1, 2, 3].map((i) => '<span class="' + (i < state.digits.length ? 'is-on' : '') + '"></span>').join('') + '</div>' +
+      '<div class="pin-dots" aria-label="' + tr('{length} chiffres saisis', { length: state.digits.length }) + '">' + [0, 1, 2, 3].map((i) => '<span class="' + (i < state.digits.length ? 'is-on' : '') + '"></span>').join('') + '</div>' +
       '<p class="pin-msg" role="alert">' + esc(msg || '') + '</p>' +
       '<div class="pin-keys">' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => '<button type="button" data-pin-key="' + n + '">' + n + '</button>').join('') +
-      '<button type="button" data-pin-cancel aria-label="Annuler">Annuler</button><button type="button" data-pin-key="0">0</button>' +
-      '<button type="button" data-pin-back aria-label="Effacer">' + ICON.back + '</button></div></div>';
+      '<button type="button" data-pin-cancel aria-label="' + tr('Annuler') + '">' + tr('Annuler') + '</button><button type="button" data-pin-key="0">0</button>' +
+      '<button type="button" data-pin-back aria-label="' + tr('Effacer') + '">' + ICON.back + '</button></div></div>';
   };
   const submit = async () => {
     state.busy = true;
@@ -447,7 +448,7 @@ function editProfile(p) {
   // Page plein écran ; après un enregistrement ou une suppression, retour à « Gérer les profils ».
   const open = (profile) => openProfileEditor(profile, { errorText, onDone: () => { manage = true; show(pickerHTML()); } });
   if (p && p.hasPin && !hasValidToken(p.id)) {
-    pinPad({ title: 'Code de ' + p.name, profile: p, onOk: async () => { hidePad(); open(p); } });
+    pinPad({ title: tr('Code de {name}', { name: p.name }), profile: p, onOk: async () => { hidePad(); open(p); } });
     return;
   }
   open(p);
@@ -463,7 +464,7 @@ function editProfile(p) {
 export function leaveKidProfile() {
   const main = parentalProfile();
   if (!main || !main.hasPin) { openPicker(); return; }
-  pinPad({ title: 'Code parental', profile: main, onOk: async () => { grantManager(main.id); hidePad(); openPicker(); } });
+  pinPad({ title: tr('Code parental'), profile: main, onOk: async () => { grantManager(main.id); hidePad(); openPicker(); } });
 }
 
 // ---------- Orchestration ----------
@@ -510,7 +511,7 @@ document.addEventListener('click', async (e) => {
     const reveal = input.type === 'password';
     input.type = reveal ? 'text' : 'password';
     eye.innerHTML = reveal ? EYE_OFF_SVG : EYE_SVG;
-    eye.setAttribute('aria-label', reveal ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+    eye.setAttribute('aria-label', reveal ? tr('Masquer le mot de passe') : tr('Afficher le mot de passe'));
     return;
   }
   const m = t.closest('[data-auth-mode]');
@@ -528,7 +529,7 @@ document.addEventListener('click', async (e) => {
     const main = parentalProfile() || auth.profiles.find((p) => p.isMainProfile);
     if (!main) return;
     const grant = () => { grantManager(main.id); hidePad(); manage = true; show(pickerHTML()); };
-    if (main.hasPin) pinPad({ title: 'Code du profil principal', profile: main, onOk: async () => grant() });
+    if (main.hasPin) pinPad({ title: tr('Code du profil principal'), profile: main, onOk: async () => grant() });
     else grant();
   }
 });

@@ -1,4 +1,5 @@
 import { isNativePlayer, nativeFetch } from './native';
+import { t } from '../i18n';
 
 /* Client du serveur de streaming Stremio (HLS, probe, proxy, sous-titres ; jamais de torrent : les sources passent par un débrideur).
  * Protocole repris de stremio-video (withStreamingServer, fetchVideoParams, buildProxyUrl). */
@@ -60,7 +61,7 @@ async function getJson<T>(url: string, timeoutMs = 8000, init?: RequestInit): Pr
     const json = (await res.json()) as T & { error?: unknown };
     if (json && typeof json === 'object' && 'error' in json && json.error) {
       const e = json.error as { message?: string } | string;
-      throw new Error(typeof e === 'string' ? e : e.message ?? 'erreur du serveur');
+      throw new Error(typeof e === 'string' ? e : e.message ?? t('erreur du serveur'));
     }
     return json;
   } finally {

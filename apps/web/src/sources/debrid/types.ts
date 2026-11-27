@@ -1,10 +1,11 @@
 /* Débrideurs côté appareil : types communs. AllDebrid, TorBox et Real-Debrid sont contactés UNIQUEMENT depuis l'appareil de
  * l'utilisateur (son IP), jamais depuis le serveur lastAddon : les débrideurs sanctionnent les appels venant d'IP de serveurs. */
 
+import { t } from '../../i18n';
 export type ProviderId = 'alldebrid' | 'torbox' | 'realdebrid';
 
 export const PROVIDER_IDS: readonly ProviderId[] = ['alldebrid', 'torbox', 'realdebrid'];
-export const PROVIDER_LABEL: Record<ProviderId, string> = { alldebrid: 'AllDebrid', torbox: 'TorBox', realdebrid: 'Real-Debrid' };
+export const PROVIDER_LABEL: Record<ProviderId, string> = { alldebrid: 'AllDebrid', torbox: 'TorBox', realdebrid: t('Real-Debrid') };
 
 /** Fichier attendu dans un magnet : index Stremio, nom, taille, et épisode visé (pack de série). */
 export interface FileHint {

@@ -19,6 +19,7 @@ import { progressResume, resumePillHTML } from './resume.js';
 import { esc, fmtDate, fmtMin } from './util.js';
 import { fillerKinds, playableSoon } from '../player/episodes';
 import { getVideoLang } from '../data/prefs';
+import { t } from '../i18n';
 
 // ---------- Fiche : sections chargées après coup ----------
 /** Notes de la fiche serveur (même forme que la route MDBList), ou null si elle n'en donne pas. */
@@ -82,12 +83,12 @@ export async function fillNext(m, token) {
   // Diffusion dans les 14 prochains jours : la ligne lance la recherche de sources de cet épisode.
   const nums = m.next && m.next.airDate === date ? m.next : null;
   if (nums && nums.season != null && isSoonPlayable(date)) {
-    slot.innerHTML = 'Prochain épisode : <button type="button" class="link-btn" data-play data-play-key="' + esc(m.key) + '" data-name="' + esc(m.name || '') +
+    slot.innerHTML = t('Prochain épisode :') + ' <button type="button" class="link-btn" data-play data-play-key="' + esc(m.key) + '" data-name="' + esc(m.name || '') +
       '" data-play-season="' + esc(nums.season) + '" data-play-episode="' + esc(nums.episode) + '" data-air="' + esc(date) + '">' +
       (label ? '<strong>' + esc(label) + '</strong> · ' : '') + esc(playableBadge(date)) + '</button>';
     return;
   }
-  slot.innerHTML = 'Prochain épisode : ' + (label ? '<strong>' + esc(label) + '</strong> ' : '') + 'le ' + esc(fmtDate(date));
+  slot.innerHTML = t('Prochain épisode : {v}le {date}', { v: (label ? '<strong>' + esc(label) + '</strong> ' : ''), date: esc(fmtDate(date)) });
 }
 
 /**
@@ -125,10 +126,10 @@ function markFillers(list, n, kinds) {
     if (!meta || meta.querySelector('.ep-filler')) continue;
     const badge = document.createElement('span');
     badge.className = 'ep-filler';
-    badge.textContent = kind === 'recap' ? 'Récap' : 'Filler';
+    badge.textContent = kind === 'recap' ? t('Récap') : t('Filler');
     meta.prepend(badge, meta.textContent ? ' · ' : '');
     const play = li.querySelector('[data-play]');
-    if (play) play.setAttribute('aria-label', play.getAttribute('aria-label') + ', ' + (kind === 'recap' ? 'récap' : 'épisode filler'));
+    if (play) play.setAttribute('aria-label', play.getAttribute('aria-label') + ', ' + (kind === 'recap' ? t('récap') : t('épisode filler')));
   }
 }
 
@@ -145,7 +146,7 @@ export async function loadSeason(m, n, token, wantEp) {
     data = await seasonEpisodes(m.id, n);
   } catch (_) {
     if (token !== state.token) return;
-    list.innerHTML = '<li class="row-msg">Les épisodes n’ont pas pu être chargés. <button type="button" class="link-btn" data-season-retry="' + n + '">Réessayer</button></li>';
+    list.innerHTML = '<li class="row-msg">' + t('Les épisodes n’ont pas pu être chargés.') + ' <button type="button" class="link-btn" data-season-retry="' + n + '">' + t('Réessayer') + '</button></li>';
     list.removeAttribute('aria-busy');
     return;
   }
@@ -154,7 +155,7 @@ export async function loadSeason(m, n, token, wantEp) {
   const eps = data.episodes || [];
   list.removeAttribute('aria-busy');
   if (!eps.length) {
-    list.innerHTML = '<li class="row-msg">Aucun épisode renseigné pour cette saison.</li>';
+    list.innerHTML = '<li class="row-msg">' + t('Aucun épisode renseigné pour cette saison.') + '</li>';
     return;
   }
   // Émission en plusieurs parties : « Partie 1/2 » dans la ligne de détails de chaque carte.
@@ -175,27 +176,27 @@ export async function loadSeason(m, n, token, wantEp) {
     if (future && !soonPlayable) {
       const real = !isPlaceholderTitle(e.name);
       return '<li class="ep is-soon" data-ep="' + n + ':' + e.episode_number + '">' +
-        '<div class="ep-main" role="group" aria-label="' + esc(m.name + ', saison ' + n + ', épisode ' + e.episode_number + ', ' + countdownText(e.air_date)) + '">' +
+        '<div class="ep-main" role="group" aria-label="' + esc(t('{name}, saison {n}, épisode {episode_number}, {air_date}', { name: m.name, n, episode_number: e.episode_number, air_date: countdownText(e.air_date) })) + '">' +
         soonInnerHTML({ airDate: e.air_date, season: n, episode: e.episode_number, epTitle: e.name, still: e.still_path, backdrop: m.backdropPath, poster: data.poster_path || m.posterPath, logo: m.logo, name: m.name }) +
         '<span class="ep-title">' + esc(code + (real ? ' · ' + e.name : '')) + '</span>' +
-        '<span class="ep-meta">' + esc('Le ' + fmtDate(e.air_date) + ' · Bientôt' + (e.runtime ? ' · ' + fmtMin(e.runtime) : '')) + '</span>' +
+        '<span class="ep-meta">' + esc(t('Le {air_date} · Bientôt', { air_date: fmtDate(e.air_date) }) + (e.runtime ? ' · ' + fmtMin(e.runtime) : '')) + '</span>' +
         (e.overview ? '<span class="ep-ov">' + esc(e.overview) + '</span>' : '') + '</div>' + soonBell(m.key) + '</li>';
     }
     // Reprise : pastille et barre d’après la progression ; un épisode vu garde son état « vu » (pastille masquée en CSS).
     const rs = progressResume(userStore.getProgress(m.key, n, e.episode_number));
-    const resumeAria = rs && !done ? ', reprise à ' + rs.label : '';
+    const resumeAria = rs && !done ? t(', reprise à {label}', { label: rs.label }) : '';
     return '<li class="ep' + (done ? ' is-seen' : '') + '" data-ep="' + n + ':' + e.episode_number + '"' + (soonPlayable ? ' data-air="' + esc(e.air_date) + '"' : '') + '>' +
-      '<button type="button" class="ep-main" data-play aria-label="' + esc('Lire ' + code + ' : ' + (e.name || 'Épisode ' + e.episode_number) + resumeAria) + '">' +
+      '<button type="button" class="ep-main" data-play aria-label="' + esc(t('Lire {code} :', { code }) + ' ' + (e.name || t('Épisode {episode_number}', { episode_number: e.episode_number })) + resumeAria) + '">' +
       '<span class="ep-still' + (img.fallback ? ' is-fb' : '') + '">' + (img.src ? '<img src="' + esc(img.src) + '" alt="" loading="lazy" decoding="async" data-still' + (bgFb ? ' data-fb="' + esc(bgFb) + '"' : '') + '>' : '') +
       '<span class="ep-num" aria-hidden="true">' + esc(code) + '</span>' +
       (rs ? resumePillHTML(rs.label) : '') +
       '<span class="ep-bar" aria-hidden="true"><span style="width:' + (done ? 100 : rs ? Math.round(rs.ratio * 100) : 0) + '%"></span></span></span>' +
       '<span class="ep-title">' + esc(code + (isPlaceholderTitle(e.name) ? '' : ' · ' + e.name)) + '</span>' +
-      '<span class="ep-meta">' + esc(meta) + (soonPlayable ? ' · déjà en ligne ?' : '') + '</span>' +
+      '<span class="ep-meta">' + esc(meta) + (soonPlayable ? ' ' + t('· déjà en ligne ?') : '') + '</span>' +
       (e.overview ? '<span class="ep-ov">' + esc(e.overview) + '</span>' : '') + '</button>' +
       (future ? ''
-        : '<button type="button" class="ep-upto" data-upto="' + n + ':' + e.episode_number + '" aria-label="' + esc('Marquer comme vu jusqu’à ' + code) + '">Vu jusqu’ici</button>' +
-          '<button type="button" class="ep-seen" data-seen="' + esc(sk) + '" aria-pressed="' + done + '" aria-label="' + esc((done ? 'Marquer comme non vu : ' : 'Marquer comme vu : ') + code) + '">' + ICON.check + '</button>' +
+        : '<button type="button" class="ep-upto" data-upto="' + n + ':' + e.episode_number + '" aria-label="' + esc(t('Marquer comme vu jusqu’à {code}', { code })) + '">' + t('Vu jusqu’ici') + '</button>' +
+          '<button type="button" class="ep-seen" data-seen="' + esc(sk) + '" aria-pressed="' + done + '" aria-label="' + esc((done ? t('Marquer comme non vu :') + ' ' : t('Marquer comme vu :') + ' ') + code) + '">' + ICON.check + '</button>' +
           episodeDownloadHTML(m, n, e.episode_number, isPlaceholderTitle(e.name) ? '' : e.name)) +
       '</li>';
   }).join('');

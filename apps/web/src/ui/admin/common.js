@@ -3,6 +3,7 @@
 import { UserApiError } from '../../data/userApi';
 import { SET_ICON } from '../settings-ui.js';
 import { esc } from '../util.js';
+import { t } from '../../i18n';
 
 const svg = (body) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + body + '</svg>';
 
@@ -19,39 +20,39 @@ export const ICON = {
 };
 
 export const badge = (text, kind) => '<span class="adm-badge' + (kind ? ' is-' + kind : '') + '">' + esc(text) + '</span>';
-export const statusBadge = (s) => (s === 'suspended' ? badge('Suspendu', 'warn') : badge('Actif', 'ok'));
+export const statusBadge = (s) => (s === 'suspended' ? badge(t('Suspendu'), 'warn') : badge(t('Actif'), 'ok'));
 export const empty = (text) => '<p class="adm-empty" role="status">' + esc(text) + '</p>';
 
 /** Message FR d'une erreur de l'API d'administration. */
 export function adminErr(err) {
-  if (!(err instanceof UserApiError)) return 'Une erreur est survenue.';
-  if (err.status === 0 && err.code === 'cancelled') return 'Action annulée.';
+  if (!(err instanceof UserApiError)) return t('Une erreur est survenue.');
+  if (err.status === 0 && err.code === 'cancelled') return t('Action annulée.');
   switch (err.code) {
-    case 'network': return 'Serveur injoignable.';
-    case 'unauthorized': return 'Session expirée : reconnecte-toi.';
-    case 'owner_only': return 'Réservé au propriétaire du serveur.';
-    case 'kid_profile': return 'Indisponible depuis un profil enfant.';
-    case 'pin_required': return 'Déverrouille d’abord ton profil (code PIN).';
-    case 'profile_invalid': return 'Profil actif invalide : change de profil.';
-    case 'rate_limited': return 'Trop de requêtes.' + (err.retryAfterSec ? ' Réessaie dans ' + err.retryAfterSec + ' s.' : '');
-    case 'invalid_password': return 'Mot de passe incorrect.';
-    case 'elevation_required': case 'elevation_expired': return 'Ré-authentification nécessaire.';
-    case 'cannot_target_owner': return 'Le propriétaire ne peut être ni suspendu ni supprimé.';
-    case 'report_closed': return 'Ce signalement est déjà traité.';
-    case 'unknown_cache': return 'Cache inconnu.';
-    case 'cache_admin_unavailable': return 'Administration des caches indisponible sur ce serveur (mode Node).';
-    case 'tv_admin_unavailable': return 'L’API TV n’est pas encore branchée sur ce serveur.';
-    case 'party_unavailable': return 'Watch parties indisponibles sur ce serveur (mode Node).';
-    case 'not_found': return 'Introuvable.';
-    case 'account_config_missing': return 'Ton compte n’a aucune clé enregistrée.';
-    default: return err.status === 501 ? 'Fonction indisponible sur ce serveur.' : 'Erreur (' + err.code + ').';
+    case 'network': return t('Serveur injoignable.');
+    case 'unauthorized': return t('Session expirée : reconnecte-toi.');
+    case 'owner_only': return t('Réservé au propriétaire du serveur.');
+    case 'kid_profile': return t('Indisponible depuis un profil enfant.');
+    case 'pin_required': return t('Déverrouille d’abord ton profil (code PIN).');
+    case 'profile_invalid': return t('Profil actif invalide : change de profil.');
+    case 'rate_limited': return t('Trop de requêtes.') + (err.retryAfterSec ? ' ' + t('Réessaie dans {retryAfterSec} s.', { retryAfterSec: err.retryAfterSec }) : '');
+    case 'invalid_password': return t('Mot de passe incorrect.');
+    case 'elevation_required': case 'elevation_expired': return t('Ré-authentification nécessaire.');
+    case 'cannot_target_owner': return t('Le propriétaire ne peut être ni suspendu ni supprimé.');
+    case 'report_closed': return t('Ce signalement est déjà traité.');
+    case 'unknown_cache': return t('Cache inconnu.');
+    case 'cache_admin_unavailable': return t('Administration des caches indisponible sur ce serveur (mode Node).');
+    case 'tv_admin_unavailable': return t('L’API TV n’est pas encore branchée sur ce serveur.');
+    case 'party_unavailable': return t('Watch parties indisponibles sur ce serveur (mode Node).');
+    case 'not_found': return t('Introuvable.');
+    case 'account_config_missing': return t('Ton compte n’a aucune clé enregistrée.');
+    default: return err.status === 501 ? t('Fonction indisponible sur ce serveur.') : t('Erreur ({code}).', { code: err.code });
   }
 }
 
 /** Contenu d'une donnée chargée : chargement, erreur (avec réessai) ou rendu. */
 export function loaded(d, render) {
-  if (!d || d.status === 'idle' || d.status === 'loading') return '<p class="adm-empty" role="status">Chargement…</p>';
-  if (d.status === 'error') return '<div class="adm-error" role="alert"><span>' + esc(d.error) + '</span><button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Réessayer</button></div>';
+  if (!d || d.status === 'idle' || d.status === 'loading') return '<p class="adm-empty" role="status">' + t('Chargement…') + '</p>';
+  if (d.status === 'error') return '<div class="adm-error" role="alert"><span>' + esc(d.error) + '</span><button type="button" class="btn btn-ghost btn-sm" data-adm-reload>' + t('Réessayer') + '</button></div>';
   return render(d.value);
 }
 
@@ -89,8 +90,8 @@ export function kpi(label, value, hint, spark) {
 
 /** Pagination à curseur : boutons « Précédent » / « Suivant » (identifiants `which:prev|next`). */
 export function pager(id, hasPrev, hasNext) {
-  return '<nav class="adm-pager" aria-label="Pagination" data-nav><button type="button" class="btn btn-ghost btn-sm" data-adm-page="' + id + ':prev"' + (hasPrev ? '' : ' disabled') + '>← Précédent</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-page="' + id + ':next"' + (hasNext ? '' : ' disabled') + '>Suivant →</button></nav>';
+  return '<nav class="adm-pager" aria-label="' + t('Pagination') + '" data-nav><button type="button" class="btn btn-ghost btn-sm" data-adm-page="' + id + ':prev"' + (hasPrev ? '' : ' disabled') + '>' + t('← Précédent') + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-page="' + id + ':next"' + (hasNext ? '' : ' disabled') + '>' + t('Suivant →') + '</button></nav>';
 }
 
 /** Branche les boutons de pagination de `root` : `onPage(which, 'prev' | 'next')`. */
@@ -106,7 +107,7 @@ export function bindPager(root, onPage) {
 /** Exécute une action ; une erreur (ou une annulation) est remise à `say` (message ou toast). Renvoie true en cas de succès. */
 export async function attempt(fn, say) {
   try { await fn(); return true; } catch (err) {
-    if (err instanceof UserApiError && err.code === 'cancelled') { say('Action annulée.'); return false; }
+    if (err instanceof UserApiError && err.code === 'cancelled') { say(t('Action annulée.')); return false; }
     say(adminErr(err));
     return false;
   }

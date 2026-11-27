@@ -30,6 +30,7 @@ import { reopenTick } from './sessionReopen.js';
 import { friendChipTick, notesTick, partyAdapter, refreshNoteMarkers, socialTick } from './sessionSocial.js';
 import { S, AUTOSYNC_TARGET, miniState, nextRef } from './sessionState.js';
 import { finishAutoSync } from './sessionTracks.js';
+import { t as tr } from '../i18n';
 
 
 export function onEnded() {
@@ -65,7 +66,7 @@ function clipTick(p, st) {
   if (step.action === 'wait') return;
   p.stopAt = undefined;
   try { p.engine.pause(); } catch (_) { /* ignoré */ }
-  S.ui.toast('Fin de l’extrait', 3000);
+  S.ui.toast(tr('Fin de l’extrait'), 3000);
 }
 export const memoryWatch = new MemoryWatch();
 /** memoryProbe compte des relevés de 100 ms ; la boucle lente en fait un par seconde. */
@@ -160,8 +161,8 @@ function slowTick() {
     // Lecture stable depuis 2 min : les essais repartent, sinon des micro-coupures espacées épuisent MAX_ATTEMPTS (LAST-186).
     const forgiven = attemptsAfterStable(p.attempts, p.view.index, p.watch.stableFor(now));
     if (forgiven) Object.assign(p, forgiven);
-    if (verdict === 'stalled') failover('La lecture est bloquée');
-    else if (verdict === 'startup-timeout') failover('La source met trop de temps à démarrer');
+    if (verdict === 'stalled') failover(tr('La lecture est bloquée'));
+    else if (verdict === 'startup-timeout') failover(tr('La source met trop de temps à démarrer'));
   }
   reopenTick(p, st); // lien débrideur lent : réouverture de la connexion (LAST-507)
   if (s.sync.state === 'collecting') {
@@ -174,7 +175,7 @@ function slowTick() {
       p.skipped = seg.start;
       p.engine.seek(seg.end);
       p.watch.reset(Date.now());
-      S.ui.toast((seg.kind === 'intro' ? 'Intro passée' : 'Récap passé'), 3000, { label: 'Annuler', run: () => { p.undone = seg.start; p.engine.seek(seg.start); } });
+      S.ui.toast((seg.kind === 'intro' ? tr('Intro passée') : tr('Récap passé')), 3000, { label: tr('Annuler'), run: () => { p.undone = seg.start; p.engine.seek(seg.start); } });
     }
     // Mini-lecteur : ni pastille de saut ni carte (le saut automatique, s'il est activé, reste actif plus haut).
     const mini = miniState.mini;

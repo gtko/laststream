@@ -11,10 +11,11 @@ import { openAddonConfig } from './addonConfig.js';
 import { ICON } from './icons.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const TRACKER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg>';
-const DEFAULT_NAMES = ['Addon amont', 'Torznab', ''];
-const TYPE_FR = { movie: 'Films', series: 'Séries', anime: 'Animés', tv: 'TV', channel: 'Chaînes' };
+const DEFAULT_NAMES = [tr('Addon amont'), tr('Torznab'), ''];
+const TYPE_FR = { movie: tr('Films'), series: tr('Séries'), anime: tr('Animés'), tv: 'TV', channel: tr('Chaînes') };
 
 let list = [];
 const info = new Map();
@@ -69,7 +70,7 @@ async function fetchManifest(url) {
   const timer = setTimeout(() => ctrl.abort(), 8000);
   try {
     const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) throw new Error(tr('HTTP {status}', { status: res.status }));
     return await res.json();
   } finally {
     clearTimeout(timer);
@@ -84,14 +85,14 @@ async function loadInfo(src) {
   let result;
   try {
     const m = manifestInfo(await fetchManifest(url));
-    result = { ...m, status: m.hasStream ? 'ok' : 'warn', error: m.hasStream ? '' : 'Pas de ressource « stream »' };
+    result = { ...m, status: m.hasStream ? 'ok' : 'warn', error: m.hasStream ? '' : tr('Pas de ressource « stream »') };
   } catch (_) {
     // Bloqué par CORS ou injoignable depuis le navigateur : lastAddon teste la source à notre place.
     try {
-      const r = await testSource({ type: 'upstream', name: src.name || 'Source', url }, getBase());
-      result = { name: r.name || '', logo: r.logo || '', version: r.version || '', desc: r.description || '', types: r.types || [], configurable: !!r.configurable, status: r.ok ? 'ok' : 'ko', error: r.ok ? '' : r.error || 'Source injoignable' };
+      const r = await testSource({ type: 'upstream', name: src.name || tr('Source'), url }, getBase());
+      result = { name: r.name || '', logo: r.logo || '', version: r.version || '', desc: r.description || '', types: r.types || [], configurable: !!r.configurable, status: r.ok ? 'ok' : 'ko', error: r.ok ? '' : r.error || tr('Source injoignable') };
     } catch (_e) {
-      result = { status: 'ko', error: 'Source injoignable' };
+      result = { status: 'ko', error: tr('Source injoignable') };
     }
   }
   info.set(src.id, result);
@@ -123,7 +124,7 @@ export function initSources(sources) {
 
 function addSource(type) {
   syncFromDom();
-  const s = toModel({ type: 'upstream', name: 'Addon amont', url: '' });
+  const s = toModel({ type: 'upstream', name: tr('Addon amont'), url: '' });
   s.open = true;
   list.push(s);
   renderSources();
@@ -160,13 +161,13 @@ export function applyTestResults(results) {
     const s = list.find((x) => x.name === r.name && x.type === r.type);
     if (!s) return;
     const prev = info.get(s.id) || {};
-    info.set(s.id, { ...prev, status: r.ok ? (prev.status === 'warn' ? 'warn' : 'ok') : 'ko', error: r.ok ? prev.error || '' : r.error || 'échec' });
+    info.set(s.id, { ...prev, status: r.ok ? (prev.status === 'warn' ? 'warn' : 'ok') : 'ko', error: r.ok ? prev.error || '' : r.error || tr('échec') });
     paintCard(s.id);
   });
 }
 
 // ---------- Rendu ----------
-const STATUS_LABEL = { ok: 'Source disponible', warn: 'Disponible mais sans ressource « stream »', ko: 'Source en erreur', unk: 'Pas encore testée', load: 'Vérification…' };
+const STATUS_LABEL = { ok: tr('Source disponible'), warn: tr('Disponible mais sans ressource « stream »'), ko: tr('Source en erreur'), unk: tr('Pas encore testée'), load: tr('Vérification…') };
 
 function host(u) {
   try { return new URL(u).host; } catch (_) { return ''; }
@@ -176,9 +177,9 @@ function cardParts(s, pos) {
   const i = info.get(s.id) || { status: 'unk' };
   const t = s.type === 'torznab';
   const status = i.status || 'unk';
-  const name = s.name || i.name || (t ? 'Ancienne source' : 'Addon amont');
+  const name = s.name || i.name || (t ? tr('Ancienne source') : tr('Addon amont'));
   const types = (i.types || []).map((x) => TYPE_FR[x] || x).join(', ');
-  const sub = t ? 'Ancienne source (inactive) · ' + (host(s.baseUrl) || 'sans adresse') : [i.version ? 'v' + i.version : '', types, i.desc].filter(Boolean).join(' · ') || host(s.url) || 'Addon amont';
+  const sub = t ? tr('Ancienne source (inactive) ·') + ' ' + (host(s.baseUrl) || tr('sans adresse')) : [i.version ? 'v' + i.version : '', types, i.desc].filter(Boolean).join(' · ') || host(s.url) || tr('Addon amont');
   const logo = !t && i.logo ? '<img src="' + esc(i.logo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : t ? TRACKER_ICON : ICON.film;
   return { status, name, sub, logo, err: i.error || '' , pos };
 }
@@ -197,30 +198,30 @@ function headHTML(s, pos) {
   const p = cardParts(s, pos);
   const cfg = isConfigurable(s);
   const copy = copyTarget(s);
-  return '<span class="src-pos" aria-label="Priorité ' + pos + '">' + pos + '</span>' +
-    '<button type="button" class="src-handle" data-src-handle aria-label="Déplacer la source ' + esc(p.name) + ' (flèches haut et bas)" title="Glisser pour changer la priorité">⋮⋮</button>' +
+  return '<span class="src-pos" aria-label="' + tr('Priorité {pos}', { pos }) + '">' + pos + '</span>' +
+    '<button type="button" class="src-handle" data-src-handle aria-label="' + tr('Déplacer la source {name} (flèches haut et bas)', { name: esc(p.name) }) + '" title="' + tr('Glisser pour changer la priorité') + '">⋮⋮</button>' +
     '<span class="src-logo' + (s.type === 'torznab' ? ' is-generic' : '') + '">' + p.logo + '</span>' +
     '<span class="src-meta"><strong class="src-name">' + esc(p.name) + '</strong><span class="src-sub">' + esc(p.sub) + '</span></span>' +
     '<span class="src-dot is-' + p.status + '" role="img" aria-label="' + esc(STATUS_LABEL[p.status] + (p.err ? ' : ' + p.err : '')) + '" title="' + esc(STATUS_LABEL[p.status] + (p.err ? ' : ' + p.err : '')) + '"></span>' +
-    '<label class="src-toggle"><input type="checkbox" data-src-enabled' + (s.enabled ? ' checked' : '') + '> <span>' + (s.enabled ? 'Activée' : 'Désactivée') + '</span></label>' +
-    (cfg ? '<button type="button" class="src-cfg" data-src-config aria-label="Configurer l’addon ' + esc(p.name) + '" title="Configurer l’addon">' + ICON.gear + '</button>' : '') +
-    '<span class="src-move"><button type="button" data-src-up aria-label="Monter la source ' + esc(p.name) + '">↑</button><button type="button" data-src-down aria-label="Descendre la source ' + esc(p.name) + '">↓</button></span>' +
-    '<span class="ep-menu-wrap"><button type="button" class="src-more" data-src-menu aria-haspopup="menu" aria-expanded="false" aria-label="Plus d’actions pour ' + esc(p.name) + '">…</button>' +
-    '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-src-edit>Modifier</button>' +
-    (cfg ? '<button type="button" role="menuitem" data-src-open-config>Ouvrir la configuration</button>' : '') +
-    (copy ? '<button type="button" role="menuitem" data-src-copy>Copier l’URL</button>' : '') +
-    '<button type="button" role="menuitem" data-src-toggle>' + (s.enabled ? 'Désactiver' : 'Activer') + '</button>' +
-    '<button type="button" role="menuitem" data-src-remove>Retirer</button></span></span>';
+    '<label class="src-toggle"><input type="checkbox" data-src-enabled' + (s.enabled ? ' checked' : '') + '> <span>' + (s.enabled ? tr('Activée') : tr('Désactivée')) + '</span></label>' +
+    (cfg ? '<button type="button" class="src-cfg" data-src-config aria-label="' + tr('Configurer l’addon {name}', { name: esc(p.name) }) + '" title="' + tr('Configurer l’addon') + '">' + ICON.gear + '</button>' : '') +
+    '<span class="src-move"><button type="button" data-src-up aria-label="' + tr('Monter la source {name}', { name: esc(p.name) }) + '">↑</button><button type="button" data-src-down aria-label="' + tr('Descendre la source {name}', { name: esc(p.name) }) + '">↓</button></span>' +
+    '<span class="ep-menu-wrap"><button type="button" class="src-more" data-src-menu aria-haspopup="menu" aria-expanded="false" aria-label="' + tr('Plus d’actions pour {name}', { name: esc(p.name) }) + '">…</button>' +
+    '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-src-edit>' + tr('Modifier') + '</button>' +
+    (cfg ? '<button type="button" role="menuitem" data-src-open-config>' + tr('Ouvrir la configuration') + '</button>' : '') +
+    (copy ? '<button type="button" role="menuitem" data-src-copy>' + tr('Copier l’URL') + '</button>' : '') +
+    '<button type="button" role="menuitem" data-src-toggle>' + (s.enabled ? tr('Désactiver') : tr('Activer')) + '</button>' +
+    '<button type="button" role="menuitem" data-src-remove>' + tr('Retirer') + '</button></span></span>';
 }
 
 function editHTML(s) {
   const f = (label, inner, hint) => '<label class="tv-field">' + esc(label) + inner + (hint ? '<span class="set-hint">' + esc(hint) + '</span>' : '') + '</label>';
-  const mask = isMask(s.apiKey) ? (s.apiKey.last4 ? 'Enregistrée (' + s.apiKey.last4 + ')' : 'Enregistrée') : 'Non définie';
-  return f('Nom', '<input type="text" data-sf="name" value="' + esc(s.name || '') + '">') +
+  const mask = isMask(s.apiKey) ? (s.apiKey.last4 ? tr('Enregistrée ({last4})', { last4: s.apiKey.last4 }) : tr('Enregistrée')) : tr('Non définie');
+  return f(tr('Nom'), '<input type="text" data-sf="name" value="' + esc(s.name || '') + '">') +
     (s.type === 'torznab'
-      ? f('URL Torznab (baseUrl)', '<input type="url" data-sf="baseUrl" value="' + esc(s.baseUrl || '') + '" placeholder="https://indexeur.exemple/api">') +
-        f('Clé API', '<input type="password" autocomplete="off" data-sf="apiKey" placeholder="' + esc(mask) + '">', 'Laisse vide pour garder la clé enregistrée.')
-      : f('URL de l’addon amont', '<input type="text" inputmode="url" data-sf="url" value="' + esc(s.url || '') + '" placeholder="https://addon.exemple/manifest.json ou stremio://…">', 'Le manifest est lu à la saisie : nom, logo et état s’affichent.') + catalogBoxHTML(normalizeManifestUrl(s.url), info.get(s.id)));
+      ? f(tr('URL Torznab (baseUrl)'), '<input type="url" data-sf="baseUrl" value="' + esc(s.baseUrl || '') + '" placeholder="https://indexeur.exemple/api">') +
+        f(tr('Clé API'), '<input type="password" autocomplete="off" data-sf="apiKey" placeholder="' + esc(mask) + '">', tr('Laisse vide pour garder la clé enregistrée.'))
+      : f(tr('URL de l’addon amont'), '<input type="text" inputmode="url" data-sf="url" value="' + esc(s.url || '') + '" placeholder="' + tr('https://addon.exemple/manifest.json ou stremio://…') + '">', tr('Le manifest est lu à la saisie : nom, logo et état s’affichent.')) + catalogBoxHTML(normalizeManifestUrl(s.url), info.get(s.id)));
 }
 
 function cardHTML(s, pos) {
@@ -232,15 +233,15 @@ function cardHTML(s, pos) {
 }
 
 export function sourcesHTML() {
-  return '<div id="set-sources" class="src-list" role="list" aria-label="Sources, par ordre de priorité">' +
-    (list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Ajoute tes extensions Stremio pour voir des sources.</p>') + '</div>' +
-    '<p class="set-hint src-order-hint">L’ordre est la priorité : la source 1 passe en premier.</p><p class="sr-only" id="src-live" aria-live="polite"></p>';
+  return '<div id="set-sources" class="src-list" role="list" aria-label="' + tr('Sources, par ordre de priorité') + '">' +
+    (list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">' + tr('Ajoute tes extensions Stremio pour voir des sources.') + '</p>') + '</div>' +
+    '<p class="set-hint src-order-hint">' + tr('L’ordre est la priorité : la source 1 passe en premier.') + '</p><p class="sr-only" id="src-live" aria-live="polite"></p>';
 }
 
 function renderSources() {
   const box = detailEl.querySelector('#set-sources');
   if (!box) return;
-  box.innerHTML = list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Ajoute tes extensions Stremio pour voir des sources.</p>';
+  box.innerHTML = list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">' + tr('Ajoute tes extensions Stremio pour voir des sources.') + '</p>';
 }
 
 /** Met à jour une carte en place (pastille, nom, logo) sans toucher aux champs en cours de saisie. */
@@ -270,7 +271,7 @@ function move(id, to) {
   list.splice(dest, 0, s);
   renderSources();
   const live = detailEl.querySelector('#src-live');
-  if (live) live.textContent = (s.name || 'Source') + ' déplacée en position ' + (dest + 1) + ' sur ' + list.length;
+  if (live) live.textContent = (s.name || tr('Source')) + ' ' + tr('déplacée en position {v} sur {length}', { v: (dest + 1), length: list.length });
   return true;
 }
 
@@ -395,8 +396,8 @@ function setVerdict(id, verdict) {
 
 /** Avertissement d’un addon « torrents seulement » : seul message affiché, avec « Configurer ». */
 function safetyHTML() {
-  return '<p class="src-safety-line">Ne renvoie que des torrents : aucune source lisible</p>' +
-    '<div class="src-cfg-actions"><button type="button" class="btn btn-ghost btn-sm" data-safe-config>Configurer</button></div>';
+  return '<p class="src-safety-line">' + tr('Ne renvoie que des torrents : aucune source lisible') + '</p>' +
+    '<div class="src-cfg-actions"><button type="button" class="btn btn-ghost btn-sm" data-safe-config>' + tr('Configurer') + '</button></div>';
 }
 
 /** Ligne d’avertissement d’un addon : masquée tant que tout va bien (rien n’est affiché). */
@@ -465,8 +466,8 @@ detailEl.addEventListener('click', (e) => {
     const s = list.find((x) => x.id === id);
     const text = s ? copyTarget(s) : '';
     if (!text) return;
-    if (!navigator.clipboard || !navigator.clipboard.writeText) { toast('Copie impossible'); return; }
-    navigator.clipboard.writeText(text).then(() => toast('URL copiée'), () => toast('Copie impossible'));
+    if (!navigator.clipboard || !navigator.clipboard.writeText) { toast(tr('Copie impossible')); return; }
+    navigator.clipboard.writeText(text).then(() => toast(tr('URL copiée')), () => toast(tr('Copie impossible')));
     return;
   }
   if (t.closest('[data-addon-cat]')) { e.preventDefault(); const s = list.find((x) => x.id === id); if (s) toggleCatalogs(t.closest('[data-addon-cat]'), normalizeManifestUrl(s.url), info.get(id)); return; }
@@ -496,7 +497,7 @@ detailEl.addEventListener('click', (e) => {
     info.delete(id);
     safety.delete(id);
     renderSources();
-    toast('Source retirée : ' + (s.name || 'sans nom') + ' (enregistre pour valider)');
+    toast(tr('Source retirée : {v} (enregistre pour valider)', { v: (s.name || tr('sans nom')) }));
     return;
   }
   if (t.closest('[data-src-up]')) { e.preventDefault(); const i = list.findIndex((x) => x.id === id); if (move(id, i - 1)) focusHandle(id, '[data-src-up]'); return; }

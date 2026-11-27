@@ -19,6 +19,7 @@ import { localFailure } from './sessionFailover.js';
 import { playView } from './sessionPlay.js';
 import { nudgeTick } from './sessionTick.js';
 import { S, activeLangPrefs, originalLangOf } from './sessionState.js';
+import { t as tr } from '../i18n';
 
 
 // ---------- Événements moteur ----------
@@ -105,14 +106,14 @@ export function forceTranscoding() {
   if (!p || isOfflineView(p.view)) return; // fichier téléchargé : pas de transcodage
   p.forceHls = true;
   S.ui.closePanel(true);
-  S.ui.toast('Passage en transcodage…');
+  S.ui.toast(tr('Passage en transcodage…'));
   p.tried = new Set();
   const st = p.engine.state();
   playView(p.view, st.time > 5 ? st.time : 0);
 }
 
 /** Action « Transcodage » d'un message sur la langue audio non modifiable ; aucune si on est déjà en transcodage. */
-export const transcodeAction = () => (S.P && !S.P.forceHls ? { label: 'Transcodage', run: forceTranscoding } : undefined);
+export const transcodeAction = () => (S.P && !S.P.forceHls ? { label: tr('Transcodage'), run: forceTranscoding } : undefined);
 
 /**
  * Mode apprentissage : un seul message groupé par lecture (langue audio ou sous-titres absents, second sous-titre indisponible,
@@ -244,7 +245,7 @@ export async function selectSubtitle(id, quiet) {
   partyBridge.refreshSubtitles();
   if (!id) {
     p.engine.setSubtitleTrack(null);
-    if (!quiet) S.ui.toast('Sous-titres désactivés');
+    if (!quiet) S.ui.toast(tr('Sous-titres désactivés'));
     S.ui.refreshPanel();
     return;
   }
@@ -266,14 +267,14 @@ export async function selectSubtitle(id, quiet) {
       try { text = await (await fetch(via)).text(); } catch (_) { text = await (await fetch(track.url)).text(); }
       if (S.P === p && s.selectedId === id) {
         s.cues = parseSubtitles(text, track.url);
-        if (!s.cues.length) S.ui.toast('Ce sous-titre est vide ou illisible');
+        if (!s.cues.length) S.ui.toast(tr('Ce sous-titre est vide ou illisible'));
         else initialSync(track);
       }
     } catch (_) {
-      if (S.P === p) S.ui.toast('Impossible de charger ce sous-titre');
+      if (S.P === p) S.ui.toast(tr('Impossible de charger ce sous-titre'));
     }
   }
-  if (!quiet) S.ui.toast('Sous-titres : ' + track.label);
+  if (!quiet) S.ui.toast(tr('Sous-titres : {label}', { label: track.label }));
   partyBridge.refreshSubtitles();
   S.ui.refreshPanel();
   nudgeTick();
@@ -350,7 +351,7 @@ function initialSync(track) {
     s.offset = saved.offset;
     s.rate = saved.rate;
     s.rateId = (RATE_CHOICES.find((r) => Math.abs(r.ratio - saved.rate) < 1e-4) || RATE_CHOICES[0]).id;
-    s.rateHint = 'Calage mémorisé pour ce fichier.';
+    s.rateHint = tr('Calage mémorisé pour ce fichier.');
     return;
   }
   const last = s.cues.length ? Math.max(...s.cues.map((c) => c.end)) : 0;
@@ -359,8 +360,8 @@ function initialSync(track) {
   if (guess.id !== 'none') {
     s.rate = guess.ratio;
     s.rateId = guess.id;
-    s.rateHint = 'Vitesse corrigée automatiquement (' + guess.label + ') : ces sous-titres semblent calés pour une autre cadence.';
-    S.ui.toast('Sous-titres : vitesse corrigée (' + guess.label + ')', 4500);
+    s.rateHint = tr('Vitesse corrigée automatiquement ({label}) : ces sous-titres semblent calés pour une autre cadence.', { label: guess.label });
+    S.ui.toast(tr('Sous-titres : vitesse corrigée ({label})', { label: guess.label }), 4500);
   }
   void track;
 }
@@ -389,7 +390,7 @@ export function startAutoSync() {
   probe.start();
   p.subs.sync = { state: 'collecting', probe, message: '' };
   p.engine.play();
-  S.ui.toast('Analyse lancée : laisse la lecture avancer', 3500);
+  S.ui.toast(tr('Analyse lancée : laisse la lecture avancer'), 3500);
   S.ui.refreshPanel();
 }
 
@@ -407,10 +408,10 @@ export function finishAutoSync() {
     p.subs.rateId = (RATE_CHOICES.find((r) => Math.abs(r.ratio - res.rate) < 1e-4) || RATE_CHOICES[0]).id;
     saveSync();
     const sign = p.subs.offset > 0 ? '+' : '';
-    p.subs.sync = { state: 'idle', message: 'Calé automatiquement : ' + sign + p.subs.offset.toFixed(1).replace('.', ',') + ' s' + (res.rate !== 1 ? ' et vitesse corrigée' : '') + '.' };
-    S.ui.toast('Sous-titres calés (' + sign + p.subs.offset.toFixed(1).replace('.', ',') + ' s)', 4000);
+    p.subs.sync = { state: 'idle', message: tr('Calé automatiquement : {sign}{v} s{v2}.', { sign, v: p.subs.offset.toFixed(1).replace('.', ','), v2: (res.rate !== 1 ? ' ' + tr('et vitesse corrigée') : '') }) };
+    S.ui.toast(tr('Sous-titres calés ({sign}{v} s)', { sign, v: p.subs.offset.toFixed(1).replace('.', ',') }), 4000);
   } else {
-    p.subs.sync = { state: 'idle', message: 'Résultat peu fiable : réessaie sur une scène avec beaucoup de dialogues.' };
+    p.subs.sync = { state: 'idle', message: tr('Résultat peu fiable : réessaie sur une scène avec beaucoup de dialogues.') };
   }
   S.ui.refreshPanel();
 }

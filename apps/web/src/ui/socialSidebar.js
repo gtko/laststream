@@ -13,7 +13,7 @@ import { copyInvite, refreshInvites, shareInvite, usableInvite } from './invites
 import { createFriendCard } from './socialCard.js';
 import { activityHTML } from './socialActivity.js';
 import {
-  ADD_ERRORS, STATUS_OPTIONS, SEEN_LABEL, ago, avatarHTML, byName, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf,
+  ADD_ERRORS, STATUS_OPTIONS, SEEN_LABEL, ago, agoText, avatarHTML, byName, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf,
   posterBox, progressPct, remainingLabel, shortName, socialErrorMessage, watchLine, watchState,
 } from './socialFmt.js';
 import { inviteToParty, openConversation as openConvHook, openProfileEditor, renderConversationList } from './socialHooks.js';
@@ -21,12 +21,13 @@ import { SI } from './socialIcons.js';
 import { openStatusEditor } from './socialStatusEditor.js';
 import { paintSocialBadges, socialAvailable } from './socialButton.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 export { clock, episodeCode, livePos, socialErrorMessage, watchLine };
 
 /** Ordre d'affichage des groupes ; chaque personne n'est que dans un groupe. */
-const GROUPS = [['requests', 'Demandes'], ['watching', 'En train de regarder'], ['online', 'En ligne'], ['account', 'Profils du compte'], ['offline', 'Hors ligne']];
-const TABS = [['friends', 'Amis'], ['messages', 'Messages'], ['activity', 'Activité']];
+const GROUPS = [['requests', tr('Demandes')], ['watching', tr('En train de regarder')], ['online', tr('En ligne')], ['account', tr('Profils du compte')], ['offline', tr('Hors ligne')]];
+const TABS = [['friends', tr('Amis')], ['messages', tr('Messages')], ['activity', tr('Activité')]];
 const PARTY_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 // ---------- Rendu des lignes ----------
@@ -36,7 +37,7 @@ function presenceText(f) {
   const cs = customStatusText(f.customStatus);
   if (cs && f.status !== 'offline') return cs;
   const base = SEEN_LABEL[f.status] || '';
-  if (f.status === 'offline') return f.lastSeen ? base + ' · il y a ' + ago(f.lastSeen) : base;
+  if (f.status === 'offline') return f.lastSeen ? base + ' · ' + agoText(f.lastSeen) : base;
   if (f.status === 'away' && f.lastSeen) return base + ' · ' + ago(f.lastSeen);
   return base;
 }
@@ -44,8 +45,8 @@ function presenceText(f) {
 /** Ligne glissante (mobile) : actions « Écrire » et « Inviter » révélées par un glissement vers la gauche. */
 function swipeActs(pid) {
   return '<div class="ss-sw-acts">' +
-    '<button type="button" class="ss-sw-b" tabindex="-1" data-ss-act="message" data-pid="' + pid + '">' + SI.chat + 'Écrire</button>' +
-    '<button type="button" class="ss-sw-b is-pri" tabindex="-1" data-ss-act="party" data-pid="' + pid + '">' + SI.room + 'Inviter</button></div>';
+    '<button type="button" class="ss-sw-b" tabindex="-1" data-ss-act="message" data-pid="' + pid + '">' + SI.chat + tr('Écrire') + '</button>' +
+    '<button type="button" class="ss-sw-b is-pri" tabindex="-1" data-ss-act="party" data-pid="' + pid + '">' + SI.room + tr('Inviter') + '</button></div>';
 }
 
 /** Ligne d'un ami : bouton qui ouvre sa fiche. */
@@ -54,7 +55,7 @@ function friendRowHTML(f) {
   const w = f.watching;
   const sub = w
     ? '<span class="ss-sub">' + esc([w.title, episodeCode(w), clock(livePos(w))].filter(Boolean).join(' · ')) +
-      (f.status === 'dnd' ? ' <em class="ss-dnd">· ne pas déranger</em>' : '') + '</span>'
+      (f.status === 'dnd' ? ' <em class="ss-dnd">' + tr('· ne pas déranger</em>') : '') + '</span>'
     : '<span class="ss-sub">' + esc(presenceText(f)) + '</span>';
   return '<li class="ss-item ss-sw"><div class="ss-sw-in">' + '<button type="button" class="ss-row" data-ss-act="open" data-pid="' + pid + '" data-fk="open:' + pid + '">' +
     avatarHTML(f, 'ss-av-m', f.status) + '<span class="ss-row-t"><span class="ss-name">' + nameHTML(f) + '</span>' + sub + '</span>' +
@@ -77,12 +78,12 @@ function watchCardHTML(f) {
     '<span class="ss-wbody">' + posterBox(w.poster, w.title, 'ss-poster-l') +
     '<span class="ss-wmeta"><span class="ss-wtitle">' + esc(w.title) + '</span>' +
     (left ? '<span class="ss-wep">' + esc(left) + '</span>' : '') +
-    '<span class="ss-bar-t" role="progressbar" aria-label="Progression" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></span>' +
+    '<span class="ss-bar-t" role="progressbar" aria-label="' + tr('Progression') + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></span>' +
     '<span class="ss-times"><span>' + esc(clock(w.duration ? Math.min(livePos(w), Number(w.duration)) : livePos(w))) + '</span><span>' + esc(w.duration ? clock(w.duration) : '') + '</span></span></span></span></button>' +
     '<div class="ss-wcard-acts"><button type="button" class="ss-btn2 ss-pri" data-ss-act="watch" data-pid="' + pid + '" data-fk="watch:' + pid + '">' + SI.play +
-    'Regarder avec ' + esc(shortName(f)) + '</button>' +
-    '<button type="button" class="ss-ico" data-ss-act="message" data-pid="' + pid + '" data-fk="msg:' + pid + '" aria-label="Écrire à ' + esc(shortName(f)) + '">' + SI.chat + '</button>' +
-    '<button type="button" class="ss-ico ss-d-only" data-ss-act="open-menu" data-pid="' + pid + '" data-fk="more:' + pid + '" aria-label="Plus d’actions">' + SI.more + '</button>' +
+    tr('Regarder avec {f}', { f: esc(shortName(f)) }) + '</button>' +
+    '<button type="button" class="ss-ico" data-ss-act="message" data-pid="' + pid + '" data-fk="msg:' + pid + '" aria-label="' + tr('Écrire à {f}', { f: esc(shortName(f)) }) + '">' + SI.chat + '</button>' +
+    '<button type="button" class="ss-ico ss-d-only" data-ss-act="open-menu" data-pid="' + pid + '" data-fk="more:' + pid + '" aria-label="' + tr('Plus d’actions') + '">' + SI.more + '</button>' +
     '</div></div></li>';
 }
 
@@ -90,21 +91,21 @@ function watchCardHTML(f) {
 function requestRowHTML(r, incoming) {
   const pid = esc(r.pid);
   const acts = incoming
-    ? '<button type="button" class="ss-ico ss-ico-pri" data-ss-act="accept" data-pid="' + pid + '" data-fk="accept:' + pid + '" aria-label="Accepter ' + esc(shortName(r)) + '">' + SI.check + '</button>' +
-      '<button type="button" class="ss-ico" data-ss-act="decline" data-kind="in" data-pid="' + pid + '" data-fk="decline-in:' + pid + '" aria-label="Refuser ' + esc(shortName(r)) + '">' + SI.x + '</button>'
-    : '<button type="button" class="ss-ico" data-ss-act="decline" data-kind="out" data-pid="' + pid + '" data-fk="decline-out:' + pid + '" aria-label="Annuler la demande à ' + esc(shortName(r)) + '">' + SI.x + '</button>';
+    ? '<button type="button" class="ss-ico ss-ico-pri" data-ss-act="accept" data-pid="' + pid + '" data-fk="accept:' + pid + '" aria-label="' + tr('Accepter {r}', { r: esc(shortName(r)) }) + '">' + SI.check + '</button>' +
+      '<button type="button" class="ss-ico" data-ss-act="decline" data-kind="in" data-pid="' + pid + '" data-fk="decline-in:' + pid + '" aria-label="' + tr('Refuser {r}', { r: esc(shortName(r)) }) + '">' + SI.x + '</button>'
+    : '<button type="button" class="ss-ico" data-ss-act="decline" data-kind="out" data-pid="' + pid + '" data-fk="decline-out:' + pid + '" aria-label="' + tr('Annuler la demande à {r}', { r: esc(shortName(r)) }) + '">' + SI.x + '</button>';
   return '<li class="ss-item"><div class="ss-row ss-req">' + avatarHTML(r, 'ss-av-m') +
     '<span class="ss-row-t"><span class="ss-name">' + nameHTML(r) + '</span>' +
-    '<span class="ss-sub">' + (incoming ? 'veut devenir ton ami' : 'demande envoyée') + '</span></span>' + acts + '</div></li>';
+    '<span class="ss-sub">' + (incoming ? tr('veut devenir ton ami') : tr('demande envoyée')) + '</span></span>' + acts + '</div></li>';
 }
 
 /** Demande de rejoindre ma watch party. */
 function joinRowHTML(f) {
   const pid = esc(f.pid);
   return '<li class="ss-item"><div class="ss-row ss-req">' + avatarHTML(f, 'ss-av-m') +
-    '<span class="ss-row-t"><span class="ss-name">' + nameHTML(f) + '</span><span class="ss-sub">demande à rejoindre ta watch party</span></span>' +
-    '<button type="button" class="ss-ico ss-ico-pri" data-ss-act="join-accept" data-pid="' + pid + '" data-fk="join-ok:' + pid + '" aria-label="Accepter la demande de ' + esc(shortName(f)) + '">' + SI.check + '</button>' +
-    '<button type="button" class="ss-ico" data-ss-act="join-decline" data-pid="' + pid + '" data-fk="join-no:' + pid + '" aria-label="Refuser la demande de ' + esc(shortName(f)) + '">' + SI.x + '</button></div></li>';
+    '<span class="ss-row-t"><span class="ss-name">' + nameHTML(f) + '</span><span class="ss-sub">' + tr('demande à rejoindre ta watch party') + '</span></span>' +
+    '<button type="button" class="ss-ico ss-ico-pri" data-ss-act="join-accept" data-pid="' + pid + '" data-fk="join-ok:' + pid + '" aria-label="' + tr('Accepter la demande de {f}', { f: esc(shortName(f)) }) + '">' + SI.check + '</button>' +
+    '<button type="button" class="ss-ico" data-ss-act="join-decline" data-pid="' + pid + '" data-fk="join-no:' + pid + '" aria-label="' + tr('Refuser la demande de {f}', { f: esc(shortName(f)) }) + '">' + SI.x + '</button></div></li>';
 }
 
 function groupHTML(id, title, items, collapsed) {
@@ -133,47 +134,47 @@ export function groupsHTML(s, q = '', collapsed = new Set(['offline'])) {
     rows[g].push(g === 'watching' && (f.status === 'online' || f.status === 'away') ? watchCardHTML(f) : friendRowHTML(f));
   });
   const total = s.friends.length + s.household.length + s.incoming.length + s.outgoing.length + (s.joinRequests || []).length;
-  if (!total) return '<p class="ss-empty">Pas encore d’ami. Ajoute quelqu’un avec son Nom#TAG, ou invite-le ci-dessous.</p>';
+  if (!total) return '<p class="ss-empty">' + tr('Pas encore d’ami. Ajoute quelqu’un avec son Nom#TAG, ou invite-le ci-dessous.') + '</p>';
   const out = GROUPS.filter(([id]) => rows[id].length).map(([id, title]) => groupHTML(id, title, rows[id], query ? new Set() : collapsed)).join('');
-  return out || '<p class="ss-empty">Aucun ami ne correspond à « ' + esc(q.trim()) + ' ».</p>';
+  return out || '<p class="ss-empty">' + tr('Aucun ami ne correspond à « {q} ».', { q: esc(q.trim()) }) + '</p>';
 }
 
 // ---------- Coque ----------
 
 function shellHTML() {
   return '<div class="ss-bar" id="ss-subbar" hidden>' +
-    '<button type="button" class="ss-ico" id="ss-back" data-ss-act="back" aria-label="Retour à la liste des amis">' + SI.chevLeft + '</button>' +
-    '<h2 class="ss-title" id="ss-title" tabindex="-1">Amis</h2>' +
-    '<button type="button" class="ss-ico" data-ss-act="close" aria-label="Fermer la liste des amis">' + SI.close + '</button></div>' +
+    '<button type="button" class="ss-ico" id="ss-back" data-ss-act="back" aria-label="' + tr('Retour à la liste des amis') + '">' + SI.chevLeft + '</button>' +
+    '<h2 class="ss-title" id="ss-title" tabindex="-1">' + tr('Amis') + '</h2>' +
+    '<button type="button" class="ss-ico" data-ss-act="close" aria-label="' + tr('Fermer la liste des amis') + '">' + SI.close + '</button></div>' +
     '<div id="ss-home">' +
-    '<div class="ss-mhead ss-m-only"><h2 class="ss-mtitle">Amis</h2>' +
-    '<button type="button" class="ss-mbtn" data-ss-act="toggle-add" aria-label="Ajouter un ami">' + SI.addUser + '</button>' +
-    '<button type="button" class="ss-mbtn ss-mclose" data-ss-act="close" aria-label="Fermer la liste des amis">' + SI.close + '</button></div>' +
-    '<section class="ss-me" aria-label="Mon profil">' +
+    '<div class="ss-mhead ss-m-only"><h2 class="ss-mtitle">' + tr('Amis') + '</h2>' +
+    '<button type="button" class="ss-mbtn" data-ss-act="toggle-add" aria-label="' + tr('Ajouter un ami') + '">' + SI.addUser + '</button>' +
+    '<button type="button" class="ss-mbtn ss-mclose" data-ss-act="close" aria-label="' + tr('Fermer la liste des amis') + '">' + SI.close + '</button></div>' +
+    '<section class="ss-me" aria-label="' + tr('Mon profil') + '">' +
     '<span id="ss-me-av"></span>' +
     '<div class="ss-me-id">' +
-    '<button type="button" class="ss-handle" id="ss-me-handle" data-ss-act="copy-handle" title="Copier mon Nom#TAG">…</button>' +
+    '<button type="button" class="ss-handle" id="ss-me-handle" data-ss-act="copy-handle" title="' + tr('Copier mon Nom#TAG') + '">…</button>' +
     '<button type="button" class="ss-stat" id="ss-status-btn" data-ss-act="status-menu" aria-haspopup="menu" aria-expanded="false"></button>' +
-    '<div class="ss-menu ss-stat-menu" id="ss-status-menu" role="menu" aria-label="Mon statut" hidden>' +
+    '<div class="ss-menu ss-stat-menu" id="ss-status-menu" role="menu" aria-label="' + tr('Mon statut') + '" hidden>' +
     STATUS_OPTIONS.map(([v, l]) => '<button type="button" role="menuitemradio" aria-checked="false" class="ss-mi" data-ss-act="set-status" data-status="' + v + '">' + l + '</button>').join('') +
-    '<div class="ss-mi-sep" role="separator"></div><button type="button" role="menuitem" class="ss-mi" data-ss-act="status-edit">Statut personnalisé…</button></div></div>' +
-    '<button type="button" class="ss-ico ss-d-only" data-ss-act="profile" aria-label="Paramètres sociaux">' + SI.gear + '</button>' +
-    '<button type="button" class="ss-ico ss-d-only" data-ss-act="close" aria-label="Fermer la liste des amis">' + SI.close + '</button>' +
-    '<button type="button" class="ss-go ss-m-only" data-ss-act="profile" aria-label="Modifier mon profil social">' + SI.chevRight + '</button></section>' +
-    '<div role="tablist" class="ss-tabs" aria-label="Amis, messages et activité">' + TABS.map(([id, label]) =>
+    '<div class="ss-mi-sep" role="separator"></div><button type="button" role="menuitem" class="ss-mi" data-ss-act="status-edit">' + tr('Statut personnalisé…') + '</button></div></div>' +
+    '<button type="button" class="ss-ico ss-d-only" data-ss-act="profile" aria-label="' + tr('Paramètres sociaux') + '">' + SI.gear + '</button>' +
+    '<button type="button" class="ss-ico ss-d-only" data-ss-act="close" aria-label="' + tr('Fermer la liste des amis') + '">' + SI.close + '</button>' +
+    '<button type="button" class="ss-go ss-m-only" data-ss-act="profile" aria-label="' + tr('Modifier mon profil social') + '">' + SI.chevRight + '</button></section>' +
+    '<div role="tablist" class="ss-tabs" aria-label="' + tr('Amis, messages et activité') + '">' + TABS.map(([id, label]) =>
       '<button type="button" role="tab" class="ss-tab" id="ss-tab-' + id + '" aria-selected="false" aria-controls="ss-p-' + id + '" tabindex="-1" data-ss-act="tab" data-tab="' + id + '">' +
       label + (id === 'messages' ? '<span class="ss-pill" id="ss-unread" hidden></span>' : '') + '</button>').join('') + '</div>' +
     '<div class="ss-panels">' +
     '<div class="ss-panel" id="ss-p-friends" role="tabpanel" aria-labelledby="ss-tab-friends">' +
-    '<form class="ss-addf" id="ss-add" autocomplete="off"><label class="ss-sr" for="ss-add-in">Chercher un ami ou ajouter Nom#TAG</label>' +
-    '<div class="ss-addrow"><div class="ss-addbox">' + SI.search + '<input id="ss-add-in" name="handle" type="text" autocapitalize="none" spellcheck="false" maxlength="40" placeholder="Chercher ou ajouter Nom#TAG"></div>' +
-    '<button type="submit" class="ss-ico ss-ico-add" aria-label="Ajouter un ami">' + SI.addUser + '</button></div>' +
+    '<form class="ss-addf" id="ss-add" autocomplete="off"><label class="ss-sr" for="ss-add-in">' + tr('Chercher un ami ou ajouter Nom#TAG') + '</label>' +
+    '<div class="ss-addrow"><div class="ss-addbox">' + SI.search + '<input id="ss-add-in" name="handle" type="text" autocapitalize="none" spellcheck="false" maxlength="40" placeholder="' + tr('Chercher ou ajouter Nom#TAG') + '"></div>' +
+    '<button type="submit" class="ss-ico ss-ico-add" aria-label="' + tr('Ajouter un ami') + '">' + SI.addUser + '</button></div>' +
     '<p class="ss-msg" id="ss-add-msg" role="status" aria-live="polite"></p></form>' +
     '<div id="ss-groups"></div></div>' +
     '<div class="ss-panel" id="ss-p-messages" role="tabpanel" aria-labelledby="ss-tab-messages" hidden></div>' +
     '<div class="ss-panel" id="ss-p-activity" role="tabpanel" aria-labelledby="ss-tab-activity" hidden></div></div>' +
     '<div class="ss-foot" id="ss-foot"><div id="ss-inv-slot" class="ss-inv"></div></div>' +
-    '<button type="button" class="ss-fab ss-m-only" id="ss-fab" data-ss-act="share-invite" hidden>' + SI.link + '<span id="ss-fab-t">Inviter</span></button>' +
+    '<button type="button" class="ss-fab ss-m-only" id="ss-fab" data-ss-act="share-invite" hidden>' + SI.link + '<span id="ss-fab-t">' + tr('Inviter') + '</span></button>' +
     '</div>' +
     '<div id="ss-friend" hidden></div>' +
     '<div id="ss-conv" hidden></div>';
@@ -236,7 +237,7 @@ async function copyText(text, ok) {
       return true;
     }
   } catch { /* repli ci-dessous */ }
-  toast('Copie impossible : sélectionne le texte et copie-le');
+  toast(tr('Copie impossible : sélectionne le texte et copie-le'));
   return false;
 }
 
@@ -288,15 +289,15 @@ function paintMe(s) {
   if (holder) holder.innerHTML = avatarHTML({ ...(s.profile || {}), ...(me || {}), handle: me && me.handle }, 'ss-av-l', s.status === 'invisible' ? 'offline' : s.status);
   const h = $('#ss-me-handle');
   if (h) h.innerHTML = me ? nameHTML({ handle: me.handle }) + '<span class="ss-copy">' + SI.copy + '</span>' : '…';
-  if (h) h.setAttribute('aria-label', me ? 'Copier mon identifiant ' + nameOf(me) : 'Mon identifiant');
+  if (h) h.setAttribute('aria-label', me ? tr('Copier mon identifiant {me}', { me: nameOf(me) }) : tr('Mon identifiant'));
   const st = $('#ss-status-btn');
   if (st) {
     const label = STATUS_OPTIONS.find(([v]) => v === s.status);
     const custom = s.profile ? customStatusText(s.profile.customStatus) : '';
     const color = s.status === 'invisible' ? 'offline' : s.status;
-    st.innerHTML = '<i class="ss-pdot-i is-' + esc(color) + '" aria-hidden="true"></i><span class="ss-ell">' + esc(label ? label[1] : 'En ligne') +
+    st.innerHTML = '<i class="ss-pdot-i is-' + esc(color) + '" aria-hidden="true"></i><span class="ss-ell">' + esc(label ? label[1] : tr('En ligne')) +
       (custom ? ' · « ' + esc(custom) + ' »' : '') + '</span>' + SI.chevDown;
-    st.setAttribute('aria-label', 'Mon statut : ' + (label ? label[1] : 'En ligne') + (custom ? ', ' + custom : ''));
+    st.setAttribute('aria-label', tr('Mon statut :') + ' ' + (label ? label[1] : tr('En ligne')) + (custom ? ', ' + custom : ''));
   }
   $('#ss-status-menu')?.querySelectorAll('[data-status]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.status === s.status)));
   const unread = $('#ss-unread');
@@ -311,12 +312,12 @@ function paintGroups(s) {
   if (!box) return;
   const keep = focusKeyIn(box);
   if (!s.me && loadError) {
-    box.innerHTML = '<p class="ss-empty" role="alert">Amis indisponibles : le serveur ne répond pas. ' +
-      '<button type="button" class="ss-link" data-ss-act="reload">Réessayer</button></p>';
+    box.innerHTML = '<p class="ss-empty" role="alert">' + tr('Amis indisponibles : le serveur ne répond pas.') + ' ' +
+      '<button type="button" class="ss-link" data-ss-act="reload">' + tr('Réessayer') + '</button></p>';
     return;
   }
   if (!s.me) {
-    box.innerHTML = '<p class="ss-empty" role="status">Chargement…</p>';
+    box.innerHTML = '<p class="ss-empty" role="status">' + tr('Chargement…') + '</p>';
     return;
   }
   box.innerHTML = groupsHTML(s, filterQ, collapsed);
@@ -356,9 +357,9 @@ function enterMessages() {
     const off = renderConversationList(box);
     cleanupMessages = typeof off === 'function' ? off : null;
   } catch {
-    toast('Messages indisponibles pour le moment.');
+    toast(tr('Messages indisponibles pour le moment.'));
   }
-  if (!box.childElementCount) box.innerHTML = '<p class="ss-empty">Tes conversations apparaîtront ici.</p>';
+  if (!box.childElementCount) box.innerHTML = '<p class="ss-empty">' + tr('Tes conversations apparaîtront ici.') + '</p>';
 }
 
 /** Affiche l'onglet `id` (Amis, Messages, Activité). */
@@ -390,32 +391,32 @@ function paintInvite(d) {
   const box = $('#ss-inv-slot');
   const fab = $('#ss-fab');
   if (!box) return;
-  const head = '<div class="ss-inv-t"><b>Inviter quelqu’un</b>';
+  const head = '<div class="ss-inv-t">' + tr('<b>Inviter quelqu’un</b>');
   if (d === 'error') {
-    box.innerHTML = head + '<span role="alert">Invitations indisponibles. <button type="button" class="ss-link" data-ss-act="inv-reload">Réessayer</button></span></div>';
+    box.innerHTML = head + '<span role="alert">' + tr('Invitations indisponibles.') + ' <button type="button" class="ss-link" data-ss-act="inv-reload">' + tr('Réessayer') + '</button></span></div>';
     if (fab) fab.hidden = true;
     return;
   }
   if (d === 'loading') {
-    box.innerHTML = head + '<span role="status">Chargement…</span></div>';
+    box.innerHTML = head + '<span role="status">' + tr('Chargement…') + '</span></div>';
     if (fab) fab.hidden = true;
     return;
   }
   const inv = usableInvite();
   if (!inv) {
-    box.innerHTML = head + '<span role="status">Aucun lien disponible pour le moment.</span></div>';
+    box.innerHTML = head + '<span role="status">' + tr('Aucun lien disponible pour le moment.') + '</span></div>';
     if (fab) fab.hidden = true;
     return;
   }
   const n = usableCount(d);
   const id = esc(inv.id);
-  box.innerHTML = head + '<span>' + n + ' invitation' + (n > 1 ? 's' : '') + ' restante' + (n > 1 ? 's' : '') + '</span></div>' +
-    '<button type="button" class="ss-btn2 ss-sec" data-ss-act="copy-invite" data-id="' + id + '" data-fk="copy-invite:' + id + '">' + SI.link + 'Copier un lien</button>';
+  box.innerHTML = head + '<span>' + tr('{n} invitation{v} restante', { n, v: (n > 1 ? 's' : '') }) + (n > 1 ? 's' : '') + '</span></div>' +
+    '<button type="button" class="ss-btn2 ss-sec" data-ss-act="copy-invite" data-id="' + id + '" data-fk="copy-invite:' + id + '">' + SI.link + tr('Copier un lien') + '</button>';
   if (fab) {
     fab.hidden = false;
     fab.dataset.id = inv.id;
     const t = $('#ss-fab-t');
-    if (t) t.textContent = 'Inviter · ' + n;
+    if (t) t.textContent = tr('Inviter · {n}', { n });
   }
 }
 
@@ -444,8 +445,8 @@ function paintView() {
   $('#ss-conv').hidden = view.name !== 'conversation';
   $('#ss-subbar').hidden = home;
   const f = view.pid ? findFriend(view.pid, s) : null;
-  $('#ss-title').textContent = home ? 'Amis' : view.name === 'friend' ? 'Amis' : f ? shortName(f) : 'Discussion';
-  root.setAttribute('aria-label', view.name === 'friend' && f ? 'Fiche de ' + shortName(f) : 'Amis');
+  $('#ss-title').textContent = home ? tr('Amis') : view.name === 'friend' ? tr('Amis') : f ? shortName(f) : tr('Discussion');
+  root.setAttribute('aria-label', view.name === 'friend' && f ? tr('Fiche de {f}', { f: shortName(f) }) : tr('Amis'));
   if (home) {
     paintMe(s);
     if (tab === 'friends') paintGroups(s);
@@ -469,12 +470,12 @@ function paintConversation() {
     try {
       conversationRenderer({ el: box, pid: view.pid, friend: f });
     } catch {
-      toast('Discussion indisponible pour le moment.');
+      toast(tr('Discussion indisponible pour le moment.'));
     }
     return;
   }
-  box.innerHTML = '<div class="ss-placeholder"><p class="ss-sub">Discussion</p>' +
-    '<p class="ss-hint">La messagerie avec ' + esc(f ? nameOf(f) : 'ce profil') + ' arrive bientôt.</p></div>';
+  box.innerHTML = '<div class="ss-placeholder"><p class="ss-sub">' + tr('Discussion') + '</p>' +
+    '<p class="ss-hint">' + tr('La messagerie avec {v} arrive bientôt.', { v: esc(f ? nameOf(f) : tr('ce profil')) }) + '</p></div>';
 }
 
 // ---------- Ouverture, fermeture, cycle de vie ----------
@@ -531,7 +532,7 @@ export function openFriendCard(pid) {
   if (!root || !socialAvailable()) return;
   openSidebar();
   if (!findFriend(pid)) {
-    toast('Ce profil n’est plus dans tes amis.');
+    toast(tr('Ce profil n’est plus dans tes amis.'));
     return;
   }
   view = { name: 'friend', pid };
@@ -573,32 +574,32 @@ function acceptJoin(pid) {
   return run(async () => {
     await store.answerJoin(pid, room ? { accept: true, partyId: room } : { accept: true });
     if (!room) inviteToParty(pid);
-  }, 'Demande acceptée');
+  }, tr('Demande acceptée'));
 }
 
-const declineJoin = (pid) => run(() => store.answerJoin(pid, { accept: false }), 'Demande refusée');
+const declineJoin = (pid) => run(() => store.answerJoin(pid, { accept: false }), tr('Demande refusée'));
 
 function announceJoinRequests(s) {
   const now = new Set((s.joinRequests || []).map((r) => r.pid));
   (s.joinRequests || []).forEach((r) => {
     if (seenJoin.has(r.pid)) return;
-    toast(shortName(r) + ' demande à rejoindre ta watch party', { action: { label: 'Accepter', run: () => acceptJoin(r.pid) }, ms: 9000 });
+    toast(tr('{r} demande à rejoindre ta watch party', { r: shortName(r) }), { action: { label: tr('Accepter'), run: () => acceptJoin(r.pid) }, ms: 9000 });
   });
   seenJoin = now;
 }
 
 function onJoinAnswer(ev) {
   const f = findFriend(ev.pid);
-  const name = f ? shortName(f) : 'Ton ami';
+  const name = f ? shortName(f) : tr('Ton ami');
   if (!ev.accept) {
-    toast(name + ' ne peut pas t’accueillir pour le moment.');
+    toast(tr('{name} ne peut pas t’accueillir pour le moment.', { name }));
     return;
   }
   if (ev.partyId && PARTY_ID.test(ev.partyId)) {
-    toast(name + ' accepte : rejoins sa watch party', { action: { label: 'Rejoindre', run: () => { location.hash = '#/party/' + ev.partyId; } }, ms: 9000 });
+    toast(tr('{name} accepte : rejoins sa watch party', { name }), { action: { label: tr('Rejoindre'), run: () => { location.hash = '#/party/' + ev.partyId; } }, ms: 9000 });
     return;
   }
-  toast(name + ' a accepté ta demande.');
+  toast(tr('{name} a accepté ta demande.', { name }));
 }
 
 function onStore(s) {
@@ -718,14 +719,14 @@ async function addFriend(form) {
     msg.dataset.tone = 'error';
     return;
   }
-  msg.textContent = 'Envoi…';
+  msg.textContent = tr('Envoi…');
   msg.dataset.tone = '';
   try {
     const out = await store.sendRequest(h.full);
     input.value = '';
     filterQ = '';
     paintGroups(store.getState());
-    msg.textContent = 'friend' in out ? h.full + ' est maintenant ton ami.' : 'Demande envoyée à ' + h.full + '.';
+    msg.textContent = 'friend' in out ? tr('{full} est maintenant ton ami.', { full: h.full }) : tr('Demande envoyée à {full}.', { full: h.full });
   } catch (err) {
     msg.textContent = socialErrorMessage(err);
     msg.dataset.tone = 'error';
@@ -739,13 +740,13 @@ function inviteFriend(f) {
 
 function watchWith(f) {
   if (typeof watchHandler !== 'function') {
-    toast('« Regarder avec ' + (f ? shortName(f) : 'lui') + ' » arrive bientôt.');
+    toast(tr('« Regarder avec {v} » arrive bientôt.', { v: (f ? shortName(f) : 'lui') }));
     return;
   }
   try {
     watchHandler(f);
   } catch (e) {
-    toastError('Impossible de lancer la lecture.', e, 'amis');
+    toastError(tr('Impossible de lancer la lecture.'), e, 'amis');
   }
 }
 
@@ -787,10 +788,10 @@ function onClick(e) {
     case 'open': openFriendCard(pid); break;
     case 'open-menu': openCardMenu(pid); break;
     case 'accept':
-      run(() => store.accept(pid), (f) => nameOf(f) + ' est maintenant ton ami.');
+      run(() => store.accept(pid), (f) => tr('{f} est maintenant ton ami.', { f: nameOf(f) }));
       break;
     case 'decline':
-      run(() => store.decline(pid), t.dataset.kind === 'in' ? 'Demande refusée' : 'Demande annulée');
+      run(() => store.decline(pid), t.dataset.kind === 'in' ? tr('Demande refusée') : tr('Demande annulée'));
       break;
     case 'join-accept': acceptJoin(pid); break;
     case 'join-decline': declineJoin(pid); break;
@@ -808,13 +809,13 @@ function onClick(e) {
     }
     case 'set-status':
       closeStatusMenu();
-      run(() => store.setStatus(t.dataset.status), 'Statut mis à jour').then((r) => {
+      run(() => store.setStatus(t.dataset.status), tr('Statut mis à jour')).then((r) => {
         if (r === undefined) paintMe(store.getState());
       });
       $('#ss-status-btn')?.focus({ preventScroll: true });
       break;
     case 'copy-handle':
-      if (store.getState().me) copyText(nameOf(store.getState().me), 'Pseudo copié');
+      if (store.getState().me) copyText(nameOf(store.getState().me), tr('Pseudo copié'));
       break;
     case 'act-retry': loadActivityFeed(); break;
     case 'inv-reload': loadInvite(); break;

@@ -19,6 +19,7 @@ import { connectShell } from '../player/shell';
 import {
   applyUpdate, currentBuild, fetchDeployedBuild, isSnoozed, readSnooze, shouldShowBanner, snoozeBuild, uiUpdateActive,
 } from '../data/uiUpdate';
+import { t as tr } from '../i18n';
 
 const APP_RECHECK_MS = 60 * 60 * 1000; // l'application peut rester ouverte des jours : on revérifie si 1 h sont passées
 const FIRST_CHECK_MS = 5000;
@@ -26,7 +27,7 @@ const RECHECK_MS = 10 * 60 * 1000;
 const FOCUS_MIN_MS = 60 * 1000;
 const WATCH_MS = 2000;
 const IDLE_AUTO_MS = 5 * 60 * 1000;
-const CONFIRM_MSG = 'La lecture sera interrompue (ta position est sauvegardée). Mettre à jour maintenant ?';
+const CONFIRM_MSG = tr('La lecture sera interrompue (ta position est sauvegardée). Mettre à jour maintenant ?');
 const TRIED_KEY = 'laststream.uiupdate.tried';
 const ACTIVITY = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
 
@@ -61,16 +62,16 @@ export function showUpdateBanner(manifest, deps = {}) {
   go.type = 'button';
   const x = el('button', 'upd-x', '×');
   x.type = 'button';
-  x.setAttribute('aria-label', 'Plus tard');
+  x.setAttribute('aria-label', tr('Plus tard'));
   x.addEventListener('click', () => { dismiss(manifest); close(); });
   go.addEventListener('click', async () => {
     go.disabled = true;
     x.hidden = true;
     sub.hidden = false;
-    sub.textContent = 'Téléchargement…';
-    const result = await install(manifest, (p) => { if (p >= 0) sub.textContent = `Téléchargement… ${p} %`; });
+    sub.textContent = tr('Téléchargement…');
+    const result = await install(manifest, (p) => { if (p >= 0) sub.textContent = `${tr('Téléchargement… {p} %', { p })}`; });
     if (result === 'started') {
-      sub.textContent = 'Installation : valide l’écran Android qui s’ouvre.';
+      sub.textContent = tr('Installation : valide l’écran Android qui s’ouvre.');
       go.disabled = false;
       x.hidden = false;
       return;
@@ -154,10 +155,10 @@ export function initUiUpdateBanner(deps = {}) {
     const r = el('div', 'uiupd-banner');
     r.setAttribute('role', 'status');
     const info = el('div', 'upd-info');
-    info.append(el('p', 'upd-text', 'Une nouvelle version est disponible'), el('p', 'upd-sub', 'L’interface sera rechargée sur la même page.'));
-    const go = el('button', 'upd-go', 'Mettre à jour');
+    info.append(el('p', 'upd-text', tr('Une nouvelle version est disponible')), el('p', 'upd-sub', tr('L’interface sera rechargée sur la même page.')));
+    const go = el('button', 'upd-go', tr('Mettre à jour'));
     go.type = 'button';
-    const x = el('button', 'upd-later', 'Plus tard');
+    const x = el('button', 'upd-later', tr('Plus tard'));
     x.type = 'button';
     go.addEventListener('click', () => {
       if (busy() && !confirmFn(CONFIRM_MSG)) return;
@@ -254,12 +255,12 @@ export async function initShellUpdateBanner(deps = {}) {
     r.setAttribute('role', 'status');
     const info = el('div', 'upd-info');
     info.append(
-      el('p', 'upd-text', 'La nouvelle app Laststream est prête'),
-      el('p', 'upd-sub', 'L’app se ferme et l’installeur s’ouvre : suis ses étapes, ta connexion est conservée.'),
+      el('p', 'upd-text', tr('La nouvelle app Laststream est prête')),
+      el('p', 'upd-sub', tr('L’app se ferme et l’installeur s’ouvre : suis ses étapes, ta connexion est conservée.')),
     );
-    const go = el('button', 'upd-go', 'Installer');
+    const go = el('button', 'upd-go', tr('Installer'));
     go.type = 'button';
-    const later = el('button', 'upd-later', 'Plus tard');
+    const later = el('button', 'upd-later', tr('Plus tard'));
     later.type = 'button';
     go.addEventListener('click', () => {
       go.disabled = true;

@@ -10,23 +10,24 @@ import { row, svcError, topBar } from './fragments.js';
 import { state } from './state.js';
 import { observeTiles, posterCard, tileCard } from './tiles.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 // ---------- Services de streaming ----------
 const SERVICE_DEFS = [
   { slug: 'netflix', label: 'Netflix', re: /^netflix/, color: '#E50914' },
-  { slug: 'prime-video', label: 'Prime Video', re: /^(amazon )?prime video/, color: '#00A8E1' },
+  { slug: 'prime-video', label: t('Prime Video'), re: /^(amazon )?prime video/, color: '#00A8E1' },
   { slug: 'disney-plus', label: 'Disney+', re: /^disney/, color: '#113CCF' },
   { slug: 'canal-plus', label: 'Canal+', re: /^canal\+/, color: '#000000', outline: true },
-  { slug: 'apple-tv-plus', label: 'Apple TV+', re: /^apple tv/, color: '#1D1D1F' },
-  { slug: 'max', label: 'Max', re: /^(hbo )?max\b/, color: '#002BE7' },
+  { slug: 'apple-tv-plus', label: t('Apple TV+'), re: /^apple tv/, color: '#1D1D1F' },
+  { slug: 'max', label: t('Max'), re: /^(hbo )?max\b/, color: '#002BE7' },
   { slug: 'paramount-plus', label: 'Paramount+', re: /^paramount/, color: '#0064FF' },
-  { slug: 'crunchyroll', label: 'Crunchyroll', re: /^crunchyroll/, color: '#F47521' },
+  { slug: 'crunchyroll', label: t('Crunchyroll'), re: /^crunchyroll/, color: '#F47521' },
   { slug: 'ocs', label: 'OCS', re: /^ocs/, color: '#17151f' },
   { slug: 'adn', label: 'ADN', re: /^(adn|animation digital)/, color: '#17151f' },
-  { slug: 'france-tv', label: 'France TV', re: /^france[ .]?tv/, color: '#17151f' },
-  { slug: 'arte', label: 'Arte', re: /^arte/, color: '#17151f' },
+  { slug: 'france-tv', label: t('France TV'), re: /^france[ .]?tv/, color: '#17151f' },
+  { slug: 'arte', label: t('Arte'), re: /^arte/, color: '#17151f' },
   { slug: 'mubi', label: 'MUBI', re: /^mubi/, color: '#17151f' },
-  { slug: 'pluto-tv', label: 'Pluto TV', re: /^pluto/, color: '#17151f' },
+  { slug: 'pluto-tv', label: t('Pluto TV'), re: /^pluto/, color: '#17151f' },
 ];
 const SERVICE_CANON = {
   netflix: /^netflix$/, 'prime-video': /^amazon prime video$/, 'disney-plus': /^disney plus$/, 'canal-plus': /^canal\+$/,
@@ -46,7 +47,7 @@ export function loadServices() {
         if (r.status !== 'fulfilled') return;
         ((r.value && r.value.results) || []).forEach((pv) => { if (!byId.has(pv.provider_id)) byId.set(pv.provider_id, pv); });
       });
-      if (!byId.size) throw new Error('services indisponibles');
+      if (!byId.size) throw new Error(t('services indisponibles'));
       const all = Array.from(byId.values());
       const out = [];
       SERVICE_DEFS.forEach((def) => {
@@ -81,14 +82,14 @@ export async function renderServices() {
     const list = await loadServices();
     const slot = document.getElementById('svc-slot');
     if (!slot || !list.length || state.status !== 'ready') return;
-    slot.innerHTML = '<section class="row-section" id="services" aria-labelledby="h-services"><h2 class="row-title" id="h-services">Services de streaming</h2>' +
+    slot.innerHTML = '<section class="row-section" id="services" aria-labelledby="h-services"><h2 class="row-title" id="h-services">' + t('Services de streaming') + '</h2>' +
       row(list.map(svcTile).join('')) + '</section>';
   } catch (_) { /* rangée absente si TMDB ne répond pas */ }
 }
 
 const SVC_GENRES = [
-  ['Action', 28, 10759], ['Comédie', 35, 35], ['Drame', 18, 18], ['Science-fiction', 878, 10765], ['Thriller', 53, '80|9648'],
-  ['Animation', 16, 16], ['Documentaire', 99, 99], ['Famille', 10751, 10751], ['Horreur', 27, null], ['Romance', 10749, null],
+  [t('Action'), 28, 10759], [t('Comédie'), 35, 35], [t('Drame'), 18, 18], [t('Science-fiction'), 878, 10765], [t('Thriller'), 53, '80|9648'],
+  [t('Animation'), 16, 16], [t('Documentaire'), 99, 99], [t('Famille'), 10751, 10751], [t('Horreur'), 27, null], [t('Romance'), 10749, null],
 ];
 
 function svcRows(type) {
@@ -96,9 +97,9 @@ function svcRows(type) {
   const today = new Date().toISOString().slice(0, 10);
   const dateKey = isTv ? 'first_air_date' : 'primary_release_date';
   const rows = [
-    { title: 'Top du moment', land: true, params: { sort_by: 'popularity.desc' } },
-    { title: 'Nouveautés', params: { sort_by: dateKey + '.desc', [dateKey + '.lte']: today } },
-    { title: 'Les mieux notés', params: { sort_by: 'vote_average.desc', 'vote_count.gte': '300' } },
+    { title: t('Top du moment'), land: true, params: { sort_by: 'popularity.desc' } },
+    { title: t('Nouveautés'), params: { sort_by: dateKey + '.desc', [dateKey + '.lte']: today } },
+    { title: t('Les mieux notés'), params: { sort_by: 'vote_average.desc', 'vote_count.gte': '300' } },
   ];
   SVC_GENRES.forEach(([title, gm, gt]) => {
     const g = isTv ? gt : gm;
@@ -123,7 +124,7 @@ async function loadSvcRow(sec, sv, type, def, token) {
     const j = await tmdb('discover/' + type, params);
     items = (j.results || []).filter((r) => r.poster_path && (r.release_date || r.first_air_date || '9999') <= todayStr()).map((r) => register(toItem(r, type)));
   } catch (_) {
-    if (token === state.token) sec.querySelector('.row').innerHTML = '<p class="row-msg" role="status">Cette rangée n’a pas pu être chargée.</p>';
+    if (token === state.token) sec.querySelector('.row').innerHTML = '<p class="row-msg" role="status">' + t('Cette rangée n’a pas pu être chargée.') + '</p>';
     return;
   }
   if (token !== state.token) return;
@@ -162,22 +163,22 @@ export async function showService(slug) {
   detailEl.innerHTML = topBar(false) + '<article class="svc-page is-loading" aria-busy="true" tabindex="-1"><header class="svc-head"><span class="sk sk-title"></span></header></article>';
   let list;
   try { list = await loadServices(); } catch (_) {
-    if (token === state.token) detailEl.innerHTML = svcError('Les services de streaming n’ont pas pu être chargés.');
+    if (token === state.token) detailEl.innerHTML = svcError(t('Les services de streaming n’ont pas pu être chargés.'));
     return;
   }
   if (token !== state.token) return;
   const sv = list.find((x) => x.slug === slug);
-  if (!sv) { detailEl.innerHTML = svcError('Service introuvable.'); return; }
+  if (!sv) { detailEl.innerHTML = svcError(t('Service introuvable.')); return; }
   state.svc = { sv, type: 'movie' };
-  document.title = sv.name + ' · Laststream';
+  document.title = t('{name} · Laststream', { name: sv.name });
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page" aria-labelledby="svc-title"><header class="svc-head" style="--svc:' + esc(sv.color) + '">' +
     (sv.logo ? '<img class="svc-logo" src="' + esc(sv.logo) + '" alt="">' : '') +
-    '<div class="svc-head-t"><p class="svc-eyebrow">Services de streaming</p>' +
-    '<h1 class="svc-title" id="svc-title" tabindex="-1">Disponible sur ' + esc(sv.name) + '</h1>' +
-    '<div class="pills svc-toggle" role="group" aria-label="Type de contenu" data-nav>' +
-    '<button type="button" class="pill" data-svctype="movie" aria-pressed="true">Films</button>' +
-    '<button type="button" class="pill" data-svctype="tv" aria-pressed="false">Séries</button></div></div></header>' +
+    '<div class="svc-head-t"><p class="svc-eyebrow">' + t('Services de streaming') + '</p>' +
+    '<h1 class="svc-title" id="svc-title" tabindex="-1">' + t('Disponible sur {name}', { name: esc(sv.name) }) + '</h1>' +
+    '<div class="pills svc-toggle" role="group" aria-label="' + t('Type de contenu') + '" data-nav>' +
+    '<button type="button" class="pill" data-svctype="movie" aria-pressed="true">' + t('Films') + '</button>' +
+    '<button type="button" class="pill" data-svctype="tv" aria-pressed="false">' + t('Séries') + '</button></div></div></header>' +
     '<div class="svc-rows" id="svc-rows"></div></article>';
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
@@ -188,18 +189,18 @@ export async function showServices() {
   teardownFiche();
   const token = state.token;
   state.kind = 'services';
-  document.title = 'Services de streaming · Laststream';
+  document.title = t('Services de streaming · Laststream');
   detailEl.innerHTML = topBar(false) + '<article class="svc-page is-loading" aria-busy="true" tabindex="-1"><header class="svc-head"><span class="sk sk-title"></span></header></article>';
   let list;
   try { list = await loadServices(); } catch (_) {
-    if (token === state.token) detailEl.innerHTML = svcError('Les services de streaming n’ont pas pu être chargés.');
+    if (token === state.token) detailEl.innerHTML = svcError(t('Les services de streaming n’ont pas pu être chargés.'));
     return;
   }
   if (token !== state.token) return;
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain">' +
-    '<div class="svc-head-t"><h1 class="svc-title" id="svc-title" tabindex="-1">Services de streaming</h1>' +
-    '<p class="svc-eyebrow">Disponibles ' + getRegion().where + '</p></div></header>' +
+    '<div class="svc-head-t"><h1 class="svc-title" id="svc-title" tabindex="-1">' + t('Services de streaming') + '</h1>' +
+    '<p class="svc-eyebrow">' + t('Disponibles {where}', { where: getRegion().where }) + '</p></div></header>' +
     '<div class="services-grid" data-nav>' + list.map(svcTile).join('') + '</div></article>';
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });

@@ -1,6 +1,7 @@
 /** Calendrier des suivis : grille du mois, libellés de sortie, regroupement par jour. */
 
 import { pad2 } from './format';
+import { t as tr, intlLocale } from '../i18n';
 
 export interface CalEvent {
   /** AAAA-MM-JJ. */
@@ -46,10 +47,10 @@ export const episodeLabel = (season: number, episode: number): string => `S${sea
 
 /** Types de sortie TMDB : 1 avant-première, 2 salles (limitée), 3 salles, 4 numérique, 5 physique, 6 télévision. */
 function releaseLabel(type: number): string {
-  if (type === 1 || type === 2 || type === 3) return 'Au cinéma';
-  if (type === 4) return 'En streaming';
-  if (type === 5) return 'En DVD / Blu-ray';
-  return 'À la télévision';
+  if (type === 1 || type === 2 || type === 3) return tr('Au cinéma');
+  if (type === 4) return tr('En streaming');
+  if (type === 5) return tr('En DVD / Blu-ray');
+  return tr('À la télévision');
 }
 
 interface ReleaseResult {
@@ -67,13 +68,13 @@ export function movieReleases(results: ReleaseResult[] | undefined, region: stri
     const label = releaseLabel(r.type);
     if (!best.has(label) || date < best.get(label)!) best.set(label, date);
   });
-  if (!best.size && fallback) return [{ date: fallback.slice(0, 10), label: 'Au cinéma' }];
+  if (!best.size && fallback) return [{ date: fallback.slice(0, 10), label: tr('Au cinéma') }];
   return [...best].map(([label, date]) => ({ label, date })).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function groupByDate(events: CalEvent[]): Map<string, CalEvent[]> {
   const map = new Map<string, CalEvent[]>();
-  [...events].sort((a, b) => a.date.localeCompare(b.date) || (a.start ?? 0) - (b.start ?? 0) || a.title.localeCompare(b.title, 'fr')).forEach((e) => {
+  [...events].sort((a, b) => a.date.localeCompare(b.date) || (a.start ?? 0) - (b.start ?? 0) || a.title.localeCompare(b.title, intlLocale())).forEach((e) => {
     (map.get(e.date) ?? map.set(e.date, []).get(e.date)!).push(e);
   });
   return map;
@@ -102,10 +103,10 @@ export type CalKind = 'movie' | 'tv' | 'airing' | 'person';
 
 /** Types de sortie, dans l'ordre des filtres : `key` sert aux filtres, `label` au pluriel des pastilles, `name` au singulier des cartes. */
 export const CAL_KINDS: ReadonlyArray<{ key: CalKind; label: string; name: string }> = [
-  { key: 'movie', label: 'Films', name: 'Film' },
-  { key: 'tv', label: 'Séries', name: 'Série' },
+  { key: 'movie', label: tr('Films'), name: tr('Film') },
+  { key: 'tv', label: tr('Séries'), name: tr('Série') },
   { key: 'airing', label: 'TV', name: 'TV' },
-  { key: 'person', label: 'Personnes', name: 'Personne' },
+  { key: 'person', label: tr('Personnes'), name: tr('Personne') },
 ];
 
 /** Type d'affichage d'une sortie : un épisode est une « série », une sortie d'une personne reste « personne ». */
@@ -166,12 +167,12 @@ export function dotKinds(events: ReadonlyArray<Pick<CalEvent, 'kind'>>): { shown
 /** « 21 octobre, 4 sorties » : nom accessible d'une cellule. */
 export function dayAriaLabel(date: string, count: number): string {
   const d = new Date(date + 'T00:00:00');
-  const day = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
-  return day + ', ' + (count === 0 ? 'aucune sortie' : count + (count > 1 ? ' sorties' : ' sortie'));
+  const day = d.toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long' });
+  return day + ', ' + (count === 0 ? tr('aucune sortie') : count + (count > 1 ? ' sorties' : ' sortie'));
 }
 
 /** « mercredi 21 octobre » : titre du panneau du jour. */
-export const dayTitle = (date: string): string => new Date(date + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+export const dayTitle = (date: string): string => new Date(date + 'T00:00:00').toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
 
 /** Deux initiales d'un titre, pour l'affiche absente. */
 export const initials = (title: string): string => title.split(/\s+/).filter(Boolean).map((w) => Array.from(w)[0]).join('').slice(0, 2).toUpperCase();
@@ -189,10 +190,10 @@ export function hueOf(title: string): number {
  */
 export function eventStatus(e: Pick<CalEvent, 'kind' | 'date' | 'label'>, today: string, future: (iso: string) => string): { text: string; hot: boolean } {
   const time = e.kind === 'airing' ? /^\d{1,2}:\d{2}/.exec(e.label)?.[0] : undefined;
-  if (e.date < today) return { text: e.kind === 'airing' ? 'Diffusé' : 'Sorti', hot: false };
+  if (e.date < today) return { text: e.kind === 'airing' ? tr('Diffusé') : tr('Sorti'), hot: false };
   if (e.date === today) {
-    if (e.kind === 'airing') return { text: time ? 'Ce soir · ' + time : 'Ce soir', hot: true };
-    return e.kind === 'episode' ? { text: 'Ce soir', hot: true } : { text: 'Aujourd’hui', hot: false };
+    if (e.kind === 'airing') return { text: time ? tr('Ce soir · {time}', { time }) : tr('Ce soir'), hot: true };
+    return e.kind === 'episode' ? { text: tr('Ce soir'), hot: true } : { text: tr('Aujourd’hui'), hot: false };
   }
   const when = future(e.date);
   return { text: time ? when + ' · ' + time : when, hot: false };

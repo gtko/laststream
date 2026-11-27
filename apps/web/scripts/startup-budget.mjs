@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* Budget du premier chargement : chunks JS/CSS que le navigateur charge au démarrage, calculés depuis le manifeste
- * de Vite (dist/.vite/manifest.json, build.manifest) = fermeture des imports statiques de l'entrée (src/main.js),
+ * de Vite (dist/.vite/manifest.json, build.manifest) = fermeture des imports statiques de l'entrée (src/boot.ts) et de src/main.js qu'elle importe aussitôt,
  * CSS compris. Les imports dynamiques ne comptent pas : ils ne sont chargés qu'à la demande.
  *
  *   node scripts/startup-budget.mjs [--dist dist] [--max-kb 500] [--max-total-gzip-kb 350] [--strict-gzip]
@@ -55,6 +55,8 @@ if (entries.length === 0) {
   process.exit(2);
 }
 for (const [key] of entries) visit(key);
+// src/boot.ts (entrée) charge la langue puis importe dynamiquement src/main.js : l'application fait partie du démarrage.
+if (manifest['src/main.js']) visit('src/main.js');
 
 const rows = [];
 let totalRaw = 0;

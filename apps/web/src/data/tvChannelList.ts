@@ -1,20 +1,21 @@
 /* Panneau « Chaînes » du lecteur TV : puces de catégorie, recherche instantanée, favoris par profil, fenêtre de rendu.
  * Logique pure, testée. */
 import { normText } from './tvRank';
+import { t as tr } from '../i18n';
 
 export type ChipId = 'all' | 'fav' | 'box' | 'news' | 'sport' | 'kids' | 'cinema' | 'music' | 'fun' | 'docs';
 
 const CHIPS: ReadonlyArray<{ id: ChipId; label: string }> = [
-  { id: 'all', label: 'Toutes' },
-  { id: 'fav', label: 'Favoris' },
-  { id: 'box', label: 'Box' },
-  { id: 'news', label: 'Info' },
-  { id: 'sport', label: 'Sport' },
-  { id: 'kids', label: 'Jeunesse' },
-  { id: 'cinema', label: 'Cinéma' },
-  { id: 'music', label: 'Musique' },
-  { id: 'fun', label: 'Divertissement' },
-  { id: 'docs', label: 'Documentaires' },
+  { id: 'all', label: tr('Toutes') },
+  { id: 'fav', label: tr('Favoris') },
+  { id: 'box', label: tr('Box') },
+  { id: 'news', label: tr('Info') },
+  { id: 'sport', label: tr('Sport') },
+  { id: 'kids', label: tr('Jeunesse') },
+  { id: 'cinema', label: tr('Cinéma') },
+  { id: 'music', label: tr('Musique') },
+  { id: 'fun', label: tr('Divertissement') },
+  { id: 'docs', label: tr('Documentaires') },
 ];
 
 export interface PanelChannel {

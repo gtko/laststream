@@ -16,6 +16,7 @@ import { findSection, SECTIONS } from './admin/sections.js';
 import { detailEl, toast } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { state } from './state.js';
+import { t as tr } from '../i18n';
 
 const idle = () => ({ status: 'idle', value: null, error: '' });
 /** État partagé de la console. Chaque donnée chargée a sa clé (`{ status, value, error }`), remplie par la section qui la charge. */
@@ -300,7 +301,7 @@ export function showAdmin() {
   if (!canAdmin()) { location.replace('#/'); return; }
   teardownFiche();
   state.kind = 'admin';
-  document.title = 'Administration · Laststream';
+  document.title = tr('Administration · Laststream');
   setElevationPrompt(({ error }) => passwordDialog({ error }));
   if (!hooked) {
     hooked = true;

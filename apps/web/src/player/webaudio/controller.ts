@@ -5,6 +5,7 @@ import { DOLBY_HINT, NOTE_STALLED, isAc3Family, nativeAudioSilent, pickReadableA
 
 import { APP_DOWNLOAD_URL } from '../appDownload';
 import { prepareWebAudio, type PrepareDeps, type PreparedAudio } from './prepare';
+import { t } from '../../i18n';
 
 /* Pilote le son de repli pour une lecture web directe : prépare le plan (CORS, codec), attache le moteur audio au moteur HTML,
  * affiche les notes (DTS, CORS) et propose une source au son lisible. Tout l'accès à l'interface passe par `WebAudioHost`
@@ -16,7 +17,7 @@ type AudioMode = 'app' | 'unsupported' | 'cors' | 'error' | null;
 export interface SoundNoteLink { label: string; href: string }
 
 /** Source Dolby sans son : lien vers la page de téléchargement de l'app (affiché seulement en lecture web, voir `session.js`). */
-export const DOLBY_LINK: SoundNoteLink = { label: 'Télécharger l’app', href: APP_DOWNLOAD_URL };
+export const DOLBY_LINK: SoundNoteLink = { label: t('Télécharger l’app'), href: APP_DOWNLOAD_URL };
 
 export interface WebAudioHost<V extends SourceLike = SourceLike> {
   video: VideoLike & { webkitAudioDecodedByteCount?: number };
@@ -69,7 +70,7 @@ export async function startWebAudio<V extends SourceLike>(host: WebAudioHost<V>,
   const propose = async (note: string): Promise<void> => {
     const alt = await pickReadableAlternative(host.alternatives(), host.currentIndex(), host.caps, { probe: host.probeView }).catch(() => null);
     if (stale() || !alt) return;
-    host.toast(note + ' · Source avec un son lisible : ' + host.describe(alt.view), 20_000, { label: 'Essayer', run: () => host.play(alt.view) });
+    host.toast(t('{note} · Source avec un son lisible : {view}', { note, view: host.describe(alt.view) }), 20_000, { label: t('Essayer'), run: () => host.play(alt.view) });
   };
 
   /** Source Dolby (AC-3 / E-AC-3, d'après l'en-tête lu ou le nom) : vrai aussi quand le son n'a pas pu être lu. */
@@ -86,7 +87,7 @@ export async function startWebAudio<V extends SourceLike>(host: WebAudioHost<V>,
       host.attach(engine);
       engine.start();
       host.setMode('app', '');
-      host.toast('Son décodé par l’app', 3500);
+      host.toast(t('Son décodé par l’app'), 3500);
     } else if (plan.mode === 'unsupported' || plan.mode === 'cors' || plan.mode === 'stalled') {
       showNote(plan.mode === 'stalled' ? 'error' : plan.mode, plan.note);
       host.toast(plan.note, 9000);

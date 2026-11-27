@@ -13,7 +13,7 @@
 .fo-crumbs a:hover { color: var(--accent); }
 .fo-crumbs [aria-current] { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
 .fo-notice { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-2); color: var(--soft); font-size: 14px; }
-.fo-pill { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 800; }
+.fo-pill { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-inline-start: 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 800; }
 
 /* Accueil */
 .fo-hero { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; padding: 22px; border-radius: 20px;
@@ -31,7 +31,7 @@
 .fo-cat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .fo-cat-name { font-family: var(--ff-title); font-weight: 800; font-size: 16px; }
 .fo-cat-desc { color: var(--soft); font-size: 13px; line-height: 1.45; }
-.fo-cat-meta { flex: 1 1 100%; display: flex; gap: 10px; padding-left: 58px; font-size: 13px; color: var(--soft); }
+.fo-cat-meta { flex: 1 1 100%; display: flex; gap: 10px; padding-inline-start: 58px; font-size: 13px; color: var(--soft); }
 
 /* Liste des sujets */
 .fo-topics { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -42,7 +42,7 @@
 .fo-topic-t { color: var(--text); font-weight: 700; text-decoration: none; overflow-wrap: anywhere; }
 .fo-topic-t:hover { color: var(--accent); }
 .fo-topic-sub { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--soft); }
-.fo-flag { margin-right: 6px; font-size: 13px; }
+.fo-flag { margin-inline-end: 6px; font-size: 13px; }
 .fo-topic-stats { flex: none; display: flex; align-items: center; gap: 14px; }
 .fo-replies { min-width: 34px; height: 26px; padding: 0 8px; border-radius: 8px; display: grid; place-items: center; background: var(--bg); font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; }
 .fo-last { display: flex; align-items: center; gap: 6px; }
@@ -85,8 +85,8 @@
 .fm > :last-child { margin-bottom: 0; }
 .fm p { margin: 0 0 10px; }
 .fm-h { margin: 14px 0 8px; font-family: var(--ff-title); }
-.fm-quote { margin: 0 0 10px; padding: 8px 14px; border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; background: var(--bg); color: var(--soft); }
-.fm-list { margin: 0 0 10px; padding-left: 22px; }
+.fm-quote { margin: 0 0 10px; padding: 8px 14px; border-inline-start: 3px solid var(--accent); border-radius: 0 10px 10px 0; background: var(--bg); color: var(--soft); }
+.fm-list { margin: 0 0 10px; padding-inline-start: 22px; }
 .fm-code { padding: 1px 6px; border-radius: 6px; background: var(--bg); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
 .fm-pre { margin: 0 0 10px; padding: 12px 14px; border-radius: 10px; background: var(--bg); overflow-x: auto; font-size: 13px; line-height: 1.5; }
 .fm-pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
@@ -103,14 +103,14 @@
 .fo-tools { display: flex; flex-wrap: wrap; gap: 4px; }
 .fo-tool { min-width: 34px; height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid transparent; background: var(--bg); color: var(--soft); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .fo-tool:hover { color: var(--text); border-color: var(--line-2); }
-.fo-tool-prev { margin-left: auto; }
+.fo-tool-prev { margin-inline-start: auto; }
 .fo-tool-prev[aria-pressed="true"] { color: var(--accent); }
 .fo-ta { width: 100%; min-height: 140px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; font-size: 15px; line-height: 1.5; resize: vertical; box-sizing: border-box; }
 .fo-ta:focus-visible, .fo-input:focus-visible, .fo-select:focus-visible { border-color: var(--accent); outline: 0; }
 .fo-ta-sm { min-height: 70px; width: 100%; box-sizing: border-box; }
 .fo-preview { min-height: 140px; padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--line-2); }
 .fo-compose-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
-.fo-count { margin-right: auto; color: var(--dim); font-size: 12px; }
+.fo-count { margin-inline-end: auto; color: var(--dim); font-size: 12px; }
 .fo-err { margin: 0; color: #ff7a7a; font-size: 13px; }
 .fo-err:empty { display: none; }
 
@@ -132,7 +132,7 @@
 .fo-plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .fo-person { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
 .fo-person-n { font-weight: 700; }
-.fo-person .fo-act { margin-left: auto; }
+.fo-person .fo-act { margin-inline-start: auto; }
 .fo-addmod { display: flex; flex-wrap: wrap; gap: 8px; }
 .fo-addmod .fo-input { flex: 1 1 220px; min-width: 0; }
 .fo-radios { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
@@ -142,7 +142,7 @@
   .fo-body { padding: 84px 16px 96px; gap: 18px; }
   .fo-hero { padding: 16px; }
   .fo-topic { flex-wrap: wrap; }
-  .fo-topic-stats { width: 100%; justify-content: space-between; padding-left: 48px; }
+  .fo-topic-stats { width: 100%; justify-content: space-between; padding-inline-start: 48px; }
   .fo-post { padding: 12px; gap: 10px; }
   .fo-post-side .cv-av { width: 32px !important; height: 32px !important; }
 }
@@ -230,7 +230,7 @@
 .fo-evpanel-main .fo-dim { margin: 0; }
 .fo-attendees { display: flex; align-items: center; gap: 10px; }
 .fo-stack { display: flex; }
-.fo-stack > * + * { margin-left: -8px; }
+.fo-stack > * + * { margin-inline-start: -8px; }
 .fo-stack > * { box-shadow: 0 0 0 2px var(--surface); }
 .fo-when { margin: 0; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 12px; }
 .fo-when[hidden] { display: none; }

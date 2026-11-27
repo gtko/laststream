@@ -1,6 +1,7 @@
 /* Comportements du menu des Réglages : clavier (↑/↓ avec boucle, Début/Fin, tabindex itinérant), sélecteur déroulant mobile.
  * Le HTML est dans settings-ui.js (navHTML) ; le défilement vers le panneau reste à la charge de l'appelant (onPick). */
 
+import { t as tr } from '../i18n';
 const ITEMS = '.set-nav-list [data-set-cat]';
 
 /** Met à jour l'état visuel et accessible du menu pour la catégorie active (liste, tabindex itinérant, sélecteur mobile). */
@@ -24,7 +25,7 @@ export function syncNav(root, id) {
   const src = items[i];
   if (label) label.textContent = src.querySelector('.set-nav-t').textContent;
   if (ic) ic.innerHTML = src.querySelector('svg').outerHTML;
-  if (pos) pos.textContent = (i + 1) + ' sur ' + items.length;
+  if (pos) pos.textContent = (i + 1) + ' ' + tr('sur {length}', { length: items.length });
 }
 
 function closeSel(root, refocus) {

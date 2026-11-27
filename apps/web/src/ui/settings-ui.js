@@ -1,6 +1,7 @@
 /* Composants de la page Réglages : catégories, lignes, interrupteurs, puces, cartes de groupe.
  * Pur HTML (chaînes) : aucun état, aucun effet de bord. Les comportements sont dans settings.js et homeprefs.js. */
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 const svg = (d) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
 
@@ -33,23 +34,23 @@ export const SET_ICON = {
 
 /** Groupes de la navigation latérale (ordre d'affichage). Un groupe sans catégorie visible est masqué. */
 const NAV_GROUPS = [
-  { id: 'account', title: 'Compte et apparence' },
-  { id: 'playback', title: 'Lecture' },
-  { id: 'content', title: 'Contenu' },
-  { id: 'server', title: 'Serveur' },
+  { id: 'account', title: t('Compte et apparence') },
+  { id: 'playback', title: t('Lecture') },
+  { id: 'content', title: t('Contenu') },
+  { id: 'server', title: t('Serveur') },
 ];
 
 /** Catégories de la navigation latérale (ordre = ordre des panneaux dans la page). `short` : libellé du menu (une ligne), `label` : titre du panneau. */
 export const CATEGORIES = [
-  { id: 'account', group: 'account', label: 'Profil et compte', short: 'Profil', icon: 'user' },
-  { id: 'appearance', group: 'account', label: 'Apparence', short: 'Apparence', icon: 'palette' },
-  { id: 'region', group: 'account', label: 'Langue et région', short: 'Langue', icon: 'globe' },
-  { id: 'playback', group: 'playback', label: 'Lecture', short: 'Lecture', icon: 'play' },
-  { id: 'audio', group: 'playback', label: 'Audio et sous-titres', short: 'Audio', icon: 'subtitles' },
-  { id: 'home', group: 'content', label: 'Accueil et recommandations', short: 'Accueil', icon: 'home' },
-  { id: 'tv', group: 'content', label: 'TV en direct', short: 'TV en direct', icon: 'tv' },
-  { id: 'server', group: 'server', label: 'Serveur lastAddon', short: 'Serveur', icon: 'server' },
-  { id: 'sources', group: 'server', label: 'Sources', short: 'Sources', icon: 'layers' },
+  { id: 'account', group: 'account', label: t('Profil et compte'), short: t('Profil'), icon: 'user' },
+  { id: 'appearance', group: 'account', label: t('Apparence'), short: t('Apparence'), icon: 'palette' },
+  { id: 'region', group: 'account', label: t('Langue et région'), short: t('Langue'), icon: 'globe' },
+  { id: 'playback', group: 'playback', label: t('Lecture'), short: t('Lecture'), icon: 'play' },
+  { id: 'audio', group: 'playback', label: t('Audio et sous-titres'), short: t('Audio'), icon: 'subtitles' },
+  { id: 'home', group: 'content', label: t('Accueil et recommandations'), short: t('Accueil'), icon: 'home' },
+  { id: 'tv', group: 'content', label: t('TV en direct'), short: t('TV en direct'), icon: 'tv' },
+  { id: 'server', group: 'server', label: t('Serveur lastAddon'), short: t('Serveur'), icon: 'server' },
+  { id: 'sources', group: 'server', label: t('Sources'), short: t('Sources'), icon: 'layers' },
 ];
 
 const CHEVRON = svg('<path d="M6 9l6 6 6-6"/>');
@@ -79,11 +80,11 @@ export function navHTML(cats, active, badges) {
   const opts = groups.map((g) => '<div role="group" aria-label="' + esc(g.title) + '"><p class="set-sel-gt" aria-hidden="true">' + esc(g.title) + '</p>' +
     g.items.map((c) => '<button type="button" role="option" class="set-sel-o" data-set-opt="' + c.id + '" tabindex="-1" aria-label="' + esc(c.label + (bd[c.id] ? ' (' + bd[c.id] + ')' : '')) + '" aria-selected="' + (c.id === active ? 'true' : 'false') + '">' +
       SET_ICON[c.icon] + '<span class="set-nav-t">' + esc(c.short) + '</span>' + (bd[c.id] ? '<span class="set-nav-dot" aria-hidden="true"></span>' : '') + '</button>').join('') + '</div>').join('');
-  return '<nav class="set-nav" aria-label="Catégories de réglages"><ul class="set-nav-list">' + list + '</ul>' +
+  return '<nav class="set-nav" aria-label="' + t('Catégories de réglages') + '"><ul class="set-nav-list">' + list + '</ul>' +
     '<div class="set-sel"><button type="button" class="set-sel-b" data-set-sel aria-haspopup="listbox" aria-expanded="false" aria-controls="set-sel-l">' +
     '<span class="set-sel-ic" data-sel-ic>' + SET_ICON[cur.icon] + '</span><span class="set-nav-t" data-sel-name>' + esc(cur.short) + '</span>' +
-    '<span class="set-sel-n" data-sel-pos>' + (idx + 1) + ' sur ' + cats.length + '</span>' + CHEVRON + '</button>' +
-    '<div class="set-sel-l" id="set-sel-l" role="listbox" aria-label="Catégories de réglages" hidden>' + opts + '</div></div></nav>';
+    '<span class="set-sel-n" data-sel-pos>' + (idx + 1) + ' ' + t('sur {length}', { length: cats.length }) + '</span>' + CHEVRON + '</button>' +
+    '<div class="set-sel-l" id="set-sel-l" role="listbox" aria-label="' + t('Catégories de réglages') + '" hidden>' + opts + '</div></div></nav>';
 }
 
 export function panelHTML(cat, desc, inner) {

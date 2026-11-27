@@ -32,6 +32,7 @@ import { ficheHash } from './ficheRoute.js';
 import { esc } from './util.js';
 import { setOpenState } from './disclosure.js';
 import { pushLayer } from './backStack.js';
+import { t as tr } from '../i18n';
 
 const LONG_PRESS_MS = 500;
 const HINT_KEY = 'ls.ctxHintSeen';
@@ -134,44 +135,44 @@ export async function playTitle(key, opener, fromStart) {
 /** Retire un titre de « Reprendre la lecture » (la progression est conservée), avec annulation possible. */
 export async function removeFromContinue(key) {
   const ok = await userStore.hideContinue(key);
-  if (!ok) { toast('Impossible de retirer ce titre'); return; }
+  if (!ok) { toast(tr('Impossible de retirer ce titre')); return; }
   const refresh = () => import('./home.js').then((h) => h.renderContinue());
   refresh();
-  toast('Retiré de « Reprendre la lecture »', {
+  toast(tr('Retiré de « Reprendre la lecture »'), {
     ms: 5000,
-    action: { label: 'Annuler', run: async () => { await userStore.showContinue(key); refresh(); } },
+    action: { label: tr('Annuler'), run: async () => { await userStore.showContinue(key); refresh(); } },
   });
 }
 
 /** Raison lisible d'un échec (ni URL, ni jeton, ni valeur de réglage). */
 export function reasonOf(err) {
   if (err instanceof LastAddonError) {
-    if (err.kind === 'network') return 'lastAddon est injoignable (réseau)';
-    if (err.kind === 'not_configured') return 'lastAddon n’est pas configuré';
-    if (err.kind === 'http') return err.status === 429 ? 'trop de requêtes, réessaie dans un instant' : 'lastAddon a répondu HTTP ' + err.status + (err.code ? ' (' + err.code + ')' : '');
-    return 'réponse lastAddon illisible';
+    if (err.kind === 'network') return tr('lastAddon est injoignable (réseau)');
+    if (err.kind === 'not_configured') return tr('lastAddon n’est pas configuré');
+    if (err.kind === 'http') return err.status === 429 ? tr('trop de requêtes, réessaie dans un instant') : tr('lastAddon a répondu HTTP {status}', { status: err.status }) + (err.code ? ' (' + err.code + ')' : '');
+    return tr('réponse lastAddon illisible');
   }
   if (err instanceof UserApiError) {
-    if (err.code === 'network') return 'serveur injoignable (réseau)';
-    if (err.status === 429) return 'trop de requêtes, réessaie dans un instant';
-    if (err.code === 'pin_required') return 'code du profil requis';
-    if (err.code === 'unauthorized') return 'session expirée, reconnecte-toi';
-    return 'serveur : ' + err.code + ' (HTTP ' + err.status + ')';
+    if (err.code === 'network') return tr('serveur injoignable (réseau)');
+    if (err.status === 429) return tr('trop de requêtes, réessaie dans un instant');
+    if (err.code === 'pin_required') return tr('code du profil requis');
+    if (err.code === 'unauthorized') return tr('session expirée, reconnecte-toi');
+    return tr('serveur : {code} (HTTP {status})', { code: err.code, status: err.status });
   }
-  return (err && err.message) || 'erreur inconnue';
+  return (err && err.message) || tr('erreur inconnue');
 }
 
 async function toggleSeriesWatched(key) {
   const [type, id] = key.split(':');
   const on = !userStore.watchedTitle(key);
-  toast(on ? 'Marquage de la série…' : 'Série marquée comme non vue…');
+  toast(on ? tr('Marquage de la série…') : tr('Série marquée comme non vue…'));
   try {
     const m = await fetchFull(type, id);
     const { markSeries } = await import('./watched.js');
     await markSeries(m, on);
   } catch (err) {
     console.error('[laststream] série ' + key + ' : ' + (on ? 'marquage' : 'retrait') + ' impossible', err);
-    toastError('Impossible de marquer la série : ' + reasonOf(err), err, 'vus');
+    toastError(tr('Impossible de marquer la série : {err}', { err: reasonOf(err) }), err, 'vus');
   }
 }
 
@@ -206,7 +207,7 @@ const whenLoaded = (v, fn) => (v && typeof v.then === 'function' ? v.then(fn) : 
 /** Watch party : refusée pour un titre pas encore sorti ou au cinéma, comme le bouton de la fiche. `key` : titre du menu d'une affiche
  * ou d'une émission (sans fiche ouverte) ; sa série est « vue » chargée avant la fenêtre, sans quoi l'épisode proposé serait le premier. */
 function partyFor(el, m, key = null) {
-  if (isFuture(m.releaseFR) || m.cinemaSince) { toast('Watch party indisponible pour ce titre'); return; }
+  if (isFuture(m.releaseFR) || m.cinemaSince) { toast(tr('Watch party indisponible pour ce titre')); return; }
   const seen = key && key.startsWith('tv:') && userStore.loadWatched ? Promise.resolve(userStore.loadWatched(key)).catch(() => undefined) : null;
   whenLoaded(seen, () => openPartyDialog(el, m));
 }
@@ -214,8 +215,8 @@ function partyFor(el, m, key = null) {
 /** « Partager » (compte connecté, profil adulte) et « Proposer une watch party » (compte connecté). `load()` rend la fiche complète, ou une promesse de celle-ci ; l'action reste synchrone quand la fiche est déjà là. */
 function socialItems(el, load, key = null) {
   const items = [];
-  if (socialAvailable()) items.push({ id: 'share', label: 'Partager', icon: ICON.share, run: () => whenLoaded(load(), (m) => openShareDialog({ media: shareMedia(m) })) });
-  if (isServerMode()) items.push({ id: 'party', label: 'Proposer une watch party', icon: ICON.users, run: () => whenLoaded(load(), (m) => partyFor(el, m, key)) });
+  if (socialAvailable()) items.push({ id: 'share', label: tr('Partager'), icon: ICON.share, run: () => whenLoaded(load(), (m) => openShareDialog({ media: shareMedia(m) })) });
+  if (isServerMode()) items.push({ id: 'party', label: tr('Proposer une watch party'), icon: ICON.users, run: () => whenLoaded(load(), (m) => partyFor(el, m, key)) });
   return items;
 }
 
@@ -224,36 +225,36 @@ function titleItems(t) {
   const [type, id] = t.key.split(':');
   const resume = resumeEntry(t.key);
   const items = [];
-  if (!it.cinema) items.push({ id: 'play', label: resume || (type === 'tv' && userStore.watchedEpisodes(t.key).length) ? 'Reprendre' : 'Lecture', icon: ICON.play, run: () => playTitle(t.key, t.el, false) });
-  items.push({ id: 'info', label: 'Plus d’infos', icon: ICON.info, run: () => go('#/' + type + '/' + id, t.el) });
+  if (!it.cinema) items.push({ id: 'play', label: resume || (type === 'tv' && userStore.watchedEpisodes(t.key).length) ? tr('Reprendre') : tr('Lecture'), icon: ICON.play, run: () => playTitle(t.key, t.el, false) });
+  items.push({ id: 'info', label: tr('Plus d’infos'), icon: ICON.info, run: () => go('#/' + type + '/' + id, t.el) });
   items.push({
-    id: 'trailer', label: 'Bande-annonce', icon: ICON.film,
-    run: async () => { const x = await named(it); const d = await getDetail(x); if (d && d.trailer) openTrailer(x, t.el); else toast('Pas de bande-annonce pour ce titre'); },
+    id: 'trailer', label: tr('Bande-annonce'), icon: ICON.film,
+    run: async () => { const x = await named(it); const d = await getDetail(x); if (d && d.trailer) openTrailer(x, t.el); else toast(tr('Pas de bande-annonce pour ce titre')); },
   });
   const on = inLib(t.key);
   items.push({
-    id: 'lib', label: on ? 'Retirer de ma bibliothèque' : 'Ajouter à ma bibliothèque', icon: on ? ICON.check : ICON.list,
-    run: () => withNamed(it, (x) => { const now = toggleLib({ type, id: x.id, name: x.name, posterPath: x.posterPath }); toast(now ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque'); renderLibrary(); }),
+    id: 'lib', label: on ? tr('Retirer de ma bibliothèque') : tr('Ajouter à ma bibliothèque'), icon: on ? ICON.check : ICON.list,
+    run: () => withNamed(it, (x) => { const now = toggleLib({ type, id: x.id, name: x.name, posterPath: x.posterPath }); toast(now ? tr('Ajouté à ta bibliothèque') : tr('Retiré de ta bibliothèque')); renderLibrary(); }),
   });
   if (type === 'movie' && !it.cinema && canDownload()) {
-    items.push({ id: 'download', label: 'Télécharger', icon: ICON.download, run: () => startDownload({ key: t.key, type: 'movie', id: String(id), name: it.name }, t.el) });
+    items.push({ id: 'download', label: tr('Télécharger'), icon: ICON.download, run: () => startDownload({ key: t.key, type: 'movie', id: String(id), name: it.name }, t.el) });
   }
   socialItems(t.el, () => fetchFull(type, id), t.key).forEach((x) => items.push(x));
   extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   if (type === 'movie') {
     const seen = userStore.isWatched(t.key);
-    items.push({ id: 'seen', label: seen ? 'Marquer comme non vu' : 'Marquer comme vu', icon: ICON.check, run: () => mark(t.key, null, !seen) });
+    items.push({ id: 'seen', label: seen ? tr('Marquer comme non vu') : tr('Marquer comme vu'), icon: ICON.check, run: () => mark(t.key, null, !seen) });
   } else {
     const any = !!userStore.watchedTitle(t.key);
-    items.push({ id: 'seen', label: any ? 'Marquer la série comme non vue' : 'Marquer la série comme vue', icon: ICON.check, run: () => toggleSeriesWatched(t.key) });
+    items.push({ id: 'seen', label: any ? tr('Marquer la série comme non vue') : tr('Marquer la série comme vue'), icon: ICON.check, run: () => toggleSeriesWatched(t.key) });
   }
   if (!isKidProfile()) { // profil enfant : pas de « Ne plus proposer » (accueil déjà filtré)
     const hidden = isHiddenKey(t.key);
-    items.push({ id: 'hide', label: hidden ? 'Réafficher sur l’accueil' : 'Ne plus proposer', icon: ICON.close, run: async () => { const x = await named(it); return toggleHidden(t.key, x.name, x.posterPath); } });
+    items.push({ id: 'hide', label: hidden ? tr('Réafficher sur l’accueil') : tr('Ne plus proposer'), icon: ICON.close, run: async () => { const x = await named(it); return toggleHidden(t.key, x.name, x.posterPath); } });
   }
   if (t.inContinue || resume) {
-    items.push({ id: 'restart', label: 'Recommencer depuis le début', icon: ICON.back, run: () => playTitle(t.key, t.el, true) });
-    items.push({ id: 'remove', label: 'Retirer de « Reprendre la lecture »', icon: ICON.close, run: () => removeFromContinue(t.key) });
+    items.push({ id: 'restart', label: tr('Recommencer depuis le début'), icon: ICON.back, run: () => playTitle(t.key, t.el, true) });
+    items.push({ id: 'remove', label: tr('Retirer de « Reprendre la lecture »'), icon: ICON.close, run: () => removeFromContinue(t.key) });
   }
   return items;
 }
@@ -261,7 +262,7 @@ function titleItems(t) {
 /** Émission (guide, « Émissions ») : « Plus d’infos » vers sa page, partage et watch party, suivre et noter. Pas de « vu » ni de bibliothèque : une émission n’est pas une série du catalogue. */
 function showItems(t) {
   const id = t.key.split(':')[1];
-  const items = [{ id: 'info', label: 'Plus d’infos', icon: ICON.info, run: () => go('#/emission/' + id, t.el) }];
+  const items = [{ id: 'info', label: tr('Plus d’infos'), icon: ICON.info, run: () => go('#/emission/' + id, t.el) }];
   socialItems(t.el, () => fetchFull('tv', id), t.key).forEach((x) => items.push(x));
   extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   return items;
@@ -272,9 +273,9 @@ async function copyEpisodeLink(m, season, episode) {
   const url = shareBase() + '/' + ficheHash('tv', m.id, { season, episode });
   try {
     await navigator.clipboard.writeText(url);
-    toast('Lien copié');
+    toast(tr('Lien copié'));
   } catch {
-    toast('Copie impossible : ' + url, { ms: 8000 });
+    toast(tr('Copie impossible : {url}', { url }), { ms: 8000 });
   }
 }
 
@@ -282,30 +283,30 @@ function episodeItems(t) {
   const m = t.model;
   const seen = userStore.isWatched(m.key, t.season, t.episode);
   const dl = canDownload()
-    ? [{ id: 'download', label: 'Télécharger', icon: ICON.download, run: () => startDownload({ key: m.key, type: 'tv', id: String(m.id), name: m.name, season: t.season, episode: t.episode }, t.el) }]
+    ? [{ id: 'download', label: tr('Télécharger'), icon: ICON.download, run: () => startDownload({ key: m.key, type: 'tv', id: String(m.id), name: m.name, season: t.season, episode: t.episode }, t.el) }]
     : [];
   return [
-    { id: 'play', label: 'Lire', icon: ICON.play, run: () => openSources({ type: 'tv', id: String(m.id), name: m.name, season: t.season, episode: t.episode, key: m.key }, t.el) },
+    { id: 'play', label: tr('Lire'), icon: ICON.play, run: () => openSources({ type: 'tv', id: String(m.id), name: m.name, season: t.season, episode: t.episode, key: m.key }, t.el) },
     ...dl,
-    { id: 'seen', label: seen ? 'Marquer comme non vu' : 'Marquer comme vu', icon: ICON.check, run: () => mark(m.key, [{ season: t.season, episode: t.episode }], !seen) },
-    { id: 'upto', label: 'Vu jusqu’ici', icon: ICON.check, run: () => { const b = t.el.querySelector('[data-upto]'); if (b) b.click(); } },
-    { id: 'copy', label: 'Copier le lien', icon: ICON.link, run: () => copyEpisodeLink(m, t.season, t.episode) },
+    { id: 'seen', label: seen ? tr('Marquer comme non vu') : tr('Marquer comme vu'), icon: ICON.check, run: () => mark(m.key, [{ season: t.season, episode: t.episode }], !seen) },
+    { id: 'upto', label: tr('Vu jusqu’ici'), icon: ICON.check, run: () => { const b = t.el.querySelector('[data-upto]'); if (b) b.click(); } },
+    { id: 'copy', label: tr('Copier le lien'), icon: ICON.link, run: () => copyEpisodeLink(m, t.season, t.episode) },
   ];
 }
 
 function channelItems(t) {
   const fav = getFavs().includes(t.id);
   return [
-    { id: 'watch', label: 'Regarder', icon: ICON.play, run: () => { const b = t.el.matches('[data-tvplay]') ? t.el : t.el.querySelector('[data-tvplay]'); if (b) b.click(); } },
+    { id: 'watch', label: tr('Regarder'), icon: ICON.play, run: () => { const b = t.el.matches('[data-tvplay]') ? t.el : t.el.querySelector('[data-tvplay]'); if (b) b.click(); } },
     {
-      id: 'fav', label: fav ? 'Retirer des favoris' : 'Ajouter aux favoris', icon: fav ? ICON.starOn : ICON.star,
-      run: () => { const b = document.querySelector('[data-tvfav="' + t.id.replace(/"/g, '\\"') + '"]'); if (b) b.click(); else toast('Ouvre le guide TV pour gérer tes favoris'); },
+      id: 'fav', label: fav ? tr('Retirer des favoris') : tr('Ajouter aux favoris'), icon: fav ? ICON.starOn : ICON.star,
+      run: () => { const b = document.querySelector('[data-tvfav="' + t.id.replace(/"/g, '\\"') + '"]'); if (b) b.click(); else toast(tr('Ouvre le guide TV pour gérer tes favoris')); },
     },
   ];
 }
 
 function personItems(t) {
-  const items = [{ id: 'person', label: 'Voir la fiche', icon: ICON.info, run: () => go('#/person/' + t.id, t.el) }];
+  const items = [{ id: 'person', label: tr('Voir la fiche'), icon: ICON.info, run: () => go('#/person/' + t.id, t.el) }];
   extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   return items;
 }
@@ -317,29 +318,29 @@ function ficheItems(t) {
   if (!m) return [];
   const items = [];
   // Groupes séparés par un filet : le titre, son téléchargement, le social, l'accueil (LAST-500).
-  if (m.trailer) items.push({ id: 'trailer', label: 'Bande-annonce', icon: ICON.film, run: () => openVideo(m.trailer, 'Bande-annonce', t.el, !!m.trailerVO) });
+  if (m.trailer) items.push({ id: 'trailer', label: tr('Bande-annonce'), icon: ICON.film, run: () => openVideo(m.trailer, tr('Bande-annonce'), t.el, !!m.trailerVO) });
   const on = inLib(m.key);
   items.push({
-    id: 'lib', label: on ? 'Retirer de ma bibliothèque' : 'Ajouter à ma bibliothèque', icon: on ? ICON.check : ICON.list,
-    run: () => { const now = toggleLib({ type: m.type, id: Number(m.id), name: m.name, posterPath: m.posterPath }); toast(now ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque'); renderLibrary(); },
+    id: 'lib', label: on ? tr('Retirer de ma bibliothèque') : tr('Ajouter à ma bibliothèque'), icon: on ? ICON.check : ICON.list,
+    run: () => { const now = toggleLib({ type: m.type, id: Number(m.id), name: m.name, posterPath: m.posterPath }); toast(now ? tr('Ajouté à ta bibliothèque') : tr('Retiré de ta bibliothèque')); renderLibrary(); },
   });
   if (m.type === 'movie') {
     const seen = userStore.isWatched(m.key);
-    items.push({ id: 'seen', label: seen ? 'Marquer comme non vu' : 'Marquer comme vu', icon: ICON.check, run: () => mark(m.key, null, !seen) });
+    items.push({ id: 'seen', label: seen ? tr('Marquer comme non vu') : tr('Marquer comme vu'), icon: ICON.check, run: () => mark(m.key, null, !seen) });
   }
   // Sur demande seulement : aucune vérification automatique des sources d'un film au cinéma.
-  if (m.cinemaSince) items.push({ id: 'sources', label: 'Voir les sources', icon: ICON.list, run: () => openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, t.el) });
+  if (m.cinemaSince) items.push({ id: 'sources', label: tr('Voir les sources'), icon: ICON.list, run: () => openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, t.el) });
   // Adulte connecté, titre sorti : « Regarder avec… » (feuille chargée au clic, hors du premier chargement) à la place de la watch party simple.
   const withSheet = partyKind(m) === 'with';
   const social = socialItems(t.el, () => m).map((x) => (x.id !== 'party' || !withSheet ? x
-    : { id: 'party', label: 'Regarder avec…', icon: ICON.users, run: () => import('./watchWith.js').then((w) => { if (!w.openWatchWith(t.el, m)) openPartyDialog(t.el); }, () => openPartyDialog(t.el)) }));
+    : { id: 'party', label: tr('Regarder avec…'), icon: ICON.users, run: () => import('./watchWith.js').then((w) => { if (!w.openWatchWith(t.el, m)) openPartyDialog(t.el); }, () => openPartyDialog(t.el)) }));
   extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   items.forEach((x) => { x.group = 'title'; });
   ficheDownloadMenuItems(m, m.seasons ? nextToWatch(m) : null, t.el).forEach((x) => items.push(x));
   social.forEach((x) => items.push({ ...x, group: 'social' }));
   if (!isKidProfile()) {
     const hidden = isHiddenKey(m.key);
-    items.push({ id: 'hide', group: 'home', label: hidden ? 'Proposer à nouveau sur l’accueil' : 'Ne plus proposer sur l’accueil', icon: ICON.close, run: () => toggleHidden(m.key, m.name, m.posterPath) });
+    items.push({ id: 'hide', group: 'home', label: hidden ? tr('Proposer à nouveau sur l’accueil') : tr('Ne plus proposer sur l’accueil'), icon: ICON.close, run: () => toggleHidden(m.key, m.name, m.posterPath) });
   }
   return items;
 }
@@ -378,12 +379,12 @@ export function openCtx(t, x, y) {
     items.map((it, i) => (i && it.group && items[i - 1].group && it.group !== items[i - 1].group ? '<div class="ctx-sep" role="separator"></div>' : '') +
       '<button type="button" role="menuitem" data-ctx="' + esc(it.id) + '">' + (it.icon || '') + '<span>' + esc(it.label) + '</span></button>').join('');
   if ((t.kind === 'title' || t.kind === 'episode') && takeHint()) {
-    menu.insertAdjacentHTML('beforeend', '<p class="ctx-hint" aria-hidden="true">Astuce : clic droit, appui long ou « … » sur une affiche ouvre ce menu.</p>');
+    menu.insertAdjacentHTML('beforeend', '<p class="ctx-hint" aria-hidden="true">' + tr('Astuce : clic droit, appui long ou « … » sur une affiche ouvre ce menu.') + '</p>');
   }
   menu._opener = t.el;
   if (sheet) {
     menu.classList.add('is-sheet');
-    menu.setAttribute('aria-label', 'Actions : ' + (t.model.name || ''));
+    menu.setAttribute('aria-label', tr('Actions :') + ' ' + (t.model.name || ''));
     const scrim = document.createElement('div');
     scrim.className = 'ctx-scrim';
     scrim.setAttribute('aria-hidden', 'true');
@@ -409,7 +410,7 @@ export function openCtx(t, x, y) {
     closeCtx(false);
     if (item) Promise.resolve(runOnce(ctxLockKey(t, item.id), () => item.run(), { cooldown: LOCKED_ITEMS.has(item.id) ? TOGGLE_COOLDOWN_MS : 0 })).catch((err) => {
       console.error('[laststream] menu contextuel : « ' + item.id + ' » impossible', err);
-      toast('Action impossible : ' + reasonOf(err));
+      toast(tr('Action impossible : {err}', { err: reasonOf(err) }));
     });
   });
   menu.addEventListener('keydown', (e) => {

@@ -1,5 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { feedbackAvailable, noteError } from '../data/feedback';
+import { t } from '../i18n';
 
 
 let toastTimer = null;
@@ -37,5 +38,5 @@ export function toastError(msg, err, where = 'app', opts) {
   const detail = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
   const noted = noteError({ where, title: msg, message: detail, error: err });
   if (!feedbackAvailable()) { toast(msg, opts); return; }
-  toast(msg, { ms: 6000, ...opts, action: { label: 'Signaler', run: () => { void import('./feedback.js').then((m) => m.openFeedback({ error: noted })); } } });
+  toast(msg, { ms: 6000, ...opts, action: { label: t('Signaler'), run: () => { void import('./feedback.js').then((m) => m.openFeedback({ error: noted })); } } });
 }

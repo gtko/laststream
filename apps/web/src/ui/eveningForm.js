@@ -14,10 +14,11 @@ import { toast } from './dom.js';
 import { openSheet } from './sheet.js';
 import { avatarHTML } from './socialFmt.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 
-const REPEATS = [['once', 'Une fois'], ['weekly', 'Chaque semaine'], ['biweekly', 'Toutes les 2 semaines']];
+const REPEATS = [['once', tr('Une fois')], ['weekly', tr('Chaque semaine')], ['biweekly', tr('Toutes les 2 semaines')]];
 
 /** Personnes invitables : mes amis acceptés et mon foyer (sans doublon, `household` vrai pour le foyer), puis les invités actuels qui ne sont plus dans la liste (à retirer). */
 function candidates(evening) {
@@ -32,13 +33,13 @@ function candidates(evening) {
 }
 
 function friendsHTML(list, picked) {
-  if (!list.length) return '<p class="evf-empty">Personne à inviter pour l’instant. Ajoute des amis depuis la page Amis : tu pourras aussi inviter plus tard.</p>';
-  return '<input class="evf-input evf-search" type="search" data-evf-search autocomplete="off" placeholder="Chercher un ami ou un proche" aria-label="Chercher un ami ou un proche à inviter">' +
+  if (!list.length) return '<p class="evf-empty">' + tr('Personne à inviter pour l’instant. Ajoute des amis depuis la page Amis : tu pourras aussi inviter plus tard.') + '</p>';
+  return '<input class="evf-input evf-search" type="search" data-evf-search autocomplete="off" placeholder="' + tr('Chercher un ami ou un proche') + '" aria-label="' + tr('Chercher un ami ou un proche à inviter') + '">' +
     '<ul class="evf-friends">' + list.map((f) => {
       const name = friendName(f);
-      return '<li data-evf-name="' + esc(norm(name)) + '"><label class="evf-friend">' + avatarHTML(f, 'ss-av-m') + '<span class="evf-fn">' + esc(name) + '</span>' + (f.household ? '<span class="evf-tag">Foyer</span>' : '') +
-        '<input type="checkbox" name="guest" value="' + esc(f.pid) + '"' + (picked.has(f.pid) ? ' checked' : '') + ' aria-label="Inviter ' + esc(name) + (f.household ? ' (foyer)' : '') + '"><span class="evf-chk" aria-hidden="true"></span></label></li>';
-    }).join('') + '</ul><p class="evf-empty" data-evf-nomatch hidden>Personne ne correspond.</p>';
+      return '<li data-evf-name="' + esc(norm(name)) + '"><label class="evf-friend">' + avatarHTML(f, 'ss-av-m') + '<span class="evf-fn">' + esc(name) + '</span>' + (f.household ? '<span class="evf-tag">' + tr('Foyer') + '</span>' : '') +
+        '<input type="checkbox" name="guest" value="' + esc(f.pid) + '"' + (picked.has(f.pid) ? ' checked' : '') + ' aria-label="' + tr('Inviter {name}', { name: esc(name) }) + (f.household ? ' (foyer)' : '') + '"><span class="evf-chk" aria-hidden="true"></span></label></li>';
+    }).join('') + '</ul><p class="evf-empty" data-evf-nomatch hidden>' + tr('Personne ne correspond.') + '</p>';
 }
 
 const field = (id, label, control, extra = '') =>
@@ -46,24 +47,24 @@ const field = (id, label, control, extra = '') =>
 
 function formHTML({ edit, title, start, picked, list }) {
   const scope = edit && (edit.recurrence || edit.seriesId)
-    ? '<fieldset class="evf-scope"><legend class="evf-lb">Appliquer à</legend>' +
-      '<label><input type="radio" name="scope" value="occurrence" checked> Cette soirée seulement</label>' +
-      '<label><input type="radio" name="scope" value="series"> Toute la série</label>' +
-      '<p class="evf-hint">Le titre et l’horaire suivent ce choix ; les invités ajoutés ou retirés ne concernent que cette soirée.</p></fieldset>' : '';
+    ? '<fieldset class="evf-scope"><legend class="evf-lb">' + tr('Appliquer à') + '</legend>' +
+      '<label><input type="radio" name="scope" value="occurrence" checked> ' + tr('Cette soirée seulement') + '</label>' +
+      '<label><input type="radio" name="scope" value="series"> ' + tr('Toute la série') + '</label>' +
+      '<p class="evf-hint">' + tr('Le titre et l’horaire suivent ce choix ; les invités ajoutés ou retirés ne concernent que cette soirée.') + '</p></fieldset>' : '';
   const repeat = edit ? '' :
-    field('repeat', 'Répéter', '<select class="evf-input" id="evf-repeat" name="repeat">' + REPEATS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('') + '</select>') +
-    '<div data-evf-until hidden>' + field('until', 'Fin de la série (facultatif)', '<input class="evf-input" id="evf-until" name="until" type="date" min="' + esc(start.date) + '">') + '</div>';
+    field('repeat', tr('Répéter'), '<select class="evf-input" id="evf-repeat" name="repeat">' + REPEATS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('') + '</select>') +
+    '<div data-evf-until hidden>' + field('until', tr('Fin de la série (facultatif)'), '<input class="evf-input" id="evf-until" name="until" type="date" min="' + esc(start.date) + '">') + '</div>';
   return '<form class="evf" data-evf novalidate>' +
-    field('title', 'Titre', '<input class="evf-input" id="evf-title" name="title" type="text" required autocomplete="off" value="' + esc(title) + '" placeholder="Ex. Soirée Dune 2" aria-describedby="evf-hint-title evf-err-title">',
-      '<p class="evf-hint" id="evf-hint-title">' + TITLE_MAX + ' caractères au maximum.</p>') +
-    '<div class="evf-row">' + field('date', 'Date', '<input class="evf-input" id="evf-date" name="date" type="date" value="' + esc(start.date) + '" min="' + esc(toDateInput(Date.now())) + '" aria-describedby="evf-err-when">') +
-    field('time', 'Heure', '<input class="evf-input" id="evf-time" name="time" type="time" value="' + esc(start.time) + '" aria-describedby="evf-err-when">') + '</div>' +
+    field('title', tr('Titre'), '<input class="evf-input" id="evf-title" name="title" type="text" required autocomplete="off" value="' + esc(title) + '" placeholder="' + tr('Ex. Soirée Dune 2') + '" aria-describedby="evf-hint-title evf-err-title">',
+      '<p class="evf-hint" id="evf-hint-title">' + tr('{TITLE_MAX} caractères au maximum.', { TITLE_MAX }) + '</p>') +
+    '<div class="evf-row">' + field('date', tr('Date'), '<input class="evf-input" id="evf-date" name="date" type="date" value="' + esc(start.date) + '" min="' + esc(toDateInput(Date.now())) + '" aria-describedby="evf-err-when">') +
+    field('time', tr('Heure'), '<input class="evf-input" id="evf-time" name="time" type="time" value="' + esc(start.time) + '" aria-describedby="evf-err-when">') + '</div>' +
     '<p class="evf-err" id="evf-err-when" hidden></p>' + scope + repeat +
-    '<fieldset class="evf-guests" aria-describedby="evf-err-guests"><legend class="evf-lb">Invités <span class="evf-count" data-evf-count aria-live="polite"></span></legend>' + friendsHTML(list, picked) + '</fieldset>' +
+    '<fieldset class="evf-guests" aria-describedby="evf-err-guests"><legend class="evf-lb">' + tr('Invités') + ' <span class="evf-count" data-evf-count aria-live="polite"></span></legend>' + friendsHTML(list, picked) + '</fieldset>' +
     '<p class="evf-err" id="evf-err-guests" hidden></p>' +
     '<p class="evf-err evf-server" data-evf-server role="alert" hidden></p>' +
-    '<div class="evf-foot"><button type="button" class="btn btn-ghost evf-btn" data-sheet-close>Annuler</button>' +
-    '<button type="submit" class="btn btn-primary evf-btn" data-evf-submit>' + (edit ? 'Enregistrer' : 'Planifier') + '</button></div></form>';
+    '<div class="evf-foot"><button type="button" class="btn btn-ghost evf-btn" data-sheet-close>' + tr('Annuler') + '</button>' +
+    '<button type="submit" class="btn btn-primary evf-btn" data-evf-submit>' + (edit ? tr('Enregistrer') : tr('Planifier')) + '</button></div></form>';
 }
 
 /**
@@ -73,7 +74,7 @@ function formHTML({ edit, title, start, picked, list }) {
  */
 export function openEveningForm(o = {}) {
   if (!eveningsAvailable()) {
-    toast('Connecte-toi avec un profil adulte pour planifier une soirée.');
+    toast(tr('Connecte-toi avec un profil adulte pour planifier une soirée.'));
     return null;
   }
   const edit = o.evening || null;
@@ -83,7 +84,7 @@ export function openEveningForm(o = {}) {
   const list = candidates(edit);
   let busy = false;
   const sheet = openSheet({
-    title: edit ? 'Modifier la soirée' : 'Planifier une soirée',
+    title: edit ? tr('Modifier la soirée') : tr('Planifier une soirée'),
     cls: 'evf-sheet',
     opener: o.opener,
     locked: () => busy,
@@ -181,7 +182,7 @@ export function openEveningForm(o = {}) {
       const done = edit ? await saveEdit(edit, input, whenChanged) : await commitEvening(() => createEvening(buildCreateBody(input, localTimeZone())));
       if (sheet.closed) return;
       if (!done || (auth.profile ? auth.profile.id : '') !== pid0) { sheet.close(true); return; }
-      toast(edit ? 'Soirée modifiée.' : 'Soirée planifiée.');
+      toast(edit ? tr('Soirée modifiée.') : tr('Soirée planifiée.'));
       sheet.close();
     } catch (err) {
       if (sheet.closed) return;

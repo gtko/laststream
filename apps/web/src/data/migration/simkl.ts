@@ -6,6 +6,7 @@ import {
   hasRef, imdbOf, isObject, num, posInt, str, timeOf, yearOf,
   type EpisodeRef, type MigrationBundle, type MigrationItem, type TitleRef,
 } from './types';
+import { t as tr } from '../../i18n';
 
 type Kind = 'movie' | 'show' | 'anime';
 
@@ -38,9 +39,9 @@ function entryItems(kind: Kind, status: string, media: { ids: TitleRef; title: s
   const anime = kind === 'anime';
   const key = 'simkl:' + (media.ids.tmdb ?? media.ids.imdb ?? media.ids.tvdb ?? media.title) + ':' + type;
   const base = { type, ref: media.ids, title: media.title, ...(media.year ? { year: media.year } : {}), at, ...(anime ? { anime } : {}) } as const;
-  if (!hasRef(media.ids)) return [{ ...base, uid: key + ':library', action: 'library', skipReason: 'Aucun identifiant TMDB, IMDb ni TVDB dans l’export' }];
+  if (!hasRef(media.ids)) return [{ ...base, uid: key + ':library', action: 'library', skipReason: tr('Aucun identifiant TMDB, IMDb ni TVDB dans l’export') }];
   const s = status.toLowerCase();
-  if (s === 'dropped') return [{ ...base, uid: key + ':library', action: 'library', skipReason: 'Marqué « abandonné » sur Simkl' }];
+  if (s === 'dropped') return [{ ...base, uid: key + ':library', action: 'library', skipReason: tr('Marqué « abandonné » sur Simkl') }];
   if (s === 'plantowatch' || s === 'plan to watch') return [{ ...base, uid: key + ':watchlist', action: 'list', list: 'watchlist' }];
   const out: MigrationItem[] = [{ ...base, uid: key + ':library', action: 'library' }];
   if (type === 'movie' && s === 'completed') out.push({ ...base, uid: key + ':watched', action: 'watched' });
@@ -58,7 +59,7 @@ function parseJson(root: Record<string, unknown>): MigrationItem[] {
       const media = isObject(e.movie) ? e.movie : isObject(e.show) ? e.show : isObject(e.anime) ? e.anime : {};
       const k: Kind = kind === 'movies' ? 'movie' : kind === 'shows' ? 'show' : 'anime';
       out.push(...entryItems(k, str(e.status), {
-        ids: idsOf(media.ids), title: str(media.title) || 'Sans titre', year: yearOf(media.year),
+        ids: idsOf(media.ids), title: str(media.title) || tr('Sans titre'), year: yearOf(media.year),
         animeMovie: k === 'anime' && str(e.anime_type).toLowerCase() === 'movie',
       }, timeOf(e.last_watched_at) || timeOf(e.added_to_watchlist_at), episodesOf(e.seasons)));
     }
@@ -119,7 +120,7 @@ function parseCsvItems(text: string): MigrationItem[] {
     const t = cell(r, 'type').toLowerCase();
     const kind: Kind = t.includes('anime') ? 'anime' : t.includes('movie') || t.includes('film') ? 'movie' : 'show';
     const ids = idsOf({ imdb: cell(r, 'imdb'), tmdb: cell(r, 'tmdb'), tvdb: cell(r, 'tvdb') });
-    const title = cell(r, 'title') || 'Sans titre';
+    const title = cell(r, 'title') || tr('Sans titre');
     const key = kind + ':' + (ids.tmdb ?? ids.imdb ?? ids.tvdb ?? title);
     const g = groups.get(key) ?? { kind, status: cell(r, 'status') || 'completed', ids, title, year: yearOf(cell(r, 'year')), at: 0, episodes: [] };
     g.at = Math.max(g.at, timeOf(cell(r, 'at')));
@@ -143,5 +144,5 @@ export function parseSimklExport(text: string): MigrationBundle {
   } else {
     items = parseCsvItems(text);
   }
-  return { source: 'simkl', items, addons: [], notes: items.length ? [] : ['Aucun film, série ni anime Simkl reconnu dans ce fichier.'] };
+  return { source: 'simkl', items, addons: [], notes: items.length ? [] : [tr('Aucun film, série ni anime Simkl reconnu dans ce fichier.')] };
 }

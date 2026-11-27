@@ -1,4 +1,5 @@
 import { capsFromMask, type DecodeCap } from '../relay/protocol';
+import { tn } from '../i18n';
 
 /* Compatibilité des invités d'une watch party avec le fichier que lit l'hôte. Les invités décodent la vidéo et le son
  * que l'hôte leur relaie : une piste que le navigateur d'un invité ne sait pas décoder rend la vidéo illisible (vidéo)
@@ -109,10 +110,6 @@ export function verdictOf(file: FileCodecs, caps: readonly DecodeCap[]): GuestVe
   return 'ok';
 }
 
-function plural(n: number, one: string, many: string): string {
-  return n === 1 ? one : many;
-}
-
 /**
  * Avertissement pour l'hôte, ou null si tous les invités qui ont annoncé leurs capacités peuvent tout lire.
  * Exemples : « 1 invité n’aura pas le son (DTS) », « 1 invité ne peut pas lire cette vidéo (HEVC) ».
@@ -129,11 +126,11 @@ export function compatWarning(file: FileCodecs, guests: readonly GuestStatus[]):
   const parts: string[] = [];
   if (unplayable > 0 && file.video) {
     parts.push(
-      unplayable + plural(unplayable, ' invité ne peut', ' invités ne peuvent') + ' pas lire cette vidéo (' + CODEC_LABEL[file.video] + ')',
+      tn(unplayable, '{n} invité ne peut pas lire cette vidéo ({codec})', '{n} invités ne peuvent pas lire cette vidéo ({codec})', { codec: CODEC_LABEL[file.video] }),
     );
   }
   if (noAudio > 0 && file.audio) {
-    parts.push(noAudio + plural(noAudio, ' invité n’aura', ' invités n’auront') + ' pas le son (' + CODEC_LABEL[file.audio] + ')');
+    parts.push(tn(noAudio, '{n} invité n’aura pas le son ({codec})', '{n} invités n’auront pas le son ({codec})', { codec: CODEC_LABEL[file.audio] }));
   }
   return parts.length ? parts.join(' · ') : null;
 }
