@@ -336,7 +336,7 @@ export function tabbar(current = 'home') {
     const nav = isHome ? (on ? ' data-noop' : ' data-go') : tabData(label);
     return '<a href="' + tabHref(label) + '"' + nav + ' class="tab' + (on ? ' is-current' : '') + '"' + (on ? ' aria-current="page"' : '') + '>' +
       (icon ? ICON[icon] : '<span class="avatar avatar-tab" aria-hidden="true">' + esc(initialOf()) + '</span>') +
-      '<span class="tab-label">' + t(label) + '</span></a>';
+      '<span class="tab-label">' + t(label) /* i18n: N_ (TABS) */ + '</span></a>';
   }).join('');
   return '<nav class="tabbar" aria-label="' + t('Navigation principale') + '">' + items + '</nav>';
 }

@@ -2,7 +2,8 @@
 /*
  * Catalogues de traduction de l'interface (LAST-1658). Voir src/i18n/index.ts et docs/i18n.md.
  *
- *   node scripts/i18n.mjs extract          relève les textes de src/ (appels t, tc, tn à argument littéral) et de index.html,
+ *   node scripts/i18n.mjs extract          relève les textes de src/ (appels t, tc, tn, N_ à argument littéral, alias compris)
+ *                                          et de index.html,
  *                                          écrit src/i18n/messages.json (clé → fichiers) ; signale les appels non littéraux
  *   node scripts/i18n.mjs check [codes…]   compare chaque catalogue src/i18n/locales/<code>.json aux clés relevées :
  *                                          manquantes, obsolètes, {paramètres} différents, balises HTML ajoutées.
@@ -16,7 +17,7 @@
  */
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import ts from 'typescript';
+import { parseSync } from 'oxc-parser';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const SRC = join(ROOT, 'src');
@@ -35,7 +36,37 @@ const walk = (dir) => readdirSync(dir).flatMap((f) => {
   return /\.(js|ts)$/.test(f) && !/\.(test|spec)\.[jt]s$/.test(f) && !f.endsWith('.d.ts') ? [p] : [];
 });
 
-const literal = (node) => (node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) ? node.text : null);
+/** Texte d'un littéral chaîne ou gabarit sans substitution, sinon null. */
+const literal = (n) => {
+  if (!n) return null;
+  if (n.type === 'Literal' && typeof n.value === 'string') return n.value;
+  if (n.type === 'TemplateLiteral' && n.expressions.length === 0) return n.quasis[0].value.cooked;
+  return null;
+};
+
+/** Noms locaux de t, tc, tn (et du marqueur N_, relevé comme t) importés depuis le module i18n (alias compris : `import { t as tr }`). */
+function i18nImports(program) {
+  const names = new Map();
+  for (const st of program.body) {
+    if (st.type !== 'ImportDeclaration' || !/(^|\/)i18n(\/index(\.ts)?)?$/.test(st.source.value)) continue;
+    for (const sp of st.specifiers) {
+      if (sp.type === 'ImportSpecifier' && ['t', 'tc', 'tn', 'N_'].includes(sp.imported.name)) names.set(sp.local.name, sp.imported.name === 'N_' ? 't' : sp.imported.name);
+    }
+  }
+  return names;
+}
+
+/** Parcours générique de l'arbre ESTree. */
+function walkAst(node, fn) {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) { for (const n of node) walkAst(n, fn); return; }
+  if (typeof node.type === 'string') fn(node);
+  for (const k in node) {
+    if (k === 'start' || k === 'end' || k === 'type') continue;
+    const v = node[k];
+    if (v && typeof v === 'object') walkAst(v, fn);
+  }
+}
 
 function extract() {
   const keys = new Map();
@@ -47,29 +78,34 @@ function extract() {
   for (const file of walk(SRC)) {
     const rel = relative(ROOT, file);
     const text = readFileSync(file, 'utf8');
-    if (!/\b(t|tc|tn)\(/.test(text)) continue;
-    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS);
-    const visit = (node) => {
-      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && ['t', 'tc', 'tn'].includes(node.expression.text)) {
-        const name = node.expression.text;
-        const a = node.arguments;
-        const where = rel + ':' + (sf.getLineAndCharacterOfPosition(node.getStart()).line + 1);
-        if (name === 't' && a.length >= 1) {
-          const k = literal(a[0]);
-          if (k !== null) add(k, rel); else warnings.push(where + ' : t() sans texte littéral');
-        } else if (name === 'tc' && a.length >= 2) {
-          const c = literal(a[0]);
-          const k = literal(a[1]);
-          if (c !== null && k !== null) add(c + CTX + k, rel); else warnings.push(where + ' : tc() sans texte littéral');
-        } else if (name === 'tn' && a.length >= 3) {
-          const one = literal(a[1]);
-          const other = literal(a[2]);
-          if (one !== null && other !== null) add(one + PLURAL + other, rel); else warnings.push(where + ' : tn() sans texte littéral');
-        }
+    if (!/i18n/.test(text)) continue;
+    const { program, errors } = parseSync(file, text);
+    if (errors.length) { warnings.push(rel + ' : analyse impossible (' + errors[0].message + ')'); continue; }
+    const names = i18nImports(program);
+    if (!names.size) continue;
+    const lineOf = (pos) => text.slice(0, pos).split('\n').length;
+    const lines = text.split('\n');
+    walkAst(program, (node) => {
+      if (node.type !== 'CallExpression' || node.callee.type !== 'Identifier' || !names.has(node.callee.name)) return;
+      const name = names.get(node.callee.name);
+      const a = node.arguments;
+      const line = lineOf(node.start);
+      const where = rel + ':' + line;
+      // Appel volontairement dynamique (clés marquées par N_ ailleurs) : signalé par « i18n: N_ » sur la ligne ou l'une des trois d'avant.
+      const quiet = /i18n: N_/.test(lines.slice(Math.max(0, line - 4), line).join('\n'));
+      if (name === 't' && a.length >= 1) {
+        const k = literal(a[0]);
+        if (k !== null) add(k, rel); else { if (!quiet) warnings.push(where + ' : t() sans texte littéral'); };
+      } else if (name === 'tc' && a.length >= 2) {
+        const c = literal(a[0]);
+        const k = literal(a[1]);
+        if (c !== null && k !== null) add(c + CTX + k, rel); else warnings.push(where + ' : tc() sans texte littéral');
+      } else if (name === 'tn' && a.length >= 3) {
+        const one = literal(a[1]);
+        const other = literal(a[2]);
+        if (one !== null && other !== null) add(one + PLURAL + other, rel); else warnings.push(where + ' : tn() sans texte littéral');
       }
-      ts.forEachChild(node, visit);
-    };
-    visit(sf);
+    });
   }
   for (const k of htmlKeys()) add(k, 'index.html');
   const out = {};
@@ -108,7 +144,9 @@ function check(args) {
   const messages = readJson(MESSAGES);
   const keys = Object.keys(messages);
   let failed = false;
-  for (const code of codesOf(args)) {
+  const codes = codesOf(args);
+  if (!args.length) for (const r of REQUIRED) if (!codes.includes(r)) codes.push(r);
+  for (const code of codes) {
     const p = join(LOCALES_DIR, code + '.json');
     if (!existsSync(p)) { console.error(code + ' : catalogue absent'); failed = true; continue; }
     const cat = readJson(p);

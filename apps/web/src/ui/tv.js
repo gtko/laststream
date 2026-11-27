@@ -17,7 +17,7 @@ import { ICON } from './icons.js';
 import { initialStatus } from './tvStatus.js';
 import { state } from './state.js';
 import { esc, names, store } from './util.js';
-import { t as tr, intlLocale } from '../i18n';
+import { N_, t as tr, intlLocale } from '../i18n';
 
 export const tv = {
   user: [], epg: new Map(), epgReq: new Set(), epgPending: new Map(), w0: 0,
@@ -32,7 +32,7 @@ export const tv = {
   boxOnly: [], boxCats: [],
 };
 /** Catégories : identifiants en français (comparés aux catégories des chaînes), traduits à l'affichage (LAST-1658). */
-export const TV_CATS = ['Toutes', 'Favoris', 'Info', 'Sport', 'Cinéma', 'Jeunesse', 'Musique', 'Divertissement', 'Documentaires', 'FAST', 'Ma playlist'];
+export const TV_CATS = [N_('Toutes'), N_('Favoris'), N_('Info'), N_('Sport'), N_('Cinéma'), N_('Jeunesse'), N_('Musique'), N_('Divertissement'), N_('Documentaires'), 'FAST', N_('Ma playlist')];
 export const PX_MIN = 160 / 30; // 30 min = 160 px
 export const EPG_H = 6;
 export const EPG_CH_W = 220;
@@ -378,6 +378,7 @@ export function catCount(cat) {
 export function catsHTML() {
   const kid = isKidProfile();
   const server = tv.catFacets && tv.catFacets.categories.length ? tv.catFacets.categories.filter((k) => !kid || isKidCat(k)).map((k) => ({ id: k.id, label: k.label })) : null;
+  // i18n: N_ (TV_CATS) : les catégories restent des identifiants français, traduits à l'affichage.
   const list = ['Toutes', 'Favoris'].map((c) => ({ id: c, label: tr(c) }))
     .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c) && (!kid || /jeunesse/i.test(c))).map((c) => ({ id: c, label: c === 'FAST' ? c : tr(c) })))
     .concat(kid || !tv.boxOnly.length && !activeBoxChannels().length ? [] : [{ id: 'Ma box', label: tr('Ma box') }].concat(tv.boxCats.map((g) => ({ id: g, label: g }))))

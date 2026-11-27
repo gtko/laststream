@@ -126,6 +126,12 @@ const fill = (text: string, params?: Params | null): string => {
   return text.replace(/\{(\w+)\}/g, (m, k: string) => (Object.prototype.hasOwnProperty.call(params, k) ? String(params[k]) : m));
 };
 
+/**
+ * Marque un texte à traduire sans le traduire : il reste l'identifiant français (onglet, catégorie) et sera passé à t()
+ * à l'affichage. Sert seulement à l'extraction des clés (scripts/i18n.mjs).
+ */
+export const N_ = <T extends string>(src: T): T => src;
+
 /** Texte traduit. `src` : le texte français (clé). */
 export function t(src: string, params?: Params | null): string {
   const v = catalogs.length ? lookup(src) : undefined;

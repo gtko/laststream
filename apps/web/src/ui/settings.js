@@ -39,7 +39,7 @@ import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { applyDownloadToggle, downloadsStorageCard } from './settings-downloads.js';
 import { state } from './state.js';
-import { t as tr } from '../i18n';
+import { t as tr, availableLocales, getLocaleSetting, setLocaleSetting } from '../i18n';
 
 
 /**
@@ -86,10 +86,19 @@ function accountPanel() {
     (owner ? migrationCard() : '');
 }
 
+/** Langue de l'interface : « Automatique » (langue du navigateur) ou une des langues disponibles, nommée dans sa propre langue. */
+function uiLangCard() {
+  const cur = getLocaleSetting();
+  const opts = availableLocales().map((l) => [l.code, l.name]).sort((a, b) => a[1].localeCompare(b[1]));
+  return card(tr('Interface'), fieldRow(tr('Langue de l’interface'), tr('Langue des menus et des textes de Laststream. En automatique, celle de ton navigateur.'), (id) =>
+    '<select class="set-input" id="' + id + '" data-set-pref="uilang"><option value="auto"' + (!cur ? ' selected' : '') + '>' + esc(tr('Automatique')) + '</option>' +
+    opts.map(([c, n]) => '<option value="' + esc(c) + '" lang="' + esc(c) + '"' + (cur === c ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>'));
+}
+
 function regionPanel() {
   const r = getRegion();
   const vl = getVideoLangSetting();
-  return card(tr('Région'), fieldRow(tr('Pays'), tr('Disponibilités en streaming, classification par âge et sorties selon le pays.'), (id) =>
+  return uiLangCard() + card(tr('Région'), fieldRow(tr('Pays'), tr('Disponibilités en streaming, classification par âge et sorties selon le pays.'), (id) =>
     '<select class="set-input" id="' + id + '" data-set-pref="region">' + REGIONS.map((x) => '<option value="' + x.code + '"' + (x.code === r.code ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>')) +
     card(tr('Bandes-annonces et synopsis'), fieldRow(tr('Langue'), tr('Les vidéos dans cette langue passent en premier, puis l’anglais.'), (id) =>
       '<select class="set-input" id="' + id + '" data-set-pref="videolang"><option value="auto"' + (vl === 'auto' ? ' selected' : '') + '>' + tr('Automatique (selon la région)') + '</option>' +
@@ -634,7 +643,11 @@ detailEl.addEventListener('change', (e) => {
   } else if (p === 'external-preferred') {
     if (playerOptions('ios').some((o) => o.id === t.value && isExternalChoice(o.id))) setPreferredExternal(t.value);
   }
-  else if (p === 'videolang') {
+  else if (p === 'uilang') {
+    setLocaleSetting(t.value === 'auto' ? '' : t.value);
+    toast(tr('Langue mise à jour : rechargement…'));
+    setTimeout(() => location.reload(), 600);
+  } else if (p === 'videolang') {
     setVideoLang(t.value);
     clearCache();
     toast(tr('Langue mise à jour : rechargement…'));

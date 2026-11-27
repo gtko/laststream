@@ -50,6 +50,14 @@ jobs:
       - name: Lint
         run: npm run lint -- --cache --cache-location node_modules/.cache/eslint/
 
+      # Traductions (LAST-1658) : la liste des textes (src/i18n/messages.json) doit être à jour, et chaque catalogue
+      # cohérent ({paramètres}, balises) ; l'anglais doit être complet (REQUIRED dans scripts/i18n.mjs).
+      - name: Traductions
+        run: |
+          npm run i18n:extract
+          git diff --exit-code -- src/i18n/messages.json || { echo "::error::src/i18n/messages.json n'est pas à jour : lance npm run i18n:extract"; exit 1; }
+          npm run i18n:check
+
       # Build et budget sur toutes les PR : un build cassé ou un budget dépassé bloque avant merge.
       - name: Build
         run: npm run build:ci
