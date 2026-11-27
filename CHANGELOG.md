@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.81 – 2026-11-27
+
+- LAST-1655 Tarif « Soutenir, J'adore » : montant annuel libre, 24 € minimum (#62) — @gtko
+
 ## v1.0.80 – 2026-11-26
 
 - LAST-1654 Bouton « Envoyer un feedback » : Sentry avec le contexte complet, forum regroupé par erreur (#61) — @gtko
