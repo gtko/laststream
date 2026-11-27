@@ -12,6 +12,7 @@ import { workerSentryOptions } from './observability/options.js';
 import { setWorkerOrigin } from './observability/scrub.js';
 import { setUnhandledErrorReporter, setWarningReporter } from './observability/report.js';
 import { isFullPassWindow, TV_RESUME_CRON } from './lt/tv-passes.js';
+import { LIBRES_CRON, refreshLibresFromEnv } from './platform/workers/libres-refresh.js';
 import { platform, setPlatform } from './platform/index.js';
 import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
 import { handleSocialLiveWs } from './user/social-v2-live-ws.js';
@@ -153,11 +154,17 @@ const worker = {
    * (lt/meta-prewarm.ts), en dernier : une erreur de ce préchauffage est journalisée sans toucher aux tâches précédentes.
    * Toutes les 30 min : reprise TV seulement (sources en échec et sondages restants), voir lt/tv-passes.ts. À l'heure de la
    * passe complète, la reprise s'efface pour ne pas prendre le verrou de cette passe.
+   * Chaque jour à 04:23 UTC : index des classiques libres (reconstruit s'il date de plus d'une semaine).
    */
   scheduled(controller: ScheduledController, rawEnv: WorkerEnv, ctx: ExecutionContext): void {
     // Mêmes liaisons enveloppées que pour les requêtes : la plateforme d'un isolat neuf démarré par le Cron les réutilise.
     const env = countedEnv(rawEnv);
     runWithEgressContext({ trigger: 'cron', requestId: `cron-${crypto.randomUUID()}` }, () => {
+      // Classiques libres (lt/libres.ts) : Cron quotidien à part, l'index n'est reconstruit qu'une fois par semaine.
+      if (controller.cron === LIBRES_CRON) {
+        ctx.waitUntil(refreshLibresFromEnv(env));
+        return;
+      }
       if (controller.cron === TV_RESUME_CRON) {
         if (!isFullPassWindow(controller.scheduledTime)) ctx.waitUntil(refreshTvFromEnv(env, { probe: true, resume: true }));
         return;

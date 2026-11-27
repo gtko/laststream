@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
   refreshTv: vi.fn((): Promise<undefined> => Promise.resolve(undefined)),
   refreshRows: vi.fn((): Promise<undefined> => Promise.resolve(undefined)),
   prewarm: vi.fn((): Promise<undefined> => Promise.resolve(undefined)),
+  refreshLibres: vi.fn((): Promise<undefined> => Promise.resolve(undefined)),
+}));
+
+vi.mock('../src/platform/workers/libres-refresh.js', () => ({
+  LIBRES_CRON: '23 4 * * *',
+  refreshLibresFromEnv: mocks.refreshLibres,
 }));
 
 vi.mock('../src/platform/workers/index.js', () => ({
@@ -77,5 +83,22 @@ describe('scheduled : reprise TV toutes les 30 min, passe complète toutes les 6
     expect(mocks.refreshTv).toHaveBeenCalledWith({}, { probe: true });
     expect(mocks.refreshRows).toHaveBeenCalledTimes(1);
     expect(mocks.prewarm).toHaveBeenCalledTimes(1);
+    expect(mocks.refreshLibres).not.toHaveBeenCalled();
+  });
+
+  it('Cron quotidien des classiques libres : index seulement, ni TV, ni rangées, ni préchauffage', async () => {
+    mocks.refreshTv.mockClear();
+    mocks.refreshRows.mockClear();
+    mocks.prewarm.mockClear();
+    mocks.refreshLibres.mockClear();
+    const { ctx, pending } = executionContext();
+
+    worker.scheduled(schedule('23 4 * * *', Date.UTC(2026, 10, 27, 4, 23)), {} as never, ctx);
+    await Promise.allSettled(pending);
+
+    expect(mocks.refreshLibres).toHaveBeenCalledWith({});
+    expect(mocks.refreshTv).not.toHaveBeenCalled();
+    expect(mocks.refreshRows).not.toHaveBeenCalled();
+    expect(mocks.prewarm).not.toHaveBeenCalled();
   });
 });

@@ -7,6 +7,7 @@ import { recordMetaEvent } from '../metrics/index.js';
 import { platform, runtimeEnv, type ThumbPort, type UserBackend } from '../platform/index.js';
 import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
 import { type RowRuntime, serveRow } from './rows.js';
+import { libresOfDeps } from './libres.js';
 import { personWhy, recommend } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
@@ -147,6 +148,17 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     const requested = Number(query.page ?? '1');
     const page = Number.isInteger(requested) && requested >= 1 && requested <= 500 ? requested : 1;
     const body = await top10Page(ctx, token, type, region, page, Date.now());
+    cacheable(c);
+    return sendJson(c, body);
+  });
+
+  // Classiques libres (lt/libres.ts) : une page de 20 films libres de droits partout ayant une fiche TMDB, du plus connu au
+  // moins connu. `page` : 1 à 100. Liste vide tant que l'index n'est pas construit.
+  lt.get('/libres', async (c) => {
+    await configOf(c);
+    const requested = Number(queryOf(c).page ?? '1');
+    const page = Number.isInteger(requested) && requested >= 1 && requested <= 100 ? requested : 1;
+    const body = await libresOfDeps(deps).page(page);
     cacheable(c);
     return sendJson(c, body);
   });

@@ -12,7 +12,8 @@ import type { DeviceFetchEntry } from '../sources/device-fetch.js';
 import { warmUpstreamManifest } from '../sources/upstream.js';
 import { issuedUrls } from '../play/issued.js';
 import { defaultPlayState } from '../play/state.js';
-import type { ContentRef } from '../types.js';
+import type { ContentRef, StremioStream } from '../types.js';
+import { libreStreams, libresOfDeps } from '../lt/libres.js';
 
 const MOVIE_ID = /^tt\d{1,12}$/;
 const SERIES_ID = /^(tt\d{1,12}):(\d{1,4}):(\d{1,4})$/;
@@ -138,6 +139,15 @@ export function registerStreamRoutes(app: App, deps: AppDeps, backend: UserBacke
     wait,
   });
 
+  const libreStreamsOf = async (imdb: string): Promise<StremioStream[]> => {
+    try {
+      const film = await libresOfDeps(deps).film(imdb);
+      return film === undefined ? [] : libreStreams(film);
+    } catch {
+      return [];
+    }
+  };
+
   /**
    * GET /:config/stream/:type/:id.json. Les indexeurs lents ne retardent pas la réponse : passé l'échéance douce, les
    * flux arrivés sont rendus avec `pending` (noms des indexeurs en cours) et `laststream.partial`. `?wait=full` attend
@@ -157,6 +167,8 @@ export function registerStreamRoutes(app: App, deps: AppDeps, backend: UserBacke
       for (const source of config.sources) if (source.type === 'upstream' && source.enabled !== false) warmUpstreamManifest(source);
     }
     const result = await getStreams(config, ref, contextOf(c, queryParams(c).wait === 'full' ? 'full' : 'soft'));
+    // Classiques libres (lt/libres.ts) : liens directs Archive et Commons en tête, pour tout le monde, sans source configurée.
+    if (ref.type === 'movie') result.streams = [...(await libreStreamsOf(ref.imdbId)), ...result.streams];
     // Registre des URL émises (miniatures) : écrit après la réponse, sans la retarder.
     platform().scheduler.background(issuedUrls().noteStreams(result.streams));
     if (result.partial === true) {

@@ -25,6 +25,8 @@ type Fetcher =
   /** Top 10 : tendances de la semaine filtrées côté serveur (titres disponibles dans la région, lt/top10.ts). */
   | { k: 'top10'; type: 'movie' | 'tv' }
   | { k: 'collections'; ids: number[] }
+  /** Classiques libres : films libres de droits partout, servis par lastAddon (lt/libres.ts), lisibles sans aucune source. */
+  | { k: 'libres' }
   | { k: 'provider'; slug: string; type: 'movie' | 'tv' | 'both'; params?: (c: RowCtx) => Params }
   | { k: 'because'; source: 'watched' | 'rated'; index: number }
   | { k: 'person'; index: number };
@@ -93,6 +95,7 @@ const inMonths = (...months: number[]) => (c: RowCtx): boolean => months.include
 export const ADULT_ROWS: RowDef[] = [
   { ...movie('films', 'Films populaires', () => ({})) },
   { ...tv('series', 'Séries populaires', () => ({})) },
+  { id: 'libres', title: 'Classiques libres', kind: 'poster', fetch: { k: 'libres' }, minItems: 6 },
   { id: 'because-w-0', title: '', kind: 'poster', fetch: { k: 'because', source: 'watched', index: 0 } },
   { id: 'because-r-0', title: '', kind: 'poster', fetch: { k: 'because', source: 'rated', index: 0 } },
   { id: 'top-series', title: 'Top 10 séries de la semaine', kind: 'top10', fetch: { k: 'top10', type: 'tv' }, minItems: 10 },
@@ -206,7 +209,7 @@ export type HubId = 'films' | 'series' | 'documentaires';
 
 /** Rangées de chaque page du menu principal, dans l'ordre d'affichage. */
 export const HUBS: Record<HubId, { title: string; rows: readonly string[] }> = {
-  films: { title: 'Films', rows: ['films', 'top-films', 'cinema', 'critics', 'blockbusters', 'fr-cinema', 'action', 'comedy', 'drama', 'thrillers', 'scifi', 'horror', 'gems'] },
+  films: { title: 'Films', rows: ['films', 'top-films', 'cinema', 'libres', 'critics', 'blockbusters', 'fr-cinema', 'action', 'comedy', 'drama', 'thrillers', 'scifi', 'horror', 'gems'] },
   series: { title: 'Séries', rows: ['series', 'top-series', 'fr-series', 'tv-drama', 'tv-crime', 'tv-comedy', 'tv-scifi', 'ended', 'miniseries', 'korean', 'anime'] },
   documentaires: { title: 'Documentaires', rows: ['docs', 'docuseries', 'docs-recent', 'docs-fr', 'docs-crime', 'docs-history', 'docs-music', 'docuseries-crime'] },
 };
