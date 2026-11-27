@@ -197,10 +197,14 @@ export interface BillingDto {
   canManage?: boolean;
   hasCustomer?: boolean;
   price?: { amount: number; currency: string; interval: string } | null;
+  /** Plus grand montant accepté pour le tarif « J'adore » (centimes). */
+  maxAmount?: number;
   referral?: { discount: boolean; rewardMonths: number; earnedMonths: number };
 }
 export const billing = () => call<BillingDto>('/billing');
-export const billingCheckout = () => call<{ url: string }>('/billing/checkout', { method: 'POST', body: {} });
+/** Ouvre Stripe Checkout. `amount` (centimes) : tarif « Soutenir, J'adore » à prix libre, au moins le prix de base. */
+export const billingCheckout = (amount?: number) =>
+  call<{ url: string }>('/billing/checkout', { method: 'POST', body: amount === undefined ? {} : { amount } });
 export const billingPortal = () => call<{ url: string }>('/billing/portal', { method: 'POST', body: {} });
 /** Résilie (fin de période payée) ou reprend l'abonnement de soutien, sans passer par le portail Stripe. */
 export const billingCancel = () => call<{ cancelAtPeriodEnd: boolean; paidUntil: string | null }>('/billing/cancel', { method: 'POST', body: {} });

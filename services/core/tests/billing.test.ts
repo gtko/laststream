@@ -37,7 +37,7 @@ function fakeStripe() {
     const form = new URLSearchParams(typeof init?.body === 'string' ? init.body : '');
     calls.push({ method, path: url.pathname, form });
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-    if (url.pathname === '/v1/prices/price_test') return json({ unit_amount: 2400, currency: 'eur', recurring: { interval: 'year' } });
+    if (url.pathname === '/v1/prices/price_test') return json({ unit_amount: 2400, currency: 'eur', recurring: { interval: 'year' }, product: 'prod_test' });
     if (url.pathname === '/v1/checkout/sessions') return json({ url: 'https://checkout.stripe.com/c/pay/test' });
     if (url.pathname === '/v1/billing_portal/sessions') return json({ url: 'https://billing.stripe.com/p/session/test' });
     const sub = /^\/v1\/subscriptions\/(.+)$/.exec(url.pathname);
@@ -197,6 +197,33 @@ describe('paiement', () => {
     expect(call?.form.get('discounts[0][coupon]')).toBe('coupon_half');
     expect(call?.form.get('success_url')).toBe('https://app.example/?billing=success');
     expect(call?.form.has('subscription_data[trial_end]')).toBe(false);
+  });
+
+  it('tarif « J adore » : montant libre au-dessus de 24 €, prix créé sur le produit, renouvelé chaque année ; pas de remise filleul', async () => {
+    enableBilling();
+    const res = await request<{ url: string }>(app, 'POST', '/user/billing/checkout', { token: carol.token, body: { amount: 150000 } });
+    expect(res.status).toBe(200);
+    const call = stripe.calls.find((c) => c.path === '/v1/checkout/sessions');
+    expect(call?.form.has('line_items[0][price]')).toBe(false);
+    expect(call?.form.get('line_items[0][price_data][unit_amount]')).toBe('150000');
+    expect(call?.form.get('line_items[0][price_data][currency]')).toBe('eur');
+    expect(call?.form.get('line_items[0][price_data][product]')).toBe('prod_test');
+    expect(call?.form.get('line_items[0][price_data][recurring][interval]')).toBe('year');
+    expect(call?.form.get('subscription_data[metadata][tier]')).toBe('jadore');
+    expect(call?.form.has('discounts[0][coupon]')).toBe(false);
+  });
+
+  it('tarif « J adore » : minimum 24 €, entier, plafond technique de Stripe ; 24 € pile = tarif de base', async () => {
+    enableBilling();
+    const post = (amount: unknown) => request<{ error?: string }>(app, 'POST', '/user/billing/checkout', { token: bob.token, body: { amount } });
+    expect((await post(2399)).body.error).toBe('amount_too_low');
+    expect((await post(30.5)).body.error).toBe('invalid_amount');
+    expect((await post('50')).body.error).toBe('invalid_amount');
+    expect((await post(100_000_000)).body.error).toBe('amount_too_high');
+    expect((await post(2400)).status).toBe(200);
+    const call = stripe.calls.filter((c) => c.path === '/v1/checkout/sessions').at(-1);
+    expect(call?.form.get('line_items[0][price]')).toBe('price_test');
+    expect(call?.form.get('subscription_data[metadata][tier]')).toBe('standard');
   });
 
   it('accès déjà acquis (transition) : le premier prélèvement attend sa fin', async () => {
