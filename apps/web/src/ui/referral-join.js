@@ -6,6 +6,7 @@ import '../styles/referral.css';
 import { safeImageUrl } from '../data/imageUrl';
 import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
 import { esc } from './util.js';
+import { t as tr, intlLocale } from '../i18n';
 
 /** Couleur de repli des avatars (le billet ne transmet pas la couleur du parrain). */
 const AVATAR_COLOR = '#ff5a36';
@@ -28,7 +29,7 @@ const GONE_REASON = new Map([
   ['invite_revoked', 'revoked'], ['revoked', 'revoked'],
   ['invite_invalid', ''], ['unknown', 'unknown'],
 ]);
-const STRENGTH = ['Choisis un mot de passe', 'Faible', 'Correct', 'Solide', 'Excellent'];
+const STRENGTH = [tr('Choisis un mot de passe'), tr('Faible'), tr('Correct'), tr('Solide'), tr('Excellent')];
 
 function icon(size, body, cls = '') {
   return '<svg' + (cls ? ' class="' + cls + '"' : '') + ' width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
@@ -45,10 +46,10 @@ const initialOf = (name) => (Array.from(str(name).trim())[0] || '?').toUpperCase
 /** Copie des raisons d'un billet qui ne vaut plus, affichée à l'écran de saisie du code. Vide si la raison est inconnue. */
 export function referralReasonText(reason) {
   switch (reason) {
-    case 'expired': return 'Ce billet a expiré. Demande à la personne qui t’invite un nouveau billet.';
-    case 'used': return 'Ce billet a déjà été utilisé : chaque billet ouvre un seul compte.';
-    case 'revoked': return 'Ce billet a été annulé. Demande un nouveau lien à la personne qui t’invite.';
-    case 'unknown': return 'Ce lien ne correspond à aucun billet. Vérifie-le, ou demande un nouveau lien.';
+    case 'expired': return tr('Ce billet a expiré. Demande à la personne qui t’invite un nouveau billet.');
+    case 'used': return tr('Ce billet a déjà été utilisé : chaque billet ouvre un seul compte.');
+    case 'revoked': return tr('Ce billet a été annulé. Demande un nouveau lien à la personne qui t’invite.');
+    case 'unknown': return tr('Ce lien ne correspond à aucun billet. Vérifie-le, ou demande un nouveau lien.');
     default: return '';
   }
 }
@@ -64,7 +65,7 @@ function inviterHandle(inv) {
 
 /** Aperçu du handle pendant la saisie : `Nom#····` tant que le serveur n'a pas attribué le vrai tag. */
 function previewHandle(name) {
-  return (clip(str(name).trim().replace(/\s+/g, ''), NAME_MAX) || 'Toi') + '#····';
+  return (clip(str(name).trim().replace(/\s+/g, ''), NAME_MAX) || tr('Toi')) + '#····';
 }
 
 /** Instant en millisecondes : chaîne ISO, ou nombre (chaîne numérique aussi ; moins de 1e11 = secondes). NaN si illisible. */
@@ -79,7 +80,7 @@ function toEpochMs(v) {
 export function expiryText(v) {
   const ms = toEpochMs(v);
   if (!Number.isFinite(ms)) return '';
-  return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  return new Date(ms).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' });
 }
 
 /** Score du mot de passe (0 à 4) : longueur, mélange de types, signes. Indicatif, comme dans la maquette. */
@@ -147,10 +148,10 @@ function dustHTML() {
 
 /** Face du billet d'arrivée : admis, numéro, invité par, rang et séance. */
 function ticketFace(c) {
-  return '<div class="rf-ticket-top"><span>ADMIS · UNE PLACE</span><span>N° ' + esc(c.number) + '</span></div>' +
+  return '<div class="rf-ticket-top"><span>' + tr('ADMIS · UNE PLACE') + '</span><span>N° ' + esc(c.number) + '</span></div>' +
     '<div class="rf-ticket-mid"><span class="rf-logo-big">last<span>stream</span></span>' +
-    '<span class="rf-ticket-by">Invité·e par ' + esc(c.handle) + '</span></div>' +
-    '<div class="rf-ticket-bot"><span>SALLE ∞</span><span>RANG G</span><span>SÉANCE QUAND TU VEUX</span></div>' +
+    '<span class="rf-ticket-by">' + tr('Invité·e par {handle}', { handle: esc(c.handle) }) + '</span></div>' +
+    '<div class="rf-ticket-bot"><span>' + tr('SALLE ∞') + '</span><span>' + tr('RANG G') + '</span><span>' + tr('SÉANCE QUAND TU VEUX') + '</span></div>' +
     '<span class="rf-stub" aria-hidden="true"></span><span class="rf-shine" aria-hidden="true"></span>';
 }
 
@@ -185,28 +186,28 @@ function onImgError(ev) {
 function showArrival(ctx) {
   const c = ctx.ticket;
   const left = expiryText(c.expiresAt);
-  const html = '<section class="rf-page rf-page--arrival" aria-label="Billet de parrainage">' +
+  const html = '<section class="rf-page rf-page--arrival" aria-label="' + tr('Billet de parrainage') + '">' +
     backdropHTML(c.picks, 'rf-backdrop--arrival') +
     '<div class="rf-beam rf-beam--a" aria-hidden="true"></div><div class="rf-beam rf-beam--b" aria-hidden="true"></div>' +
     dustHTML() +
     '<header class="rf-top">' + wordmark() + '</header>' +
     '<div class="rf-stage">' +
       '<div class="rf-copy">' +
-        '<p class="rf-kicker rf-up rf-d1">' + icon(18, TICKET_BODY) + '<span>Billet de parrainage</span></p>' +
-        '<h1 id="rf-title" class="rf-h1 rf-up rf-d2" tabindex="-1">Ta place est réservée.</h1>' +
+        '<p class="rf-kicker rf-up rf-d1">' + icon(18, TICKET_BODY) + '<span>' + tr('Billet de parrainage') + '</span></p>' +
+        '<h1 id="rf-title" class="rf-h1 rf-up rf-d2" tabindex="-1">' + tr('Ta place est réservée.') + '</h1>' +
         '<div class="rf-note rf-up rf-d3">' + avatarHTML(c.name, c.avatar, 'rf-av--note') +
-          '<div><p class="rf-note-who"><strong>' + esc(c.handle) + '</strong> t’offre un de ses billets</p>' +
+          '<div><p class="rf-note-who">' + tr('<strong>{handle}</strong> t’offre un de ses billets', { handle: esc(c.handle) }) + '</p>' +
           (c.message ? '<p class="rf-note-msg">« ' + esc(c.message) + ' »</p>' : '') + '</div></div>' +
         '<div class="rf-actions rf-up rf-d4">' +
-          '<button type="button" class="rf-cta" data-rf-create><span>Créer mon compte</span>' + ARROW + '</button>' +
-          '<button type="button" class="rf-link" data-auth-mode="login">J’ai déjà un compte</button>' +
+          '<button type="button" class="rf-cta" data-rf-create><span>' + tr('Créer mon compte') + '</span>' + ARROW + '</button>' +
+          '<button type="button" class="rf-link" data-auth-mode="login">' + tr('J’ai déjà un compte') + '</button>' +
         '</div>' +
-        '<p class="rf-fine rf-up rf-d5">Sur invitation uniquement' + (left ? ' · billet valable jusqu’au ' + esc(left) : '') + '</p>' +
+        '<p class="rf-fine rf-up rf-d5">' + tr('Sur invitation uniquement') + (left ? ' ' + tr('· billet valable jusqu’au {left}', { left: esc(left) }) : '') + '</p>' +
       '</div>' +
       '<div class="rf-visual">' +
         '<div class="rf-ticket-wrap rf-in"><div class="rf-ticket rf-float">' + ticketFace(c) + '</div></div>' +
         (c.picks.length
-          ? '<p class="rf-fan-title rf-up rf-d4">Ses coups de cœur, rien que pour toi</p><div class="rf-fan">' + fanHTML(c.picks) + '</div>'
+          ? '<p class="rf-fan-title rf-up rf-d4">' + tr('Ses coups de cœur, rien que pour toi') + '</p><div class="rf-fan">' + fanHTML(c.picks) + '</div>'
           : '') +
       '</div>' +
     '</div>' +
@@ -220,25 +221,25 @@ function showArrival(ctx) {
 /** Écran 2 « Crée ton compte » : billet en miniature, nom de profil avec aperçu du handle, mot de passe avec jauge, case ami. */
 function showAccount(ctx) {
   const c = ctx.ticket;
-  const who = c.name || 'ton parrain';
-  const html = '<section class="rf-page rf-page--account" aria-label="Créer mon compte">' +
-    '<div class="rf-bar"><button type="button" class="rf-back" data-rf-back aria-label="Retour">' + icon(20, '<path d="M15 6l-6 6 6 6"></path>') + '</button></div>' +
+  const who = c.name || tr('ton parrain');
+  const html = '<section class="rf-page rf-page--account" aria-label="' + tr('Créer mon compte') + '">' +
+    '<div class="rf-bar"><button type="button" class="rf-back" data-rf-back aria-label="' + tr('Retour') + '">' + icon(20, '<path d="M15 6l-6 6 6 6"></path>') + '</button></div>' +
     '<div class="rf-column">' +
-      '<div class="rf-mini rf-drop"><div class="rf-mini-text"><span>BILLET N° ' + esc(c.number) + ' · ADMIS</span><strong>Offert par ' + esc(c.handle) + '</strong></div>' +
+      '<div class="rf-mini rf-drop"><div class="rf-mini-text"><span>' + tr('BILLET N° {number} · ADMIS', { number: esc(c.number) }) + '</span>' + tr('<strong>Offert par {handle}</strong>', { handle: esc(c.handle) }) + '</div>' +
         '<span class="rf-mini-stub" aria-hidden="true"></span><span class="rf-shine" aria-hidden="true"></span></div>' +
-      '<h1 id="rf-title" class="rf-h1 rf-h1--form rf-up rf-d1" tabindex="-1">Crée ton compte</h1>' +
-      '<p class="rf-sub rf-up rf-d1">Ton propre compte, ton foyer, et des billets à offrir à ton tour.</p>' +
+      '<h1 id="rf-title" class="rf-h1 rf-h1--form rf-up rf-d1" tabindex="-1">' + tr('Crée ton compte') + '</h1>' +
+      '<p class="rf-sub rf-up rf-d1">' + tr('Ton propre compte, ton foyer, et des billets à offrir à ton tour.') + '</p>' +
       '<form id="rf-form" class="rf-form" data-level="0" novalidate>' +
-        '<div class="rf-field rf-up rf-d2"><label for="rf-name">Nom de profil</label>' +
+        '<div class="rf-field rf-up rf-d2"><label for="rf-name">' + tr('Nom de profil') + '</label>' +
           '<div class="rf-name-row"><span class="rf-av rf-av--form"' + avatarAttrs(null, AVATAR_COLOR) + ' data-rf-initial aria-hidden="true">?</span>' +
           '<input id="rf-name" class="rf-input" name="username" type="text" minlength="' + NAME_MIN + '" maxlength="' + NAME_MAX + '" autocomplete="username" autocapitalize="none" spellcheck="false" required aria-describedby="rf-handle"></div>' +
-          '<p id="rf-handle" class="rf-handle">Identifiant pour tes amis : <strong data-rf-handle>' + esc(previewHandle('')) + '</strong></p></div>' +
-        '<div class="rf-field rf-up rf-d3"><label for="rf-pwd">Mot de passe</label>' +
-          '<input id="rf-pwd" class="rf-input" name="password" type="password" minlength="' + PWD_MIN + '" autocomplete="new-password" placeholder="8 caractères minimum, une phrase de préférence" required aria-describedby="rf-strength">' +
+          '<p id="rf-handle" class="rf-handle">' + tr('Identifiant pour tes amis :') + ' <strong data-rf-handle>' + esc(previewHandle('')) + '</strong></p></div>' +
+        '<div class="rf-field rf-up rf-d3"><label for="rf-pwd">' + tr('Mot de passe') + '</label>' +
+          '<input id="rf-pwd" class="rf-input" name="password" type="password" minlength="' + PWD_MIN + '" autocomplete="new-password" placeholder="' + tr('8 caractères minimum, une phrase de préférence') + '" required aria-describedby="rf-strength">' +
           '<div class="rf-gauge" aria-hidden="true"><span></span><span></span><span></span><span></span></div>' +
           '<p id="rf-strength" class="rf-strength" data-rf-strength aria-live="polite">' + esc(STRENGTH[0]) + '</p></div>' +
-        '<label class="rf-check rf-up rf-d4"><input type="checkbox" name="autoFriend" checked><span>Devenir ami avec ' + esc(who) + ' dès mon arrivée</span></label>' +
-        '<button type="submit" class="rf-cta rf-cta--block rf-up rf-d5" data-rf-submit><span class="rf-cta-label">Valider mon billet</span>' + ARROW + '</button>' +
+        '<label class="rf-check rf-up rf-d4"><input type="checkbox" name="autoFriend" checked><span>' + tr('Devenir ami avec {who} dès mon arrivée', { who: esc(who) }) + '</span></label>' +
+        '<button type="submit" class="rf-cta rf-cta--block rf-up rf-d5" data-rf-submit><span class="rf-cta-label">' + tr('Valider mon billet') + '</span>' + ARROW + '</button>' +
         '<p id="rf-msg" class="rf-msg" role="alert" hidden></p>' +
       '</form>' +
     '</div></section>';
@@ -280,9 +281,9 @@ const normalizeName = (s) => str(s).trim().toLowerCase();
 function validate(v) {
   const len = Array.from(v.username).length;
   if (len < NAME_MIN || len > NAME_MAX || !NAME_RE.test(v.username)) {
-    return { field: '#rf-name', text: 'Nom : 3 à 32 caractères (a-z, 0-9, _ . -).' };
+    return { field: '#rf-name', text: tr('Nom : 3 à 32 caractères (a-z, 0-9, _ . -).') };
   }
-  if (Array.from(v.password).length < PWD_MIN) return { field: '#rf-pwd', text: 'Mot de passe : 8 caractères minimum.' };
+  if (Array.from(v.password).length < PWD_MIN) return { field: '#rf-pwd', text: tr('Mot de passe : 8 caractères minimum.') };
   return null;
 }
 
@@ -301,7 +302,7 @@ function setBusy(page, busy) {
   if (!btn) return;
   btn.disabled = busy;
   btn.setAttribute('aria-busy', String(busy));
-  btn.querySelector('.rf-cta-label').textContent = busy ? 'Création de ton compte…' : 'Valider mon billet';
+  btn.querySelector('.rf-cta-label').textContent = busy ? tr('Création de ton compte…') : tr('Valider mon billet');
 }
 
 /** Envoi du formulaire : création du compte avec le billet (`create`), puis bienvenue, ou message / retour à la saisie du code. */
@@ -347,20 +348,20 @@ function showWelcome(ctx, who) {
   const c = ctx.ticket;
   const name = who.name || 'toi';
   const handle = who.handle || previewHandle(name);
-  const html = '<section class="rf-page rf-page--welcome" aria-label="Bienvenue">' +
+  const html = '<section class="rf-page rf-page--welcome" aria-label="' + tr('Bienvenue') + '">' +
     backdropHTML(c.picks, 'rf-backdrop--welcome') +
     '<div class="rf-column rf-column--center">' +
-      '<div class="rf-torn rf-up"><div class="rf-torn-main"><span class="rf-torn-no">BILLET N° ' + esc(c.number) + '</span>' +
-        '<span class="rf-logo-big rf-logo-sm">last<span>stream</span></span><span class="rf-torn-ok">VALIDÉ · BIENVENUE</span></div>' +
+      '<div class="rf-torn rf-up"><div class="rf-torn-main"><span class="rf-torn-no">' + tr('BILLET N° {number}', { number: esc(c.number) }) + '</span>' +
+        '<span class="rf-logo-big rf-logo-sm">last<span>stream</span></span><span class="rf-torn-ok">' + tr('VALIDÉ · BIENVENUE') + '</span></div>' +
         '<div class="rf-torn-stub rf-tear" aria-hidden="true"><span>ADMIS</span></div></div>' +
-      '<h1 id="rf-title" class="rf-h1 rf-h1--welcome rf-up rf-d1" tabindex="-1">Tu es dans la salle, ' + esc(name) + '</h1>' +
-      '<p class="rf-lead rf-up rf-d2">Ton compte est prêt. Ton identifiant ami : <strong class="rf-mono">' + esc(handle) + '</strong></p>' +
+      '<h1 id="rf-title" class="rf-h1 rf-h1--welcome rf-up rf-d1" tabindex="-1">' + tr('Tu es dans la salle, {name}', { name: esc(name) }) + '</h1>' +
+      '<p class="rf-lead rf-up rf-d2">' + tr('Ton compte est prêt. Ton identifiant ami :') + ' <strong class="rf-mono">' + esc(handle) + '</strong></p>' +
       '<div class="rf-friend rf-up rf-d3">' + avatarHTML(c.name, c.avatar, 'rf-av--friend') +
-        '<div><strong>' + esc(c.handle) + ' · ' + (who.autoFriend ? 'ton ami' : 'ton parrain') + '</strong>' +
-        '<span>' + (who.autoFriend ? 'Ami ajouté dès ton arrivée' : 'Ton billet est validé') + '</span></div></div>' +
+        '<div><strong>' + esc(c.handle) + ' · ' + (who.autoFriend ? tr('ton ami') : tr('ton parrain')) + '</strong>' +
+        '<span>' + (who.autoFriend ? tr('Ami ajouté dès ton arrivée') : tr('Ton billet est validé')) + '</span></div></div>' +
       '<div class="rf-next rf-up rf-d4"><span class="rf-next-tickets" aria-hidden="true"><i></i><i></i><i></i><i></i></span>' +
-        '<div><strong>À ton tour : 2 billets</strong><span>Invite tes proches depuis Parrainage</span></div></div>' +
-      '<button type="button" class="rf-cta rf-cta--block rf-up rf-d5" data-rf-enter><span>Découvrir l’accueil</span>' + ARROW + '</button>' +
+        '<div>' + tr('<strong>À ton tour : 2 billets</strong>') + '<span>' + tr('Invite tes proches depuis Parrainage') + '</span></div></div>' +
+      '<button type="button" class="rf-cta rf-cta--block rf-up rf-d5" data-rf-enter><span>' + tr('Découvrir l’accueil') + '</span>' + ARROW + '</button>' +
     '</div></section>';
   paint(ctx, html, (page) => {
     page.querySelector('[data-rf-enter]').addEventListener('click', () => ctx.onEnter());
@@ -379,7 +380,7 @@ export function mountReferral(root, opts) {
     root,
     ticket: normalizeTicket(opts.ticket),
     create: opts.create,
-    message: opts.message || (() => 'Une erreur est survenue.'),
+    message: opts.message || (() => tr('Une erreur est survenue.')),
     onGone: opts.onGone,
     onEnter: opts.onEnter,
     busy: false,

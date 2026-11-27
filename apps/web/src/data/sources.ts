@@ -2,6 +2,7 @@ import { addonUrl, ltUrl } from './config';
 import { getBandwidthSetting, type BandwidthSetting } from './prefs';
 import { getLaststream, type Lang, type LastStreamInfo, type Stream } from './stream';
 import { requestJson } from './transport';
+import { t, intlLocale } from '../i18n';
 
 /* Sources de lecture : récupération des streams lastAddon, tri par score, regroupement par qualité,
  * mesure du débit et choix de la source automatique. Fonctions pures testées dans tests/sources.test.ts. */
@@ -9,7 +10,7 @@ import { requestJson } from './transport';
 export type QualityGroupKey = '2160p' | '1440p' | '1080p' | '720p' | 'SD' | 'other';
 export const QUALITY_GROUP_ORDER: readonly QualityGroupKey[] = ['2160p', '1440p', '1080p', '720p', 'SD', 'other'];
 export const QUALITY_LABEL: Record<QualityGroupKey, string> = {
-  '2160p': '4K · 2160p', '1440p': '2K · 1440p', '1080p': 'Full HD · 1080p', '720p': 'HD · 720p', SD: 'SD', other: 'Autres',
+  '2160p': '4K · 2160p', '1440p': '2K · 1440p', '1080p': t('Full HD · 1080p'), '720p': t('HD · 720p'), SD: 'SD', other: t('Autres'),
 };
 
 export interface QualityGroup<T> {
@@ -76,10 +77,10 @@ export function notYetDigitalOf(raw: { notYetDigital?: unknown; digitalDate?: un
 
 /** Message affiché à la place des sources d'un film pas encore disponible en numérique. */
 export function notYetDigitalText(digitalDate?: string): string {
-  if (digitalDate === undefined) return 'Pas encore disponible en streaming.';
+  if (digitalDate === undefined) return t('Pas encore disponible en streaming.');
   const d = new Date(digitalDate + 'T00:00:00');
-  const label = Number.isNaN(d.getTime()) ? digitalDate : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-  return 'Pas encore disponible en streaming (sortie numérique prévue le ' + label + ').';
+  const label = Number.isNaN(d.getTime()) ? digitalDate : d.toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long', year: 'numeric' });
+  return t('Pas encore disponible en streaming (sortie numérique prévue le {label}).', { label });
 }
 
 /** Addon à interroger depuis l'appareil : son URL /stream pour ce titre (peut porter la clé de débrideur de l'utilisateur : jamais journalisée, jamais mise en cache). */
@@ -211,7 +212,7 @@ export function copiesOf<T extends object>(stream: T, all: readonly T[]): number
 export function formatSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return '';
   const gb = bytes / 1e9;
-  return gb >= 1 ? gb.toFixed(1).replace('.', ',') + ' Go' : Math.round(bytes / 1e6) + ' Mo';
+  return gb >= 1 ? t('{v} Go', { v: gb.toFixed(1).replace('.', ',') }) : t('{v} Mo', { v: Math.round(bytes / 1e6) });
 }
 
 export function formatBitrate(kbps: number | null | undefined): string {

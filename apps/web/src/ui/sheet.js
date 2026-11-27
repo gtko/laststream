@@ -30,7 +30,7 @@ export function openSheet(o) {
   box.setAttribute('aria-modal', 'true');
   box.setAttribute('aria-labelledby', id);
   box.tabIndex = -1;
-  // eslint-disable-next-line no-restricted-syntax -- gabarit de l'appelant, données dynamiques échappées par esc
+  // eslint-disable-next-line laststream/no-html-sink -- gabarit de l'appelant, données dynamiques échappées par esc
   box.innerHTML = '<span class="sh-grab" aria-hidden="true"></span><h2 class="sh-title" id="' + id + '">' + esc(o.title) + '</h2>' + o.html;
   veil.append(box);
   document.body.append(veil);

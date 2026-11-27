@@ -10,26 +10,27 @@ import {
   pollTotal, previewOf, typingText,
 } from './socialConvModel.js';
 import { groupErrorMessage } from './socialChat.js';
+import { t } from '../i18n';
 
 /** Boîte « Nouveau groupe » : nom (≤ 40) et 2 à 19 amis. Ouvre le groupe créé. */
 function openGroupDialog(opener, toast) {
   let nameEl = null;
   const picked = new Set();
   openDialog({
-    title: 'Nouveau groupe', confirmLabel: 'Créer le groupe', opener,
+    title: t('Nouveau groupe'), confirmLabel: t('Créer le groupe'), opener,
     build(body, ctl) {
-      nameEl = h('input', 'cvd-input', null, { type: 'text', maxlength: GROUP_NAME_MAX, placeholder: 'Nom du groupe (ex. Ciné du dimanche)', 'aria-label': 'Nom du groupe' });
+      nameEl = h('input', 'cvd-input', null, { type: 'text', maxlength: GROUP_NAME_MAX, placeholder: t('Nom du groupe (ex. Ciné du dimanche)'), 'aria-label': t('Nom du groupe') });
       body.append(nameEl);
       const hint = h('p', 'cvd-hint', '');
-      const list = h('div', 'cvd-people', null, { role: 'group', 'aria-label': 'Amis à ajouter' });
+      const list = h('div', 'cvd-people', null, { role: 'group', 'aria-label': t('Amis à ajouter') });
       const s = store.getState();
       const people = [...s.friends, ...s.household];
       const check = () => {
         const n = picked.size;
-        hint.textContent = n + ' ami' + (n > 1 ? 's' : '') + ' choisi' + (n > 1 ? 's' : '') + ' (de ' + GROUP_MEMBERS_MIN + ' à ' + GROUP_MEMBERS_MAX + ')';
+        hint.textContent = t('{n} ami{v} choisi{v} (de {GROUP_MEMBERS_MIN} à {GROUP_MEMBERS_MAX})', { n, v: (n > 1 ? 's' : ''), GROUP_MEMBERS_MIN, GROUP_MEMBERS_MAX });
         ctl.setValid(nameEl.value.trim() !== '' && n >= GROUP_MEMBERS_MIN && n <= GROUP_MEMBERS_MAX);
       };
-      if (!people.length) list.append(h('p', 'cvd-hint', 'Ajoute d’abord des amis pour créer un groupe.'));
+      if (!people.length) list.append(h('p', 'cvd-hint', t('Ajoute d’abord des amis pour créer un groupe.')));
       for (const f of people) {
         const label = h('label', 'cvd-person');
         const cb = h('input', null, null, { type: 'checkbox' });
@@ -50,7 +51,7 @@ function openGroupDialog(opener, toast) {
       try { conv = await store.createGroup(nameEl.value.trim(), [...picked]); } catch (e) {
         throw new Error(groupErrorMessage(e, (pid) => personName(pid, store.getState())));
       }
-      if (toast) toast('Groupe créé.');
+      if (toast) toast(t('Groupe créé.'));
       openConversation(conv.conv);
     },
   });
@@ -70,8 +71,8 @@ function rowAvatar(inf) {
 }
 
 function miniPoll(poll) {
-  const box = h('div', 'cvl-poll', null, { role: 'group', 'aria-label': 'Sondage : ' + poll.question });
-  box.append(h('div', 'cvl-poll-q', 'Sondage · ' + poll.question));
+  const box = h('div', 'cvl-poll', null, { role: 'group', 'aria-label': t('Sondage : {question}', { question: poll.question }) });
+  box.append(h('div', 'cvl-poll-q', t('Sondage · {question}', { question: poll.question })));
   for (const o of poll.options.slice(0, 3)) {
     const row = h('div', 'cvl-poll-o');
     const bar = h('span', 'cvl-poll-bar');
@@ -79,7 +80,7 @@ function miniPoll(poll) {
     row.append(bar, h('span', 'cvl-poll-l', o.label), h('b', null, String(o.votes)));
     box.append(row);
   }
-  if (pollTotal(poll) === 0) box.append(h('div', 'cvl-poll-hint', 'Aucun vote pour l’instant'));
+  if (pollTotal(poll) === 0) box.append(h('div', 'cvl-poll-hint', t('Aucun vote pour l’instant')));
   return box;
 }
 
@@ -92,10 +93,10 @@ export function renderConversationList(el, deps = {}) {
   el.textContent = '';
   const wrap = h('div', 'cvl');
   const bar = h('div', 'cvl-bar');
-  const search = h('input', 'cvl-search', null, { type: 'search', placeholder: 'Rechercher une discussion', 'aria-label': 'Rechercher une discussion', autocomplete: 'off' });
-  const addBtn = iconBtn('cvl-add', 'Nouveau groupe', SVG.plus, () => openGroupDialog(addBtn, deps.toast));
+  const search = h('input', 'cvl-search', null, { type: 'search', placeholder: t('Rechercher une discussion'), 'aria-label': t('Rechercher une discussion'), autocomplete: 'off' });
+  const addBtn = iconBtn('cvl-add', t('Nouveau groupe'), SVG.plus, () => openGroupDialog(addBtn, deps.toast));
   bar.append(search, addBtn);
-  const list = h('ul', 'cvl-list', null, { 'aria-label': 'Discussions' });
+  const list = h('ul', 'cvl-list', null, { 'aria-label': t('Discussions') });
   wrap.append(bar, list);
   el.append(wrap);
 
@@ -117,14 +118,14 @@ export function renderConversationList(el, deps = {}) {
     const typing = store.typingPids(s, inf.conv).filter((p) => !s.me || p !== s.me.pid);
     const unread = inf.unread > 0;
     const b = h('button', 'cvl-row' + (getActiveConv() === inf.conv ? ' is-active' : ''), null, { type: 'button' });
-    b.setAttribute('aria-label', inf.name + (unread ? ', ' + inf.unread + ' message' + (inf.unread > 1 ? 's' : '') + ' non lu' + (inf.unread > 1 ? 's' : '') : ''));
+    b.setAttribute('aria-label', inf.name + (unread ? t(', {unread} message{v} non lu', { unread: inf.unread, v: (inf.unread > 1 ? 's' : '') }) + (inf.unread > 1 ? 's' : '') : ''));
     b.append(rowAvatar(inf));
     const mid = h('div', 'cvl-mid');
     const top = h('div', 'cvl-top');
     const name = h('b', 'cvl-name', inf.name);
-    if (inf.household) name.append(h('span', 'cvl-home', ' · foyer'));
+    if (inf.household) name.append(h('span', 'cvl-home', ' ' + t('· foyer')));
     top.append(name, h('span', 'cvl-time' + (unread ? ' is-unread' : ''), inf.last ? listTime(inf.last.createdAt) : ''));
-    const names = typing.map((p) => (inf.kind === 'group' ? (inf.members.find((m) => m.pid === p) || { handle: { name: 'Quelqu’un' } }).handle.name : inf.name));
+    const names = typing.map((p) => (inf.kind === 'group' ? (inf.members.find((m) => m.pid === p) || { handle: { name: t('Quelqu’un') } }).handle.name : inf.name));
     const prev = h('div', 'cvl-prev' + (unread ? ' is-unread' : '') + (typing.length ? ' is-typing' : ''), typing.length ? typingText(names) : previewOf(inf, s));
     mid.append(top, prev);
     b.append(mid);
@@ -154,14 +155,14 @@ export function renderConversationList(el, deps = {}) {
       const b = h('button', 'cvl-row', null, { type: 'button' });
       b.append(avatarEl({ name: f.nickname || f.handle.name, avatarColor: f.avatarColor, avatar: f.avatar }, 42, f.status));
       const mid = h('div', 'cvl-mid');
-      mid.append(h('b', 'cvl-name', f.nickname || f.handle.name), h('div', 'cvl-prev', 'Nouvelle discussion'));
+      mid.append(h('b', 'cvl-name', f.nickname || f.handle.name), h('div', 'cvl-prev', t('Nouvelle discussion')));
       b.append(mid);
       b.addEventListener('click', () => openConversation(dmConv(f.pid)));
       li.append(b);
       list.append(li);
     }
     if (!shown.length && !fresh.length) {
-      list.append(h('li', 'cvl-empty', q ? 'Aucune discussion ne correspond.' : 'Aucune discussion pour l’instant. Choisis un ami dans l’onglet Amis pour lui écrire.'));
+      list.append(h('li', 'cvl-empty', q ? t('Aucune discussion ne correspond.') : t('Aucune discussion pour l’instant. Choisis un ami dans l’onglet Amis pour lui écrire.')));
     }
   }
 

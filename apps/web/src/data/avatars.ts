@@ -6,6 +6,7 @@
  */
 
 import { HERO_FAMILIES, HERO_FAMILY_IDS, type HeroFamily } from './heroes/render';
+import { t, intlLocale } from '../i18n';
 
 export type { HeroFamily } from './heroes/render';
 export { HERO_FAMILIES } from './heroes/render';
@@ -31,8 +32,8 @@ export interface AvatarStyle {
 const CC0 = 'cc0';
 const BY = 'cc-by';
 const FREE = 'libre';
-const LISA = 'Lisa Wischofsky';
-const STANLEY = 'Pablo Stanley';
+const LISA = t('Lisa Wischofsky');
+const STANLEY = t('Pablo Stanley');
 const DICEBEAR = 'DiceBear';
 const FIGMA = 'https://www.figma.com/community/file/';
 
@@ -41,46 +42,46 @@ const s = (id: string, label: string, family: AvatarFamily, license: AvatarLicen
 
 export const AVATAR_STYLES: readonly AvatarStyle[] = [
   // Personnages
-  s('lorelei', 'Lorelei', 'personnages', CC0, LISA, FIGMA + '1198749693280469639'),
-  s('notionists', 'Notionists', 'personnages', CC0, 'Zoish', 'https://heyzoish.gumroad.com/l/notionists'),
-  s('notionists-neutral', 'Notionists (visages)', 'personnages', CC0, 'Zoish', 'https://heyzoish.gumroad.com/l/notionists'),
-  s('open-peeps', 'Open Peeps', 'personnages', CC0, STANLEY, 'https://www.openpeeps.com/'),
-  s('personas', 'Personas', 'personnages', BY, 'Draftbit', 'https://personas.draftbit.com/'),
-  s('micah', 'Micah', 'personnages', BY, 'Micah Lanier', FIGMA + '829741575478342595'),
-  s('avataaars', 'Avataaars', 'personnages', FREE, STANLEY, 'https://avataaars.com/'),
-  s('avataaars-neutral', 'Avataaars (visages)', 'personnages', FREE, STANLEY, 'https://avataaars.com/'),
-  s('adventurer', 'Aventurier', 'personnages', BY, LISA, FIGMA + '1184595184137881796'),
-  s('big-ears', 'Grandes oreilles', 'personnages', BY, 'The Visual Team', FIGMA + '986078800058673824'),
-  s('dylan', 'Dylan', 'personnages', BY, 'Natalia Spivak', FIGMA + '1356575240759683500'),
+  s('lorelei', t('Lorelei'), 'personnages', CC0, LISA, FIGMA + '1198749693280469639'),
+  s('notionists', t('Notionists'), 'personnages', CC0, t('Zoish'), 'https://heyzoish.gumroad.com/l/notionists'),
+  s('notionists-neutral', t('Notionists (visages)'), 'personnages', CC0, t('Zoish'), 'https://heyzoish.gumroad.com/l/notionists'),
+  s('open-peeps', t('Open Peeps'), 'personnages', CC0, STANLEY, 'https://www.openpeeps.com/'),
+  s('personas', t('Personas'), 'personnages', BY, t('Draftbit'), 'https://personas.draftbit.com/'),
+  s('micah', t('Micah'), 'personnages', BY, t('Micah Lanier'), FIGMA + '829741575478342595'),
+  s('avataaars', t('Avataaars'), 'personnages', FREE, STANLEY, 'https://avataaars.com/'),
+  s('avataaars-neutral', t('Avataaars (visages)'), 'personnages', FREE, STANLEY, 'https://avataaars.com/'),
+  s('adventurer', t('Aventurier'), 'personnages', BY, LISA, FIGMA + '1184595184137881796'),
+  s('big-ears', t('Grandes oreilles'), 'personnages', BY, t('The Visual Team'), FIGMA + '986078800058673824'),
+  s('dylan', t('Dylan'), 'personnages', BY, t('Natalia Spivak'), FIGMA + '1356575240759683500'),
   // Illustrés
-  s('lorelei-neutral', 'Lorelei (visages)', 'illustres', CC0, LISA, FIGMA + '1198749693280469639'),
-  s('adventurer-neutral', 'Aventurier (visages)', 'illustres', BY, LISA, FIGMA + '1184595184137881796'),
-  s('big-ears-neutral', 'Grandes oreilles (visages)', 'illustres', BY, 'The Visual Team', FIGMA + '986078800058673824'),
-  s('big-smile', 'Grand sourire', 'illustres', BY, 'Ashley Seo', FIGMA + '881358461963645496', true),
-  s('croodles', 'Croodles', 'illustres', BY, 'Vijay Verma', FIGMA + '966199982810283152', true),
-  s('croodles-neutral', 'Croodles (visages)', 'illustres', BY, 'Vijay Verma', FIGMA + '966199982810283152', true),
-  s('toon-head', 'Toon', 'illustres', BY, 'Johan Melin', FIGMA + '1589627891082866389', true),
-  s('miniavs', 'Miniavs', 'illustres', BY, 'Webpixels', FIGMA + '923211396597067458', true),
+  s('lorelei-neutral', t('Lorelei (visages)'), 'illustres', CC0, LISA, FIGMA + '1198749693280469639'),
+  s('adventurer-neutral', t('Aventurier (visages)'), 'illustres', BY, LISA, FIGMA + '1184595184137881796'),
+  s('big-ears-neutral', t('Grandes oreilles (visages)'), 'illustres', BY, t('The Visual Team'), FIGMA + '986078800058673824'),
+  s('big-smile', t('Grand sourire'), 'illustres', BY, t('Ashley Seo'), FIGMA + '881358461963645496', true),
+  s('croodles', t('Croodles'), 'illustres', BY, t('Vijay Verma'), FIGMA + '966199982810283152', true),
+  s('croodles-neutral', t('Croodles (visages)'), 'illustres', BY, t('Vijay Verma'), FIGMA + '966199982810283152', true),
+  s('toon-head', t('Toon'), 'illustres', BY, t('Johan Melin'), FIGMA + '1589627891082866389', true),
+  s('miniavs', t('Miniavs'), 'illustres', BY, t('Webpixels'), FIGMA + '923211396597067458', true),
   // Robots
-  s('bottts', 'Robots', 'robots', FREE, STANLEY, 'https://bottts.com/', true),
-  s('bottts-neutral', 'Robots (visages)', 'robots', FREE, STANLEY, 'https://bottts.com/', true),
-  s('pixel-art', 'Pixel art', 'robots', CC0, DICEBEAR, FIGMA + '1198754108850888330', true),
-  s('pixel-art-neutral', 'Pixel art (visages)', 'robots', CC0, DICEBEAR, FIGMA + '1198754108850888330'),
+  s('bottts', t('Robots'), 'robots', FREE, STANLEY, 'https://bottts.com/', true),
+  s('bottts-neutral', t('Robots (visages)'), 'robots', FREE, STANLEY, 'https://bottts.com/', true),
+  s('pixel-art', t('Pixel art'), 'robots', CC0, DICEBEAR, FIGMA + '1198754108850888330', true),
+  s('pixel-art-neutral', t('Pixel art (visages)'), 'robots', CC0, DICEBEAR, FIGMA + '1198754108850888330'),
   // Fun
-  s('fun-emoji', 'Fun emoji', 'fun', BY, 'Davis Uche', FIGMA + '968125295144990435', true),
-  s('thumbs', 'Pouces', 'fun', CC0, DICEBEAR, 'https://www.dicebear.com', true),
-  s('shapes', 'Formes', 'fun', CC0, DICEBEAR, 'https://www.dicebear.com', true),
-  s('glass', 'Verre', 'fun', CC0, DICEBEAR, 'https://www.dicebear.com'),
-  s('rings', 'Anneaux', 'fun', CC0, DICEBEAR, 'https://www.dicebear.com'),
-  s('identicon', 'Identicon', 'fun', CC0, DICEBEAR, 'https://www.dicebear.com'),
+  s('fun-emoji', t('Fun emoji'), 'fun', BY, t('Davis Uche'), FIGMA + '968125295144990435', true),
+  s('thumbs', t('Pouces'), 'fun', CC0, DICEBEAR, 'https://www.dicebear.com', true),
+  s('shapes', t('Formes'), 'fun', CC0, DICEBEAR, 'https://www.dicebear.com', true),
+  s('glass', t('Verre'), 'fun', CC0, DICEBEAR, 'https://www.dicebear.com'),
+  s('rings', t('Anneaux'), 'fun', CC0, DICEBEAR, 'https://www.dicebear.com'),
+  s('identicon', t('Identicon'), 'fun', CC0, DICEBEAR, 'https://www.dicebear.com'),
 ];
 
 /** Licences d'illustration acceptées. Tout style dont la licence n'y figure pas n'est jamais proposé. */
 export const ALLOWED_LICENSES: readonly AvatarLicense[] = ['cc0', 'cc-by', 'libre'];
 export const LICENSE_LABEL: Record<AvatarLicense, string> = {
-  cc0: 'CC0 1.0 (domaine public)',
-  'cc-by': 'CC BY 4.0',
-  libre: 'Libre pour un usage personnel et commercial',
+  cc0: t('CC0 1.0 (domaine public)'),
+  'cc-by': t('CC BY 4.0'),
+  libre: t('Libre pour un usage personnel et commercial'),
 };
 export const LICENSE_URL: Record<AvatarLicense, string> = {
   cc0: 'https://creativecommons.org/publicdomain/zero/1.0/',
@@ -92,18 +93,18 @@ export const LICENSE_URL: Record<AvatarLicense, string> = {
 export const usableStyles = (): AvatarStyle[] => AVATAR_STYLES.filter((st) => ALLOWED_LICENSES.includes(st.license));
 
 export const AVATAR_TABS: ReadonlyArray<{ id: AvatarTab; label: string }> = [
-  { id: 'heroes', label: 'Héros' },
-  { id: 'enfants', label: 'Enfants' },
-  { id: 'personnages', label: 'Personnages' },
-  { id: 'illustres', label: 'Illustrés' },
-  { id: 'robots', label: 'Robots' },
-  { id: 'fun', label: 'Fun' },
+  { id: 'heroes', label: t('Héros') },
+  { id: 'enfants', label: t('Enfants') },
+  { id: 'personnages', label: t('Personnages') },
+  { id: 'illustres', label: t('Illustrés') },
+  { id: 'robots', label: t('Robots') },
+  { id: 'fun', label: t('Fun') },
 ];
 
 /** Graines fixes : mêmes avatars à chaque ouverture (déterministe). */
 const DEFAULT_SEEDS: readonly string[] = [
-  'Mimi', 'Tigrou', 'Luna', 'Oscar', 'Zoe', 'Maya', 'Leo', 'Nina',
-  'Pixel', 'Coco', 'Jade', 'Milo', 'Sacha', 'Lola', 'Noa', 'Felix',
+  t('Mimi'), t('Tigrou'), t('Luna'), t('Oscar'), t('Zoe'), t('Maya'), t('Leo'), t('Nina'),
+  t('Pixel'), t('Coco'), t('Jade'), t('Milo'), t('Sacha'), t('Lola'), t('Noa'), t('Felix'),
 ];
 
 /** Couleurs de fond (palette de l'app : corail, violet, turquoise, jaune, bleu, rose, vert, ardoise), sans le #. */
@@ -147,10 +148,10 @@ export const isValidAvatar = (value: unknown): boolean => parseAvatar(value) !==
 
 /** Graines fixes des Héros : 48 noms originaux, puis deux séries de variantes (« Plus »). Déterministe. */
 const HERO_NAMES: readonly string[] = [
-  'Aegis', 'Blaze', 'Cyra', 'Dax', 'Ember', 'Flux', 'Gale', 'Halo', 'Ion', 'Jinx', 'Kaze', 'Lyra',
-  'Mako', 'Nova', 'Onyx', 'Pyra', 'Quill', 'Rune', 'Sable', 'Titan', 'Umbra', 'Vega', 'Wren', 'Xeno',
-  'Yara', 'Zephyr', 'Apex', 'Bolt', 'Cinder', 'Drift', 'Echo', 'Fable', 'Glint', 'Havoc', 'Iris', 'Jolt',
-  'Kilo', 'Lumen', 'Mirage', 'Nimbus', 'Orbit', 'Pulse', 'Quasar', 'Riot', 'Spark', 'Talon', 'Vortex', 'Warden',
+  t('Aegis'), t('Blaze'), t('Cyra'), t('Dax'), t('Ember'), t('Flux'), t('Gale'), t('Halo'), t('Ion'), t('Jinx'), t('Kaze'), t('Lyra'),
+  t('Mako'), t('Nova'), t('Onyx'), t('Pyra'), t('Quill'), t('Rune'), t('Sable'), t('Titan'), t('Umbra'), t('Vega'), t('Wren'), t('Xeno'),
+  t('Yara'), t('Zephyr'), t('Apex'), t('Bolt'), t('Cinder'), t('Drift'), t('Echo'), t('Fable'), t('Glint'), t('Havoc'), t('Iris'), t('Jolt'),
+  t('Kilo'), t('Lumen'), t('Mirage'), t('Nimbus'), t('Orbit'), t('Pulse'), t('Quasar'), t('Riot'), t('Spark'), t('Talon'), t('Vortex'), t('Warden'),
 ];
 export const HERO_SEEDS: readonly string[] = [...HERO_NAMES, ...HERO_NAMES.map((n) => n + '-2'), ...HERO_NAMES.map((n) => n + '-3')];
 
@@ -233,5 +234,5 @@ export function avatarCredits(): AvatarCredit[] {
     cur.styles.push({ label: st.label, source: st.source });
     map.set(key, cur);
   }
-  return [...map.values()].sort((a, b) => a.creator.localeCompare(b.creator, 'fr'));
+  return [...map.values()].sort((a, b) => a.creator.localeCompare(b.creator, intlLocale()));
 }

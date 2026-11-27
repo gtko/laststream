@@ -8,14 +8,15 @@ import { cancelEvening, leaveEvening, stopEveningSeries } from '../data/socialV3
 import { toast } from './dom.js';
 import { openSheet } from './sheet.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 const COPY = {
-  cancel: { title: 'Annuler cette soirée ?', ok: 'Annuler la soirée', keep: 'Garder', done: 'Soirée annulée.', danger: true,
-    text: (e) => '« ' + e.title + ' » sera annulée pour tous les invités, qui en seront prévenus.' },
-  stop: { title: 'Arrêter la série ?', ok: 'Arrêter la série', keep: 'Garder', done: 'Série arrêtée.', danger: true,
-    text: (e) => 'Les prochaines soirées de « ' + e.title + ' » seront annulées pour tous les invités.' },
-  leave: { title: 'Quitter cette soirée ?', ok: 'Quitter', keep: 'Rester', done: 'Tu as quitté la soirée.', danger: false,
-    text: (e) => 'Tu ne viendras pas à « ' + e.title + ' ». L’hôte en sera prévenu.' },
+  cancel: { title: t('Annuler cette soirée ?'), ok: t('Annuler la soirée'), keep: t('Garder'), done: t('Soirée annulée.'), danger: true,
+    text: (e) => t('« {title} » sera annulée pour tous les invités, qui en seront prévenus.', { title: e.title }) },
+  stop: { title: t('Arrêter la série ?'), ok: t('Arrêter la série'), keep: t('Garder'), done: t('Série arrêtée.'), danger: true,
+    text: (e) => t('Les prochaines soirées de « {title} » seront annulées pour tous les invités.', { title: e.title }) },
+  leave: { title: t('Quitter cette soirée ?'), ok: t('Quitter'), keep: t('Rester'), done: t('Tu as quitté la soirée.'), danger: false,
+    text: (e) => t('Tu ne viendras pas à « {title} ». L’hôte en sera prévenu.', { title: e.title }) },
 };
 
 /** Types d'action de confirmation. */
@@ -41,8 +42,8 @@ export function openEveningAction(kind, ev, opener) {
     locked: () => busy,
     initialFocus: '[data-sheet-close]',
     html: '<p class="evc-text">' + esc(c.text(ev)) + '</p>' +
-      (series ? '<fieldset class="evf-scope"><legend class="sr-only">Portée</legend><label><input type="radio" name="scope" value="occurrence" checked> Cette soirée seulement</label>' +
-        '<label><input type="radio" name="scope" value="series"> Toute la série</label></fieldset>' : '') +
+      (series ? '<fieldset class="evf-scope"><legend class="sr-only">' + t('Portée') + '</legend><label><input type="radio" name="scope" value="occurrence" checked> ' + t('Cette soirée seulement') + '</label>' +
+        '<label><input type="radio" name="scope" value="series"> ' + t('Toute la série') + '</label></fieldset>' : '') +
       '<p class="evf-err evf-server" data-evc-err role="alert" hidden></p>' +
       '<div class="evf-foot"><button type="button" class="btn btn-ghost evf-btn" data-sheet-close>' + esc(c.keep) + '</button>' +
       '<button type="button" class="btn evf-btn ' + (c.danger ? 'evc-danger' : 'btn-primary') + '" data-evc-ok>' + esc(c.ok) + '</button></div>',
@@ -63,7 +64,7 @@ export function openEveningAction(kind, ev, opener) {
       (done) => {
         if (sheet.closed) return;
         if (!done || (auth.profile ? auth.profile.id : '') !== pid0) { sheet.close(true); return; }
-        toast(kind === 'leave' && scope === 'series' ? 'Tu as quitté la série.' : c.done);
+        toast(kind === 'leave' && scope === 'series' ? t('Tu as quitté la série.') : c.done);
         sheet.close();
       },
       (e) => {

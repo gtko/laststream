@@ -4,6 +4,7 @@
  * sans message. Module sans DOM (hors écriture de l'aperçu en sessionStorage). */
 import { catalogDisplay, fetchCatalogPage, readAddonCatalogs } from '../data/addonCatalog';
 import { addonCatalogHash, addonMetaHash, addonSlug } from './addonRoutes.js';
+import { t } from '../i18n';
 
 const enc = encodeURIComponent;
 
@@ -12,7 +13,7 @@ const ADDON_PREVIEW_PREFIX = 'laststream.addonMetaPreview:';
 /** Clé sessionStorage de l'aperçu d'une fiche, propre à l'addon : un autre addon au même type et id ne le reprend pas. */
 export const addonPreviewKey = (slug, type, id) => ADDON_PREVIEW_PREFIX + slug + ':' + type + ':' + id;
 
-const TYPE_LABELS = new Map([['movie', 'Film'], ['series', 'Série'], ['tv', 'Série'], ['channel', 'Chaîne']]);
+const TYPE_LABELS = new Map([['movie', t('Film')], ['series', t('Série')], ['tv', t('Série')], ['channel', t('Chaîne')]]);
 /** Libellé français d'un type de catalogue d'addon (le type brut sinon). */
 export const addonTypeLabel = (type) => TYPE_LABELS.get(type) ?? type;
 

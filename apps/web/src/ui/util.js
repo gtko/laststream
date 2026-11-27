@@ -1,5 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { userStore } from '../data/userStore';
+import { t, intlLocale } from '../i18n';
 
 export { escapeHtml as esc } from '../data/format';
 
@@ -13,7 +14,7 @@ export function rewriteKeepingFocus(el, html) {
       if (v !== null) { sel = '[' + attr + (v ? '="' + v.replace(/["\\]/g, '\\$&') + '"' : '') + ']'; break; }
     }
   }
-  // eslint-disable-next-line no-restricted-syntax -- données serveur échappées par esc dans chaque gabarit
+  // eslint-disable-next-line laststream/no-html-sink -- données serveur échappées par esc dans chaque gabarit
   el.innerHTML = html;
   const next = sel ? el.querySelector(sel) : null;
   if (next) next.focus({ preventScroll: true });
@@ -24,7 +25,7 @@ export const fmtNum = (v, d) => {
 };
 export const fmtMin = (n) => {
   if (!n || n <= 0) return '';
-  if (n < 60) return n + ' min';
+  if (n < 60) return t('{n} min', { n });
   const h = Math.floor(n / 60);
   const r = n % 60;
   return r ? h + ' h ' + String(r).padStart(2, '0') : h + ' h';
@@ -32,10 +33,10 @@ export const fmtMin = (n) => {
 export const fmtDate = (s) => {
   if (!s) return '';
   const d = new Date(String(s).slice(0, 10) + 'T00:00:00');
-  return isNaN(d) ? s : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  return isNaN(d) ? s : d.toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long', year: 'numeric' });
 };
 export const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
-export const typeLabel = (it) => (it.type === 'tv' ? 'Série' : 'Film');
+export const typeLabel = (it) => (it.type === 'tv' ? t('Série') : t('Film'));
 export const cut = (list, n) => (list ? list.slice(0, n) : null);
 export function store(key, value) {
   try {
@@ -49,7 +50,7 @@ export function store(key, value) {
 }
 export const names = (type, code) => {
   try {
-    return new Intl.DisplayNames(['fr'], { type }).of(code) || code;
+    return new Intl.DisplayNames([intlLocale()], { type }).of(code) || code;
   } catch (_) {
     return code;
   }

@@ -1,6 +1,7 @@
 import { formatClock } from './progress';
 import { guessKind, initialRange, MARK_MIN, moveHandle, rangeValid, type MarkRange } from './segmentMark';
 import type { MarkKind } from './skip';
+import { t as tr } from '../i18n';
 
 /* Marquage d'un segment sur la barre de progression : deux poignées à glisser (souris, tactile ou flèches) et un petit
  * popover (type, début / fin = lecture, Envoyer). Aucune logique réseau ici : l'envoi passe par `onSend`. */
@@ -28,7 +29,7 @@ export interface MarkBar {
   isOpen(): boolean;
 }
 
-const KINDS: ReadonlyArray<[MarkKind, string]> = [['intro', 'Intro'], ['recap', 'Récap'], ['credits', 'Générique']];
+const KINDS: ReadonlyArray<[MarkKind, string]> = [['intro', tr('Intro')], ['recap', tr('Récap')], ['credits', tr('Générique')]];
 const STEP = 1;
 const BIG_STEP = 5;
 
@@ -50,23 +51,23 @@ export function createMarkBar(opts: MarkBarOpts): MarkBar {
   const layer = el('span', 'lp-mk-layer');
   layer.hidden = true;
   const fill = el('i', 'lp-mk-fill');
-  const hs = button('lp-mk-h lp-mk-h-s', '', 'Début du segment');
-  const he = button('lp-mk-h lp-mk-h-e', '', 'Fin du segment');
+  const hs = button('lp-mk-h lp-mk-h-s', '', tr('Début du segment'));
+  const he = button('lp-mk-h lp-mk-h-e', '', tr('Fin du segment'));
   for (const h of [hs, he]) h.setAttribute('role', 'slider');
   layer.append(fill, hs, he);
 
   const pop = el('div', 'lp-mk');
   pop.setAttribute('role', 'dialog');
-  pop.setAttribute('aria-label', 'Marquer un segment');
+  pop.setAttribute('aria-label', tr('Marquer un segment'));
   pop.hidden = true;
   const title = el('p', 'lp-mk-t');
   const range$ = el('b', 'lp-mk-range');
   const len$ = el('span', 'lp-mk-len');
-  title.append(el('span', '', 'Segment'), range$, len$);
-  const hint = el('p', 'lp-mk-hint', 'Glisse les poignées sur la barre pour régler le début et la fin.');
+  title.append(el('span', '', tr('Segment')), range$, len$);
+  const hint = el('p', 'lp-mk-hint', tr('Glisse les poignées sur la barre pour régler le début et la fin.'));
   const kindsBox = el('div', 'lp-mk-kinds');
   kindsBox.setAttribute('role', 'radiogroup');
-  kindsBox.setAttribute('aria-label', 'Type de segment');
+  kindsBox.setAttribute('aria-label', tr('Type de segment'));
   const kindBtns = KINDS.map(([k, label]) => {
     const b = button('lp-mk-k', label);
     b.setAttribute('role', 'radio');
@@ -75,12 +76,12 @@ export function createMarkBar(opts: MarkBarOpts): MarkBar {
   });
   kindsBox.append(...kindBtns);
   const setHere = el('div', 'lp-mk-set');
-  const startHere = button('lp-mk-here', 'Début = ici');
-  const endHere = button('lp-mk-here', 'Fin = ici');
+  const startHere = button('lp-mk-here', tr('Début = ici'));
+  const endHere = button('lp-mk-here', tr('Fin = ici'));
   setHere.append(startHere, endHere);
   const actions = el('div', 'lp-mk-act');
-  const cancel = button('lp-mk-cancel', 'Annuler');
-  const send = button('lp-mk-send', 'Envoyer');
+  const cancel = button('lp-mk-cancel', tr('Annuler'));
+  const send = button('lp-mk-send', tr('Envoyer'));
   actions.append(cancel, send);
   pop.append(title, hint, kindsBox, setHere, actions);
 
@@ -108,11 +109,11 @@ export function createMarkBar(opts: MarkBarOpts): MarkBar {
     }
     range$.textContent = formatClock(range.start) + ' → ' + formatClock(range.end);
     const secs = Math.round(range.end - range.start);
-    len$.textContent = secs >= 60 ? Math.floor(secs / 60) + ' min ' + String(secs % 60).padStart(2, '0') + ' s' : secs + ' s';
+    len$.textContent = secs >= 60 ? tr('{v} min {v2} s', { v: Math.floor(secs / 60), v2: String(secs % 60).padStart(2, '0') }) : secs + ' s';
     kindBtns.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.kind === kind)));
     kindBtns.forEach((b) => b.classList.toggle('is-on', b.dataset.kind === kind));
     send.disabled = busy || !rangeValid(range);
-    send.textContent = busy ? 'Envoi…' : 'Envoyer';
+    send.textContent = busy ? tr('Envoi…') : tr('Envoyer');
   }
 
   function setRange(next: MarkRange): void {

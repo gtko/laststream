@@ -4,12 +4,13 @@
 import { isKidProfile, isServerMode } from '../data/auth';
 import { getState } from '../data/socialStore';
 import { ICON } from './icons.js';
+import { t } from '../i18n';
 
 /** Social disponible : compte connecté (mode serveur) et profil non enfant. */
 export const socialAvailable = () => isServerMode() && !isKidProfile();
 
 const countText = (n) => (n > 99 ? '99+' : String(n));
-const labelOf = (n) => 'Amis' + (n > 0 ? ', ' + n + ' notification' + (n > 1 ? 's' : '') : '');
+const labelOf = (n) => t('Amis') + (n > 0 ? t(', {n} notification', { n }) + (n > 1 ? 's' : '') : '');
 
 function badgeHTML(n) {
   return '<span class="soc-badge" data-soc-badge' + (n > 0 ? '' : ' hidden') + '>' + countText(n) + '</span>';
@@ -23,7 +24,7 @@ export function friendsButtonHTML(cls = 'icon-btn') {
   if (!socialAvailable()) return '';
   const n = getState().badge;
   // Sur les pages de détail (f-round), l’infobulle est celle du thème (data-tip) ; ailleurs, l’infobulle native.
-  const tip = cls.includes('f-round') ? ' data-tip="Amis"' : ' title="Amis"';
+  const tip = cls.includes('f-round') ? ' data-tip="' + t('Amis') + '"' : ' title="' + t('Amis') + '"';
   return '<button type="button" class="' + cls + ' soc-open" data-soc-open aria-controls="social-sidebar" aria-expanded="false"' +
     ' aria-label="' + labelOf(n) + '"' + tip + '>' + ICON.users + badgeHTML(n) + '</button>';
 }

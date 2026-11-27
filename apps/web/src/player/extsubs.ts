@@ -1,4 +1,5 @@
 import { langName, normalizeLang, type SubtitleTrack } from './tracks';
+import { t as tr } from '../i18n';
 
 /** Mots d'un nom de release (« Show.S01E03.1080p.WEB-DL.x264-GRP » → show, s01e03, 1080p, web, dl, x264, grp). */
 function releaseTokens(name: string): string[] {
@@ -53,7 +54,7 @@ export function normalizeExternal(resp: unknown, source: string): SubtitleTrack[
       id: 'x:' + source + ':' + (typeof s.id === 'string' || typeof s.id === 'number' ? String(s.id) : i), lang, codec: '', forced: false,
       origin: 'external', renderable: true, url: s.url, selected: false, source, release, hashMatch,
       downloads: typeof s.downloads === 'number' ? s.downloads : undefined, rating: typeof s.rating === 'number' ? s.rating : undefined,
-      label: lang ? langName(lang) : typeof s.lang === 'string' ? s.lang : 'Sous-titres',
+      label: lang ? langName(lang) : typeof s.lang === 'string' ? s.lang : tr('Sous-titres'),
     });
   });
   return out;

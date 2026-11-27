@@ -2,6 +2,7 @@
  * Logique pure, testée ; les appels réseau sont dans showsApi.ts. */
 
 import { pad2 } from './format';
+import { intlLocale } from '../i18n';
 
 export interface EpgProgram {
   channelId: string;
@@ -196,7 +197,7 @@ export function dayLabel(sec: number, nowSec: number): string {
   const today = localDate(nowSec);
   if (d === today) return 'Aujourd’hui';
   if (d === localDate(nowSec + 86400)) return 'Demain';
-  return new Date(sec * 1000).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  return new Date(sec * 1000).toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 export const isLiveNow = (a: { start: number; stop: number }, now: number): boolean => a.start <= now && now < a.stop;

@@ -19,8 +19,9 @@ import { ICON } from './icons.js';
 import { state } from './state.js';
 import { observeTiles, tileCard } from './tiles.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
-const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const MONTHS = ['janvier', tr('février'), 'mars', 'avril', 'mai', 'juin', 'juillet', tr('août'), 'septembre', 'octobre', 'novembre', tr('décembre')];
 const DOW = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
 const cache = new Map();
 
@@ -88,7 +89,7 @@ async function personEvents(f, from, to) {
     if (seen.has(k)) return;
     seen.add(k);
     const it = itemOf(c.media_type, c.id, c.title || c.name, c.poster_path, c.backdrop_path);
-    out.push({ date, kind: 'person', key: it.key, title: it.name, poster: c.poster_path, label: 'Avec ' + f.title });
+    out.push({ date, kind: 'person', key: it.key, title: it.name, poster: c.poster_path, label: tr('Avec {title}', { title: f.title }) });
   });
   return out;
 }
@@ -180,7 +181,7 @@ export async function renderFollowRow() {
     return it ? tileCard(it, { variant: 'land', alwaysMeta: true, sub: e.label + ' · ' + (e.date < today ? 'sorti' : countdown(e.date) || fmtShort(e.date)) }) : '';
   }).filter(Boolean);
   if (!items.length) return;
-  fresh.innerHTML = section('suivis', 'Cette semaine dans tes suivis', items, () => row(items.join(''))).replace('</h2>', ' <a class="row-link" href="#/calendar" data-calnav>Calendrier</a></h2>');
+  fresh.innerHTML = section('suivis', tr('Cette semaine dans tes suivis'), items, () => row(items.join(''))).replace('</h2>', ' <a class="row-link" href="#/calendar" data-calnav>' + tr('Calendrier') + '</a></h2>');
   observeTiles(fresh);
 }
 
@@ -224,7 +225,7 @@ function cellHTML(d, byDate, today) {
   const first = evs[0];
   return '<button type="button" class="cal-day cal-cell' + (d.date === today ? ' is-today' : '') + (d.date < today ? ' is-past' : '') + (sel ? ' is-sel' : '') +
     '" data-caldate="' + d.date + '"' + (d.date === today ? ' aria-current="date"' : '') + ' aria-pressed="' + sel + '" tabindex="' + (sel ? 0 : -1) + '" aria-label="' + esc(dayAriaLabel(d.date, evs.length)) + '">' +
-    '<span class="cal-hd"><span class="cal-num">' + n + '</span>' + (d.date === today && evs.length ? '<span class="cal-tag">Ce soir</span>' : '') + '</span>' +
+    '<span class="cal-hd"><span class="cal-num">' + n + '</span>' + (d.date === today && evs.length ? '<span class="cal-tag">' + tr('Ce soir') + '</span>' : '') + '</span>' +
     '<span class="cal-ps">' + shown.map((e) => thumbHTML(e, isSeen(e))).join('') + (more ? '<span class="cal-more">+' + more + '</span>' : '') + '</span>' +
     (first ? '<span class="cal-cap cal-k-' + kindOfEvent(first) + '"><b>' + esc(first.label) + '</b> ' + esc(first.title) + '</span>' : '') +
     '<span class="cal-dots">' + dots.shown.map((k) => '<i class="cal-k-' + k + '"></i>').join('') + (dots.more ? '<b>+</b>' : '') + '</span></button>';
@@ -240,9 +241,9 @@ function gridHTML() {
 
 /** Action principale d'une sortie : l'épisode lui-même, la fiche du titre, ou la diffusion TV. */
 function openAction(e) {
-  if (e.kind === 'airing') return { attrs: 'data-showopen="' + esc(e.showId) + '"', text: 'Voir la diffusion' };
-  if (e.kind === 'episode' && e.season && e.episode) return { attrs: 'data-open="' + esc(e.key) + '" data-open-season="' + esc(e.season) + '" data-open-episode="' + esc(e.episode) + '"', text: 'Ouvrir l’épisode' };
-  return { attrs: 'data-open="' + esc(e.key) + '"', text: 'Ouvrir la fiche' };
+  if (e.kind === 'airing') return { attrs: 'data-showopen="' + esc(e.showId) + '"', text: tr('Voir la diffusion') };
+  if (e.kind === 'episode' && e.season && e.episode) return { attrs: 'data-open="' + esc(e.key) + '" data-open-season="' + esc(e.season) + '" data-open-episode="' + esc(e.episode) + '"', text: tr('Ouvrir l’épisode') };
+  return { attrs: 'data-open="' + esc(e.key) + '"', text: tr('Ouvrir la fiche') };
 }
 
 /** Carte d'une sortie. Panneau : bouton « Ouvrir… » ; agenda : toute la carte cliquable (bouton étendu), la cloche reste un bouton frère. */
@@ -258,12 +259,12 @@ function cardHTML(e, agenda) {
   const remind = e.date > today && e.kind !== 'airing';
   const on = remind && getRemind().includes(e.key);
   const bell = remind
-    ? '<button type="button" class="cal-bell" data-remindkey="' + esc(e.key) + '" aria-pressed="' + on + '" aria-label="' + (on ? 'Rappel activé : ' : 'Me rappeler : ') + esc(e.title) + '" data-tip="' + (on ? 'Rappel activé' : 'Me rappeler') + '">' + (on ? ICON.check : ICON.bell) + '</button>'
+    ? '<button type="button" class="cal-bell" data-remindkey="' + esc(e.key) + '" aria-pressed="' + on + '" aria-label="' + (on ? tr('Rappel activé :') + ' ' : tr('Me rappeler :') + ' ') + esc(e.title) + '" data-tip="' + (on ? tr('Rappel activé') : tr('Me rappeler')) + '">' + (on ? ICON.check : ICON.bell) + '</button>'
     : '';
   const status = '<span class="cal-st' + (st.hot ? ' hot' : '') + '">' + esc(st.text) + '</span>';
   return '<article class="cal-ev kind-' + e.kind + ' cal-k-' + k + (seen ? ' is-seen' : '') + (agenda ? ' is-agenda' : '') + '">' + thumbHTML(e, seen) +
     (agenda ? '<button type="button" class="cal-hit" ' + act.attrs + ' title="' + tip + '" aria-label="' + name + '"></button>' : '') + '<div class="cal-evx"><span class="cal-evk"><i aria-hidden="true"></i>' + kindName(k) + '</span>' +
-    '<span class="cal-evt">' + esc(e.title) + '</span><span class="cal-evs">' + esc(sub) + '</span>' + (seen ? '<span class="sr-only">Déjà vu</span>' : '') +
+    '<span class="cal-evt">' + esc(e.title) + '</span><span class="cal-evs">' + esc(sub) + '</span>' + (seen ? '<span class="sr-only">' + tr('Déjà vu') + '</span>' : '') +
     (agenda
       ? '<div class="cal-row2">' + status + bell + '</div>'
       : status + '<div class="cal-acts"><button type="button" class="cal-go" ' + act.attrs + ' title="' + tip + '" aria-label="' + name + '">' + act.text + '</button>' + bell + '</div>') +
@@ -273,32 +274,32 @@ function cardHTML(e, agenda) {
 /** Panneau du jour sélectionné (à droite de la grille, dessous sur écran étroit). */
 function panelHTML() {
   const evs = visibleByDate().get(view.sel) || [];
-  return '<div class="cal-ph"><h2>' + esc(dayTitle(view.sel)) + '</h2>' + (view.sel === todayStr() ? '<span class="cal-now">Aujourd’hui</span>' : '') + '</div>' +
-    (evs.length ? evs.map((e) => cardHTML(e, false)).join('') : '<p class="cal-empty">' + (view.loading ? 'Chargement…' : 'Rien de prévu ce jour-là…') + '</p>') +
-    '<p class="cal-legend">Choisis un jour pour voir toutes ses sorties. Une affiche grisée = déjà vu.</p>';
+  return '<div class="cal-ph"><h2>' + esc(dayTitle(view.sel)) + '</h2>' + (view.sel === todayStr() ? '<span class="cal-now">' + tr('Aujourd’hui') + '</span>' : '') + '</div>' +
+    (evs.length ? evs.map((e) => cardHTML(e, false)).join('') : '<p class="cal-empty">' + (view.loading ? tr('Chargement…') : tr('Rien de prévu ce jour-là…')) + '</p>') +
+    '<p class="cal-legend">' + tr('Choisis un jour pour voir toutes ses sorties. Une affiche grisée = déjà vu.') + '</p>';
 }
 
 function monthHTML() {
-  return '<div class="cal-month">' + gridHTML() + '<aside class="cal-panel" id="cal-panel" aria-label="Détail du jour" data-nav>' + panelHTML() + '</aside></div>';
+  return '<div class="cal-month">' + gridHTML() + '<aside class="cal-panel" id="cal-panel" aria-label="' + tr('Détail du jour') + '" data-nav>' + panelHTML() + '</aside></div>';
 }
 
 function agendaHTML() {
   const today = todayStr();
   const groups = visibleByDate();
-  if (!groups.size) return '<p class="row-msg">' + (view.loading ? 'Chargement…' : 'Rien de prévu ce mois-ci pour les titres et personnes que tu suis.') + '</p>';
+  if (!groups.size) return '<p class="row-msg">' + (view.loading ? tr('Chargement…') : tr('Rien de prévu ce mois-ci pour les titres et personnes que tu suis.')) + '</p>';
   return '<div class="cal-agenda">' + [...groups].map(([date, evs]) => {
     const d = new Date(date + 'T00:00:00');
     return '<section class="cal-ag-day' + (date < today ? ' is-past' : '') + (date === today ? ' is-today' : '') + '"><h3 class="cal-dt">' +
       '<span class="cal-dw" aria-hidden="true">' + DOW[(d.getDay() + 6) % 7] + '</span><b class="cal-dn" aria-hidden="true">' + d.getDate() + '</b>' +
-      '<span class="cal-dfull">' + esc(dayTitle(date)) + '</span>' + (date === today ? ' <span class="cal-now">Aujourd’hui</span>' : '') + '</h3>' +
+      '<span class="cal-dfull">' + esc(dayTitle(date)) + '</span>' + (date === today ? ' <span class="cal-now">' + tr('Aujourd’hui') + '</span>' : '') + '</h3>' +
       '<div class="cal-ag-list" data-nav>' + evs.map((e) => cardHTML(e, true)).join('') + '</div></section>';
   }).join('') + '</div>';
 }
 
-const toolsHTML = () => '<button type="button" class="cal-today" data-caltoday>Aujourd’hui</button>' +
-  '<div class="cal-seg" role="group" aria-label="Affichage">' +
-  '<button type="button" data-calmode="month" aria-pressed="' + (view.mode === 'month') + '">Mois</button>' +
-  '<button type="button" data-calmode="agenda" aria-pressed="' + (view.mode === 'agenda') + '">Agenda</button></div>';
+const toolsHTML = () => '<button type="button" class="cal-today" data-caltoday>' + tr('Aujourd’hui') + '</button>' +
+  '<div class="cal-seg" role="group" aria-label="' + tr('Affichage') + '">' +
+  '<button type="button" data-calmode="month" aria-pressed="' + (view.mode === 'month') + '">' + tr('Mois') + '</button>' +
+  '<button type="button" data-calmode="agenda" aria-pressed="' + (view.mode === 'agenda') + '">' + tr('Agenda') + '</button></div>';
 
 function chipHTML(k, counts) {
   const n = counts[k.key];
@@ -310,10 +311,10 @@ function chipHTML(k, counts) {
 function mainHTML() {
   const counts = countByKind(view.events);
   return '<div class="cal-bar" data-nav><div class="cal-nav">' +
-    '<button type="button" class="cal-step" data-calstep="-1" aria-label="Mois précédent">' + ICON.back + '</button>' +
+    '<button type="button" class="cal-step" data-calstep="-1" aria-label="' + tr('Mois précédent') + '">' + ICON.back + '</button>' +
     '<h2 class="cal-title" id="cal-title" aria-live="polite">' + MONTHS[view.m - 1] + ' ' + view.y + '</h2>' +
-    '<button type="button" class="cal-step" data-calstep="1" aria-label="Mois suivant">' + ICON.chev + '</button></div>' +
-    '<div class="cal-chips" role="group" aria-label="Filtrer par type">' + CAL_KINDS.map((k) => chipHTML(k, counts)).join('') + '</div></div>' +
+    '<button type="button" class="cal-step" data-calstep="1" aria-label="' + tr('Mois suivant') + '">' + ICON.chev + '</button></div>' +
+    '<div class="cal-chips" role="group" aria-label="' + tr('Filtrer par type') + '">' + CAL_KINDS.map((k) => chipHTML(k, counts)).join('') + '</div></div>' +
     '<div id="cal-body" class="cal-body' + (view.loading ? ' is-loading' : '') + '" aria-busy="' + view.loading + '">' + (view.mode === 'month' ? monthHTML() : agendaHTML()) + '</div>';
 }
 
@@ -387,7 +388,7 @@ function selectDate(date, focus) {
 export function showCalendar() {
   teardownFiche();
   state.kind = 'calendar';
-  document.title = 'Calendrier · Laststream';
+  document.title = tr('Calendrier · Laststream');
   const now = new Date();
   if (!view.y) { view.y = now.getFullYear(); view.m = now.getMonth() + 1; }
   if (!view.sel || view.sel.slice(0, 7) !== isoDate(view.y, view.m, 1).slice(0, 7)) {
@@ -397,9 +398,9 @@ export function showCalendar() {
   const empty = !userStore.getFollows().length;
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page cal-page" aria-labelledby="svc-title"><div class="cal-wrap"><header class="cal-top"><div class="cal-ttl">' +
-    '<h1 id="svc-title" tabindex="-1">Calendrier</h1><p class="cal-sub">Les sorties de ce que tu suis</p></div>' +
+    '<h1 id="svc-title" tabindex="-1">' + tr('Calendrier') + '</h1><p class="cal-sub">' + tr('Les sorties de ce que tu suis') + '</p></div>' +
     (empty ? '' : '<div class="cal-tools" id="cal-tools" data-nav></div>') + '</header>' +
-    (empty ? '<p class="row-msg">Tu ne suis encore rien. Utilise « Suivre » sur une fiche, une affiche ou une personnalité pour la retrouver ici.</p>' : '<div class="cal-main" id="cal-main"></div>') +
+    (empty ? '<p class="row-msg">' + tr('Tu ne suis encore rien. Utilise « Suivre » sur une fiche, une affiche ou une personnalité pour la retrouver ici.') + '</p>' : '<div class="cal-main" id="cal-main"></div>') +
     '</div></article>';
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });

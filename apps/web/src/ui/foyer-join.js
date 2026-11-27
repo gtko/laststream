@@ -8,6 +8,7 @@ import { checkHouseholdInvite, householdErrorCode, redeemHouseholdInvite } from 
 import { safeImageUrl } from '../data/imageUrl';
 import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 /** Couleur de repli des avatars (le contrat ne transmet pas la couleur du profil). */
 const AVATAR_COLOR = '#ff5a36';
@@ -22,7 +23,7 @@ const BACKDROP_MAX = 12;
 const CONFETTI = 14;
 const CONFETTI_COLORS = ['#ff5a36', '#7b5bf5', '#19c3a6', '#f5b700', '#ff9a80'];
 /** Jauge du mot de passe (indicative) : libellé selon le score de 0 à 4. Les couleurs sont dans foyer.css (`data-level`). */
-const STRENGTH_LABELS = ['Choisis un mot de passe', 'Faible', 'Correct', 'Solide', 'Excellent'];
+const STRENGTH_LABELS = [t('Choisis un mot de passe'), t('Faible'), t('Correct'), t('Solide'), t('Excellent')];
 /** Numéro d'écran courant : un résultat d'API qui arrive après un changement d'écran est ignoré. */
 let currentScreen = 0;
 let screenSeq = 0;
@@ -32,9 +33,9 @@ const nextScreen = () => {
 };
 /** Trois arguments du foyer affichés à l'arrivée. */
 const PILLS = [
-  { label: 'Ton propre mot de passe', body: '<rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path>' },
-  { label: 'Ta bibliothèque à toi', body: '<path d="M4 19V5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM8 7h6"></path>' },
-  { label: 'Extensions du foyer incluses', body: '<path d="M12 2l3 7h7l-5.5 4.5 2 7.5L12 17l-6.5 4 2-7.5L2 9h7z"></path>' },
+  { label: t('Ton propre mot de passe'), body: '<rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path>' },
+  { label: t('Ta bibliothèque à toi'), body: '<path d="M4 19V5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM8 7h6"></path>' },
+  { label: t('Extensions du foyer incluses'), body: '<path d="M12 2l3 7h7l-5.5 4.5 2 7.5L12 17l-6.5 4 2-7.5L2 9h7z"></path>' },
 ];
 /** Icônes d'écran d'erreur : couleur et classe d'animation. */
 const ERROR_ICONS = {
@@ -75,8 +76,8 @@ function remainingText(expiresAt, now = Date.now()) {
   const h = Math.floor((min % 1440) / 60);
   const m = min % 60;
   if (d > 0) return d + ' j ' + h + ' h';
-  if (h > 0) return h + ' h ' + String(m).padStart(2, '0') + ' min';
-  return m + ' min';
+  if (h > 0) return t('{h} h {v} min', { h, v: String(m).padStart(2, '0') });
+  return t('{m} min', { m });
 }
 
 /** Fonds acceptés : même règle que les billets (https, hôte autorisé, voir data/imageUrl.ts), les autres sont écartés. */
@@ -118,20 +119,20 @@ const wordmarkHTML = () => '<span class="fj-wordmark">' + LOGO + '<span>last<spa
 
 /** Copie des écrans d'erreur (états du lien, ou erreur de vérification). `host` : nom de l'hôte, s'il est connu. */
 function errorCopy(state, host) {
-  const who = host || 'la personne qui t’invite';
+  const who = host || t('la personne qui t’invite');
   switch (state) {
     case 'expired':
-      return { title: 'Ce lien a expiré', body: 'Il n’est plus valable. Demande à ' + who + ' d’en générer un nouveau : ça prend deux secondes.', cta: 'J’ai déjà un accès', icon: 'sand' };
+      return { title: t('Ce lien a expiré'), body: t('Il n’est plus valable. Demande à {who} d’en générer un nouveau : ça prend deux secondes.', { who }), cta: t('J’ai déjà un accès'), icon: 'sand' };
     case 'used':
-      return { title: 'Ce lien a déjà servi', body: 'Un accès a déjà été créé avec cette invitation. Si c’était toi, connecte-toi simplement avec ton identifiant.', cta: 'Me connecter', icon: 'used' };
+      return { title: t('Ce lien a déjà servi'), body: t('Un accès a déjà été créé avec cette invitation. Si c’était toi, connecte-toi simplement avec ton identifiant.'), cta: t('Me connecter'), icon: 'used' };
     case 'revoked':
-      return { title: 'Invitation annulée', body: 'Cette invitation a été retirée. Si c’est une erreur, demande un nouveau lien à ' + who + '.', cta: 'J’ai déjà un accès', icon: 'revoked' };
+      return { title: t('Invitation annulée'), body: t('Cette invitation a été retirée. Si c’est une erreur, demande un nouveau lien à {who}.', { who }), cta: t('J’ai déjà un accès'), icon: 'revoked' };
     case 'network':
-      return { title: 'Lien impossible à vérifier', body: 'lastAddon est injoignable. Vérifie ta connexion, puis réessaie.', cta: 'Réessayer', icon: 'offline', retry: true };
+      return { title: t('Lien impossible à vérifier'), body: t('lastAddon est injoignable. Vérifie ta connexion, puis réessaie.'), cta: t('Réessayer'), icon: 'offline', retry: true };
     case 'rate_limited':
-      return { title: 'Trop de tentatives', body: 'Patiente une minute, puis réessaie.', cta: 'Réessayer', icon: 'offline', retry: true };
+      return { title: t('Trop de tentatives'), body: t('Patiente une minute, puis réessaie.'), cta: t('Réessayer'), icon: 'offline', retry: true };
     default:
-      return { title: 'Lien introuvable', body: 'Ce lien ne correspond à aucune invitation. Vérifie qu’il est complet, ou demande un nouveau lien à ' + who + '.', cta: 'J’ai déjà un accès', icon: 'unknown' };
+      return { title: t('Lien introuvable'), body: t('Ce lien ne correspond à aucune invitation. Vérifie qu’il est complet, ou demande un nouveau lien à {who}.', { who }), cta: t('J’ai déjà un accès'), icon: 'unknown' };
   }
 }
 
@@ -154,7 +155,7 @@ function paint(ctx, html, bind) {
 /** Vérifie le lien (sans le consommer) puis affiche l'arrivée, ou l'écran d'erreur de son état. */
 function start(ctx) {
   nextScreen();
-  ctx.root.innerHTML ='<section class="fj-page fj-page--state" aria-busy="true"><div class="fj-center"><p class="fj-loading" role="status">Vérification du lien…</p></div></section>';
+  ctx.root.innerHTML ='<section class="fj-page fj-page--state" aria-busy="true"><div class="fj-center"><p class="fj-loading" role="status">' + t('Vérification du lien…') + '</p></div></section>';
   checkHouseholdInvite(ctx.token).then(
     (res) => {
       const c = res && typeof res === 'object' ? res : {};
@@ -177,10 +178,10 @@ function start(ctx) {
 function showArrival(ctx) {
   const c = ctx.check;
   const host = hostName(c);
-  const prof = profileName(c) || 'ce profil';
+  const prof = profileName(c) || t('ce profil');
   const left = remainingText(c.expiresAt);
-  const title = host ? host + ' te garde une place à la maison.' : 'Une place t’attend à la maison.';
-  const html = '<section class="fj-page fj-page--arrival" aria-label="Invitation au foyer">' +
+  const title = host ? t('{host} te garde une place à la maison.', { host }) : t('Une place t’attend à la maison.');
+  const html = '<section class="fj-page fj-page--arrival" aria-label="' + t('Invitation au foyer') + '">' +
     wallHTML(c.backdrops) +
     '<div class="fj-shade" aria-hidden="true"></div><div class="fj-fade" aria-hidden="true"></div>' +
     '<header class="fj-top">' + wordmarkHTML() + '</header>' +
@@ -190,12 +191,12 @@ function showArrival(ctx) {
         (host ? avatarHTML(c.inviter, 'fj-av--host fj-pop') : '') +
         '<span class="fj-key">' + KEY + '</span>' +
       '</div>' +
-      '<p class="fj-kicker fj-up fj-d1">Invitation au foyer</p>' +
+      '<p class="fj-kicker fj-up fj-d1">' + t('Invitation au foyer') + '</p>' +
       '<h1 id="fj-title" class="fj-h1 fj-up fj-d2" tabindex="-1">' + esc(title) + '</h1>' +
-      '<p class="fj-lead fj-up fj-d3">Le profil « ' + esc(prof) + ' » t’attend dans son foyer Laststream : ton identifiant, ta bibliothèque, ton historique. Les extensions du foyer sont déjà prêtes.</p>' +
+      '<p class="fj-lead fj-up fj-d3">' + t('Le profil « {prof} » t’attend dans son foyer Laststream : ton identifiant, ta bibliothèque, ton historique. Les extensions du foyer sont déjà prêtes.', { prof: esc(prof) }) + '</p>' +
       '<ul class="fj-pills fj-up fj-d4">' + PILLS.map((p) => '<li class="fj-pill">' + icon(15, p.body) + '<span>' + esc(p.label) + '</span></li>').join('') + '</ul>' +
-      '<button type="button" class="fj-cta fj-up fj-d5" data-fj-create><span class="fj-sweep" aria-hidden="true"></span><span class="fj-cta-label">Créer mon accès</span>' + ARROW + '</button>' +
-      '<p class="fj-expiry fj-up fj-d6">' + CLOCK + '<span>Lien personnel à usage unique' + (left ? ' · expire dans ' + esc(left) : '') + '</span></p>' +
+      '<button type="button" class="fj-cta fj-up fj-d5" data-fj-create><span class="fj-sweep" aria-hidden="true"></span><span class="fj-cta-label">' + t('Créer mon accès') + '</span>' + ARROW + '</button>' +
+      '<p class="fj-expiry fj-up fj-d6">' + CLOCK + '<span>' + t('Lien personnel à usage unique') + (left ? ' ' + t('· expire dans {left}', { left: esc(left) }) : '') + '</span></p>' +
     '</div></section>';
   paint(ctx, html, (root) => {
     root.querySelector('[data-fj-create]').addEventListener('click', () => showForm(ctx));
@@ -209,9 +210,9 @@ function showError(ctx, state) {
   const prof = profileName(c);
   const copy = errorCopy(state, host);
   const ic = ERROR_ICONS[copy.icon];
-  const kicker = host && prof ? 'Invitation de ' + host + ' · profil ' + prof : 'Invitation au foyer';
-  const fine = copy.retry ? '' : '<p class="fj-fine fj-up fj-d3">Par sécurité, une invitation au foyer sert une seule fois et dure au plus 7 jours.</p>';
-  const html = '<section class="fj-page fj-page--error" aria-label="Invitation au foyer">' +
+  const kicker = host && prof ? t('Invitation de {host} · profil {prof}', { host, prof }) : t('Invitation au foyer');
+  const fine = copy.retry ? '' : '<p class="fj-fine fj-up fj-d3">' + t('Par sécurité, une invitation au foyer sert une seule fois et dure au plus 7 jours.') + '</p>';
+  const html = '<section class="fj-page fj-page--error" aria-label="' + t('Invitation au foyer') + '">' +
     bannerHTML(c.backdrops, 'fj-banner--error') +
     '<div class="fj-center fj-center--error">' +
       '<div class="fj-tile-icon fj-up" aria-hidden="true" style="color:' + ic.color + '">' + icon(40, ic.body, ic.cls) + '</div>' +
@@ -230,35 +231,35 @@ function showError(ctx, state) {
 function showForm(ctx) {
   const c = ctx.check;
   const host = hostName(c);
-  const prof = clip(profileName(c), NAME_MAX) || 'Nouveau profil';
-  const html = '<section class="fj-page fj-page--form" aria-label="Créer mon accès">' +
+  const prof = clip(profileName(c), NAME_MAX) || t('Nouveau profil');
+  const html = '<section class="fj-page fj-page--form" aria-label="' + t('Créer mon accès') + '">' +
     bannerHTML(c.backdrops, 'fj-banner--form') +
     '<div class="fj-bar">' +
-      '<button type="button" class="fj-back" data-fj-back aria-label="Retour">' + icon(20, '<path d="M15 6l-6 6 6 6"></path>') + '</button>' +
-      '<p class="fj-steps" role="img" aria-label="Étape 2 sur 3"><span class="is-done"></span><span class="is-current"></span><span></span></p>' +
+      '<button type="button" class="fj-back" data-fj-back aria-label="' + t('Retour') + '">' + icon(20, '<path d="M15 6l-6 6 6 6"></path>') + '</button>' +
+      '<p class="fj-steps" role="img" aria-label="' + t('Étape 2 sur 3') + '"><span class="is-done"></span><span class="is-current"></span><span></span></p>' +
       '<span class="fj-bar-spacer" aria-hidden="true"></span>' +
     '</div>' +
     '<form class="fj-form" data-fj-form novalidate>' +
       avatarHTML(c.profile, 'fj-av--square') +
-      '<h1 id="fj-title" class="fj-h1 fj-h1--form" tabindex="-1">Crée ton accès</h1>' +
-      '<p class="fj-sub">Profil <strong>' + esc(prof) + '</strong>' + (host ? ' · foyer de ' + esc(host) : '') + '</p>' +
-      '<div class="fj-field"><label for="fj-name">Nom du profil</label>' +
+      '<h1 id="fj-title" class="fj-h1 fj-h1--form" tabindex="-1">' + t('Crée ton accès') + '</h1>' +
+      '<p class="fj-sub">' + t('Profil <strong>{prof}</strong>', { prof: esc(prof) }) + (host ? ' ' + t('· foyer de {host}', { host: esc(host) }) : '') + '</p>' +
+      '<div class="fj-field"><label for="fj-name">' + t('Nom du profil') + '</label>' +
         '<input id="fj-name" class="fj-input" name="name" type="text" maxlength="' + NAME_MAX + '" autocomplete="off" value="' + esc(clip(profileName(c), NAME_MAX)) + '" aria-describedby="fj-name-err">' +
         '<p id="fj-name-err" class="fj-err" hidden></p></div>' +
-      '<div class="fj-field"><label for="fj-login">Identifiant de connexion (e-mail ou pseudo)</label>' +
+      '<div class="fj-field"><label for="fj-login">' + t('Identifiant de connexion (e-mail ou pseudo)') + '</label>' +
         '<input id="fj-login" class="fj-input" name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="toi@exemple.fr" aria-describedby="fj-login-err">' +
         '<p id="fj-login-err" class="fj-err" hidden></p></div>' +
-      '<div class="fj-field"><label for="fj-pwd">Mot de passe</label>' +
+      '<div class="fj-field"><label for="fj-pwd">' + t('Mot de passe') + '</label>' +
         '<div class="fj-pwd-wrap">' +
-          '<input id="fj-pwd" class="fj-input fj-input--pwd" name="password" type="password" autocomplete="new-password" placeholder="12 caractères ou une phrase" aria-describedby="fj-pwd-hint fj-pwd-err">' +
-          '<button type="button" class="fj-eye" data-fj-eye aria-label="Afficher le mot de passe" aria-pressed="false" aria-controls="fj-pwd">' + EYE + '</button>' +
+          '<input id="fj-pwd" class="fj-input fj-input--pwd" name="password" type="password" autocomplete="new-password" placeholder="' + t('12 caractères ou une phrase') + '" aria-describedby="fj-pwd-hint fj-pwd-err">' +
+          '<button type="button" class="fj-eye" data-fj-eye aria-label="' + t('Afficher le mot de passe') + '" aria-pressed="false" aria-controls="fj-pwd">' + EYE + '</button>' +
         '</div>' +
         '<div class="fj-gauge" aria-hidden="true"><span class="fj-seg"></span><span class="fj-seg"></span><span class="fj-seg"></span><span class="fj-seg"></span></div>' +
-        '<p id="fj-pwd-hint" class="fj-strength"><span class="fj-strength-label" data-level="0" aria-live="polite">' + esc(STRENGTH_LABELS[0]) + '</span><span class="fj-dim">Jamais visible par ' + esc(host || 'la personne qui t’invite') + '</span></p>' +
+        '<p id="fj-pwd-hint" class="fj-strength"><span class="fj-strength-label" data-level="0" aria-live="polite">' + esc(STRENGTH_LABELS[0]) + '</span><span class="fj-dim">' + t('Jamais visible par {v}', { v: esc(host || t('la personne qui t’invite')) }) + '</span></p>' +
         '<p id="fj-pwd-err" class="fj-err" hidden></p></div>' +
-      '<div class="fj-field fj-field--check"><label class="fj-check" for="fj-cgu"><input id="fj-cgu" name="cgu" type="checkbox" aria-describedby="fj-cgu-err"><span>J’accepte les conditions d’utilisation</span></label>' +
+      '<div class="fj-field fj-field--check"><label class="fj-check" for="fj-cgu"><input id="fj-cgu" name="cgu" type="checkbox" aria-describedby="fj-cgu-err"><span>' + t('J’accepte les conditions d’utilisation') + '</span></label>' +
         '<p id="fj-cgu-err" class="fj-err" hidden></p></div>' +
-      '<button type="submit" class="fj-cta fj-cta--block fj-cta--submit" data-fj-submit><span class="fj-cta-label">Entrer dans le foyer</span>' + ARROW + '</button>' +
+      '<button type="submit" class="fj-cta fj-cta--block fj-cta--submit" data-fj-submit><span class="fj-cta-label">' + t('Entrer dans le foyer') + '</span>' + ARROW + '</button>' +
       '<p id="fj-msg" class="fj-msg" role="alert" hidden></p>' +
     '</form></section>';
   paint(ctx, html, (root) => bindForm(ctx, root));
@@ -276,11 +277,11 @@ function readForm(root) {
 /** Erreurs de saisie par champ (vide = valide). Les règles reprennent celles de `register` (8 caractères minimum). */
 function validateForm(v) {
   const e = {};
-  if (!v.name) e.name = 'Donne un nom au profil.';
-  else if (v.name.length > NAME_MAX) e.name = 'Nom : ' + NAME_MAX + ' caractères au plus.';
-  if (!v.login) e.login = 'Indique un e-mail ou un pseudo.';
-  if (v.pwd.length < PWD_MIN) e.pwd = 'Mot de passe : ' + PWD_MIN + ' caractères minimum.';
-  if (!v.cgu) e.cgu = 'Accepte les conditions d’utilisation pour continuer.';
+  if (!v.name) e.name = t('Donne un nom au profil.');
+  else if (v.name.length > NAME_MAX) e.name = t('Nom : {NAME_MAX} caractères au plus.', { NAME_MAX });
+  if (!v.login) e.login = t('Indique un e-mail ou un pseudo.');
+  if (v.pwd.length < PWD_MIN) e.pwd = t('Mot de passe : {PWD_MIN} caractères minimum.', { PWD_MIN });
+  if (!v.cgu) e.cgu = t('Accepte les conditions d’utilisation pour continuer.');
   return e;
 }
 
@@ -309,7 +310,7 @@ function setBusy(root, busy) {
   if (!btn) return;
   btn.disabled = busy;
   btn.setAttribute('aria-busy', String(busy));
-  btn.querySelector('.fj-cta-label').textContent = busy ? 'Création de l’accès…' : 'Entrer dans le foyer';
+  btn.querySelector('.fj-cta-label').textContent = busy ? t('Création de l’accès…') : t('Entrer dans le foyer');
 }
 
 /**
@@ -330,7 +331,7 @@ function showLoginOnly(root, text) {
     go.type = 'button';
     go.className = 'fj-cta fj-cta--block';
     go.setAttribute('data-fj-login', '');
-    go.textContent = 'Aller à la connexion';
+    go.textContent = t('Aller à la connexion');
     go.addEventListener('click', goHome);
     form.append(go);
   }
@@ -364,7 +365,7 @@ function bindForm(ctx, root) {
   eye.addEventListener('click', () => {
     const shown = pwd.type === 'password';
     pwd.type = shown ? 'text' : 'password';
-    eye.setAttribute('aria-label', shown ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+    eye.setAttribute('aria-label', shown ? t('Masquer le mot de passe') : t('Afficher le mot de passe'));
     eye.setAttribute('aria-pressed', String(shown));
   });
   root.querySelector('[data-fj-back]').addEventListener('click', () => showArrival(ctx));
@@ -408,7 +409,7 @@ async function submitForm(ctx, root) {
     ctx.busy = false;
     if (screen !== currentScreen) return;
     // L'accès est créé et le lien consommé : pas de nouvel envoi, seulement un passage par la connexion.
-    showLoginOnly(root, 'Ton accès est créé, connecte-toi avec ton identifiant.');
+    showLoginOnly(root, t('Ton accès est créé, connecte-toi avec ton identifiant.'));
     return;
   }
   ctx.busy = false;
@@ -421,15 +422,15 @@ function redeemFailed(ctx, root, code) {
   const focusSubmit = () => root.querySelector('[data-fj-submit]')?.focus();
   switch (code) {
     case 'login_taken':
-      setErr(root, 'login', 'Cet identifiant est déjà pris. Choisis-en un autre.');
+      setErr(root, 'login', t('Cet identifiant est déjà pris. Choisis-en un autre.'));
       root.querySelector('#fj-login')?.focus();
       return;
     case 'bad_login':
-      setErr(root, 'login', 'Cet identifiant n’est pas valide : e-mail ou pseudo.');
+      setErr(root, 'login', t('Cet identifiant n’est pas valide : e-mail ou pseudo.'));
       root.querySelector('#fj-login')?.focus();
       return;
     case 'weak_password':
-      setErr(root, 'pwd', 'Ce mot de passe est trop faible. Choisis-en un plus long.');
+      setErr(root, 'pwd', t('Ce mot de passe est trop faible. Choisis-en un plus long.'));
       root.querySelector('#fj-pwd')?.focus();
       return;
     case 'expired':
@@ -439,19 +440,19 @@ function redeemFailed(ctx, root, code) {
       showError(ctx, code);
       return;
     case 'profile_locked':
-      setMsg(root, 'Ce profil est déjà rattaché à un identifiant.');
+      setMsg(root, t('Ce profil est déjà rattaché à un identifiant.'));
       focusSubmit();
       return;
     case 'rate_limited':
-      setMsg(root, 'Trop de tentatives. Réessaie dans quelques minutes.');
+      setMsg(root, t('Trop de tentatives. Réessaie dans quelques minutes.'));
       focusSubmit();
       return;
     case 'network':
-      setMsg(root, 'lastAddon est injoignable. Vérifie ta connexion, puis réessaie.');
+      setMsg(root, t('lastAddon est injoignable. Vérifie ta connexion, puis réessaie.'));
       focusSubmit();
       return;
     default:
-      setMsg(root, 'Une erreur est survenue. Réessaie.');
+      setMsg(root, t('Une erreur est survenue. Réessaie.'));
       focusSubmit();
   }
 }
@@ -475,17 +476,17 @@ function confettiHTML() {
 function showWelcome(ctx, name) {
   const c = ctx.check;
   const shown = name || 'toi';
-  const html = '<section class="fj-page fj-page--welcome" aria-label="Bienvenue">' +
+  const html = '<section class="fj-page fj-page--welcome" aria-label="' + t('Bienvenue') + '">' +
     bannerHTML(c.backdrops, 'fj-banner--welcome') +
     '<div class="fj-center">' +
       '<div class="fj-ring" aria-hidden="true">' + confettiHTML() +
         '<span class="fj-ring-spin"></span><span class="fj-ring-hole"></span>' +
         avatarHTML({ name: shown, avatar: c.profile && c.profile.avatar }, 'fj-av--ring fj-zoom') +
       '</div>' +
-      '<p class="fj-kicker fj-kicker--ok fj-up fj-d1">Accès créé</p>' +
-      '<h1 id="fj-title" class="fj-h1 fj-h1--welcome fj-up fj-d1" tabindex="-1">Bienvenue chez toi, ' + esc(shown) + '</h1>' +
-      '<p class="fj-lead fj-lead--sm fj-up fj-d2">Connecte-toi avec ton identifiant sur la TV, le PC ou le téléphone : tu arrives directement sur ton profil.</p>' +
-      '<div class="fj-stack fj-up fj-d5"><button type="button" class="fj-cta fj-cta--block" data-fj-start>Commencer à regarder' + PLAY + '</button></div>' +
+      '<p class="fj-kicker fj-kicker--ok fj-up fj-d1">' + t('Accès créé') + '</p>' +
+      '<h1 id="fj-title" class="fj-h1 fj-h1--welcome fj-up fj-d1" tabindex="-1">' + t('Bienvenue chez toi, {shown}', { shown: esc(shown) }) + '</h1>' +
+      '<p class="fj-lead fj-lead--sm fj-up fj-d2">' + t('Connecte-toi avec ton identifiant sur la TV, le PC ou le téléphone : tu arrives directement sur ton profil.') + '</p>' +
+      '<div class="fj-stack fj-up fj-d5"><button type="button" class="fj-cta fj-cta--block" data-fj-start>' + t('Commencer à regarder') + PLAY + '</button></div>' +
     '</div></section>';
   paint(ctx, html, (root) => {
     root.querySelector('[data-fj-start]').addEventListener('click', goHome);

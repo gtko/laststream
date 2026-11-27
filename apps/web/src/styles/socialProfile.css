@@ -98,7 +98,7 @@
 .spf-pos { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--dim); }
 .spf-pos[hidden] { display: none; }
 .spf-pos-l { flex: none; }
-.spf-pos-v { flex: none; width: 36px; text-align: right; color: var(--text); }
+.spf-pos-v { flex: none; width: 36px; text-align: end; color: var(--text); }
 .spf-range { flex: 1 1 0; min-width: 0; accent-color: var(--accent); }
 .spf--m .spf-pos { padding: 8px 16px 0; }
 .spf-bn { height: 96px; border-radius: 10px; background: #3a2a1c center / cover; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px; font-size: 13px; }
@@ -137,7 +137,7 @@
 .spf-modal-h { display: flex; align-items: center; justify-content: space-between; }
 .spf-x { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--line); }
 .spf-res { display: flex; flex-direction: column; gap: 6px; }
-.spf-r { display: flex; align-items: center; gap: 12px; text-align: left; padding: 6px; border-radius: 10px; }
+.spf-r { display: flex; align-items: center; gap: 12px; text-align: start; padding: 6px; border-radius: 10px; }
 .spf-r:hover, .spf-r:focus-visible { background: var(--line); }
 .spf-th { width: 36px; height: 54px; border-radius: 6px; background: var(--line) center / cover; flex: none; }
 .spf-rt { display: flex; flex-direction: column; min-width: 0; }
@@ -145,7 +145,7 @@
 .spf-sheet { place-items: end center; padding: 0; }
 .spf-sheet-box { width: min(480px, 100%); background: var(--surface); border-radius: 20px 20px 0 0; padding: 16px 16px 20px; display: flex; flex-direction: column; gap: 8px; }
 .spf-sheet-t { font-family: var(--ff-title); font-weight: 700; padding: 4px 4px 8px; }
-.spf-opt { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 12px; text-align: left; }
+.spf-opt { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 12px; text-align: start; }
 .spf-opt span { flex: 1; }
 .spf-opt.on { background: var(--line); }
 .spf-opt .spf-ic { color: var(--accent); }
@@ -181,7 +181,7 @@
 .spf--m .spf-btn.spf-sm { height: 36px; border-radius: 18px; font-size: 13px; background: var(--line); flex: 1; }
 .spf--m .spf-card { padding: 0; gap: 0; border: 0; overflow: hidden; }
 .spf--m .spf-sec > .spf-card { background: var(--surface); }
-.spf-li { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 14px; width: 100%; text-align: left; border-top: 1px solid var(--line); }
+.spf-li { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 14px; width: 100%; text-align: start; border-top: 1px solid var(--line); }
 .spf-card > .spf-li:first-child { border-top: 0; }
 .spf-vl { font-size: 13px; color: var(--muted); white-space: nowrap; }
 .spf--m .spf-tg { width: 46px; height: 28px; border-radius: 14px; }

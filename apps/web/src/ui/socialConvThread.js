@@ -14,6 +14,7 @@ import {
   EMOJI_TABS, GROUP_MEMBERS_MAX, GROUP_NAME_MAX, POLL_OPTIONS_MAX, POLL_OPTIONS_MIN, POLL_OPTION_MAX, POLL_QUESTION_MAX, authorName, convInfo, loadRecentEmojis,
   messageText, personName, pushRecentEmoji, timeline, typingText, watchingLine,
 } from './socialConvModel.js';
+import { t as tr, intlLocale } from '../i18n';
 
 const PAGE = 30;
 const NEAR_BOTTOM_PX = 48;
@@ -52,19 +53,19 @@ export function createThread(o) {
   const el = h('section', 'cvw-panel' + (mobile ? ' is-sheet' : ''));
   const head = h('header', 'cvw-head');
   const log = h('div', 'cvw-log', null, { role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
-  const more = h('button', 'cvm-btn cvw-more', 'Messages précédents', { type: 'button' });
+  const more = h('button', 'cvm-btn cvw-more', tr('Messages précédents'), { type: 'button' });
   const status = h('p', 'cvw-status', '', { role: 'status' });
   const replyBar = h('div', 'cvw-replybar');
   replyBar.hidden = true;
   const sugg = h('div', 'cvw-sugg');
   const form = h('form', 'cvw-form');
   form.noValidate = true;
-  const plusBtn = iconBtn('cvw-ico', 'Partager un titre ou un moment, créer un sondage', SVG.plus);
+  const plusBtn = iconBtn('cvw-ico', tr('Partager un titre ou un moment, créer un sondage'), SVG.plus);
   plusBtn.setAttribute('aria-haspopup', 'menu');
-  const input = h('input', 'cvw-input', null, { type: 'text', name: 'text', autocomplete: 'off', 'aria-label': 'Message', enterkeyhint: 'send' });
-  const emojiBtn = iconBtn('cvw-ico', 'Emojis', SVG.smile);
+  const input = h('input', 'cvw-input', null, { type: 'text', name: 'text', autocomplete: 'off', 'aria-label': tr('Message'), enterkeyhint: 'send' });
+  const emojiBtn = iconBtn('cvw-ico', tr('Emojis'), SVG.smile);
   emojiBtn.setAttribute('aria-expanded', 'false');
-  const sendBtn = iconBtn('cvw-ico is-send', 'Envoyer', SVG.send);
+  const sendBtn = iconBtn('cvw-ico is-send', tr('Envoyer'), SVG.send);
   sendBtn.type = 'submit';
   const count = h('span', 'cvw-count', '');
   count.hidden = true;
@@ -93,16 +94,16 @@ export function createThread(o) {
     if (!inf) sub = '';
     else if (inf.kind === 'group') sub = inf.members.length + 1 + ' membres';
     // Ni ami ni foyer : pas de présence connue, donc pas de « Hors ligne » trompeur.
-    else sub = watching || (!inf.known ? '' : inf.status === 'offline' ? 'Hors ligne' : 'En ligne');
-    const name = inf ? inf.name : 'Discussion';
+    else sub = watching || (!inf.known ? '' : inf.status === 'offline' ? tr('Hors ligne') : tr('En ligne'));
+    const name = inf ? inf.name : tr('Discussion');
     const shownStatus = inf && inf.known ? inf.status : '';
     const avatars = inf && inf.kind === 'group' ? inf.members.slice(0, 2).map((m) => (m.avatar || '') + (m.avatarColor || '')).join(',') : inf && inf.avatar;
     const sig = [conv, name, inf && inf.tag, sub, inf && inf.avatarColor, avatars, shownStatus, !!watching, mobile, inf && inf.owner, inf && inf.kind === 'group' ? inf.members.length : ''].join('|');
     if (sig === headSig) return;
     headSig = sig;
     head.textContent = '';
-    el.setAttribute('aria-label', 'Discussion avec ' + name);
-    if (mobile) head.append(iconBtn('cvw-ico is-big', 'Retour', SVG.back, () => o.onClose()));
+    el.setAttribute('aria-label', tr('Discussion avec {name}', { name }));
+    if (mobile) head.append(iconBtn('cvw-ico is-big', tr('Retour'), SVG.back, () => o.onClose()));
     if (inf && inf.kind === 'group') head.append(groupAvatars(inf));
     else head.append(avatarEl(inf ? { name, avatarColor: inf.avatarColor, avatar: inf.avatar } : { name }, mobile ? 38 : 36, shownStatus));
     const who = h('div', 'cvw-who');
@@ -114,21 +115,21 @@ export function createThread(o) {
     head.append(who);
     if (mobile) {
       if (watching) {
-        const w = iconBtn('cvw-ico is-big is-accent', 'Regarder avec ' + name, SVG.playL, () => watchWith());
+        const w = iconBtn('cvw-ico is-big is-accent', tr('Regarder avec {name}', { name }), SVG.playL, () => watchWith());
         head.append(w);
       }
-      const more2 = iconBtn('cvw-ico is-big', 'Plus d’actions', SVG.more, (e) => openMenu(e.currentTarget, headerActions()));
+      const more2 = iconBtn('cvw-ico is-big', tr('Plus d’actions'), SVG.more, (e) => openMenu(e.currentTarget, headerActions()));
       more2.setAttribute('aria-haspopup', 'menu');
       head.append(more2);
     } else {
-      if (inf && inf.kind === 'dm') head.append(iconBtn('cvw-ico', 'Lancer une watch party avec ' + name, SVG.party, () => inviteToParty(inf.pid)));
+      if (inf && inf.kind === 'dm') head.append(iconBtn('cvw-ico', tr('Lancer une watch party avec {name}', { name }), SVG.party, () => inviteToParty(inf.pid)));
       if (inf && inf.kind === 'group') {
-        const grp = iconBtn('cvw-ico', 'Actions du groupe', SVG.more, (e) => openMenu(e.currentTarget, headerActions()));
+        const grp = iconBtn('cvw-ico', tr('Actions du groupe'), SVG.more, (e) => openMenu(e.currentTarget, headerActions()));
         grp.setAttribute('aria-haspopup', 'menu');
         head.append(grp);
       }
-      if (o.onMinimize) head.append(iconBtn('cvw-ico', 'Réduire', SVG.min, () => o.onMinimize()));
-      head.append(iconBtn('cvw-ico', 'Fermer la discussion', SVG.close, () => o.onClose()));
+      if (o.onMinimize) head.append(iconBtn('cvw-ico', tr('Réduire'), SVG.min, () => o.onMinimize()));
+      head.append(iconBtn('cvw-ico', tr('Fermer la discussion'), SVG.close, () => o.onClose()));
     }
   }
 
@@ -151,16 +152,16 @@ export function createThread(o) {
   function headerActions() {
     const inf = info();
     const acts = [];
-    if (inf && inf.kind === 'dm') acts.push({ label: 'Proposer une watch party', run: () => inviteToParty(inf.pid) });
-    acts.push({ label: 'Créer un sondage', run: () => openPollDialog() });
-    acts.push({ label: 'Partager un titre', run: () => openShareDialog({ media: null, conv }) });
+    if (inf && inf.kind === 'dm') acts.push({ label: tr('Proposer une watch party'), run: () => inviteToParty(inf.pid) });
+    acts.push({ label: tr('Créer un sondage'), run: () => openPollDialog() });
+    acts.push({ label: tr('Partager un titre'), run: () => openShareDialog({ media: null, conv }) });
     if (inf && inf.kind === 'group') {
       // Renommer et changer les membres : réservé au propriétaire. Quitter : pour tous.
       if (inf.owner) {
-        acts.push({ label: 'Renommer le groupe', run: () => openRenameDialog(inf) });
-        acts.push({ label: 'Gérer les membres', run: () => openMembersDialog(inf) });
+        acts.push({ label: tr('Renommer le groupe'), run: () => openRenameDialog(inf) });
+        acts.push({ label: tr('Gérer les membres'), run: () => openMembersDialog(inf) });
       }
-      acts.push({ label: 'Quitter le groupe', run: () => (inf.owner ? openLeaveDialog(inf) : leaveNow(inf)) });
+      acts.push({ label: tr('Quitter le groupe'), run: () => (inf.owner ? openLeaveDialog(inf) : leaveNow(inf)) });
     }
     return acts;
   }
@@ -176,9 +177,9 @@ export function createThread(o) {
   /** Le propriétaire est prévenu : en partant, la propriété passe au plus ancien membre. */
   function openLeaveDialog(inf) {
     openDialog({
-      title: 'Quitter le groupe', confirmLabel: 'Quitter le groupe', opener: plusBtn,
+      title: tr('Quitter le groupe'), confirmLabel: tr('Quitter le groupe'), opener: plusBtn,
       build(body, ctl) {
-        body.append(h('p', 'cvd-hint', 'Tu es le propriétaire de « ' + inf.name + ' ». En partant, la propriété passe au plus ancien membre du groupe.'));
+        body.append(h('p', 'cvd-hint', tr('Tu es le propriétaire de « {name} ». En partant, la propriété passe au plus ancien membre du groupe.', { name: inf.name })));
         ctl.setValid(true);
       },
       onConfirm: async () => {
@@ -191,9 +192,9 @@ export function createThread(o) {
   function openRenameDialog(inf) {
     let nameEl = null;
     openDialog({
-      title: 'Renommer le groupe', confirmLabel: 'Renommer', opener: plusBtn,
+      title: tr('Renommer le groupe'), confirmLabel: tr('Renommer'), opener: plusBtn,
       build(body, ctl) {
-        nameEl = h('input', 'cvd-input', null, { type: 'text', maxlength: GROUP_NAME_MAX, 'aria-label': 'Nom du groupe' });
+        nameEl = h('input', 'cvd-input', null, { type: 'text', maxlength: GROUP_NAME_MAX, 'aria-label': tr('Nom du groupe') });
         nameEl.value = inf.name;
         body.append(nameEl);
         const check = () => { const v = nameEl.value.trim(); ctl.setValid(v !== '' && v !== inf.name); };
@@ -214,14 +215,14 @@ export function createThread(o) {
     const people = [...inf.members];
     for (const f of [...s.friends, ...s.household]) if (!current.has(f.pid) && f.pid !== myPid()) people.push(f);
     openDialog({
-      title: 'Membres du groupe', confirmLabel: 'Enregistrer', opener: plusBtn,
+      title: tr('Membres du groupe'), confirmLabel: tr('Enregistrer'), opener: plusBtn,
       build(body, ctl) {
         const hint = h('p', 'cvd-hint', '');
-        const list = h('div', 'cvd-people', null, { role: 'group', 'aria-label': 'Membres du groupe' });
+        const list = h('div', 'cvd-people', null, { role: 'group', 'aria-label': tr('Membres du groupe') });
         const check = () => {
           const n = picked.size;
           const changed = people.some((p) => picked.has(p.pid) !== current.has(p.pid));
-          hint.textContent = n + ' autre' + (n > 1 ? 's' : '') + ' membre' + (n > 1 ? 's' : '') + ' (jusqu’à ' + GROUP_MEMBERS_MAX + ')';
+          hint.textContent = tr('{n} autre{v} membre{v} (jusqu’à {GROUP_MEMBERS_MAX})', { n, v: (n > 1 ? 's' : ''), GROUP_MEMBERS_MAX });
           ctl.setValid(changed && n >= 1 && n <= GROUP_MEMBERS_MAX);
         };
         for (const f of people) {
@@ -275,13 +276,13 @@ export function createThread(o) {
   // ---------- Sondage ----------
   function openPollDialog() {
     openDialog({
-      title: 'Nouveau sondage', confirmLabel: 'Envoyer le sondage', opener: plusBtn,
+      title: tr('Nouveau sondage'), confirmLabel: tr('Envoyer le sondage'), opener: plusBtn,
       build(body, ctl) {
-        const q = h('input', 'cvd-input', null, { type: 'text', maxlength: POLL_QUESTION_MAX, placeholder: 'Question (ex. film de dimanche)', 'aria-label': 'Question du sondage' });
+        const q = h('input', 'cvd-input', null, { type: 'text', maxlength: POLL_QUESTION_MAX, placeholder: tr('Question (ex. film de dimanche)'), 'aria-label': tr('Question du sondage') });
         body.append(q);
         const optsBox = h('div', 'cvd-opts');
         body.append(optsBox);
-        const add = h('button', 'cvm-btn', '+ Ajouter une option', { type: 'button' });
+        const add = h('button', 'cvm-btn', tr('+ Ajouter une option'), { type: 'button' });
         body.append(add);
         const fields = [];
         const check = () => {
@@ -290,7 +291,7 @@ export function createThread(o) {
           add.hidden = fields.length >= POLL_OPTIONS_MAX;
         };
         const addField = () => {
-          const f = h('input', 'cvd-input', null, { type: 'text', maxlength: POLL_OPTION_MAX, placeholder: 'Option ' + (fields.length + 1), 'aria-label': 'Option ' + (fields.length + 1) });
+          const f = h('input', 'cvd-input', null, { type: 'text', maxlength: POLL_OPTION_MAX, placeholder: tr('Option') + ' ' + (fields.length + 1), 'aria-label': tr('Option') + ' ' + (fields.length + 1) });
           f.addEventListener('input', check);
           fields.push(f);
           optsBox.append(f);
@@ -327,9 +328,9 @@ export function createThread(o) {
       try {
         const p = t.poster ? posterPathOf(t.poster) || (t.poster.startsWith('/') ? t.poster : '') : '';
         userStore.toggleLibrary({ id: String(t.tmdbId), type: t.type === 'series' ? 'tv' : 'movie', title: t.title, poster: p, year: t.year ? String(t.year) : '' });
-        deps.toast(t.title + ' est dans ta liste.');
+        deps.toast(tr('{title} est dans ta liste.', { title: t.title }));
         repaintLog(true);
-      } catch { deps.toast('Impossible d’ajouter à ta liste.'); }
+      } catch { deps.toast(tr('Impossible d’ajouter à ta liste.')); }
       if (opener && opener.isConnected) opener.blur();
     },
     playMoment(mo, opener) {
@@ -368,8 +369,8 @@ export function createThread(o) {
     if (!replyTo) return;
     const inf = info();
     const t = h('div', 'cvw-reply-t');
-    t.append(h('b', null, 'Réponse à ' + authorName(replyTo.from, inf, lastState)), h('span', null, messageText(replyTo)));
-    replyBar.append(t, iconBtn('cvw-ico', 'Annuler la réponse', SVG.close, () => { replyTo = null; paintReply(); input.focus(); }));
+    t.append(h('b', null, tr('Réponse à {from}', { from: authorName(replyTo.from, inf, lastState) })), h('span', null, messageText(replyTo)));
+    replyBar.append(t, iconBtn('cvw-ico', tr('Annuler la réponse'), SVG.close, () => { replyTo = null; paintReply(); input.focus(); }));
   }
 
   // ---------- Messages ----------
@@ -416,9 +417,9 @@ export function createThread(o) {
     log.append(more);
     more.hidden = !(hasMore || loadFailed);
     more.disabled = loading;
-    more.textContent = loadFailed ? 'Réessayer le chargement' : 'Messages précédents';
+    more.textContent = loadFailed ? tr('Réessayer le chargement') : tr('Messages précédents');
     if (!list.length) {
-      if (!loading) log.append(h('p', 'cvw-empty', 'Aucun message pour l’instant. Écris le premier !'));
+      if (!loading) log.append(h('p', 'cvw-empty', tr('Aucun message pour l’instant. Écris le premier !')));
     } else {
       for (const it of timeline(list)) {
         if (it.day) log.append(h('div', 'cvm-day', it.day));
@@ -426,7 +427,7 @@ export function createThread(o) {
       }
     }
     const seenAt = seenInfo(list, me);
-    if (seenAt) log.append(h('div', 'cvm-seen', 'Vu · ' + new Date(seenAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })));
+    if (seenAt) log.append(h('div', 'cvm-seen', 'Vu · ' + new Date(seenAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' })));
     const names = typingNames();
     if (names.length) {
       const t = h('div', 'cvm-typing');
@@ -475,7 +476,7 @@ export function createThread(o) {
     }
     loading = false;
     if (!alive) return;
-    setStatus(loadFailed ? 'Messages indisponibles pour le moment.' : '', loadFailed ? 'error' : '');
+    setStatus(loadFailed ? tr('Messages indisponibles pour le moment.') : '', loadFailed ? 'error' : '');
     lastState = store.getState();
     repaintLog(true);
   }
@@ -491,7 +492,7 @@ export function createThread(o) {
       hasMore = merged.length > prev;
     } catch {
       hasMore = true;
-      if (alive) deps.toast('Messages précédents indisponibles pour le moment.');
+      if (alive) deps.toast(tr('Messages précédents indisponibles pour le moment.'));
     }
     loading = false;
     if (!alive) return;
@@ -528,7 +529,7 @@ export function createThread(o) {
     const text = input.value.trim();
     if (sending || !text) return;
     if (Array.from(text).length > store.MESSAGE_MAX) {
-      setStatus('Message trop long : ' + store.MESSAGE_MAX + ' caractères au maximum.', 'error');
+      setStatus(tr('Message trop long : {MESSAGE_MAX} caractères au maximum.', { MESSAGE_MAX: store.MESSAGE_MAX }), 'error');
       return;
     }
     sending = true;
@@ -566,11 +567,11 @@ export function createThread(o) {
       b.addEventListener('click', () => { emojiTab = t.id; paintEmoji(); });
       tabs.append(b);
     }
-    const grid = h('div', 'cvw-egrid', null, { role: 'group', 'aria-label': 'Emojis' });
+    const grid = h('div', 'cvw-egrid', null, { role: 'group', 'aria-label': tr('Emojis') });
     const tab = EMOJI_TABS.find((t) => t.id === emojiTab) || EMOJI_TABS[0];
     const list = tab.id === 'recent' ? loadRecentEmojis() : tab.list;
     for (const em of list) {
-      const b = h('button', 'cvw-eit', em, { type: 'button', 'aria-label': 'Insérer ' + em });
+      const b = h('button', 'cvw-eit', em, { type: 'button', 'aria-label': tr('Insérer {em}', { em }) });
       b.addEventListener('click', () => insertEmoji(em));
       grid.append(b);
     }
@@ -602,17 +603,17 @@ export function createThread(o) {
       if (inf.watching) {
         const b = h('button', 'cvw-chip', null, { type: 'button' });
         b.innerHTML = SVG.play;
-        b.append('Regarder avec ' + inf.name);
+        b.append(tr('Regarder avec {name}', { name: inf.name }));
         b.addEventListener('click', watchWith);
         sugg.append(b);
       }
       const p = h('button', 'cvw-chip', null, { type: 'button' });
       p.innerHTML = SVG.party;
-      p.append('Proposer une watch party');
+      p.append(tr('Proposer une watch party'));
       p.addEventListener('click', () => inviteToParty(inf.pid));
       sugg.append(p);
     } else {
-      const p = h('button', 'cvw-chip', 'Créer un sondage', { type: 'button' });
+      const p = h('button', 'cvw-chip', tr('Créer un sondage'), { type: 'button' });
       p.addEventListener('click', () => openPollDialog());
       sugg.append(p);
     }
@@ -631,8 +632,8 @@ export function createThread(o) {
     if (barFor && !e.target.closest('.cvm-bar, .cvm-act')) { barFor = null; repaintLog(true); }
   });
   plusBtn.addEventListener('click', () => openMenu(plusBtn, [
-    { label: 'Partager un titre', run: () => openShareDialog({ media: null, conv }) },
-    { label: 'Créer un sondage', run: () => openPollDialog() },
+    { label: tr('Partager un titre'), run: () => openShareDialog({ media: null, conv }) },
+    { label: tr('Créer un sondage'), run: () => openPollDialog() },
   ]));
   emojiBtn.addEventListener('click', () => { emojiOpen = !emojiOpen; paintEmoji(); });
   el.addEventListener('keydown', (e) => {

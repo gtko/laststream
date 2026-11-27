@@ -2,6 +2,7 @@ import type { DesktopEngine } from '../data/prefs';
 import type { MediaCaps, Probe } from './server';
 import type { ShellBackend } from './shell';
 import { trackLang } from './tracks';
+import { t } from '../i18n';
 
 /* Toute lecture passe par un lien HTTPS (débrideur ou lien direct d'un addon) : aucun moteur torrent.
  * Choix du moteur de lecture : lecteur natif Android (libVLC), mpv (coque Windows), lecture directe HTML5, ou HLS via le serveur de streaming.
@@ -103,7 +104,7 @@ export function localWebVerdict(container: string, caps: MediaCaps): { ok: true 
   const c = container.toLowerCase();
   if (!c || WEB_LOCAL_CONTAINERS.includes(c)) return { ok: true };
   if (c === 'mkv' && caps.formats.includes('matroska,webm')) return { ok: true };
-  return { ok: false, reason: 'Ce navigateur ne lit pas les fichiers ' + c.toUpperCase() + '.' };
+  return { ok: false, reason: t('Ce navigateur ne lit pas les fichiers {c}.', { c: c.toUpperCase() }) };
 }
 
 /**
@@ -133,31 +134,31 @@ export function shouldRetryOnLibvlc(i: LibvlcRetryInput): boolean {
 
 export function chooseEngine(i: EngineInput): EngineChoice {
   if (i.native) {
-    return { engine: 'native', viaServer: false, label: 'libVLC (lecteur natif Android)', reason: 'Application Android : le lecteur natif lit tous les formats (HEVC, AV1, DTS, TrueHD, AC3, EAC3).' };
+    return { engine: 'native', viaServer: false, label: t('libVLC (lecteur natif Android)'), reason: t('Application Android : le lecteur natif lit tous les formats (HEVC, AV1, DTS, TrueHD, AC3, EAC3).') };
   }
   if (i.shell) {
     const backend = pickShellBackend(i.desktopEngine ?? 'auto', !!i.libvlcAvailable);
     return backend === 'libvlc'
-      ? { engine: 'mpv', backend, viaServer: false, label: 'libVLC (application Windows)', reason: 'Coque Windows : moteur libVLC choisi dans les réglages.' }
-      : { engine: 'mpv', backend, viaServer: false, label: 'mpv (application Windows)', reason: 'Coque Windows détectée : mpv lit tous les formats.' };
+      ? { engine: 'mpv', backend, viaServer: false, label: t('libVLC (application Windows)'), reason: t('Coque Windows : moteur libVLC choisi dans les réglages.') }
+      : { engine: 'mpv', backend, viaServer: false, label: t('mpv (application Windows)'), reason: t('Coque Windows détectée : mpv lit tous les formats.') };
   }
   if (i.local) {
     const v = localWebVerdict(i.local.container || (/\.([a-z0-9]{2,5})$/i.exec(i.local.name)?.[1] ?? ''), i.caps);
-    const label = 'lecture hors ligne';
+    const label = t('lecture hors ligne');
     return v.ok
-      ? { engine: 'direct', viaServer: false, label, reason: 'Fichier téléchargé, lu depuis cet appareil.' }
+      ? { engine: 'direct', viaServer: false, label, reason: t('Fichier téléchargé, lu depuis cet appareil.') }
       : { engine: 'direct', viaServer: false, label, reason: v.reason, unsupported: v.reason };
   }
   const playable = i.forceTranscoding ? false : i.probe ? canPlayProbe(i.probe, i.caps, { preferredLang: i.preferredLang, audioTracksSupported: i.audioTracksSupported }) : guessWebPlayable(i.name, i.notWebReady);
   if (playable || !i.serverUp) {
     return {
-      engine: 'direct', viaServer: false, label: 'lecture directe',
-      reason: playable ? 'Fichier lisible par le navigateur.' : 'Serveur de streaming absent : lecture directe tentée.',
+      engine: 'direct', viaServer: false, label: t('lecture directe'),
+      reason: playable ? t('Fichier lisible par le navigateur.') : t('Serveur de streaming absent : lecture directe tentée.'),
     };
   }
   return {
-    engine: 'hls', viaServer: true, label: 'transcodage HLS',
-    reason: i.probe ? 'Codecs, pistes audio ou sous-titres non gérés par le navigateur.' : 'Format incertain : transcodage par le serveur.',
+    engine: 'hls', viaServer: true, label: t('transcodage HLS'),
+    reason: i.probe ? t('Codecs, pistes audio ou sous-titres non gérés par le navigateur.') : t('Format incertain : transcodage par le serveur.'),
   };
 }
 
@@ -204,7 +205,7 @@ export function probeConversion(probe: Probe | null, caps: MediaCaps, forced = f
 }
 
 export const CONVERSION_LABEL: Record<ConversionKind, string> = {
-  none: 'Remux seul (aucune conversion)', audio: 'Conversion audio seulement', video: 'Conversion vidéo (réencodage)', unknown: 'Inconnue',
+  none: t('Remux seul (aucune conversion)'), audio: t('Conversion audio seulement'), video: t('Conversion vidéo (réencodage)'), unknown: t('Inconnue'),
 };
 
 /**

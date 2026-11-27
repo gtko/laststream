@@ -43,7 +43,7 @@
   .ens-panel .wp-filters .wp-pills { flex-wrap: nowrap; overflow-x: auto; flex: 1 1 100%; margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scrollbar-width: none; }
   .ens-panel .wp-filters .wp-pills::-webkit-scrollbar { display: none; }
   .ens-panel .wp-filters .pill { flex: none; }
-  .ens-panel .wp-count { flex: 1 1 0; min-width: 0; text-align: right; }
+  .ens-panel .wp-count { flex: 1 1 0; min-width: 0; text-align: end; }
 }
 @media (max-width: 480px) {
   .ens-root .top-actions [data-search] { display: none; }

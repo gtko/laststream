@@ -4,6 +4,7 @@ import { isIOS } from './appDownload';
 import { isAndroidApp } from '../data/config';
 import { getExternalPlayer } from '../data/prefs';
 import { connectShell, isShellEnvironment } from './shell';
+import { t as tr } from '../i18n';
 
 /** Où tourne l'app : coque Windows, app Android (Capacitor), iPhone ou iPad, Chrome Android, autre navigateur. */
 export type Platform = 'ios' | 'android-app' | 'shell' | 'web-android' | 'web';
@@ -24,7 +25,7 @@ interface Scheme { id: string; label: string; build(url: string, title: string):
 const SCHEMES: readonly Scheme[] = [
   { id: 'vlc', label: 'VLC', build: (url) => `vlc-x-callback://x-callback-url/stream?url=${encodeURIComponent(url)}` },
   { id: 'infuse', label: 'Infuse', build: (url) => `infuse://x-callback-url/play?url=${encodeURIComponent(url)}` },
-  { id: 'outplayer', label: 'Outplayer', build: (url) => `outplayer://${url}` },
+  { id: 'outplayer', label: tr('Outplayer'), build: (url) => `outplayer://${url}` },
   { id: 'nplayer', label: 'nPlayer', build: (url) => `nplayer-${url}` },
   { id: 'vidhub', label: 'VidHub', build: (url) => `open-vidhub://x-callback-url/open?url=${encodeURIComponent(url)}` },
   { id: 'senplayer', label: 'SenPlayer', build: (url) => `SenPlayer://x-callback-url/play?url=${encodeURIComponent(url)}` },
@@ -58,32 +59,32 @@ export function playerOptions(platform: Platform): PlayerOption[] {
   switch (platform) {
     case 'ios':
       return [
-        { id: 'auto', label: 'Intégré, sinon lecteur externe' },
-        { id: 'builtin', label: 'Intégré (Safari)' },
+        { id: 'auto', label: tr('Intégré, sinon lecteur externe') },
+        { id: 'builtin', label: tr('Intégré (Safari)') },
         ...SCHEMES.map(({ id, label }) => ({ id, label })),
       ];
     case 'shell':
       return [
-        { id: 'builtin', label: 'Intégré (mpv)' },
+        { id: 'builtin', label: tr('Intégré (mpv)') },
         { id: 'vlc', label: 'VLC' },
-        { id: 'system', label: 'Lecteur par défaut du système' },
+        { id: 'system', label: tr('Lecteur par défaut du système') },
       ];
     case 'android-app': {
       const plugin = hasAndroidPlugin();
-      const chooser: PlayerOption = { id: 'chooser', label: 'Autre application…', disabled: !plugin };
-      if (!plugin) chooser.hint = 'Nécessite la mise à jour de l’app';
-      return [{ id: 'builtin', label: 'Intégré (libVLC)' }, chooser];
+      const chooser: PlayerOption = { id: 'chooser', label: tr('Autre application…'), disabled: !plugin };
+      if (!plugin) chooser.hint = tr('Nécessite la mise à jour de l’app');
+      return [{ id: 'builtin', label: tr('Intégré (libVLC)') }, chooser];
     }
     case 'web-android':
       return [
-        { id: 'builtin', label: 'Intégré' },
-        { id: 'intent', label: 'Autre application' },
-        { id: 'm3u', label: 'Télécharger une playlist (.m3u)' },
+        { id: 'builtin', label: tr('Intégré') },
+        { id: 'intent', label: tr('Autre application') },
+        { id: 'm3u', label: tr('Télécharger une playlist (.m3u)') },
       ];
     case 'web':
       return [
-        { id: 'builtin', label: 'Intégré' },
-        { id: 'm3u', label: 'Télécharger une playlist (.m3u)' },
+        { id: 'builtin', label: tr('Intégré') },
+        { id: 'm3u', label: tr('Télécharger une playlist (.m3u)') },
       ];
   }
 }

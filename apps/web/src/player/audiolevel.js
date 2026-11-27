@@ -2,6 +2,7 @@
  * Le son passe par un graphe WebAudio : on ne l'active que sur demande, et pas sur un média d'une autre origine sans CORS
  * (le navigateur le rendrait muet). Les flux HLS (blob MSE) et les médias de la même origine conviennent. */
 
+import { t as tr } from '../i18n';
 const SAMPLE_MS = 100;
 const MAX_SAMPLES = 24000;
 
@@ -13,16 +14,16 @@ function sameOriginOrBlob(src) {
 
 /** Le flux se prête-t-il à l'analyse (sans rien brancher) ? */
 export function levelProbeSupported(video) {
-  if (!(window.AudioContext || window.webkitAudioContext)) return { ok: false, reason: 'Ce navigateur n’a pas WebAudio.' };
-  if (!sameOriginOrBlob(video.currentSrc || video.src)) return { ok: false, reason: 'Disponible en lecture convertie (HLS) ; ce flux direct vient d’une autre origine.' };
+  if (!(window.AudioContext || window.webkitAudioContext)) return { ok: false, reason: tr('Ce navigateur n’a pas WebAudio.') };
+  if (!sameOriginOrBlob(video.currentSrc || video.src)) return { ok: false, reason: tr('Disponible en lecture convertie (HLS) ; ce flux direct vient d’une autre origine.') };
   return { ok: true, reason: '' };
 }
 
 /** Renvoie { ok:false, reason } ou { ok:true, samples, start(), stop(), seconds() } (secondes de vidéo couvertes). */
 export function createLevelProbe(video) {
   const Ctx = window.AudioContext || window.webkitAudioContext;
-  if (!Ctx) return { ok: false, reason: 'Ce navigateur n’a pas WebAudio.' };
-  if (!sameOriginOrBlob(video.currentSrc || video.src)) return { ok: false, reason: 'Disponible en lecture convertie (HLS) ; ce flux direct vient d’une autre origine.' };
+  if (!Ctx) return { ok: false, reason: tr('Ce navigateur n’a pas WebAudio.') };
+  if (!sameOriginOrBlob(video.currentSrc || video.src)) return { ok: false, reason: tr('Disponible en lecture convertie (HLS) ; ce flux direct vient d’une autre origine.') };
   let graph = video._lsLevelGraph;
   try {
     if (!graph) {
@@ -41,7 +42,7 @@ export function createLevelProbe(video) {
       video._lsLevelGraph = graph;
     }
   } catch (_) {
-    return { ok: false, reason: 'Impossible de brancher l’analyse audio sur cette vidéo.' };
+    return { ok: false, reason: tr('Impossible de brancher l’analyse audio sur cette vidéo.') };
   }
   const samples = [];
   let timer = null;

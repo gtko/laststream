@@ -1,5 +1,6 @@
 /* Pagination par section de la page Recherche (ODY-215) : nombre de résultats affichés au départ et taille d'un lot « Charger plus ».
  * Vue « Tout » : 18 par section (trois rangées de six sur grand écran) ; dans un filtre unique, 36. Personnalités : 12, puis 24. */
+import { t } from '../i18n';
 const BASE_ALL = 18;
 const BASE_ONE = 36;
 const PEOPLE_ALL = 12;
@@ -32,7 +33,7 @@ export function hiddenCount(loaded, limit) {
 export function moreLabel(loaded, limit, done) {
   const rest = hiddenCount(loaded, limit);
   if (!rest && done) return '';
-  return rest ? 'Charger plus (' + rest + (done ? '' : '+') + ' restant' + (rest > 1 ? 's' : '') + ')' : 'Charger plus';
+  return rest ? t('Charger plus ({rest}{v} restant{v2})', { rest, v: (done ? '' : '+'), v2: (rest > 1 ? 's' : '') }) : t('Charger plus');
 }
 
 /** Un bouton est-il utile ? Oui s'il reste des résultats masqués ou d'autres pages à venir. */

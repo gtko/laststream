@@ -3,10 +3,11 @@
  * contrôles de la vignette (lecture/pause, agrandir, fermer, progression) et accessibilité. La géométrie est dans mini.ts. */
 import { LI } from './icons.js';
 import { clampBox, holeClipFor, isBarLayout, miniLayout, snapCorner } from './mini';
+import { t as tr } from '../i18n';
 
 const DRAG_THRESHOLD = 6;
 
-const PLAIN_ROLE = { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Lecteur vidéo' };
+const PLAIN_ROLE = { role: 'dialog', 'aria-modal': 'true', 'aria-label': tr('Lecteur vidéo') };
 
 /**
  * `h` : { state: MiniState, action(act), layout(video | null, layout) }. `layout` reçoit le rectangle de l'image (px de la
@@ -17,11 +18,11 @@ export function createMiniView(root, h) {
   bar.className = 'lp-mini';
   bar.hidden = true;
   bar.innerHTML =
-    '<button type="button" class="lp-mini-btn lp-mini-expand" data-act="expand" aria-label="Agrandir le lecteur (I)" title="Agrandir (I)">' + LI.expand + '</button>' +
-    '<button type="button" class="lp-mini-btn lp-mini-close" data-act="close" aria-label="Fermer le lecteur" title="Fermer">' + LI.close + '</button>' +
-    '<button type="button" class="lp-mini-btn lp-mini-play" data-act="toggle-play" aria-label="Lecture" title="Lecture / pause">' + LI.play + '</button>' +
+    '<button type="button" class="lp-mini-btn lp-mini-expand" data-act="expand" aria-label="' + tr('Agrandir le lecteur (I)') + '" title="' + tr('Agrandir (I)') + '">' + LI.expand + '</button>' +
+    '<button type="button" class="lp-mini-btn lp-mini-close" data-act="close" aria-label="' + tr('Fermer le lecteur') + '" title="' + tr('Fermer') + '">' + LI.close + '</button>' +
+    '<button type="button" class="lp-mini-btn lp-mini-play" data-act="toggle-play" aria-label="' + tr('Lecture') + '" title="' + tr('Lecture / pause') + '">' + LI.play + '</button>' +
     '<div class="lp-mini-info"><p class="lp-mini-title"></p><p class="lp-mini-sub"></p></div>' +
-    '<div class="lp-mini-prog" role="progressbar" aria-label="Progression de la lecture" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>';
+    '<div class="lp-mini-prog" role="progressbar" aria-label="' + tr('Progression de la lecture') + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>';
   root.appendChild(bar);
   const q = (s) => bar.querySelector(s);
   const playBtn = q('.lp-mini-play');
@@ -116,7 +117,7 @@ export function createMiniView(root, h) {
   });
   window.addEventListener('resize', () => { if (active && !drag) layout(); });
 
-  function setLabel() { root.setAttribute('aria-label', 'Mini-lecteur' + (title ? ' : ' + title : '')); }
+  function setLabel() { root.setAttribute('aria-label', tr('Mini-lecteur') + (title ? ' : ' + title : '')); }
 
   return {
     get active() { return active; },
@@ -161,7 +162,7 @@ export function createMiniView(root, h) {
       if (paused !== !!st.paused) {
         paused = !!st.paused;
         playBtn.innerHTML = paused ? LI.play : LI.pause;
-        playBtn.setAttribute('aria-label', paused ? 'Lecture' : 'Pause');
+        playBtn.setAttribute('aria-label', paused ? tr('Lecture') : tr('Pause'));
       }
     },
   };

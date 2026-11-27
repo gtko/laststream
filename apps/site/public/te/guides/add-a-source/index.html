@@ -1,0 +1,277 @@
+<!doctype html>
+<!-- Page générée par guides-capture/build-guides.mjs (texte : guides-content.mjs) : modifier la source, pas ce fichier. -->
+<html lang="te">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>మూలాన్ని జోడించు (Stremio ఎక్స్‌టెన్షన్) - Laststream గైడ్‌లు</title>
+<meta name="description" content="Laststream Stremio ఎక్స్‌టెన్షన్‌లను (addons) అంగీకరిస్తుంది: వాటి manifest చిరునామాను అతికించు, మీరు ఒక శీర్షికను ప్లే చేసినప్పుడు వాటి లింక్‌లు కనిపిస్తాయి.">
+<meta name="theme-color" content="#0c0b11">
+<link rel="canonical" href="https://laststream.app/te/guides/add-a-source/">
+<link rel="alternate" hreflang="fr" href="https://laststream.app/guides/ajouter-une-source/">
+<link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/add-a-source/">
+<link rel="alternate" hreflang="af" href="https://laststream.app/af/guides/add-a-source/">
+<link rel="alternate" hreflang="ar" href="https://laststream.app/ar/guides/add-a-source/">
+<link rel="alternate" hreflang="be" href="https://laststream.app/be/guides/add-a-source/">
+<link rel="alternate" hreflang="bg" href="https://laststream.app/bg/guides/add-a-source/">
+<link rel="alternate" hreflang="bn" href="https://laststream.app/bn/guides/add-a-source/">
+<link rel="alternate" hreflang="ca" href="https://laststream.app/ca/guides/add-a-source/">
+<link rel="alternate" hreflang="cs" href="https://laststream.app/cs/guides/add-a-source/">
+<link rel="alternate" hreflang="cy" href="https://laststream.app/cy/guides/add-a-source/">
+<link rel="alternate" hreflang="da" href="https://laststream.app/da/guides/add-a-source/">
+<link rel="alternate" hreflang="de" href="https://laststream.app/de/guides/add-a-source/">
+<link rel="alternate" hreflang="el" href="https://laststream.app/el/guides/add-a-source/">
+<link rel="alternate" hreflang="eo" href="https://laststream.app/eo/guides/add-a-source/">
+<link rel="alternate" hreflang="es" href="https://laststream.app/es/guides/add-a-source/">
+<link rel="alternate" hreflang="et" href="https://laststream.app/et/guides/add-a-source/">
+<link rel="alternate" hreflang="eu" href="https://laststream.app/eu/guides/add-a-source/">
+<link rel="alternate" hreflang="fa" href="https://laststream.app/fa/guides/add-a-source/">
+<link rel="alternate" hreflang="fi" href="https://laststream.app/fi/guides/add-a-source/">
+<link rel="alternate" hreflang="fil" href="https://laststream.app/fil/guides/add-a-source/">
+<link rel="alternate" hreflang="gl" href="https://laststream.app/gl/guides/add-a-source/">
+<link rel="alternate" hreflang="he" href="https://laststream.app/he/guides/add-a-source/">
+<link rel="alternate" hreflang="hi" href="https://laststream.app/hi/guides/add-a-source/">
+<link rel="alternate" hreflang="hr" href="https://laststream.app/hr/guides/add-a-source/">
+<link rel="alternate" hreflang="hu" href="https://laststream.app/hu/guides/add-a-source/">
+<link rel="alternate" hreflang="id" href="https://laststream.app/id/guides/add-a-source/">
+<link rel="alternate" hreflang="is" href="https://laststream.app/is/guides/add-a-source/">
+<link rel="alternate" hreflang="it" href="https://laststream.app/it/guides/add-a-source/">
+<link rel="alternate" hreflang="ja" href="https://laststream.app/ja/guides/add-a-source/">
+<link rel="alternate" hreflang="kk" href="https://laststream.app/kk/guides/add-a-source/">
+<link rel="alternate" hreflang="ko" href="https://laststream.app/ko/guides/add-a-source/">
+<link rel="alternate" hreflang="lt" href="https://laststream.app/lt/guides/add-a-source/">
+<link rel="alternate" hreflang="lv" href="https://laststream.app/lv/guides/add-a-source/">
+<link rel="alternate" hreflang="mk" href="https://laststream.app/mk/guides/add-a-source/">
+<link rel="alternate" hreflang="ml" href="https://laststream.app/ml/guides/add-a-source/">
+<link rel="alternate" hreflang="mr" href="https://laststream.app/mr/guides/add-a-source/">
+<link rel="alternate" hreflang="ms" href="https://laststream.app/ms/guides/add-a-source/">
+<link rel="alternate" hreflang="my" href="https://laststream.app/my/guides/add-a-source/">
+<link rel="alternate" hreflang="nb" href="https://laststream.app/nb/guides/add-a-source/">
+<link rel="alternate" hreflang="ne" href="https://laststream.app/ne/guides/add-a-source/">
+<link rel="alternate" hreflang="nl" href="https://laststream.app/nl/guides/add-a-source/">
+<link rel="alternate" hreflang="pa" href="https://laststream.app/pa/guides/add-a-source/">
+<link rel="alternate" hreflang="pl" href="https://laststream.app/pl/guides/add-a-source/">
+<link rel="alternate" hreflang="pt-BR" href="https://laststream.app/pt-BR/guides/add-a-source/">
+<link rel="alternate" hreflang="ro" href="https://laststream.app/ro/guides/add-a-source/">
+<link rel="alternate" hreflang="ru" href="https://laststream.app/ru/guides/add-a-source/">
+<link rel="alternate" hreflang="sk" href="https://laststream.app/sk/guides/add-a-source/">
+<link rel="alternate" hreflang="sl" href="https://laststream.app/sl/guides/add-a-source/">
+<link rel="alternate" hreflang="sq" href="https://laststream.app/sq/guides/add-a-source/">
+<link rel="alternate" hreflang="sr" href="https://laststream.app/sr/guides/add-a-source/">
+<link rel="alternate" hreflang="sv" href="https://laststream.app/sv/guides/add-a-source/">
+<link rel="alternate" hreflang="ta" href="https://laststream.app/ta/guides/add-a-source/">
+<link rel="alternate" hreflang="te" href="https://laststream.app/te/guides/add-a-source/">
+<link rel="alternate" hreflang="th" href="https://laststream.app/th/guides/add-a-source/">
+<link rel="alternate" hreflang="tr" href="https://laststream.app/tr/guides/add-a-source/">
+<link rel="alternate" hreflang="uk" href="https://laststream.app/uk/guides/add-a-source/">
+<link rel="alternate" hreflang="ur" href="https://laststream.app/ur/guides/add-a-source/">
+<link rel="alternate" hreflang="vi" href="https://laststream.app/vi/guides/add-a-source/">
+<link rel="alternate" hreflang="zh-CN" href="https://laststream.app/zh-CN/guides/add-a-source/">
+<link rel="alternate" hreflang="zh-TW" href="https://laststream.app/zh-TW/guides/add-a-source/">
+<link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/ajouter-une-source/">
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Laststream">
+<meta property="og:locale" content="te">
+<meta property="og:title" content="మూలాన్ని జోడించు (Stremio ఎక్స్‌టెన్షన్) - Laststream గైడ్‌లు">
+<meta property="og:description" content="Laststream Stremio ఎక్స్‌టెన్షన్‌లను (addons) అంగీకరిస్తుంది: వాటి manifest చిరునామాను అతికించు, మీరు ఒక శీర్షికను ప్లే చేసినప్పుడు వాటి లింక్‌లు కనిపిస్తాయి.">
+<meta property="og:url" content="https://laststream.app/te/guides/add-a-source/">
+<meta property="og:image" content="https://laststream.app/te/guides/add-a-source/img/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="సెట్టింగ్‌లు, మూలాలు: manifest URL ఫీల్డ్ పసుపు రంగులో ఫ్రేమ్ చేయబడింది">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="మూలాన్ని జోడించు (Stremio ఎక్స్‌టెన్షన్) - Laststream గైడ్‌లు">
+<meta name="twitter:description" content="Laststream Stremio ఎక్స్‌టెన్షన్‌లను (addons) అంగీకరిస్తుంది: వాటి manifest చిరునామాను అతికించు, మీరు ఒక శీర్షికను ప్లే చేసినప్పుడు వాటి లింక్‌లు కనిపిస్తాయి.">
+<meta name="twitter:image" content="https://laststream.app/te/guides/add-a-source/img/og.jpg">
+<meta name="twitter:image:alt" content="సెట్టింగ్‌లు, మూలాలు: manifest URL ఫీల్డ్ పసుపు రంగులో ఫ్రేమ్ చేయబడింది">
+<link rel="preload" href="/assets/fonts/sora-latin-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/jakarta-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/guides/guides.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Guides",
+      "item": "https://laststream.app/te/guides/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Add a source (Stremio extension)",
+      "item": "https://laststream.app/te/guides/add-a-source/"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#contenu">కంటెంట్‌కు దాటు</a>
+
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="/te/" aria-label="Laststream, హోమ్">
+      <img src="/assets/logo.svg" width="36" height="36" alt=""> <span>Laststream</span>
+    </a>
+    <nav class="nav" aria-label="ప్రధాన నావిగేషన్">
+      <a href="/te/#fonctions">ఫీచర్లు</a>
+      <a href="/te/#etapes">ఇది ఎలా పనిచేస్తుంది</a>
+      <a href="/te/#apercu">ప్రివ్యూ</a>
+      <a href="/te/#ensemble">కలిసి</a>
+      <a href="/te/#telecharger">డౌన్‌లోడ్</a>
+      <a href="/te/#faq">తరచూ అడిగే ప్రశ్నలు</a>
+      <a href="/te/guides/" aria-current="page">గైడ్‌లు</a>
+    </nav>
+    <a class="btn btn-sm" href="/te/#telecharger">డౌన్‌లోడ్</a>
+    <nav class="lang" aria-label="Language">
+      <a href="/guides/ajouter-une-source/" hreflang="fr" lang="fr">FR</a>
+      <a href="/en/guides/add-a-source/" hreflang="en" lang="en">EN</a><!-- langues:début (scripts/i18n-site.mjs) --><details class="lang-more"><summary aria-current="page"><span aria-hidden="true">TE</span><span class="sr-only">Languages</span></summary><ul><li><a href="/af/guides/add-a-source/" hreflang="af" lang="af">Afrikaans</a></li><li><a href="/ar/guides/add-a-source/" hreflang="ar" lang="ar">العربية</a></li><li><a href="/be/guides/add-a-source/" hreflang="be" lang="be">Беларуская</a></li><li><a href="/bg/guides/add-a-source/" hreflang="bg" lang="bg">Български</a></li><li><a href="/bn/guides/add-a-source/" hreflang="bn" lang="bn">বাংলা</a></li><li><a href="/ca/guides/add-a-source/" hreflang="ca" lang="ca">Català</a></li><li><a href="/cs/guides/add-a-source/" hreflang="cs" lang="cs">Čeština</a></li><li><a href="/cy/guides/add-a-source/" hreflang="cy" lang="cy">Cymraeg</a></li><li><a href="/da/guides/add-a-source/" hreflang="da" lang="da">Dansk</a></li><li><a href="/de/guides/add-a-source/" hreflang="de" lang="de">Deutsch</a></li><li><a href="/el/guides/add-a-source/" hreflang="el" lang="el">Ελληνικά</a></li><li><a href="/eo/guides/add-a-source/" hreflang="eo" lang="eo">Esperanto</a></li><li><a href="/es/guides/add-a-source/" hreflang="es" lang="es">Español (España)</a></li><li><a href="/et/guides/add-a-source/" hreflang="et" lang="et">Eesti</a></li><li><a href="/eu/guides/add-a-source/" hreflang="eu" lang="eu">Euskara</a></li><li><a href="/fa/guides/add-a-source/" hreflang="fa" lang="fa">فارسی</a></li><li><a href="/fi/guides/add-a-source/" hreflang="fi" lang="fi">Suomi</a></li><li><a href="/fil/guides/add-a-source/" hreflang="fil" lang="fil">Filipino</a></li><li><a href="/gl/guides/add-a-source/" hreflang="gl" lang="gl">Galego</a></li><li><a href="/he/guides/add-a-source/" hreflang="he" lang="he">עברית</a></li><li><a href="/hi/guides/add-a-source/" hreflang="hi" lang="hi">हिन्दी</a></li><li><a href="/hr/guides/add-a-source/" hreflang="hr" lang="hr">Hrvatski</a></li><li><a href="/hu/guides/add-a-source/" hreflang="hu" lang="hu">Magyar</a></li><li><a href="/id/guides/add-a-source/" hreflang="id" lang="id">Bahasa Indonesia</a></li><li><a href="/is/guides/add-a-source/" hreflang="is" lang="is">Íslenska</a></li><li><a href="/it/guides/add-a-source/" hreflang="it" lang="it">Italiano</a></li><li><a href="/ja/guides/add-a-source/" hreflang="ja" lang="ja">日本語</a></li><li><a href="/kk/guides/add-a-source/" hreflang="kk" lang="kk">Қазақ тілі</a></li><li><a href="/ko/guides/add-a-source/" hreflang="ko" lang="ko">한국어</a></li><li><a href="/lt/guides/add-a-source/" hreflang="lt" lang="lt">Lietuvių</a></li><li><a href="/lv/guides/add-a-source/" hreflang="lv" lang="lv">Latviešu</a></li><li><a href="/mk/guides/add-a-source/" hreflang="mk" lang="mk">Македонски</a></li><li><a href="/ml/guides/add-a-source/" hreflang="ml" lang="ml">മലയാളം</a></li><li><a href="/mr/guides/add-a-source/" hreflang="mr" lang="mr">मराठी</a></li><li><a href="/ms/guides/add-a-source/" hreflang="ms" lang="ms">Bahasa Melayu</a></li><li><a href="/my/guides/add-a-source/" hreflang="my" lang="my">မြန်မာ</a></li><li><a href="/nb/guides/add-a-source/" hreflang="nb" lang="nb">Norsk bokmål</a></li><li><a href="/ne/guides/add-a-source/" hreflang="ne" lang="ne">नेपाली</a></li><li><a href="/nl/guides/add-a-source/" hreflang="nl" lang="nl">Nederlands</a></li><li><a href="/pa/guides/add-a-source/" hreflang="pa" lang="pa">ਪੰਜਾਬੀ</a></li><li><a href="/pl/guides/add-a-source/" hreflang="pl" lang="pl">Polski</a></li><li><a href="/pt-BR/guides/add-a-source/" hreflang="pt-BR" lang="pt-BR">Português (Brasil)</a></li><li><a href="/ro/guides/add-a-source/" hreflang="ro" lang="ro">Română</a></li><li><a href="/ru/guides/add-a-source/" hreflang="ru" lang="ru">Русский</a></li><li><a href="/sk/guides/add-a-source/" hreflang="sk" lang="sk">Slovenčina</a></li><li><a href="/sl/guides/add-a-source/" hreflang="sl" lang="sl">Slovenščina</a></li><li><a href="/sq/guides/add-a-source/" hreflang="sq" lang="sq">Shqip</a></li><li><a href="/sr/guides/add-a-source/" hreflang="sr" lang="sr">Српски</a></li><li><a href="/sv/guides/add-a-source/" hreflang="sv" lang="sv">Svenska</a></li><li><a href="/ta/guides/add-a-source/" hreflang="ta" lang="ta">தமிழ்</a></li><li><a href="/te/guides/add-a-source/" hreflang="te" lang="te" aria-current="page">తెలుగు</a></li><li><a href="/th/guides/add-a-source/" hreflang="th" lang="th">ไทย</a></li><li><a href="/tr/guides/add-a-source/" hreflang="tr" lang="tr">Türkçe</a></li><li><a href="/uk/guides/add-a-source/" hreflang="uk" lang="uk">Українська</a></li><li><a href="/ur/guides/add-a-source/" hreflang="ur" lang="ur">اردو</a></li><li><a href="/vi/guides/add-a-source/" hreflang="vi" lang="vi">Tiếng Việt</a></li><li><a href="/zh-CN/guides/add-a-source/" hreflang="zh-CN" lang="zh-CN">简体中文</a></li><li><a href="/zh-TW/guides/add-a-source/" hreflang="zh-TW" lang="zh-TW">繁體中文（台灣）</a></li></ul></details><!-- langues:fin -->
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+  <header class="guide-hero">
+    <div class="wrap narrow">
+      <nav class="guide-crumbs" aria-label="బ్రెడ్‌క్రంబ్">
+        <ol>
+          <li><a href="/te/guides/">గైడ్‌లు</a></li>
+          <li aria-current="page">మూలాన్ని జోడించు (Stremio ఎక్స్‌టెన్షన్)</li>
+        </ol>
+      </nav>
+      <h1>మూలాన్ని జోడించు (Stremio ఎక్స్‌టెన్షన్)</h1>
+      <p class="lead">Laststream Stremio ఎక్స్‌టెన్షన్‌లను (addons) అంగీకరిస్తుంది: వాటి manifest చిరునామాను అతికించు, మీరు ఒక శీర్షికను ప్లే చేసినప్పుడు వాటి లింక్‌లు కనిపిస్తాయి.</p>
+      <ul class="guide-badges" aria-label="వ్యవధి మరియు ప్లాట్‌ఫారమ్‌లు">
+        <li class="is-time">3 నిమిషాలు</li>
+        <li>Windows</li>
+        <li>Android</li>
+        <li>బ్రౌజర్</li>
+      </ul>
+      <figure class="shot">
+        <video class="clip" src="/en/guides/add-a-source/clip.mp4" poster="/en/guides/add-a-source/img/poster.webp" width="1280" height="800" autoplay muted loop playsinline controls preload="metadata" aria-label="మొత్తం మార్గదర్శకం యొక్క వీడియో, శబ్దం లేకుండా"></video>
+      </figure>
+    </div>
+  </header>
+
+  <article class="wrap narrow guide-body">
+    <section class="guide-prereq" aria-labelledby="h-prereq">
+      <h2 id="h-prereq">ప్రారంభించే ముందు</h2>
+      <ul>
+        <li>ప్రధాన ప్రొఫైల్‌లో సైన్ ఇన్ చేసిన ఖాతా.</li>
+        <li>ఎక్స్‌టెన్షన్ manifest చిరునామా (ఇది సాధారణంగా <code>/manifest.json</code>తో ముగుస్తుంది).</li>
+      </ul>
+    </section>
+    <section aria-labelledby="h-steps">
+      <h2 id="h-steps">దశలు</h2>
+      <p class="guide-note">ప్రతి స్క్రీన్‌షాట్‌లో, పసుపు ఫ్రేమ్ ఎక్కడ నొక్కాలో లేదా క్లిక్ చేయాలో చూపుతుంది; సంఖ్యలు క్రమాన్ని ఇస్తాయి. యాప్ ఫ్రెంచ్‌లో ఉంది: స్క్రీన్‌షాట్‌లు దాని ఆంగ్ల అనువాదాన్ని చూపుతాయి.</p>
+      <ol class="guide-steps">
+        <li>
+          <p>మీ అవతార్‌ను నొక్కు, ఆపై “సెట్టింగ్‌లు”.</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/01-menu-reglages-1280.webp" srcset="./img/01-menu-reglages-1280.webp 1280w, ./img/01-menu-reglages.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="అవతార్ మెనూ తెరిచి ఉంది: “సెట్టింగ్‌లు” ఎంట్రీ ఫ్రేమ్ చేయబడింది.">
+          </figure>
+        </li>
+        <li>
+          <p>ఎడమ కాలమ్‌లో, “మూలాలు” (1) ఎంచుకో, ఆపై “Stremio addonను జోడించు” (2).</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/02-reglages-sources-1280.webp" srcset="./img/02-reglages-sources-1280.webp 1280w, ./img/02-reglages-sources.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="సెట్టింగ్‌లు: “మూలాలు” వర్గం మరియు “Stremio addonను జోడించు” బటన్ 1 మరియు 2 గా నంబర్ చేయబడ్డాయి.">
+          </figure>
+        </li>
+        <li>
+          <p>చిరునామాను “Upstream addon URL”లో అతికించు. <code>stremio://</code> లింక్‌లు అంగీకరించబడతాయి, మరియు లేకపోతే <code>/manifest.json</code> జోడించబడుతుంది.</p>
+          <p>స్క్రీన్‌షాట్‌లలో చిరునామా <code>http://localhost</code>తో మొదలవుతుంది: ఇది గైడ్ కోసం స్థానికంగా నడిచే దిగువ ఉదాహరణ ఎక్స్‌టెన్షన్. మీరు ఇన్‌స్టాల్ చేయాలనుకునే ఎక్స్‌టెన్షన్ ఇచ్చిన చిరునామాను అతికిస్తారు.</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/03-url-addon-1280.webp" srcset="./img/03-url-addon-1280.webp 1280w, ./img/03-url-addon.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="కొత్త addon కార్డ్: నింపిన “Upstream addon URL” ఫీల్డ్ ఫ్రేమ్ చేయబడింది.">
+          </figure>
+        </li>
+        <li>
+          <p>manifest వెంటనే చదవబడుతుంది: addon పేరు, లోగో మరియు స్థితి కనిపిస్తాయి (1). సెట్టింగ్‌ల దిగువన ఉన్న “సేవ్” నొక్కు (2).</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/04-addon-lu-1280.webp" srcset="./img/04-addon-lu-1280.webp 1280w, ./img/04-addon-lu.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="లోగో మరియు స్థితితో “Mon addon” కార్డ్, మరియు “సేవ్” బటన్, 1 మరియు 2 గా నంబర్ చేయబడ్డాయి.">
+          </figure>
+        </li>
+        <li>
+          <p>ఒక సినిమాను తెరిచి “ప్లే” నొక్కు: addon లింక్‌లు “మూలాలు” ప్యానెల్‌లో కనిపిస్తాయి.</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/05-fiche-sources-1280.webp" srcset="./img/05-fiche-sources-1280.webp 1280w, ./img/05-fiche-sources.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="సినిమా “మూలాలు” ప్యానెల్: “Mon addon” అందించిన లింక్ ఫ్రేమ్ చేయబడింది.">
+          </figure>
+        </li>
+      </ol>
+    </section>
+    <aside class="guide-tip" aria-label="తెలుసుకోవలసినవి">
+      <p class="guide-tip-title">తెలుసుకోవలసినవి</p>
+      <ul>
+        <li>కార్డ్‌లోని “…” మెనూ: సవరించు, కాన్ఫిగరేషన్ తెరువు, URLను కాపీ చేయి, ప్రారంభించు లేదా నిలిపివేయి, తీసివేయి.</li>
+        <li>క్రమం ముఖ్యం: మూలం 1 ముందుగా ప్రశ్నించబడుతుంది. ⋮⋮ హ్యాండిల్ లేదా ↑ ↓ బాణాలతో మార్చు.</li>
+        <li>అన్‌ఇన్‌స్టాల్ చేయడానికి: తీసివేయి, ఆపై “సేవ్”.</li>
+        <li>debrid కీ Laststreamలో నమోదు చేయబడదు: ప్రతి addon దాని స్వంత కాన్ఫిగరేషన్‌లో debridను నిర్వహిస్తుంది.</li>
+      </ul>
+    </aside>
+    <section aria-labelledby="h-example">
+      <h2 id="h-example">ఉదాహరణ: ఒక ప్రాథమిక ఎక్స్‌టెన్షన్</h2>
+      <p>ఎక్స్‌టెన్షన్ అంటే రెండు చిరునామాలను బహిర్గతం చేసే ఒక చిన్న వెబ్ సేవ: <code>/manifest.json</code> మరియు <code>/stream/{type}/{id}.json</code>.</p>
+      <p>manifest:</p>
+      <pre><code>{
+        "id": "exemple.mon-addon",
+        "version": "1.0.0",
+        "name": "Mon addon",
+        "description": "Exemple de source pour Laststream",
+        "resources": ["stream"],
+        "types": ["movie", "series"],
+        "idPrefixes": ["tt"],
+        "catalogs": []
+      }</code></pre>
+      <p><code>/stream/movie/tt0000001.json</code> ప్రతిస్పందన:</p>
+      <pre><code>{
+        "streams": [
+          {
+            "name": "Mon addon",
+            "title": "1080p",
+            "url": "https://exemple.com/video.mp4"
+          }
+        ]
+      }</code></pre>
+      <p>ఈ గైడ్ స్క్రీన్‌షాట్‌ల కోసం ఉపయోగించిన ఎక్స్‌టెన్షన్ ఇదే.</p>
+    </section>
+    <nav class="guide-pager" aria-label="ఇతర గైడ్‌లు">
+      <a class="prev" href="/te/guides/kids-profile/">
+        <small>మునుపటి గైడ్</small> <strong>పిల్లల ప్రొఫైల్‌ను సృష్టించు</strong>
+      </a>
+      <a class="next" href="/te/guides/live-tv/">
+        <small>తదుపరి గైడ్</small> <strong>లైవ్ టీవీని సెటప్ చేయి (M3U ప్లేలిస్ట్)</strong>
+      </a>
+    </nav>
+  </article>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <a class="brand" href="/te/"><img src="/assets/logo.svg" width="28" height="28" alt=""><span>Laststream</span></a>
+    <div class="foot-txt">
+      <p>Laststream ఎలాంటి కంటెంట్‌ను హోస్ట్ చేయదు: మీరు కాన్ఫిగర్ చేసే ఎక్స్‌టెన్షన్‌లను అది చదువుతుంది. ఆహ్వానం ద్వారా మాత్రమే.</p>
+      <p><a href="/te/guides/">గైడ్‌లు</a></p>
+      <p class="legal">Laststream, Stremioతో అనుబంధం లేనిది.</p>
+      <p class="legal">ఈ ఉత్పత్తి TMDB APIని ఉపయోగిస్తుంది, కానీ TMDB ఆమోదించలేదు లేదా ధృవీకరించలేదు.</p>
+      <p class="legal">డెమో కేటలాగ్‌తో చేసిన స్క్రీన్‌షాట్‌లు: కల్పిత శీర్షికలు మరియు AI-సృష్టించిన పోస్టర్‌లు.</p>
+    </div>
+  </div>
+</footer>
+<script>
+  // Vidéos du guide : pas de lecture automatique si l'utilisateur réduit les animations
+  (function () {
+    try {
+      if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      document.querySelectorAll('video.clip').forEach(function (v) { v.removeAttribute('autoplay'); v.pause(); v.setAttribute('preload', 'none'); });
+    } catch (e) { /* sans effet */ }
+  })();
+</script>
+<script type="application/json" id="ls-i18n">{"mb":"MB","others":"ఇతర ప్లాట్‌ఫారమ్‌లు క్రింద ఉన్నాయి.","label":{"windows":["Windows కోసం డౌన్‌లోడ్ చేయి","గుర్తించబడింది: Windows"],"android":["Android APKని డౌన్‌లోడ్ చేయి","గుర్తించబడింది: Android"],"ios":["వెబ్ వెర్షన్‌ను ఇన్‌స్టాల్ చేయి","గుర్తించబడింది: iPhone లేదా iPad"],"mac":["Mac కోసం డౌన్‌లోడ్ చేయి","గుర్తించబడింది: macOS"],"linux":["Linux కోసం డౌన్‌లోడ్ చేయి","గుర్తించబడింది: Linux"],"web":["బ్రౌజర్‌లో తెరువు","మీ ప్లాట్‌ఫారమ్ గుర్తించబడలేదు"]},"close":"మూసివేయి","dialog":"పెద్దదిగా చేసిన స్క్రీన్‌షాట్","badge":"మీ పరికరం కోసం"}</script>
+</body>
+</html>

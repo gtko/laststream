@@ -7,19 +7,19 @@
 .adm-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; color: var(--muted); font-size: 13px; font-weight: 700; white-space: nowrap; transition: background-color 0.15s, color 0.15s, border-color 0.15s; }
 .adm-chip:hover { border-color: var(--muted); color: var(--text); }
 .adm-chip[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
-.adm-chip-n { opacity: 0.7; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.adm-chip-n { opacity: 0.7; margin-inline-start: 4px; font-variant-numeric: tabular-nums; }
 
 /* ---------- Barre d'actions groupées ---------- */
 .adm-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
-.adm-bulk-n { font-size: 13.5px; font-weight: 800; margin-right: 4px; }
+.adm-bulk-n { font-size: 13.5px; font-weight: 800; margin-inline-end: 4px; }
 .adm-bulk .btn { min-height: 34px; padding: 0 12px; font-size: 12.5px; }
 .adm-bulk .adm-bulk-quota { gap: 8px; }
 .adm-bulk .adm-bulk-quota .adm-field { flex-direction: row; align-items: center; gap: 8px; }
 .adm-bulk .adm-bulk-quota .set-input { width: 84px; min-height: 34px; padding: 0 10px; font-size: 13px; }
-.adm-bulk-clear { margin-left: auto; }
+.adm-bulk-clear { margin-inline-start: auto; }
 
 /* ---------- Tableau des comptes ---------- */
-.adm-table th.adm-sel, .adm-table td.adm-sel { width: 44px; padding-left: 14px; padding-right: 6px; }
+.adm-table th.adm-sel, .adm-table td.adm-sel { width: 44px; padding-inline-start: 14px; padding-inline-end: 6px; }
 .adm-sel input, .adm-accounts input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
 .adm-accounts tbody tr[data-adm-row] { cursor: pointer; }
 .adm-accounts tbody tr.is-selected td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
@@ -46,7 +46,7 @@
 .adm-tabs [role="tab"]:hover { color: var(--text); }
 .adm-tabs [role="tab"][aria-selected="true"] { color: var(--text); font-weight: 800; box-shadow: inset 0 -2px 0 var(--accent); }
 .adm-tabs [role="tab"]:focus-visible { outline: var(--focus-ring-key); outline-offset: -2px; }
-.adm-tab-n { opacity: 0.7; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.adm-tab-n { opacity: 0.7; margin-inline-start: 4px; font-variant-numeric: tabular-nums; }
 .adm-tabpanel { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; min-width: 0; }
 
 /* ---------- Aperçu : tuiles, quota ---------- */
@@ -98,16 +98,16 @@
   .adm-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
   .adm-chip { flex: none; }
   .adm-bulk { gap: 8px; padding: 10px; }
-  .adm-bulk-clear { margin-left: 0; }
+  .adm-bulk-clear { margin-inline-start: 0; }
   .adm-bulk .adm-bulk-quota { width: 100%; }
   .adm-bulk .adm-bulk-quota .set-input { width: 100px; }
   .adm-table td.adm-sel { justify-content: flex-start; padding-bottom: 7px; }
   .adm-table td.adm-sel::before { content: none; }
-  .adm-table td.adm-sel input { margin-left: 0; }
+  .adm-table td.adm-sel input { margin-inline-start: 0; }
   .adm-tiles { gap: 8px; }
   .adm-tile { padding: 10px; }
   .adm-tile-v { font-size: 18px; }
   .adm-sess { flex-wrap: wrap; }
   .adm-tl { flex-wrap: wrap; }
-  .adm-tl-at { width: 100%; padding-left: 18px; }
+  .adm-tl-at { width: 100%; padding-inline-start: 18px; }
 }

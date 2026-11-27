@@ -11,6 +11,7 @@ import { detailEl, toast } from './dom.js';
 import { ICON } from './icons.js';
 import { progressResume } from './resume.js';
 import { state } from './state.js';
+import { t as tr } from '../i18n';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const isAired = (e) => !e.air_date || e.air_date <= today();
@@ -30,7 +31,7 @@ export async function mark(key, refs, watched) {
   const ok = await pending;
   if (!ok) {
     refreshWatchedUI();
-    toast('Enregistrement impossible : modification annulée');
+    toast(tr('Enregistrement impossible : modification annulée'));
   } else if (!watched && key.startsWith('tv:')) {
     setSeriesCompleted(key, false); // un épisode non vu : la série n'est plus vue en entier
   } else if (watched && key.startsWith('movie:')) {
@@ -53,18 +54,18 @@ export function refreshWatchedUI() {
       const b = li.querySelector('.ep-seen');
       if (b) {
         b.setAttribute('aria-pressed', String(on));
-        b.setAttribute('aria-label', (on ? 'Marquer comme non vu : É' : 'Marquer comme vu : É') + e);
+        b.setAttribute('aria-label', (on ? tr('Marquer comme non vu : É') : tr('Marquer comme vu : É')) + e);
       }
     });
     const sb = detailEl.querySelector('[data-season-watch]');
     if (sb) {
       const refs = seasonAired();
       const all = allWatched(m.key, refs);
-      const long = all ? 'Marquer la saison comme non vue' : 'Marquer la saison comme vue';
+      const long = all ? tr('Marquer la saison comme non vue') : tr('Marquer la saison comme vue');
       const l = sb.querySelector('.sw-l');
       const sh = sb.querySelector('.sw-s');
       if (l) l.textContent = long; else sb.textContent = long;
-      if (sh) sh.textContent = all ? 'Saison non vue' : 'Saison vue';
+      if (sh) sh.textContent = all ? tr('Saison non vue') : tr('Saison vue');
       sb.dataset.state = all ? 'on' : 'off';
       sb.disabled = !refs.length;
     }
@@ -74,7 +75,7 @@ export function refreshWatchedUI() {
     if (nc) {
       const n = newEpisodeCount(m.seasons || [], m.lastAired, userStore.watchedEpisodes(m.key).map((x) => ({ season: x.season, episode: x.episode })));
       nc.hidden = !n;
-      nc.textContent = n === 1 ? '1 nouvel épisode' : n + ' nouveaux épisodes';
+      nc.textContent = n === 1 ? tr('1 nouvel épisode') : tr('{n} nouveaux épisodes', { n });
     }
   }
   refreshRatingUI();
@@ -85,7 +86,7 @@ export function refreshWatchedUI() {
     const media = el.querySelector('.card-media');
     if (!media) return;
     const badge = media.querySelector('.t-watched');
-    if (on && !badge) media.insertAdjacentHTML('beforeend', '<span class="t-watched" aria-hidden="true" title="Vu">' + ICON.check + '</span>');
+    if (on && !badge) media.insertAdjacentHTML('beforeend', '<span class="t-watched" aria-hidden="true" title="' + tr('Vu') + '">' + ICON.check + '</span>');
     else if (!on && badge) badge.remove();
   });
 }
@@ -153,7 +154,7 @@ document.addEventListener('click', async (e) => {
     e.preventDefault();
     closeMenu();
     await once('series:' + m.key + ':' + series.dataset.seriesWatch, series, async () => {
-      toast('Marquage de la série…');
+      toast(tr('Marquage de la série…'));
       const refs = await seriesAired(m);
       if (state.model !== m) return;
       await mark(m.key, refs, series.dataset.seriesWatch === '1');
@@ -166,7 +167,7 @@ document.addEventListener('click', async (e) => {
     const [s, ep] = upto.dataset.upto.split(':').map(Number);
     await once('upto:' + m.key + ':' + s + ':' + ep, upto, async () => {
       await mark(m.key, untilHere(m, s, ep), true);
-      toast('Marqué comme vu jusqu’à É' + ep);
+      toast(tr('Marqué comme vu jusqu’à É') + ep);
     });
     return;
   }
@@ -179,7 +180,7 @@ document.addEventListener('keydown', (e) => {
 /** Série entière : tous les épisodes diffusés (saison 0 exclue). */
 export async function markSeries(m, watched) {
   const refs = await seriesAired(m);
-  if (!refs.length) throw new Error('aucun épisode diffusé connu pour cette série');
+  if (!refs.length) throw new Error(tr('aucun épisode diffusé connu pour cette série'));
   const ok = await mark(m.key, refs, watched);
   if (ok && watched) setSeriesCompleted(m.key, true); // « vue en entier » : la série sort de l'accueil
   return ok;

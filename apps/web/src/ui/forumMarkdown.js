@@ -3,6 +3,7 @@
  * *italique* ou _italique_, ~~barré~~, ||spoiler|| (flouté, révélé au clic), [texte](https://…), liens nus https://…, et
  * mentions @Nom#TAG. Les liens ne sont que http(s), ouverts dans un nouvel onglet sans référent. */
 
+import { t } from '../i18n';
 const INLINE = new RegExp(
   [
     '(`[^`\\n]+`)', // 1 code
@@ -49,7 +50,7 @@ function renderInline(text, parent, depth = 0) {
       const sp = el('span', 'fm-spoiler');
       sp.tabIndex = 0;
       sp.setAttribute('role', 'button');
-      sp.setAttribute('aria-label', 'Spoiler : afficher');
+      sp.setAttribute('aria-label', t('Spoiler : afficher'));
       renderInline(s.slice(2, -2), sp, depth + 1);
       const reveal = () => { sp.classList.add('is-shown'); sp.removeAttribute('role'); sp.removeAttribute('aria-label'); sp.removeAttribute('tabindex'); };
       sp.addEventListener('click', reveal, { once: true });
@@ -135,5 +136,5 @@ export function renderMarkdown(src) {
 /** Citation d'un message pour le champ de réponse : « > @Nom#TAG a écrit : » puis le texte cité. */
 export function quoteOf(authorFull, body) {
   const quoted = String(body || '').split('\n').slice(0, 20).map((l) => '> ' + l).join('\n');
-  return '> **' + (authorFull ? '@' + authorFull : 'Quelqu’un') + '** a écrit :\n' + quoted + '\n\n';
+  return t('> **{v}** a écrit :\n{quoted}', { v: (authorFull ? '@' + authorFull : t('Quelqu’un')), quoted }) + '\n\n';
 }

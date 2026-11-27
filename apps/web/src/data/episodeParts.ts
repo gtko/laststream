@@ -1,6 +1,7 @@
 /* Émissions diffusées en deux parties (ou plus) : « Les auditions (1) » puis « Les auditions (2) » sont deux épisodes
  * d'une même émission. Détection d'après les titres d'épisodes, pour dire « Partie 1/2 » et enchaîner la suite. */
 
+import { t } from '../i18n';
 export interface EpisodePart {
   /** Rang de la partie (1 pour la première). */
   index: number;
@@ -73,4 +74,4 @@ export function episodeParts(list: readonly { season?: number; episode: number; 
 }
 
 /** « Partie 1/2 ». */
-export const partLabel = (p: Pick<EpisodePart, 'index' | 'total'>): string => `Partie ${p.index}/${p.total}`;
+export const partLabel = (p: Pick<EpisodePart, 'index' | 'total'>): string => `${t('Partie {index}/', { index: p.index })}${p.total}`;

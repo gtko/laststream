@@ -1,5 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { DAY_MS } from './constants.js';
+import { t, intlLocale } from '../i18n';
 
 export const todayStr = () => {
   const d = new Date();
@@ -10,15 +11,15 @@ export const dayDiff = (iso) => Math.round((Date.parse(String(iso).slice(0, 10))
 export const isFuture = (iso) => !!iso && dayDiff(iso) > 0;
 export const fmtShort = (iso) => {
   const d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
-  return isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  return isNaN(d) ? '' : d.toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' });
 };
 export function countdown(iso) {
   const n = dayDiff(iso);
   if (n < 0) return '';
-  if (n === 0) return 'aujourd’hui';
+  if (n === 0) return t('aujourd’hui');
   if (n === 1) return 'demain';
-  if (n < 61) return 'dans ' + n + ' jours';
-  return 'dans ' + Math.round(n / 30) + ' mois';
+  if (n < 61) return t('dans {n} jours', { n });
+  return t('dans {v} mois', { v: Math.round(n / 30) });
 }
 
 /** Titre déjà sorti d'après sa date (film : sortie, série : première diffusion). Sans date : non sorti. */

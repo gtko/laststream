@@ -10,13 +10,14 @@ import { webCompatContext } from '../sources/load';
 import { webCompatOf } from '../sources/webCompat';
 import { formatClock } from './progress';
 import { beginExternalWatch, dropExternalWatch, dropPendingExternalWatch, externalDuration, noteExternalLeft, settleExternalWatch } from './externalWatch';
+import { t } from '../i18n';
 
 /** Source passant par le serveur (proxy) : son adresse locale n’est pas joignable depuis une autre application. */
-const NOTE_PROXY = 'Cette source passe par notre serveur et ne peut pas s’ouvrir dans un lecteur externe. Essaie une autre source.';
+const NOTE_PROXY = t('Cette source passe par notre serveur et ne peut pas s’ouvrir dans un lecteur externe. Essaie une autre source.');
 /** Avis quand le lecteur externe est écarté pour une source proxifiée hors iPhone et iPad : la lecture reste intégrée. */
-export const NOTE_NOT_EXTERNAL = 'Cette source ne s’ouvre pas dans un lecteur externe : lecture intégrée.';
+export const NOTE_NOT_EXTERNAL = t('Cette source ne s’ouvre pas dans un lecteur externe : lecture intégrée.');
 /** Nom court des options sans nom propre. */
-const SHORT = { m3u: 'la playlist', chooser: 'une autre application', intent: 'une autre application', system: 'le lecteur par défaut' };
+const SHORT = { m3u: t('la playlist'), chooser: t('une autre application'), intent: t('une autre application'), system: t('le lecteur par défaut') };
 /** Délai après lequel une app absente se signale : la page est restée visible (sinon l’app a pris la main). */
 const NOT_INSTALLED_MS = 2000;
 
@@ -36,14 +37,14 @@ function screenTitle(p) {
     const name = info ? (info.part ? info.part.title : info.name) : '';
     return 'S' + p.cur.season + ' · E' + p.cur.episode + (name ? ' — ' + name : '');
   }
-  return p.meta.title || 'Lecture';
+  return p.meta.title || t('Lecture');
 }
 
 /** Choix de lecture externe, au format de `choice` (moteur « external »). */
 function choiceFor(playerId, platform, blocked) {
   return {
     engine: 'external', playerId, platform, blocked, viaServer: false,
-    label: 'Lecteur externe (' + labelOf(playerId, platform) + ')', reason: 'La source s’ouvre dans une autre application.',
+    label: t('Lecteur externe ({playerId})', { playerId: labelOf(playerId, platform) }), reason: t('La source s’ouvre dans une autre application.'),
   };
 }
 
@@ -99,7 +100,7 @@ function showBlocked(p) {
   cur = null;
   clearTimeout(timer);
   S.ui.setLoading(null);
-  S.ui.setError(screenTitle(p), NOTE_PROXY, [{ act: 'source', label: 'Essayer une autre source' }, { act: 'close', label: 'Fermer' }]);
+  S.ui.setError(screenTitle(p), NOTE_PROXY, [{ act: 'source', label: t('Essayer une autre source') }, { act: 'close', label: t('Fermer') }]);
 }
 
 function showExternal(p, url, playerId) {
@@ -118,19 +119,19 @@ function otherPlayers() {
 function renderMain() {
   const { p, playerId, platform } = cur;
   const label = labelOf(playerId, platform);
-  const actions = [{ act: 'ext-open', label: 'Ouvrir dans ' + label }];
-  if (otherPlayers().length) actions.push({ act: 'ext-other', label: 'Changer de lecteur' });
-  actions.push({ act: 'ext-copy', label: 'Copier le lien' });
+  const actions = [{ act: 'ext-open', label: t('Ouvrir dans {label}', { label }) }];
+  if (otherPlayers().length) actions.push({ act: 'ext-other', label: t('Changer de lecteur') });
+  actions.push({ act: 'ext-copy', label: t('Copier le lien') });
   // Titre d’addon : pas de « vu » (il est indexé par id TMDB côté serveur, voir sessionTick).
-  if (!p.addon) actions.push({ act: 'ext-seen', label: 'Marquer comme vu' });
-  actions.push({ act: 'close', label: 'Fermer' });
-  S.ui.setError(screenTitle(p), 'Lecture dans ' + label + '…', actions);
+  if (!p.addon) actions.push({ act: 'ext-seen', label: t('Marquer comme vu') });
+  actions.push({ act: 'close', label: t('Fermer') });
+  S.ui.setError(screenTitle(p), t('Lecture dans {label}…', { label }), actions);
 }
 
 function renderPicker() {
   const actions = otherPlayers().map((o) => ({ act: 'ext-pick:' + o.id, label: o.label }));
-  actions.push({ act: 'ext-back', label: 'Retour' });
-  S.ui.setError(screenTitle(cur.p), 'Dans quelle application ouvrir cette source ? Le réglage ne change pas.', actions);
+  actions.push({ act: 'ext-back', label: t('Retour') });
+  S.ui.setError(screenTitle(cur.p), t('Dans quelle application ouvrir cette source ? Le réglage ne change pas.'), actions);
 }
 
 function launchNow() {
@@ -143,7 +144,7 @@ function launchNow() {
   if (sent && c.platform === 'ios') {
     const mine = seq;
     timer = setTimeout(() => {
-      if (mine === seq && S.P === c.p && document.visibilityState === 'visible') S.ui.toast(labelOf(c.playerId, c.platform) + ' n’est peut-être pas installé.', 5000);
+      if (mine === seq && S.P === c.p && document.visibilityState === 'visible') S.ui.toast(t('{playerId} n’est peut-être pas installé.', { playerId: labelOf(c.playerId, c.platform) }), 5000);
     }, NOT_INSTALLED_MS);
   }
 }
@@ -181,7 +182,7 @@ function externalReturn() {
     // Écran externe encore ouvert, pas fini : si la personne retourne dans le lecteur, le suivi reprend de cette position.
     if (!est.watched) beginExternalWatch(est.watch.entry, est.watch.duration, est.position);
   }
-  if (S.ui) S.ui.toast(est.watched ? 'Marqué comme vu' : 'Reprise enregistrée à ' + formatClock(est.position), 4000);
+  if (S.ui) S.ui.toast(est.watched ? t('Marqué comme vu') : t('Reprise enregistrée à {position}', { position: formatClock(est.position) }), 4000);
 }
 
 if (typeof document !== 'undefined') {
@@ -192,14 +193,14 @@ if (typeof document !== 'undefined') {
 }
 
 async function copyLink() {
-  try { await navigator.clipboard.writeText(cur.url); S.ui.toast('Lien copié'); } catch (_) { S.ui.toast('Copie impossible'); }
+  try { await navigator.clipboard.writeText(cur.url); S.ui.toast(t('Lien copié')); } catch (_) { S.ui.toast(t('Copie impossible')); }
 }
 
 async function markSeen() {
   const p = cur.p;
   if (p.addon) return;
   const refs = p.req.type === 'tv' && p.cur.season != null ? [{ season: p.cur.season, episode: p.cur.episode }] : null;
-  if (await mark(p.req.key, refs, true)) S.ui.toast('Marqué comme vu');
+  if (await mark(p.req.key, refs, true)) S.ui.toast(t('Marqué comme vu'));
 }
 
 /** Fermeture de la session : l’écran externe ne retient plus la session fermée. */

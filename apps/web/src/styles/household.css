@@ -251,7 +251,7 @@
   .hh-ttls { grid-template-columns: minmax(0, 1fr); }
   .hh-linkbox { flex-wrap: wrap; height: auto; padding: 10px 10px 10px 16px; }
   .hh-link { flex-basis: 100%; order: 1; }
-  .hh-copy { order: 2; margin-left: auto; }
+  .hh-copy { order: 2; margin-inline-start: auto; }
   .hh-linkbox > svg { order: 0; }
 }
 

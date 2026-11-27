@@ -2,6 +2,7 @@
  * Couleurs : variables CSS --adm-* (admin.css), donc thème et contraste suivent la page. Chaque graphique est un role="img"
  * avec une description FR ; les mêmes chiffres sont toujours donnés en tableau à côté. */
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const W = 480;
 const H = 190;
@@ -20,7 +21,7 @@ function niceMax(max) {
 /** Mini-courbe sans axes (cartes de la vue d'ensemble). */
 export function sparkline(values, label, cls) {
   const v = values.filter((x) => Number.isFinite(x));
-  if (v.length < 2) return '<svg class="adm-spark" viewBox="0 0 120 36" role="img" aria-label="' + esc(label + ' : pas assez de données') + '"><path class="adm-spark-base" d="M0 34H120"/></svg>';
+  if (v.length < 2) return '<svg class="adm-spark" viewBox="0 0 120 36" role="img" aria-label="' + esc(tr('{label} : pas assez de données', { label })) + '"><path class="adm-spark-base" d="M0 34H120"/></svg>';
   const max = Math.max(...v, 1);
   const pts = v.map((y, i) => [num((i / (v.length - 1)) * 120), num(33 - (y / max) * 30)]);
   const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0] + ' ' + p[1]).join('');
@@ -34,7 +35,7 @@ export function sparkline(values, label, cls) {
  */
 export function lineChart({ series, labels, yFmt, description }) {
   const n = Math.max(0, ...series.map((s) => s.values.length));
-  if (n < 2) return '<p class="adm-empty" role="status">Pas encore assez de données sur cette période.</p>';
+  if (n < 2) return '<p class="adm-empty" role="status">' + tr('Pas encore assez de données sur cette période.') + '</p>';
   const max = niceMax(Math.max(0, ...series.flatMap((s) => s.values.filter(Number.isFinite))));
   const x = (i) => num(PAD.l + (i / (n - 1)) * (W - PAD.l - PAD.r));
   const y = (v) => num(H - PAD.b - (v / max) * (H - PAD.t - PAD.b));

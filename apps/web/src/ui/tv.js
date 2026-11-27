@@ -17,6 +17,7 @@ import { ICON } from './icons.js';
 import { initialStatus } from './tvStatus.js';
 import { state } from './state.js';
 import { esc, names, store } from './util.js';
+import { N_, t as tr, intlLocale } from '../i18n';
 
 export const tv = {
   user: [], epg: new Map(), epgReq: new Set(), epgPending: new Map(), w0: 0,
@@ -30,7 +31,8 @@ export const tv = {
   // Playlists de l'utilisateur (box, IPTV) : chaînes absentes du catalogue chargé, et leurs catégories.
   boxOnly: [], boxCats: [],
 };
-export const TV_CATS = ['Toutes', 'Favoris', 'Info', 'Sport', 'Cinéma', 'Jeunesse', 'Musique', 'Divertissement', 'Documentaires', 'FAST', 'Ma playlist'];
+/** Catégories : identifiants en français (comparés aux catégories des chaînes), traduits à l'affichage (LAST-1658). */
+export const TV_CATS = [N_('Toutes'), N_('Favoris'), N_('Info'), N_('Sport'), N_('Cinéma'), N_('Jeunesse'), N_('Musique'), N_('Divertissement'), N_('Documentaires'), 'FAST', N_('Ma playlist')];
 export const PX_MIN = 160 / 30; // 30 min = 160 px
 export const EPG_H = 6;
 export const EPG_CH_W = 220;
@@ -170,7 +172,7 @@ export function matchesFilters(c, f, cat) {
 // Chaîne de playlist : guide local (XMLTV de l'utilisateur, clé = id de la chaîne) sinon identifiant de guide du catalogue.
 // Chaîne du catalogue : guide du serveur, clé = id de la chaîne.
 export const epgKey = (c) => (c.source === 'box' ? (hasLocalGuide(c.id) ? c.id : c.epgId || '') : c.source === 'user' ? c.epgId || '' : c.id);
-export const fmtHM = (sec) => new Date(sec * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+export const fmtHM = (sec) => new Date(sec * 1000).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
 
 export function tvWindow() {
   const now = Math.floor(Date.now() / 1000);
@@ -249,7 +251,7 @@ function normFacet(x, labelOf) {
   const arr = Array.isArray(x)
     ? x.map((e) => ({ id: String(e.id != null ? e.id : e.code != null ? e.code : e.value != null ? e.value : ''), label: e.label || e.name || '', count: Number(e.count != null ? e.count : e.n) || 0 }))
     : Object.entries(x).map(([k, v]) => (typeof v === 'number' ? { id: k, label: '', count: v } : { id: k, label: (v && (v.label || v.name)) || '', count: Number(v && v.count) || 0 }));
-  return arr.filter((e) => e.id).map((e) => Object.assign(e, { label: e.label || labelOf(e.id) })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'fr'));
+  return arr.filter((e) => e.id).map((e) => Object.assign(e, { label: e.label || labelOf(e.id) })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, intlLocale()));
 }
 
 export function normFacets(raw) {
@@ -308,11 +310,11 @@ export function nowNext(c, now) {
 export const numHTML = (c) => (channelNumber(c) ? '<b class="ch-num" aria-hidden="true">' + channelNumber(c) + '</b> ' : '');
 export function liveTile(c, nn, now) {
   const pct = Math.max(0, Math.min(100, Math.round(((now - nn.cur.start) / (nn.cur.stop - nn.cur.start)) * 100)));
-  return '<button type="button" class="live-tile" data-tvplay="' + esc(c.id) + '" data-tvctx="home" aria-label="' + esc((channelNumber(c) ? 'Chaîne ' + channelNumber(c) + ', ' : '') + c.name + ', en direct : ' + nn.cur.title + (nn.next ? ', ensuite : ' + nn.next.title : '')) + '">' +
+  return '<button type="button" class="live-tile" data-tvplay="' + esc(c.id) + '" data-tvctx="home" aria-label="' + esc((channelNumber(c) ? tr('Chaîne {c},', { c: channelNumber(c) }) + ' ' : '') + c.name + tr(', en direct : {title}', { title: nn.cur.title }) + (nn.next ? tr(', ensuite : {title}', { title: nn.next.title }) : '')) + '">' +
     '<span class="lt-top">' + logoHTML(c, 'lt-logo') +
-    '<span class="lt-name">' + numHTML(c) + esc(c.name) + '</span><span class="lt-live" aria-hidden="true">En direct</span></span>' +
+    '<span class="lt-name">' + numHTML(c) + esc(c.name) + '</span><span class="lt-live" aria-hidden="true">' + tr('En direct') + '</span></span>' +
     '<span class="lt-title" aria-hidden="true">' + esc(nn.cur.title) + '</span>' +
-    '<span class="lt-next" aria-hidden="true">' + (nn.next ? 'Ensuite : ' + esc(nn.next.title) : '&nbsp;') + '</span>' +
+    '<span class="lt-next" aria-hidden="true">' + (nn.next ? tr('Ensuite : {title}', { title: esc(nn.next.title) }) : '&nbsp;') + '</span>' +
     '<span class="progress" aria-hidden="true"><span style="width:' + pct + '%"></span></span></button>';
 }
 
@@ -330,8 +332,8 @@ export async function renderLive() {
     const slot = document.getElementById('live-slot');
     if (!slot || !pick.length) return;
     tv.homeList = pick.map((x) => x.c);
-    slot.innerHTML = '<section class="row-section" id="direct" aria-labelledby="h-direct"><h2 class="row-title" id="h-direct">En direct maintenant ' +
-      '<a class="row-link" href="#/tv-live" data-tvlive>Guide TV</a></h2>' + row(pick.map((x) => liveTile(x.c, x.nn, now)).join('')) + '</section>';
+    slot.innerHTML = '<section class="row-section" id="direct" aria-labelledby="h-direct"><h2 class="row-title" id="h-direct">' + tr('En direct maintenant') + ' ' +
+      '<a class="row-link" href="#/tv-live" data-tvlive>' + tr('Guide TV') + '</a></h2>' + row(pick.map((x) => liveTile(x.c, x.nn, now)).join('')) + '</section>';
   } catch (_) { /* rangée absente */ }
 }
 
@@ -376,10 +378,11 @@ export function catCount(cat) {
 export function catsHTML() {
   const kid = isKidProfile();
   const server = tv.catFacets && tv.catFacets.categories.length ? tv.catFacets.categories.filter((k) => !kid || isKidCat(k)).map((k) => ({ id: k.id, label: k.label })) : null;
-  const list = ['Toutes', 'Favoris'].map((c) => ({ id: c, label: c }))
-    .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c) && (!kid || /jeunesse/i.test(c))).map((c) => ({ id: c, label: c })))
-    .concat(kid || !tv.boxOnly.length && !activeBoxChannels().length ? [] : [{ id: 'Ma box', label: 'Ma box' }].concat(tv.boxCats.map((g) => ({ id: g, label: g }))))
-    .concat(kid ? [] : [{ id: 'Ma playlist', label: 'Ma playlist' }]);
+  // i18n: N_ (TV_CATS) : les catégories restent des identifiants français, traduits à l'affichage.
+  const list = ['Toutes', 'Favoris'].map((c) => ({ id: c, label: tr(c) }))
+    .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c) && (!kid || /jeunesse/i.test(c))).map((c) => ({ id: c, label: c === 'FAST' ? c : tr(c) })))
+    .concat(kid || !tv.boxOnly.length && !activeBoxChannels().length ? [] : [{ id: 'Ma box', label: tr('Ma box') }].concat(tv.boxCats.map((g) => ({ id: g, label: g }))))
+    .concat(kid ? [] : [{ id: 'Ma playlist', label: tr('Ma playlist') }]);
   return list.map((c) => {
     const n = catCount(c.id);
     return '<div data-nav><button type="button" class="tv-cat" data-tvcat="' + esc(c.id) + '" aria-pressed="' + (c.id === tv.cat) + '">' + esc(c.label) +
@@ -403,42 +406,42 @@ export function filtersHTML() {
   const lList = withCur(fx ? fx.languages : [], f.language, names('language', f.language), sameLang);
   const catList = (tv.catFacets && tv.catFacets.categories) || [];
   const srcList = fx ? fx.sources : [];
-  return '<form id="tv-filters" class="tv-filters" role="search" aria-label="Filtrer les chaînes">' +
-    '<label class="tv-field">Pays<select name="country">' + optHTML(cList, f.country, 'Tous les pays') + '</select></label>' +
-    '<label class="tv-field">Langue<select name="language">' + optHTML(lList, f.language, 'Toutes les langues', sameLang) + '</select></label>' +
-    (catList.length ? '<label class="tv-field">Catégorie<select name="category">' + optHTML(catList, SPECIAL_CATS.includes(tv.cat) ? '' : tv.cat, 'Toutes les catégories') + '</select></label>' : '') +
-    (srcList.length ? '<label class="tv-field">Source<select name="source">' + optHTML(srcList, f.source, 'Toutes les sources') + '</select></label>' : '') +
-    '<label class="tv-field tvf-search">Recherche<input type="search" name="q" value="' + esc(f.q) + '" placeholder="Nom de la chaîne" autocomplete="off"></label>' +
-    '<label class="set-check tvf-rel"><input type="checkbox" name="reliable"' + (f.reliable ? ' checked' : '') + '> <span>Fiable</span></label></form>';
+  return '<form id="tv-filters" class="tv-filters" role="search" aria-label="' + tr('Filtrer les chaînes') + '">' +
+    '<label class="tv-field">' + tr('Pays') + '<select name="country">' + optHTML(cList, f.country, tr('Tous les pays')) + '</select></label>' +
+    '<label class="tv-field">' + tr('Langue') + '<select name="language">' + optHTML(lList, f.language, tr('Toutes les langues'), sameLang) + '</select></label>' +
+    (catList.length ? '<label class="tv-field">' + tr('Catégorie') + '<select name="category">' + optHTML(catList, SPECIAL_CATS.includes(tv.cat) ? '' : tv.cat, tr('Toutes les catégories')) + '</select></label>' : '') +
+    (srcList.length ? '<label class="tv-field">' + tr('Source') + '<select name="source">' + optHTML(srcList, f.source, tr('Toutes les sources')) + '</select></label>' : '') +
+    '<label class="tv-field tvf-search">' + tr('Recherche') + '<input type="search" name="q" value="' + esc(f.q) + '" placeholder="' + tr('Nom de la chaîne') + '" autocomplete="off"></label>' +
+    '<label class="set-check tvf-rel"><input type="checkbox" name="reliable"' + (f.reliable ? ' checked' : '') + '> <span>' + tr('Fiable') + '</span></label></form>';
 }
 
 export function settingsHTML() {
   const cfg = store('ls_tv_playlist') || { type: 'm3u' };
   const x = cfg.type === 'xtream';
   const v = (k) => esc(cfg[k] || '');
-  return '<form id="tv-form" class="tv-form" autocomplete="off"><h2 class="f-sub">Ma playlist</h2>' +
-    '<div class="tv-radios" role="radiogroup" aria-label="Type de playlist"><label><input type="radio" name="ttype" value="m3u"' + (x ? '' : ' checked') + '> Lien M3U</label>' +
-    '<label><input type="radio" name="ttype" value="xtream"' + (x ? ' checked' : '') + '> Xtream Codes</label></div>' +
-    '<div data-ttype="m3u"' + (x ? ' hidden' : '') + '><label class="tv-field">URL de la playlist M3U<input type="url" name="url" placeholder="https://exemple.fr/playlist.m3u" value="' + v('url') + '"></label></div>' +
-    '<div data-ttype="xtream"' + (x ? '' : ' hidden') + '><label class="tv-field">Serveur<input type="text" name="server" placeholder="http://serveur:8080" value="' + v('server') + '"></label>' +
-    '<label class="tv-field">Identifiant<input type="text" name="username" value="' + v('username') + '"></label>' +
-    '<label class="tv-field">Mot de passe<input type="password" name="password" value="' + v('password') + '"></label></div>' +
-    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-tvtest>Tester</button><button type="submit" class="btn btn-primary">Enregistrer et charger</button>' +
-    '<button type="button" class="btn btn-ghost" data-tvclear>Retirer ma playlist</button></div>' +
+  return '<form id="tv-form" class="tv-form" autocomplete="off"><h2 class="f-sub">' + tr('Ma playlist') + '</h2>' +
+    '<div class="tv-radios" role="radiogroup" aria-label="' + tr('Type de playlist') + '"><label><input type="radio" name="ttype" value="m3u"' + (x ? '' : ' checked') + '> ' + tr('Lien M3U') + '</label>' +
+    '<label><input type="radio" name="ttype" value="xtream"' + (x ? ' checked' : '') + '> ' + tr('Xtream Codes') + '</label></div>' +
+    '<div data-ttype="m3u"' + (x ? ' hidden' : '') + '><label class="tv-field">' + tr('URL de la playlist M3U') + '<input type="url" name="url" placeholder="https://exemple.fr/playlist.m3u" value="' + v('url') + '"></label></div>' +
+    '<div data-ttype="xtream"' + (x ? '' : ' hidden') + '><label class="tv-field">' + tr('Serveur') + '<input type="text" name="server" placeholder="http://serveur:8080" value="' + v('server') + '"></label>' +
+    '<label class="tv-field">' + tr('Identifiant') + '<input type="text" name="username" value="' + v('username') + '"></label>' +
+    '<label class="tv-field">' + tr('Mot de passe') + '<input type="password" name="password" value="' + v('password') + '"></label></div>' +
+    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-tvtest>' + tr('Tester') + '</button><button type="submit" class="btn btn-primary">' + tr('Enregistrer et charger') + '</button>' +
+    '<button type="button" class="btn btn-ghost" data-tvclear>' + tr('Retirer ma playlist') + '</button></div>' +
     '<p class="tv-form-msg" id="tv-form-msg" role="status"></p>' +
-    '<p class="tv-form-note">Enregistrée uniquement dans ce navigateur. Les identifiants sont transmis à ton serveur local pour lire la playlist, sans être enregistrés ni journalisés.</p></form>';
+    '<p class="tv-form-note">' + tr('Enregistrée uniquement dans ce navigateur. Les identifiants sont transmis à ton serveur local pour lire la playlist, sans être enregistrés ni journalisés.') + '</p></form>';
 }
 
 export function tvPageHTML() {
   const last = snapChannel(store('ls_tv_last'));
   return topBar(false) +
-    '<article class="tv-page" aria-labelledby="tv-title"><header class="tv-head"><div><p class="svc-eyebrow">Chaînes gratuites, FAST et ta playlist</p>' +
-    '<h1 class="svc-title" id="tv-title" tabindex="-1">TV en direct</h1></div><div class="tv-head-actions" data-nav>' +
-    (last ? '<button type="button" class="btn btn-primary" data-tvplay="' + esc(last.id) + '">' + ICON.play + '<span>Reprendre la dernière chaîne</span></button>' : '') +
-    '<button type="button" class="btn btn-ghost" data-tvsettings aria-expanded="false">' + ICON.gear + '<span>Ma playlist</span></button></div></header>' +
-    filtersHTML() + '<div class="tv-body"><nav class="tv-cats" id="tv-cats" aria-label="Catégories">' + catsHTML() + '</nav><div class="tv-main">' +
+    '<article class="tv-page" aria-labelledby="tv-title"><header class="tv-head"><div><p class="svc-eyebrow">' + tr('Chaînes gratuites, FAST et ta playlist') + '</p>' +
+    '<h1 class="svc-title" id="tv-title" tabindex="-1">' + tr('TV en direct') + '</h1></div><div class="tv-head-actions" data-nav>' +
+    (last ? '<button type="button" class="btn btn-primary" data-tvplay="' + esc(last.id) + '">' + ICON.play + '<span>' + tr('Reprendre la dernière chaîne') + '</span></button>' : '') +
+    '<button type="button" class="btn btn-ghost" data-tvsettings aria-expanded="false">' + ICON.gear + '<span>' + tr('Ma playlist') + '</span></button></div></header>' +
+    filtersHTML() + '<div class="tv-body"><nav class="tv-cats" id="tv-cats" aria-label="' + tr('Catégories') + '">' + catsHTML() + '</nav><div class="tv-main">' +
     '<div id="tv-settings" class="tv-settings glass" hidden>' + settingsHTML() + '</div>' +
-    '<div class="tv-detail glass" id="tv-detail" aria-live="polite"><p class="tv-detail-hint">Sélectionne un programme pour voir le détail. Entrée lance la chaîne.</p></div>' +
+    '<div class="tv-detail glass" id="tv-detail" aria-live="polite"><p class="tv-detail-hint">' + tr('Sélectionne un programme pour voir le détail. Entrée lance la chaîne.') + '</p></div>' +
     '<div class="epg" id="epg"></div></div></div></article>';
 }
 
@@ -449,7 +452,7 @@ export function epgShell() {
   for (let i = 0; i < EPG_H * 2; i++) slots += '<span class="epg-slot" style="width:' + 30 * PX_MIN + 'px">' + fmtHM(w0 + i * 1800) + '</span>';
   const nowPx = ((Math.floor(Date.now() / 1000) - w0) / 60) * PX_MIN;
   return '<div class="epg-scroll" id="epg-scroll"><div class="epg-inner" style="width:' + (EPG_CH_W + total) + 'px">' +
-    '<div class="epg-times"><div class="epg-corner">Chaîne</div><div class="epg-slots">' + slots + '</div></div>' +
+    '<div class="epg-times"><div class="epg-corner">' + tr('Chaîne') + '</div><div class="epg-slots">' + slots + '</div></div>' +
     '<div id="epg-rows"></div><div class="epg-now" id="epg-now" style="left:' + (EPG_CH_W + nowPx) + 'px" aria-hidden="true"></div></div></div>' +
     '<div class="epg-more" id="epg-more"></div>';
 }
@@ -465,11 +468,11 @@ export function setChannelDown(id, down) {
 export function epgRowHTML(c) {
   const fav = getFavs().includes(c.id);
   return '<div class="epg-row' + (tv.failed.has(c.id) ? ' is-down' : '') + (boxLocked(c) ? ' is-box-off' : '') + '" data-nav data-chid="' + esc(c.id) + '"><div class="epg-chcol">' +
-    '<button type="button" class="epg-ch" data-tvplay="' + esc(c.id) + '" data-tvctx="page" aria-label="Regarder ' + esc(c.name) + '">' +
+    '<button type="button" class="epg-ch" data-tvplay="' + esc(c.id) + '" data-tvctx="page" aria-label="' + tr('Regarder {name}', { name: esc(c.name) }) + '">' +
     logoHTML(c, 'epg-logo') +
-    '<span class="epg-name">' + numHTML(c) + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + (c.box ? ' <em class="box-badge">Box</em>' : '') + (boxLocked(c) ? '<small class="box-note">' + esc(boxStatus(c).note) + '</small>' : '') + '</span></button>' +
-    '<button type="button" class="epg-fav" data-tvfav="' + esc(c.id) + '" aria-pressed="' + fav + '" aria-label="' + (fav ? 'Retirer des favoris : ' : 'Ajouter aux favoris : ') + esc(c.name) + '">' + (fav ? ICON.starOn : ICON.star) + '</button></div>' +
-    '<div class="epg-line" style="width:' + EPG_H * 60 * PX_MIN + 'px"><span class="epg-load">Chargement…</span></div></div>';
+    '<span class="epg-name">' + numHTML(c) + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + (c.box ? ' <em class="box-badge">' + tr('Box</em>') : '') + (boxLocked(c) ? '<small class="box-note">' + esc(boxStatus(c).note) + '</small>' : '') + '</span></button>' +
+    '<button type="button" class="epg-fav" data-tvfav="' + esc(c.id) + '" aria-pressed="' + fav + '" aria-label="' + (fav ? tr('Retirer des favoris :') + ' ' : tr('Ajouter aux favoris :') + ' ') + esc(c.name) + '">' + (fav ? ICON.starOn : ICON.star) + '</button></div>' +
+    '<div class="epg-line" style="width:' + EPG_H * 60 * PX_MIN + 'px"><span class="epg-load">' + tr('Chargement…') + '</span></div></div>';
 }
 
 export function fillEpgRow(c) {
@@ -486,11 +489,11 @@ export function fillEpgRow(c) {
     const width = Math.max(2, ((e - s) / 60) * PX_MIN - 3);
     const isNow = p.start <= now && now < p.stop;
     return '<button type="button" class="epg-cell' + (isNow ? ' is-now' : '') + '" style="left:' + left + 'px;width:' + width + 'px" data-tvprog="' + esc(c.id) + '|' + p.start +
-      '" aria-label="' + esc(p.title + ', ' + fmtHM(p.start) + ' à ' + fmtHM(p.stop) + (isNow ? ', en cours' : '')) + '"><span class="ec-t">' + esc(p.title) + '</span><span class="ec-h">' + fmtHM(p.start) + '</span></button>';
+      '" aria-label="' + esc(p.title + ', ' + fmtHM(p.start) + ' à ' + fmtHM(p.stop) + (isNow ? tr(', en cours') : '')) + '"><span class="ec-t">' + esc(p.title) + '</span><span class="ec-h">' + fmtHM(p.start) + '</span></button>';
   });
   line.innerHTML = cells.length ? cells.join('') :
     '<button type="button" class="epg-cell epg-none" style="left:0;width:' + (EPG_H * 60 * PX_MIN - 3) + 'px" data-tvplay="' + esc(c.id) + '" data-tvctx="page"><span class="ec-t">' +
-    'Programme indisponible</span><span class="ec-h">Regarder en direct</span></button>';
+    tr('Programme indisponible') + '</span><span class="ec-h">' + tr('Regarder en direct') + '</span></button>';
 }
 
 export function renderEpgGrid() {
@@ -499,7 +502,7 @@ export function renderEpgGrid() {
   tv.list = tvFilter();
   tv.shown = 0;
   if (!tv.list.length) {
-    epg.innerHTML = '<p class="row-msg">' + (tv.cat === 'Favoris' ? 'Aucun favori pour le moment : clique sur l’étoile d’une chaîne.' : tv.cat === 'Ma playlist' ? 'Aucune chaîne : ajoute une playlist avec le bouton « Ma playlist ».' : 'Aucune chaîne pour ces filtres : élargis le pays, la langue ou la recherche.') + '</p>';
+    epg.innerHTML = '<p class="row-msg">' + (tv.cat === 'Favoris' ? tr('Aucun favori pour le moment : clique sur l’étoile d’une chaîne.') : tv.cat === 'Ma playlist' ? tr('Aucune chaîne : ajoute une playlist avec le bouton « Ma playlist ».') : tr('Aucune chaîne pour ces filtres : élargis le pays, la langue ou la recherche.')) + '</p>';
     return;
   }
   epg.innerHTML = epgShell();
@@ -534,14 +537,14 @@ export async function showTvLive() {
   teardownFiche();
   const token = state.token;
   state.kind = 'tvlive';
-  document.title = 'TV en direct · Laststream';
+  document.title = tr('TV en direct · Laststream');
   detailEl.innerHTML = topBar(false) + '<article class="svc-page is-loading" aria-busy="true" tabindex="-1"><header class="svc-head"><span class="sk sk-title"></span></header></article>';
   try {
     initFilters();
     await Promise.all([loadChannelsPage(true), loadFacets().catch(() => {}), loadUserPlaylist()]);
     refreshAll(); // playlists de l'utilisateur : test de la box, actualisation du jour (évènement BOX_CHANGED ensuite)
   } catch (_) {
-    if (token === state.token) detailEl.innerHTML = svcError('La TV en direct n’a pas pu être chargée.');
+    if (token === state.token) detailEl.innerHTML = svcError(tr('La TV en direct n’a pas pu être chargée.'));
     return;
   }
   if (token !== state.token) return;
@@ -563,9 +566,9 @@ export function showProg(chId, start) {
   const now = Math.floor(Date.now() / 1000);
   box.innerHTML = (p.icon ? '<img class="tvd-img" src="' + esc(p.icon) + '" alt="" loading="lazy">' : '') +
     '<div class="tvd-t"><p class="tvd-ch">' + esc(c.name) + '</p><h2 class="tvd-title">' + esc(p.title) + '</h2>' +
-    '<p class="tvd-time">' + fmtHM(p.start) + ' – ' + fmtHM(p.stop) + ' · ' + Math.round((p.stop - p.start) / 60) + ' min' + (p.start <= now && now < p.stop ? ' · <strong>En cours</strong>' : '') + (p.category ? ' · ' + esc(p.category) : '') + '</p>' +
+    '<p class="tvd-time">' + tr('{start} – {stop} · {v} min', { start: fmtHM(p.start), stop: fmtHM(p.stop), v: Math.round((p.stop - p.start) / 60) }) + (p.start <= now && now < p.stop ? ' ' + tr('· <strong>En cours</strong>') : '') + (p.category ? ' · ' + esc(p.category) : '') + '</p>' +
     (p.desc ? '<p class="tvd-desc">' + esc(p.desc) + '</p>' : '') +
-    '<button type="button" class="btn btn-primary" data-tvplay="' + esc(c.id) + '" data-tvctx="page">' + ICON.play + '<span>Regarder</span></button></div>';
+    '<button type="button" class="btn btn-primary" data-tvplay="' + esc(c.id) + '" data-tvctx="page">' + ICON.play + '<span>' + tr('Regarder') + '</span></button></div>';
 }
 
 export async function tvTest(save) {
@@ -577,10 +580,10 @@ export async function tvTest(save) {
   const cfg = type === 'xtream'
     ? { type, server: f.server.value.trim(), username: f.username.value.trim(), password: f.password.value }
     : { type, url: f.url.value.trim() };
-  msg.textContent = 'Test en cours…';
+  msg.textContent = tr('Test en cours…');
   try {
     const j = await tvImport(cfg);
-    msg.textContent = j.count + ' chaîne' + (j.count > 1 ? 's' : '') + ' trouvée' + (j.count > 1 ? 's' : '') + '.';
+    msg.textContent = tr('{count} chaîne{v} trouvée{v}.', { count: j.count, v: (j.count > 1 ? 's' : '') });
     if (save) {
       store('ls_tv_playlist', cfg);
       tv.user = j.channels || [];
@@ -588,7 +591,7 @@ export async function tvTest(save) {
       renderEpgGrid();
     }
   } catch (_) {
-    msg.textContent = 'Playlist inaccessible ou refusée. Vérifie l’adresse et tes identifiants.';
+    msg.textContent = tr('Playlist inaccessible ou refusée. Vérifie l’adresse et tes identifiants.');
   }
 }
 
@@ -617,9 +620,9 @@ export function toggleFav(id) {
 export async function reloadList() {
   const token = state.token;
   const epg = detailEl.querySelector('#epg');
-  if (epg) epg.innerHTML = '<p class="row-msg" role="status">Chargement des chaînes…</p>';
+  if (epg) epg.innerHTML = '<p class="row-msg" role="status">' + tr('Chargement des chaînes…') + '</p>';
   try { await loadChannelsPage(true); } catch (_) {
-    if (epg && token === state.token) epg.innerHTML = '<p class="row-msg" role="alert">Les chaînes n’ont pas pu être chargées.</p>';
+    if (epg && token === state.token) epg.innerHTML = '<p class="row-msg" role="alert">' + tr('Les chaînes n’ont pas pu être chargées.') + '</p>';
     return;
   }
   if (token !== state.token) return;

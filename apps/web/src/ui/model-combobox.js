@@ -8,14 +8,15 @@ import {
 } from '../data/openrouterModels';
 import { esc } from './util.js';
 import '../styles/model-combobox.css';
+import { t as tr } from '../i18n';
 
-const SORTS = [['price', 'Prix'], ['ctx', 'Contexte'], ['name', 'Nom']];
+const SORTS = [['price', tr('Prix')], ['ctx', tr('Contexte')], ['name', tr('Nom')]];
 const SKELETON_ROWS = 6;
 const CHEV = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>';
 const CROSS = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
 const CHECK = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>';
 const PLUS = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>';
-const SEARCH_PH = 'Rechercher un modèle, un fournisseur…';
+const SEARCH_PH = tr('Rechercher un modèle, un fournisseur…');
 const FREE_PH = 'fournisseur/nom-du-modèle';
 
 /** Catalogue partagé par tous les widgets : idle → loading → ok | error. */
@@ -52,25 +53,25 @@ export function modelComboHTML(id, value) {
     '<input type="hidden" name="svc.openrouterModel" value="' + esc(value) + '" data-mcb-value>' +
     '<div class="mcb-field mcb-field-main"><input class="mcb-input" id="' + id + '" type="text" data-mcb-q autocomplete="off" spellcheck="false" aria-describedby="' + id + '-cp ' + id + '-est">' +
     '<span class="mcb-curprice" id="' + id + '-cp"></span>' +
-    '<button type="button" class="mcb-chev" tabindex="-1" aria-label="Afficher la liste des modèles" data-mcb-toggle>' + CHEV + '</button></div>' +
+    '<button type="button" class="mcb-chev" tabindex="-1" aria-label="' + tr('Afficher la liste des modèles') + '" data-mcb-toggle>' + CHEV + '</button></div>' +
     '<button type="button" class="mcb-trig" data-mcb-trig aria-haspopup="listbox" aria-expanded="false" aria-controls="' + lb + '">' +
     '<span class="mcb-trig-t"><span class="mcb-trig-n"></span><span class="mcb-trig-id"></span></span><span class="mcb-curprice"></span>' + CHEV + '</button>' +
     '<div class="mcb-veil" data-mcb-close hidden></div>' +
     '<div class="mcb-pop" data-mcb-pop hidden>' +
     '<div class="mcb-sheet-h"><div class="mcb-handle" aria-hidden="true"></div><div class="mcb-field">' +
-    '<input class="mcb-input" type="text" data-mcb-q="sheet" role="combobox" aria-label="Rechercher un modèle" aria-expanded="true" aria-controls="' + lb + '" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="' + SEARCH_PH + '">' +
-    '<button type="button" class="mcb-chev" aria-label="Fermer la liste" data-mcb-close>' + CROSS + '</button></div></div>' +
-    '<div class="mcb-bar"><span class="mcb-count" aria-live="polite"></span><div class="mcb-segs" role="group" aria-label="Trier par">' +
+    '<input class="mcb-input" type="text" data-mcb-q="sheet" role="combobox" aria-label="' + tr('Rechercher un modèle') + '" aria-expanded="true" aria-controls="' + lb + '" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="' + SEARCH_PH + '">' +
+    '<button type="button" class="mcb-chev" aria-label="' + tr('Fermer la liste') + '" data-mcb-close>' + CROSS + '</button></div></div>' +
+    '<div class="mcb-bar"><span class="mcb-count" aria-live="polite"></span><div class="mcb-segs" role="group" aria-label="' + tr('Trier par') + '">' +
     SORTS.map(([k, l]) => '<button type="button" class="mcb-seg" data-mcb-sort="' + k + '" aria-pressed="false">' + l + '</button>').join('') + '</div></div>' +
-    '<div class="mcb-body"><div class="mcb-sk-wrap" role="status" aria-label="Chargement des modèles" hidden>' +
+    '<div class="mcb-body"><div class="mcb-sk-wrap" role="status" aria-label="' + tr('Chargement des modèles') + '" hidden>' +
     '<div class="mcb-sk"><i class="mcb-sk-dot"></i><span><i class="mcb-sk-a"></i><i class="mcb-sk-b"></i></span><i></i></div>'.repeat(SKELETON_ROWS) + '</div>' +
     '<div class="mcb-empty" hidden></div>' +
-    '<ul class="mcb-list" id="' + lb + '" role="listbox" aria-label="Modèles OpenRouter"></ul></div>' +
-    '<div class="mcb-foot"><button type="button" class="mcb-link" data-mcb-custom>' + PLUS + 'Utiliser un identifiant personnalisé</button></div></div>' +
-    '<div class="mcb-warn" role="alert" hidden><span>Impossible de charger la liste des modèles. Saisis l’identifiant à la main, ou réessaie.</span>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-mcb-retry>Réessayer</button></div>' +
-    '<p class="mcb-invalid" role="status" hidden>Cet identifiant ne ressemble pas à « fournisseur/modèle » : vérifie-le sur openrouter.ai.</p>' +
-    '<p class="mcb-note" hidden>Identifiant personnalisé. <button type="button" class="mcb-back" data-mcb-back>Revenir à la liste</button></p>' +
+    '<ul class="mcb-list" id="' + lb + '" role="listbox" aria-label="' + tr('Modèles OpenRouter') + '"></ul></div>' +
+    '<div class="mcb-foot"><button type="button" class="mcb-link" data-mcb-custom>' + PLUS + tr('Utiliser un identifiant personnalisé') + '</button></div></div>' +
+    '<div class="mcb-warn" role="alert" hidden><span>' + tr('Impossible de charger la liste des modèles. Saisis l’identifiant à la main, ou réessaie.') + '</span>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-mcb-retry>' + tr('Réessayer') + '</button></div>' +
+    '<p class="mcb-invalid" role="status" hidden>' + tr('Cet identifiant ne ressemble pas à « fournisseur/modèle » : vérifie-le sur openrouter.ai.') + '</p>' +
+    '<p class="mcb-note" hidden>' + tr('Identifiant personnalisé.') + ' <button type="button" class="mcb-back" data-mcb-back>' + tr('Revenir à la liste') + '</button></p>' +
     '<p class="mcb-est" id="' + id + '-est" aria-live="polite"></p></div>';
 }
 
@@ -119,11 +120,11 @@ function optionHTML(m, k, lb, cur, active) {
   return '<li class="mcb-opt' + (cur ? ' is-cur' : '') + (k === active ? ' is-act' : '') + '" id="' + lb + '-o' + k + '" role="option" aria-selected="' + cur + '" data-mcb-opt="' + esc(m.id) + '">' +
     '<span class="mcb-check" aria-hidden="true">' + (cur ? CHECK : '') + '</span>' +
     '<span class="mcb-main"><span class="mcb-name">' + esc(m.name) +
-    (b.free ? ' <span class="mcb-badge is-free">Gratuit</span>' : '') +
-    (b.eco ? ' <span class="mcb-badge is-eco">Économique</span>' : '') +
-    (b.long ? ' <span class="mcb-badge is-long">Long contexte</span>' : '') +
+    (b.free ? ' <span class="mcb-badge is-free">' + tr('Gratuit') + '</span>' : '') +
+    (b.eco ? ' <span class="mcb-badge is-eco">' + tr('Économique') + '</span>' : '') +
+    (b.long ? ' <span class="mcb-badge is-long">' + tr('Long contexte') + '</span>' : '') +
     '</span><span class="mcb-id">' + esc(m.id) + '</span></span>' +
-    '<span class="mcb-meta"><span class="mcb-pr">' + esc(priceLabel(m)) + '</span>' + (ctx ? '<span class="mcb-ctx">' + ctx + ' de contexte</span>' : '') + '</span></li>';
+    '<span class="mcb-meta"><span class="mcb-pr">' + esc(priceLabel(m)) + '</span>' + (ctx ? '<span class="mcb-ctx">' + tr('{ctx} de contexte', { ctx }) + '</span>' : '') + '</span></li>';
 }
 
 /** Liste filtrée et groupée ; `st.flat` garde l'ordre affiché pour le clavier. */
@@ -142,14 +143,14 @@ function paintList(root) {
   p.list.innerHTML = groups.map((g, gi) => '<li class="mcb-g" role="group" aria-labelledby="' + lb + '-g' + gi + '"><div class="mcb-grp" id="' + lb + '-g' + gi + '" role="presentation">' + esc(g.provider) + '</div>' +
     '<ul class="mcb-gl" role="none">' + g.models.map((m) => optionHTML(m, k++, lb, m.id === curId, s.active)).join('') + '</ul></li>').join('');
   const n = s.flat.length;
-  root.querySelector('.mcb-count').textContent = loading ? 'Chargement…' : n + (n > 1 ? ' modèles' : ' modèle') + ' · prix par million de tokens (entrée / sortie)';
+  root.querySelector('.mcb-count').textContent = loading ? tr('Chargement…') : n + (n > 1 ? ' ' + tr('modèles') : ' ' + tr('modèle')) + ' ' + tr('· prix par million de tokens (entrée / sortie)');
   root.querySelector('.mcb-sk-wrap').hidden = !loading;
   const empty = root.querySelector('.mcb-empty');
   empty.hidden = loading || n > 0;
   if (!empty.hidden) {
     const q = s.query.trim();
-    empty.innerHTML = '<strong>Aucun modèle pour « ' + esc(q) + ' »</strong><span>Essaie un autre mot, ou utilise un identifiant personnalisé.</span>' +
-      (q ? '<button type="button" class="mcb-back" data-mcb-custom>Utiliser « ' + esc(q) + ' » comme identifiant</button>' : '');
+    empty.innerHTML = tr('<strong>Aucun modèle pour « {q} »</strong>', { q: esc(q) }) + '<span>' + tr('Essaie un autre mot, ou utilise un identifiant personnalisé.') + '</span>' +
+      (q ? '<button type="button" class="mcb-back" data-mcb-custom>' + tr('Utiliser « {q} » comme identifiant', { q: esc(q) }) + '</button>' : '');
   }
   p.list.hidden = loading || n === 0;
   root.querySelectorAll('[data-mcb-sort]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mcbSort === s.sort)));
@@ -200,15 +201,15 @@ function paint(root) {
     inp.setAttribute('aria-autocomplete', 'list');
     inp.setAttribute('aria-haspopup', 'listbox');
     inp.setAttribute('aria-expanded', String(s.open && !s.sheet));
-    inp.placeholder = s.open ? SEARCH_PH : (store.status === 'loading' ? 'Chargement des modèles…' : SEARCH_PH);
+    inp.placeholder = s.open ? SEARCH_PH : (store.status === 'loading' ? tr('Chargement des modèles…') : SEARCH_PH);
     if (!s.open) inp.value = cur ? cur.name : id;
   }
   s.mode = mode;
   const price = cur ? priceLabel(cur) : '';
   root.querySelectorAll('.mcb-curprice').forEach((el) => { el.textContent = s.open || free ? '' : price; });
   p.trig.setAttribute('aria-expanded', String(s.open && s.sheet));
-  p.trig.setAttribute('aria-label', 'Modèle OpenRouter : ' + (cur ? cur.name + ', ' + price : id || 'aucun'));
-  p.trig.querySelector('.mcb-trig-n').textContent = cur ? cur.name : (id || 'Choisir un modèle');
+  p.trig.setAttribute('aria-label', tr('Modèle OpenRouter :') + ' ' + (cur ? cur.name + ', ' + price : id || 'aucun'));
+  p.trig.querySelector('.mcb-trig-n').textContent = cur ? cur.name : (id || tr('Choisir un modèle'));
   p.trig.querySelector('.mcb-trig-id').textContent = cur ? id : '';
   p.pop.hidden = !s.open;
   p.veil.hidden = !(s.open && s.sheet);

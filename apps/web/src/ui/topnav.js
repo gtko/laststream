@@ -9,6 +9,7 @@ import { friendsButtonHTML } from './socialButton.js';
 import { downloadsNavHTML } from './downloadBtn.js';
 import { esc } from './util.js';
 import { toast } from './dom.js';
+import { t as tr } from '../i18n';
 
 const TOP_DROP = '.topbar [data-drop]';
 
@@ -18,31 +19,31 @@ const menuLink = (href, attrs, icon, label) =>
 
 /** Menu principal : [identifiant, adresse, attributs du lien, icône, libellé]. Les services de streaming restent dans Collections. */
 const MAIN_NAV = [
-  ['series', '#/series', ' data-go', 'layers', 'Séries'],
-  ['films', '#/films', ' data-go', 'film', 'Films'],
-  ['direct', '#/tv-live', ' data-tvlive', 'play', 'Direct'],
-  ['emissions', '#/emissions', ' data-showsnav', 'tv', 'Émissions TV'],
-  ['documentaires', '#/documentaires', ' data-go', 'info', 'Documentaires'],
+  ['series', '#/series', ' data-go', 'layers', tr('Séries')],
+  ['films', '#/films', ' data-go', 'film', tr('Films')],
+  ['direct', '#/tv-live', ' data-tvlive', 'play', tr('Direct')],
+  ['emissions', '#/emissions', ' data-showsnav', 'tv', tr('Émissions TV')],
+  ['documentaires', '#/documentaires', ' data-go', 'info', tr('Documentaires')],
 ];
 
 /** Attributs d'état du lien de la page affichée (`current` : identifiant de MAIN_NAV). */
 const currentAttrs = (id, current) => (id === current ? ' aria-current="page"' : '');
 
 /** Entrée « Ensemble » (comptes connectés hors profil enfant) : [identifiant, adresse, attributs, icône, libellé], après Documentaires. */
-const ENSEMBLE_NAV = ['ensemble', '#/ensemble', ' data-go', 'users', 'Ensemble'];
+const ENSEMBLE_NAV = ['ensemble', '#/ensemble', ' data-go', 'users', tr('Ensemble')];
 
 /** Menu « Explorer » : les entrées hors menu principal ; sous 1100 px, les entrées du menu principal (et Ensemble si social) s'y ajoutent (classe nav-pop-compact). */
 function exploreMenuHTML(idSuffix, current, social) {
   const compact = '<ul class="nav-pop-list nav-pop-compact">' +
     (social ? [...MAIN_NAV, ENSEMBLE_NAV] : MAIN_NAV).map(([id, href, attrs, icon, label]) => '<li>' + menuLink(href, attrs + currentAttrs(id, current), icon, label) + '</li>').join('') + '</ul>';
   const main = '<ul class="nav-pop-list">' +
-    '<li>' + menuLink('#/library', ' data-libnav', 'list', 'Ma liste') + '</li>' +
-    '<li>' + menuLink('#/collections', ' data-go', 'grid', 'Collections') + '</li>' +
-    '<li>' + menuLink('#/discover', ' data-go', 'compass', 'Découvrir') + '</li>' +
-    '<li>' + menuLink('#/calendar', ' data-calnav', 'calendar', 'Calendrier') + '</li>' +
-    (social && hasCommunity() ? '<li>' + menuLink('#/forum', ' data-go' + currentAttrs('forum', current), 'forum', 'Forum') + '</li>' : '') + '</ul>';
+    '<li>' + menuLink('#/library', ' data-libnav', 'list', tr('Ma liste')) + '</li>' +
+    '<li>' + menuLink('#/collections', ' data-go', 'grid', tr('Collections')) + '</li>' +
+    '<li>' + menuLink('#/discover', ' data-go', 'compass', tr('Découvrir')) + '</li>' +
+    '<li>' + menuLink('#/calendar', ' data-calnav', 'calendar', tr('Calendrier')) + '</li>' +
+    (social && hasCommunity() ? '<li>' + menuLink('#/forum', ' data-go' + currentAttrs('forum', current), 'forum', tr('Forum')) + '</li>' : '') + '</ul>';
   return '<div class="nav-drop" data-drop>' +
-    '<button type="button" class="nav-drop-btn" data-drop-btn aria-expanded="false" aria-controls="nav-explore' + idSuffix + '">Explorer' + ICON.chev + '</button>' +
+    '<button type="button" class="nav-drop-btn" data-drop-btn aria-expanded="false" aria-controls="nav-explore' + idSuffix + '">' + tr('Explorer') + ICON.chev + '</button>' +
     '<div class="nav-pop nav-pop-explore" id="nav-explore' + idSuffix + '" hidden>' + main + compact + '</div></div>';
 }
 
@@ -54,7 +55,7 @@ function exploreMenuHTML(idSuffix, current, social) {
 export function mainNavHTML({ current = '', idSuffix = '', social = false } = {}) {
   const ens = social
     ? '<a href="' + ENSEMBLE_NAV[1] + '"' + ENSEMBLE_NAV[2] + ' class="nav-wide nav-ens' + (current === 'ensemble' ? ' is-current' : '') + '"' + currentAttrs('ensemble', current) +
-      '><span class="nav-dot" aria-hidden="true"></span>Ensemble</a>'
+      '><span class="nav-dot" aria-hidden="true"></span>' + tr('Ensemble') + '</a>'
     : '';
   return MAIN_NAV.map(([id, href, attrs, , label]) =>
     '<a href="' + href + '"' + attrs + ' class="nav-wide' + (id === current ? ' is-current' : '') + '"' + currentAttrs(id, current) + '>' + label + '</a>').join('') +
@@ -71,23 +72,23 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
   const initial = name.slice(0, 1).toUpperCase();
   const bg = current.avatarColor || current.avatar ? avatarAttrs(current.avatar, current.avatarColor) : '';
   const items = [
-    kid ? '' : menuLink('#/stats', ' data-go', 'stats', 'Statistiques'),
-    kid ? '' : menuLink('#/settings', ' data-go', 'gear', 'Réglages'),
-    owner && !kid ? menuLink('#/admin', ' data-go', 'shield', 'Administration') : '',
+    kid ? '' : menuLink('#/stats', ' data-go', 'stats', tr('Statistiques')),
+    kid ? '' : menuLink('#/settings', ' data-go', 'gear', tr('Réglages')),
+    owner && !kid ? menuLink('#/admin', ' data-go', 'shield', tr('Administration')) : '',
     // Feedback (LAST-1654) : seulement s'il a une destination (Sentry ou forum), jamais pour un profil enfant.
-    !kid && feedbackAvailable() ? '<button type="button" class="nav-pop-item" data-nav-feedback>' + ICON.feedback + '<span>Envoyer un feedback</span></button>' : '',
-    server && !isProfileLocked() ? '<button type="button" class="nav-pop-item" data-nav-switch>' + ICON.switch + '<span>Changer de profil</span></button>' : '',
-    server && !kid ? '<button type="button" class="nav-pop-item" data-nav-logout>' + ICON.logout + '<span>Se déconnecter</span></button>' : '',
+    !kid && feedbackAvailable() ? '<button type="button" class="nav-pop-item" data-nav-feedback>' + ICON.feedback + '<span>' + tr('Envoyer un feedback') + '</span></button>' : '',
+    server && !isProfileLocked() ? '<button type="button" class="nav-pop-item" data-nav-switch>' + ICON.switch + '<span>' + tr('Changer de profil') + '</span></button>' : '',
+    server && !kid ? '<button type="button" class="nav-pop-item" data-nav-logout>' + ICON.logout + '<span>' + tr('Se déconnecter') + '</span></button>' : '',
   ].join('');
   return '<div class="top-actions">' +
-    (search || '<button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>') +
+    (search || '<button type="button" class="icon-btn" data-search aria-label="' + tr('Rechercher') + '">' + ICON.search + '</button>') +
     (kid ? '' : downloadsNavHTML()) +
     (social ? friendsButtonHTML('icon-btn') : '') +
     '<div class="nav-drop nav-drop-profile" data-drop>' +
     '<button type="button" class="avatar nav-avatar" data-drop-btn aria-expanded="false" aria-controls="nav-profile' + idSuffix + '"' + bg +
-    ' aria-label="Profil ' + esc(name) + ', menu">' + esc(initial) + '</button>' +
+    ' aria-label="' + tr('Profil {name}, menu', { name: esc(name) }) + '">' + esc(initial) + '</button>' +
     '<div class="nav-pop nav-pop-profile" id="nav-profile' + idSuffix + '" hidden>' +
-    '<div class="nav-pop-who">' + esc(name) + (kid ? '<span class="nav-pop-sub">Profil enfant</span>' : '') + '</div>' +
+    '<div class="nav-pop-who">' + esc(name) + (kid ? '<span class="nav-pop-sub">' + tr('Profil enfant') + '</span>' : '') + '</div>' +
     items + '</div></div></div>';
 }
 
@@ -146,7 +147,7 @@ async function onClick(e) {
   if (sw) {
     e.preventDefault();
     closeAll();
-    void import('./auth-ui.js').then((m) => (isKidProfile() ? m.leaveKidProfile() : m.openPicker()), () => toast('Impossible de charger cet écran, vérifiez la connexion.'));
+    void import('./auth-ui.js').then((m) => (isKidProfile() ? m.leaveKidProfile() : m.openPicker()), () => toast(tr('Impossible de charger cet écran, vérifiez la connexion.')));
     return;
   }
   const fb = t.closest('[data-nav-feedback]');
@@ -154,7 +155,7 @@ async function onClick(e) {
     e.preventDefault();
     const trigger = fb.closest(TOP_DROP)?.querySelector('[data-drop-btn]') || null;
     closeAll();
-    void import('./feedback.js').then((m) => m.openFeedback({ error: null, opener: trigger }), () => toast('Impossible de charger cet écran, vérifiez la connexion.'));
+    void import('./feedback.js').then((m) => m.openFeedback({ error: null, opener: trigger }), () => toast(tr('Impossible de charger cet écran, vérifiez la connexion.')));
     return;
   }
   const lo = t.closest('[data-nav-logout]');

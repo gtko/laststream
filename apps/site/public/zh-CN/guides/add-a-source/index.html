@@ -1,0 +1,277 @@
+<!doctype html>
+<!-- Page générée par guides-capture/build-guides.mjs (texte : guides-content.mjs) : modifier la source, pas ce fichier. -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>添加资源（Stremio 插件）- Laststream 指南</title>
+<meta name="description" content="Laststream 支持 Stremio 插件（addon）：粘贴其 manifest 地址，播放作品时即可显示其链接。">
+<meta name="theme-color" content="#0c0b11">
+<link rel="canonical" href="https://laststream.app/zh-CN/guides/add-a-source/">
+<link rel="alternate" hreflang="fr" href="https://laststream.app/guides/ajouter-une-source/">
+<link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/add-a-source/">
+<link rel="alternate" hreflang="af" href="https://laststream.app/af/guides/add-a-source/">
+<link rel="alternate" hreflang="ar" href="https://laststream.app/ar/guides/add-a-source/">
+<link rel="alternate" hreflang="be" href="https://laststream.app/be/guides/add-a-source/">
+<link rel="alternate" hreflang="bg" href="https://laststream.app/bg/guides/add-a-source/">
+<link rel="alternate" hreflang="bn" href="https://laststream.app/bn/guides/add-a-source/">
+<link rel="alternate" hreflang="ca" href="https://laststream.app/ca/guides/add-a-source/">
+<link rel="alternate" hreflang="cs" href="https://laststream.app/cs/guides/add-a-source/">
+<link rel="alternate" hreflang="cy" href="https://laststream.app/cy/guides/add-a-source/">
+<link rel="alternate" hreflang="da" href="https://laststream.app/da/guides/add-a-source/">
+<link rel="alternate" hreflang="de" href="https://laststream.app/de/guides/add-a-source/">
+<link rel="alternate" hreflang="el" href="https://laststream.app/el/guides/add-a-source/">
+<link rel="alternate" hreflang="eo" href="https://laststream.app/eo/guides/add-a-source/">
+<link rel="alternate" hreflang="es" href="https://laststream.app/es/guides/add-a-source/">
+<link rel="alternate" hreflang="et" href="https://laststream.app/et/guides/add-a-source/">
+<link rel="alternate" hreflang="eu" href="https://laststream.app/eu/guides/add-a-source/">
+<link rel="alternate" hreflang="fa" href="https://laststream.app/fa/guides/add-a-source/">
+<link rel="alternate" hreflang="fi" href="https://laststream.app/fi/guides/add-a-source/">
+<link rel="alternate" hreflang="fil" href="https://laststream.app/fil/guides/add-a-source/">
+<link rel="alternate" hreflang="gl" href="https://laststream.app/gl/guides/add-a-source/">
+<link rel="alternate" hreflang="he" href="https://laststream.app/he/guides/add-a-source/">
+<link rel="alternate" hreflang="hi" href="https://laststream.app/hi/guides/add-a-source/">
+<link rel="alternate" hreflang="hr" href="https://laststream.app/hr/guides/add-a-source/">
+<link rel="alternate" hreflang="hu" href="https://laststream.app/hu/guides/add-a-source/">
+<link rel="alternate" hreflang="id" href="https://laststream.app/id/guides/add-a-source/">
+<link rel="alternate" hreflang="is" href="https://laststream.app/is/guides/add-a-source/">
+<link rel="alternate" hreflang="it" href="https://laststream.app/it/guides/add-a-source/">
+<link rel="alternate" hreflang="ja" href="https://laststream.app/ja/guides/add-a-source/">
+<link rel="alternate" hreflang="kk" href="https://laststream.app/kk/guides/add-a-source/">
+<link rel="alternate" hreflang="ko" href="https://laststream.app/ko/guides/add-a-source/">
+<link rel="alternate" hreflang="lt" href="https://laststream.app/lt/guides/add-a-source/">
+<link rel="alternate" hreflang="lv" href="https://laststream.app/lv/guides/add-a-source/">
+<link rel="alternate" hreflang="mk" href="https://laststream.app/mk/guides/add-a-source/">
+<link rel="alternate" hreflang="ml" href="https://laststream.app/ml/guides/add-a-source/">
+<link rel="alternate" hreflang="mr" href="https://laststream.app/mr/guides/add-a-source/">
+<link rel="alternate" hreflang="ms" href="https://laststream.app/ms/guides/add-a-source/">
+<link rel="alternate" hreflang="my" href="https://laststream.app/my/guides/add-a-source/">
+<link rel="alternate" hreflang="nb" href="https://laststream.app/nb/guides/add-a-source/">
+<link rel="alternate" hreflang="ne" href="https://laststream.app/ne/guides/add-a-source/">
+<link rel="alternate" hreflang="nl" href="https://laststream.app/nl/guides/add-a-source/">
+<link rel="alternate" hreflang="pa" href="https://laststream.app/pa/guides/add-a-source/">
+<link rel="alternate" hreflang="pl" href="https://laststream.app/pl/guides/add-a-source/">
+<link rel="alternate" hreflang="pt-BR" href="https://laststream.app/pt-BR/guides/add-a-source/">
+<link rel="alternate" hreflang="ro" href="https://laststream.app/ro/guides/add-a-source/">
+<link rel="alternate" hreflang="ru" href="https://laststream.app/ru/guides/add-a-source/">
+<link rel="alternate" hreflang="sk" href="https://laststream.app/sk/guides/add-a-source/">
+<link rel="alternate" hreflang="sl" href="https://laststream.app/sl/guides/add-a-source/">
+<link rel="alternate" hreflang="sq" href="https://laststream.app/sq/guides/add-a-source/">
+<link rel="alternate" hreflang="sr" href="https://laststream.app/sr/guides/add-a-source/">
+<link rel="alternate" hreflang="sv" href="https://laststream.app/sv/guides/add-a-source/">
+<link rel="alternate" hreflang="ta" href="https://laststream.app/ta/guides/add-a-source/">
+<link rel="alternate" hreflang="te" href="https://laststream.app/te/guides/add-a-source/">
+<link rel="alternate" hreflang="th" href="https://laststream.app/th/guides/add-a-source/">
+<link rel="alternate" hreflang="tr" href="https://laststream.app/tr/guides/add-a-source/">
+<link rel="alternate" hreflang="uk" href="https://laststream.app/uk/guides/add-a-source/">
+<link rel="alternate" hreflang="ur" href="https://laststream.app/ur/guides/add-a-source/">
+<link rel="alternate" hreflang="vi" href="https://laststream.app/vi/guides/add-a-source/">
+<link rel="alternate" hreflang="zh-CN" href="https://laststream.app/zh-CN/guides/add-a-source/">
+<link rel="alternate" hreflang="zh-TW" href="https://laststream.app/zh-TW/guides/add-a-source/">
+<link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/ajouter-une-source/">
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Laststream">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="添加资源（Stremio 插件）- Laststream 指南">
+<meta property="og:description" content="Laststream 支持 Stremio 插件（addon）：粘贴其 manifest 地址，播放作品时即可显示其链接。">
+<meta property="og:url" content="https://laststream.app/zh-CN/guides/add-a-source/">
+<meta property="og:image" content="https://laststream.app/zh-CN/guides/add-a-source/img/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="设置，资源：manifest 网址输入框已用黄色框标出">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="添加资源（Stremio 插件）- Laststream 指南">
+<meta name="twitter:description" content="Laststream 支持 Stremio 插件（addon）：粘贴其 manifest 地址，播放作品时即可显示其链接。">
+<meta name="twitter:image" content="https://laststream.app/zh-CN/guides/add-a-source/img/og.jpg">
+<meta name="twitter:image:alt" content="设置，资源：manifest 网址输入框已用黄色框标出">
+<link rel="preload" href="/assets/fonts/sora-latin-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/jakarta-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/guides/guides.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Guides",
+      "item": "https://laststream.app/zh-CN/guides/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Add a source (Stremio extension)",
+      "item": "https://laststream.app/zh-CN/guides/add-a-source/"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#contenu">跳至内容</a>
+
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="/zh-CN/" aria-label="Laststream，首页">
+      <img src="/assets/logo.svg" width="36" height="36" alt=""> <span>Laststream</span>
+    </a>
+    <nav class="nav" aria-label="主导航">
+      <a href="/zh-CN/#fonctions">功能</a>
+      <a href="/zh-CN/#etapes">工作原理</a>
+      <a href="/zh-CN/#apercu">预览</a>
+      <a href="/zh-CN/#ensemble">一起</a>
+      <a href="/zh-CN/#telecharger">下载</a>
+      <a href="/zh-CN/#faq">常见问题</a>
+      <a href="/zh-CN/guides/" aria-current="page">指南</a>
+    </nav>
+    <a class="btn btn-sm" href="/zh-CN/#telecharger">下载</a>
+    <nav class="lang" aria-label="Language">
+      <a href="/guides/ajouter-une-source/" hreflang="fr" lang="fr">FR</a>
+      <a href="/en/guides/add-a-source/" hreflang="en" lang="en">EN</a><!-- langues:début (scripts/i18n-site.mjs) --><details class="lang-more"><summary aria-current="page"><span aria-hidden="true">ZH-CN</span><span class="sr-only">Languages</span></summary><ul><li><a href="/af/guides/add-a-source/" hreflang="af" lang="af">Afrikaans</a></li><li><a href="/ar/guides/add-a-source/" hreflang="ar" lang="ar">العربية</a></li><li><a href="/be/guides/add-a-source/" hreflang="be" lang="be">Беларуская</a></li><li><a href="/bg/guides/add-a-source/" hreflang="bg" lang="bg">Български</a></li><li><a href="/bn/guides/add-a-source/" hreflang="bn" lang="bn">বাংলা</a></li><li><a href="/ca/guides/add-a-source/" hreflang="ca" lang="ca">Català</a></li><li><a href="/cs/guides/add-a-source/" hreflang="cs" lang="cs">Čeština</a></li><li><a href="/cy/guides/add-a-source/" hreflang="cy" lang="cy">Cymraeg</a></li><li><a href="/da/guides/add-a-source/" hreflang="da" lang="da">Dansk</a></li><li><a href="/de/guides/add-a-source/" hreflang="de" lang="de">Deutsch</a></li><li><a href="/el/guides/add-a-source/" hreflang="el" lang="el">Ελληνικά</a></li><li><a href="/eo/guides/add-a-source/" hreflang="eo" lang="eo">Esperanto</a></li><li><a href="/es/guides/add-a-source/" hreflang="es" lang="es">Español (España)</a></li><li><a href="/et/guides/add-a-source/" hreflang="et" lang="et">Eesti</a></li><li><a href="/eu/guides/add-a-source/" hreflang="eu" lang="eu">Euskara</a></li><li><a href="/fa/guides/add-a-source/" hreflang="fa" lang="fa">فارسی</a></li><li><a href="/fi/guides/add-a-source/" hreflang="fi" lang="fi">Suomi</a></li><li><a href="/fil/guides/add-a-source/" hreflang="fil" lang="fil">Filipino</a></li><li><a href="/gl/guides/add-a-source/" hreflang="gl" lang="gl">Galego</a></li><li><a href="/he/guides/add-a-source/" hreflang="he" lang="he">עברית</a></li><li><a href="/hi/guides/add-a-source/" hreflang="hi" lang="hi">हिन्दी</a></li><li><a href="/hr/guides/add-a-source/" hreflang="hr" lang="hr">Hrvatski</a></li><li><a href="/hu/guides/add-a-source/" hreflang="hu" lang="hu">Magyar</a></li><li><a href="/id/guides/add-a-source/" hreflang="id" lang="id">Bahasa Indonesia</a></li><li><a href="/is/guides/add-a-source/" hreflang="is" lang="is">Íslenska</a></li><li><a href="/it/guides/add-a-source/" hreflang="it" lang="it">Italiano</a></li><li><a href="/ja/guides/add-a-source/" hreflang="ja" lang="ja">日本語</a></li><li><a href="/kk/guides/add-a-source/" hreflang="kk" lang="kk">Қазақ тілі</a></li><li><a href="/ko/guides/add-a-source/" hreflang="ko" lang="ko">한국어</a></li><li><a href="/lt/guides/add-a-source/" hreflang="lt" lang="lt">Lietuvių</a></li><li><a href="/lv/guides/add-a-source/" hreflang="lv" lang="lv">Latviešu</a></li><li><a href="/mk/guides/add-a-source/" hreflang="mk" lang="mk">Македонски</a></li><li><a href="/ml/guides/add-a-source/" hreflang="ml" lang="ml">മലയാളം</a></li><li><a href="/mr/guides/add-a-source/" hreflang="mr" lang="mr">मराठी</a></li><li><a href="/ms/guides/add-a-source/" hreflang="ms" lang="ms">Bahasa Melayu</a></li><li><a href="/my/guides/add-a-source/" hreflang="my" lang="my">မြန်မာ</a></li><li><a href="/nb/guides/add-a-source/" hreflang="nb" lang="nb">Norsk bokmål</a></li><li><a href="/ne/guides/add-a-source/" hreflang="ne" lang="ne">नेपाली</a></li><li><a href="/nl/guides/add-a-source/" hreflang="nl" lang="nl">Nederlands</a></li><li><a href="/pa/guides/add-a-source/" hreflang="pa" lang="pa">ਪੰਜਾਬੀ</a></li><li><a href="/pl/guides/add-a-source/" hreflang="pl" lang="pl">Polski</a></li><li><a href="/pt-BR/guides/add-a-source/" hreflang="pt-BR" lang="pt-BR">Português (Brasil)</a></li><li><a href="/ro/guides/add-a-source/" hreflang="ro" lang="ro">Română</a></li><li><a href="/ru/guides/add-a-source/" hreflang="ru" lang="ru">Русский</a></li><li><a href="/sk/guides/add-a-source/" hreflang="sk" lang="sk">Slovenčina</a></li><li><a href="/sl/guides/add-a-source/" hreflang="sl" lang="sl">Slovenščina</a></li><li><a href="/sq/guides/add-a-source/" hreflang="sq" lang="sq">Shqip</a></li><li><a href="/sr/guides/add-a-source/" hreflang="sr" lang="sr">Српски</a></li><li><a href="/sv/guides/add-a-source/" hreflang="sv" lang="sv">Svenska</a></li><li><a href="/ta/guides/add-a-source/" hreflang="ta" lang="ta">தமிழ்</a></li><li><a href="/te/guides/add-a-source/" hreflang="te" lang="te">తెలుగు</a></li><li><a href="/th/guides/add-a-source/" hreflang="th" lang="th">ไทย</a></li><li><a href="/tr/guides/add-a-source/" hreflang="tr" lang="tr">Türkçe</a></li><li><a href="/uk/guides/add-a-source/" hreflang="uk" lang="uk">Українська</a></li><li><a href="/ur/guides/add-a-source/" hreflang="ur" lang="ur">اردو</a></li><li><a href="/vi/guides/add-a-source/" hreflang="vi" lang="vi">Tiếng Việt</a></li><li><a href="/zh-CN/guides/add-a-source/" hreflang="zh-CN" lang="zh-CN" aria-current="page">简体中文</a></li><li><a href="/zh-TW/guides/add-a-source/" hreflang="zh-TW" lang="zh-TW">繁體中文（台灣）</a></li></ul></details><!-- langues:fin -->
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+  <header class="guide-hero">
+    <div class="wrap narrow">
+      <nav class="guide-crumbs" aria-label="面包屑导航">
+        <ol>
+          <li><a href="/zh-CN/guides/">指南</a></li>
+          <li aria-current="page">添加资源（Stremio 插件）</li>
+        </ol>
+      </nav>
+      <h1>添加资源（Stremio 插件）</h1>
+      <p class="lead">Laststream 支持 Stremio 插件（addon）：粘贴其 manifest 地址，播放作品时即可显示其链接。</p>
+      <ul class="guide-badges" aria-label="时长与平台">
+        <li class="is-time">3 分钟</li>
+        <li>Windows</li>
+        <li>Android</li>
+        <li>浏览器</li>
+      </ul>
+      <figure class="shot">
+        <video class="clip" src="/en/guides/add-a-source/clip.mp4" poster="/en/guides/add-a-source/img/poster.webp" width="1280" height="800" autoplay muted loop playsinline controls preload="metadata" aria-label="完整演示视频，无声音"></video>
+      </figure>
+    </div>
+  </header>
+
+  <article class="wrap narrow guide-body">
+    <section class="guide-prereq" aria-labelledby="h-prereq">
+      <h2 id="h-prereq">开始之前</h2>
+      <ul>
+        <li>已登录的账户，使用主资料。</li>
+        <li>插件 manifest 的地址（通常以 <code>/manifest.json</code> 结尾）。</li>
+      </ul>
+    </section>
+    <section aria-labelledby="h-steps">
+      <h2 id="h-steps">步骤</h2>
+      <p class="guide-note">每张截图中，黄色框标示了应点按或点击的位置，数字表示顺序。应用原本使用法语，截图展示的是其英文译本。</p>
+      <ol class="guide-steps">
+        <li>
+          <p>点按头像，然后选择“设置”。</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/01-menu-reglages-1280.webp" srcset="./img/01-menu-reglages-1280.webp 1280w, ./img/01-menu-reglages.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="头像菜单已打开：“设置”项已用框标出。">
+          </figure>
+        </li>
+        <li>
+          <p>在左栏中选择“资源”（1），然后选择“添加 Stremio 插件”（2）。</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/02-reglages-sources-1280.webp" srcset="./img/02-reglages-sources-1280.webp 1280w, ./img/02-reglages-sources.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="设置：“资源”类别和“添加 Stremio 插件”按钮分别编号 1 和 2。">
+          </figure>
+        </li>
+        <li>
+          <p>将地址粘贴到“上游插件网址”中。接受 <code>stremio://</code> 链接，缺少时会自动补上 <code>/manifest.json</code>。</p>
+          <p>截图中的地址以 <code>http://localhost</code> 开头：这是下方的示例插件，为本指南在本地运行。你只需粘贴所要安装的插件提供的地址。</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/03-url-addon-1280.webp" srcset="./img/03-url-addon-1280.webp 1280w, ./img/03-url-addon.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="新插件卡片：已填写的“上游插件网址”输入框已用框标出。">
+          </figure>
+        </li>
+        <li>
+          <p>manifest 会立即被读取：插件的名称、标志和状态会显示出来（1）。点按“设置”底部的“保存”（2）。</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/04-addon-lu-1280.webp" srcset="./img/04-addon-lu-1280.webp 1280w, ./img/04-addon-lu.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="“Mon addon”卡片（含其标志和状态）以及“保存”按钮分别编号 1 和 2。">
+          </figure>
+        </li>
+        <li>
+          <p>打开一部电影并点按“播放”：插件的链接会显示在“资源”面板中。</p>
+          <figure class="shot">
+            <img src="/en/guides/add-a-source/img/05-fiche-sources-1280.webp" srcset="./img/05-fiche-sources-1280.webp 1280w, ./img/05-fiche-sources.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="电影的“资源”面板：由“Mon addon”提供的链接已用框标出。">
+          </figure>
+        </li>
+      </ol>
+    </section>
+    <aside class="guide-tip" aria-label="须知">
+      <p class="guide-tip-title">须知</p>
+      <ul>
+        <li>卡片的“…”菜单：编辑、打开配置、复制网址、启用或停用、删除。</li>
+        <li>顺序很重要：资源 1 会被优先查询。可用 ⋮⋮ 手柄或 ↑ ↓ 箭头调整。</li>
+        <li>卸载：移除，然后点击“保存”。</li>
+        <li>Debrid 密钥无需在 Laststream 中输入：每个插件在其自身配置中处理 Debrid。</li>
+      </ul>
+    </aside>
+    <section aria-labelledby="h-example">
+      <h2 id="h-example">示例：一个基础插件</h2>
+      <p>插件是一个小型网络服务，提供两个地址：<code>/manifest.json</code> 和 <code>/stream/{type}/{id}.json</code>。</p>
+      <p>manifest：</p>
+      <pre><code>{
+        "id": "exemple.mon-addon",
+        "version": "1.0.0",
+        "name": "Mon addon",
+        "description": "Exemple de source pour Laststream",
+        "resources": ["stream"],
+        "types": ["movie", "series"],
+        "idPrefixes": ["tt"],
+        "catalogs": []
+      }</code></pre>
+      <p><code>/stream/movie/tt0000001.json</code> 的响应：</p>
+      <pre><code>{
+        "streams": [
+          {
+            "name": "Mon addon",
+            "title": "1080p",
+            "url": "https://exemple.com/video.mp4"
+          }
+        ]
+      }</code></pre>
+      <p>这正是本指南截图中所用的插件。</p>
+    </section>
+    <nav class="guide-pager" aria-label="其他指南">
+      <a class="prev" href="/zh-CN/guides/kids-profile/">
+        <small>上一篇指南</small> <strong>创建儿童资料</strong>
+      </a>
+      <a class="next" href="/zh-CN/guides/live-tv/">
+        <small>下一篇指南</small> <strong>设置直播电视（M3U 播放列表）</strong>
+      </a>
+    </nav>
+  </article>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <a class="brand" href="/zh-CN/"><img src="/assets/logo.svg" width="28" height="28" alt=""><span>Laststream</span></a>
+    <div class="foot-txt">
+      <p>Laststream 不托管任何内容：它读取你配置的插件。仅限邀请。</p>
+      <p><a href="/zh-CN/guides/">指南</a></p>
+      <p class="legal">Laststream 与 Stremio 无关联。</p>
+      <p class="legal">本产品使用 TMDB API，但未获得 TMDB 的认可或认证。</p>
+      <p class="legal">截图使用演示目录制作：作品为虚构，海报由 AI 生成。</p>
+    </div>
+  </div>
+</footer>
+<script>
+  // Vidéos du guide : pas de lecture automatique si l'utilisateur réduit les animations
+  (function () {
+    try {
+      if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      document.querySelectorAll('video.clip').forEach(function (v) { v.removeAttribute('autoplay'); v.pause(); v.setAttribute('preload', 'none'); });
+    } catch (e) { /* sans effet */ }
+  })();
+</script>
+<script type="application/json" id="ls-i18n">{"mb":"MB","others":"其他平台就在下方。","label":{"windows":["下载 Windows 版","已检测到：Windows"],"android":["下载 Android APK","已检测到：Android"],"ios":["安装网页版","已检测到：iPhone 或 iPad"],"mac":["下载 Mac 版","已检测到：macOS"],"linux":["下载 Linux 版","已检测到：Linux"],"web":["在浏览器中打开","未能识别你的平台"]},"close":"关闭","dialog":"放大的截图","badge":"适用于你的设备"}</script>
+</body>
+</html>

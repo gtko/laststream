@@ -7,6 +7,7 @@
 import { pickFile, type FlatFile } from './files';
 import { jsonOf, type HttpFn, type HttpResponse } from './http';
 import { DebridError, normalizeHash, type AccountState, type DebridProvider, type FileHint, type ProviderStatus, type ResolvedLink } from './types';
+import { t } from '../../i18n';
 
 const API = 'https://api.real-debrid.com/rest/1.0';
 const POLL_ATTEMPTS = 6;
@@ -69,7 +70,7 @@ export function createRealDebrid(o: RealDebridOptions): DebridProvider {
 
   return {
     id: 'realdebrid',
-    label: 'Real-Debrid',
+    label: t('Real-Debrid'),
 
     // Statut inconnu : instantAvailability n'existe plus. Aucun appel.
     checkCache() {

@@ -8,9 +8,10 @@ import { toast } from '../dom.js';
 import { shareBase } from '../invites.js';
 import { esc } from '../util.js';
 import { adminErr, attempt, badge, empty, statusBadge } from './common.js';
+import { t as tr } from '../../i18n';
 
-const TABS = [['overview', 'Aperçu'], ['sessions', 'Sessions'], ['invites', 'Invitations'], ['activity', 'Activité']];
-const INVITE_LABEL = { active: ['Actif', 'ok'], used: ['Utilisé'], expired: ['Expiré'], revoked: ['Révoqué', 'warn'] };
+const TABS = [['overview', tr('Aperçu')], ['sessions', tr('Sessions')], ['invites', tr('Invitations')], ['activity', tr('Activité')]];
+const INVITE_LABEL = { active: [tr('Actif'), 'ok'], used: [tr('Utilisé')], expired: [tr('Expiré')], revoked: [tr('Révoqué'), 'warn'] };
 const TIMELINE_KINDS = ['audit', 'signup', 'invite', 'session', 'party'];
 const QUOTA_MIN = 0;
 const QUOTA_MAX = 100;
@@ -26,11 +27,11 @@ export function avatarHTML(name, large) {
 }
 
 const ACCOUNT_ACTIONS = {
-  suspend: (u) => ({ title: 'Suspendre ' + u, message: '<strong>' + esc(u) + '</strong> ne pourra plus se connecter et toutes ses sessions seront révoquées immédiatement. Tu pourras réactiver le compte.', confirmLabel: 'Suspendre', danger: true, run: api.suspendAccount, done: 'Compte suspendu.' }),
-  reactivate: (u) => ({ title: 'Réactiver ' + u, message: '<strong>' + esc(u) + '</strong> pourra de nouveau se connecter.', confirmLabel: 'Réactiver', danger: false, run: api.reactivateAccount, done: 'Compte réactivé.' }),
-  revoke: (u) => ({ title: 'Révoquer les sessions', message: 'Toutes les sessions de <strong>' + esc(u) + '</strong> seront fermées : il devra se reconnecter sur chaque appareil.', confirmLabel: 'Révoquer', danger: true, run: api.revokeSessions, done: 'Sessions révoquées.' }),
-  reset: (u) => ({ title: 'Lien de réinitialisation', message: 'Générer un lien à usage unique (24 h) pour <strong>' + esc(u) + '</strong>. Un nouveau lien remplace le précédent. Le lien n’est montré qu’une fois.', confirmLabel: 'Générer le lien', danger: false, run: api.resetLink }),
-  delete: (u) => ({ title: 'Supprimer ' + u, message: 'Le compte <strong>' + esc(u) + '</strong>, tous ses profils, sa bibliothèque et ses salons seront supprimés définitivement. Cette action est irréversible.', confirmLabel: 'Supprimer définitivement', danger: true, expect: u, run: api.deleteAccount, done: 'Compte supprimé.' }),
+  suspend: (u) => ({ title: tr('Suspendre {u}', { u }), message: tr('<strong>{u}</strong> ne pourra plus se connecter et toutes ses sessions seront révoquées immédiatement. Tu pourras réactiver le compte.', { u: esc(u) }), confirmLabel: tr('Suspendre'), danger: true, run: api.suspendAccount, done: tr('Compte suspendu.') }),
+  reactivate: (u) => ({ title: tr('Réactiver {u}', { u }), message: tr('<strong>{u}</strong> pourra de nouveau se connecter.', { u: esc(u) }), confirmLabel: tr('Réactiver'), danger: false, run: api.reactivateAccount, done: tr('Compte réactivé.') }),
+  revoke: (u) => ({ title: tr('Révoquer les sessions'), message: tr('Toutes les sessions de <strong>{u}</strong> seront fermées : il devra se reconnecter sur chaque appareil.', { u: esc(u) }), confirmLabel: tr('Révoquer'), danger: true, run: api.revokeSessions, done: tr('Sessions révoquées.') }),
+  reset: (u) => ({ title: tr('Lien de réinitialisation'), message: tr('Générer un lien à usage unique (24 h) pour <strong>{u}</strong>. Un nouveau lien remplace le précédent. Le lien n’est montré qu’une fois.', { u: esc(u) }), confirmLabel: tr('Générer le lien'), danger: false, run: api.resetLink }),
+  delete: (u) => ({ title: tr('Supprimer {u}', { u }), message: tr('Le compte <strong>{u}</strong>, tous ses profils, sa bibliothèque et ses salons seront supprimés définitivement. Cette action est irréversible.', { u: esc(u) }), confirmLabel: tr('Supprimer définitivement'), danger: true, expect: u, run: api.deleteAccount, done: tr('Compte supprimé.') }),
 };
 
 /** Fiche ouverte : { layer, id, ctx, detail, link, msg, tab, timeline, busy }. `ctx` : section d'origine (rafraîchie après une action). */
@@ -45,7 +46,7 @@ function listHTML(items, emptyText, line) {
 }
 
 function tabsHTML(me, nSessions) {
-  return '<div class="adm-tabs" role="tablist" aria-label="Rubriques de la fiche">' + TABS.map(([id, label]) => {
+  return '<div class="adm-tabs" role="tablist" aria-label="' + tr('Rubriques de la fiche') + '">' + TABS.map(([id, label]) => {
     const on = me.tab === id;
     return '<button type="button" role="tab" id="adm-tab-' + id + '" aria-selected="' + (on ? 'true' : 'false') + '" aria-controls="adm-tabpanel" tabindex="' + (on ? '0' : '-1') +
       '" data-adm-tab="' + id + '" data-adm-focus="tab:' + id + '">' + esc(label) +
@@ -58,47 +59,47 @@ function overviewHTML(me, dis) {
   const a = d.account;
   const quotaDown = dis || a.inviteQuota <= QUOTA_MIN ? ' disabled' : '';
   const quotaUp = dis || a.inviteQuota >= QUOTA_MAX ? ' disabled' : '';
-  return '<div class="adm-tiles">' + tile(fmtInt(d.profiles.length), 'profils') + tile(fmtInt(d.libraryCount), 'titres en bibliothèque') + tile(fmtInt(d.invitees.length), 'filleuls') + '</div>' +
-    '<dl class="adm-dl">' + dd('Créé le', esc(fmtDateTime(a.createdAt))) + dd('Parrain', a.referrer ? esc(a.referrer) : '—') + dd('Dernière activité', esc(fmtAgo(a.lastActivityAt))) +
-    (a.suspendedAt ? dd('Suspendu le', esc(fmtDateTime(a.suspendedAt)))  : '') + '</dl>' +
-    '<h4 class="adm-sub">Profils</h4>' + listHTML(d.profiles, 'Aucun profil.', (p) => '<li>' + esc(p.name) + ((p.isKid ?? p.kid) ? ' ' + badge('Enfant') : '') + ((p.hasPin ?? p.pin) ? ' ' + badge('PIN') : '') +
-      ' <span class="adm-dim">' + fmtInt(p.libraryCount ?? p.library ?? 0) + ' titre(s)</span></li>') +
-    '<h4 class="adm-sub">Quota d’invitations</h4>' +
-    '<div class="adm-quota"><p class="adm-quota-t"><strong>' + fmtInt(a.invitesUsed) + ' utilisée(s)</strong> sur un quota de ' + fmtInt(a.inviteQuota) + '</p>' +
-    '<div class="adm-stepper" role="group" aria-label="Quota d’invitations">' +
-    '<button type="button" class="adm-step" data-adm-quota-step="-1" data-adm-focus="quota:-1" aria-label="Retirer une invitation"' + quotaDown + '>−</button>' +
+  return '<div class="adm-tiles">' + tile(fmtInt(d.profiles.length), 'profils') + tile(fmtInt(d.libraryCount), tr('titres en bibliothèque')) + tile(fmtInt(d.invitees.length), 'filleuls') + '</div>' +
+    '<dl class="adm-dl">' + dd(tr('Créé le'), esc(fmtDateTime(a.createdAt))) + dd(tr('Parrain'), a.referrer ? esc(a.referrer) : '—') + dd(tr('Dernière activité'), esc(fmtAgo(a.lastActivityAt))) +
+    (a.suspendedAt ? dd(tr('Suspendu le'), esc(fmtDateTime(a.suspendedAt)))  : '') + '</dl>' +
+    '<h4 class="adm-sub">' + tr('Profils') + '</h4>' + listHTML(d.profiles, tr('Aucun profil.'), (p) => '<li>' + esc(p.name) + ((p.isKid ?? p.kid) ? ' ' + badge(tr('Enfant')) : '') + ((p.hasPin ?? p.pin) ? ' ' + badge('PIN') : '') +
+      ' <span class="adm-dim">' + tr('{fmtInt} titre(s)', { fmtInt: fmtInt(p.libraryCount ?? p.library ?? 0) }) + '</span></li>') +
+    '<h4 class="adm-sub">' + tr('Quota d’invitations') + '</h4>' +
+    '<div class="adm-quota"><p class="adm-quota-t">' + tr('<strong>{invitesUsed} utilisée(s)</strong> sur un quota de {inviteQuota}', { invitesUsed: fmtInt(a.invitesUsed), inviteQuota: fmtInt(a.inviteQuota) }) + '</p>' +
+    '<div class="adm-stepper" role="group" aria-label="' + tr('Quota d’invitations') + '">' +
+    '<button type="button" class="adm-step" data-adm-quota-step="-1" data-adm-focus="quota:-1" aria-label="' + tr('Retirer une invitation') + '"' + quotaDown + '>−</button>' +
     '<span class="adm-step-v" aria-live="polite">' + fmtInt(a.inviteQuota) + '</span>' +
-    '<button type="button" class="adm-step" data-adm-quota-step="1" data-adm-focus="quota:1" aria-label="Ajouter une invitation"' + quotaUp + '>+</button></div></div>';
+    '<button type="button" class="adm-step" data-adm-quota-step="1" data-adm-focus="quota:1" aria-label="' + tr('Ajouter une invitation') + '"' + quotaUp + '>+</button></div></div>';
 }
 
 function sessionsHTML(me, dis) {
   const sessions = me.detail.sessions || [];
-  const head = '<div class="adm-sess-h"><h4 class="adm-sub">Sessions ouvertes</h4>' +
-    (sessions.length ? '<button type="button" class="btn btn-ghost btn-sm" data-adm-do="revoke"' + dis + '>Révoquer toutes</button>' : '') + '</div>';
-  if (!sessions.length) return head + empty('Aucune session ouverte.');
-  return head + '<ul class="adm-sesslist">' + sessions.map((s) => '<li class="adm-sess"><div class="adm-sess-main"><div class="adm-sess-d">' + esc(s.device || 'Appareil inconnu') + '</div>' +
-    '<div class="adm-dim">Créée le ' + esc(fmtDateTime(s.createdAt)) + ' · dernière activité ' + esc(s.lastSeenAt ? fmtAgo(s.lastSeenAt) : 'inconnu') + '</div></div>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-sess="' + esc(s.id) + '" data-adm-focus="sess:' + esc(s.id) + '"' + dis + '>Révoquer</button></li>').join('') + '</ul>';
+  const head = '<div class="adm-sess-h"><h4 class="adm-sub">' + tr('Sessions ouvertes') + '</h4>' +
+    (sessions.length ? '<button type="button" class="btn btn-ghost btn-sm" data-adm-do="revoke"' + dis + '>' + tr('Révoquer toutes') + '</button>' : '') + '</div>';
+  if (!sessions.length) return head + empty(tr('Aucune session ouverte.'));
+  return head + '<ul class="adm-sesslist">' + sessions.map((s) => '<li class="adm-sess"><div class="adm-sess-main"><div class="adm-sess-d">' + esc(s.device || tr('Appareil inconnu')) + '</div>' +
+    '<div class="adm-dim">' + tr('Créée le {createdAt} · dernière activité', { createdAt: esc(fmtDateTime(s.createdAt)) }) + ' ' + esc(s.lastSeenAt ? fmtAgo(s.lastSeenAt) : 'inconnu') + '</div></div>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-sess="' + esc(s.id) + '" data-adm-focus="sess:' + esc(s.id) + '"' + dis + '>' + tr('Révoquer') + '</button></li>').join('') + '</ul>';
 }
 
 function invitesHTML(me) {
   const d = me.detail;
   const invitees = d.invitees || [];
   const invites = d.invites || [];
-  return '<h4 class="adm-sub">Filleuls</h4>' + listHTML(invitees, 'Aucun filleul.', (i) => '<li>' + esc(i.username) +
-    (i.usedAt ? ' <span class="adm-dim">inscrit le ' + esc(fmtDay(i.usedAt)) + '</span>' : '') + '</li>') +
-    '<h4 class="adm-sub">Liens d’invitation</h4>' + listHTML(invites, 'Aucun lien émis.', (i) => {
+  return '<h4 class="adm-sub">' + tr('Filleuls') + '</h4>' + listHTML(invitees, tr('Aucun filleul.'), (i) => '<li>' + esc(i.username) +
+    (i.usedAt ? ' <span class="adm-dim">' + tr('inscrit le {usedAt}', { usedAt: esc(fmtDay(i.usedAt)) }) + '</span>' : '') + '</li>') +
+    '<h4 class="adm-sub">' + tr('Liens d’invitation') + '</h4>' + listHTML(invites, tr('Aucun lien émis.'), (i) => {
       const [label, kind] = INVITE_LABEL[i.status] || [i.status, ''];
-      return '<li class="adm-inv">' + badge(label, kind) + ' <span class="adm-dim">créé le ' + esc(fmtDay(i.createdAt)) +
-        (i.expiresAt ? ' · expire le ' + esc(fmtDay(i.expiresAt)) : ' · sans expiration') + (i.usedAt ? ' · utilisé le ' + esc(fmtDay(i.usedAt)) : '') + '</span></li>';
+      return '<li class="adm-inv">' + badge(label, kind) + ' <span class="adm-dim">' + tr('créé le {createdAt}', { createdAt: esc(fmtDay(i.createdAt)) }) +
+        (i.expiresAt ? ' ' + tr('· expire le {expiresAt}', { expiresAt: esc(fmtDay(i.expiresAt)) }) : ' ' + tr('· sans expiration')) + (i.usedAt ? ' ' + tr('· utilisé le {usedAt}', { usedAt: esc(fmtDay(i.usedAt)) }) : '') + '</span></li>';
     });
 }
 
 function activityHTML(me) {
   const tl = me.timeline;
-  if (tl.status === 'idle' || tl.status === 'loading') return '<p class="adm-empty" role="status">Chargement…</p>';
-  if (tl.status === 'error') return '<div class="adm-error" role="alert"><span>' + esc(tl.error) + '</span><button type="button" class="btn btn-ghost btn-sm" data-adm-tl-reload>Réessayer</button></div>';
-  if (!tl.value.length) return empty('Aucune activité récente.');
+  if (tl.status === 'idle' || tl.status === 'loading') return '<p class="adm-empty" role="status">' + tr('Chargement…') + '</p>';
+  if (tl.status === 'error') return '<div class="adm-error" role="alert"><span>' + esc(tl.error) + '</span><button type="button" class="btn btn-ghost btn-sm" data-adm-tl-reload>' + tr('Réessayer') + '</button></div>';
+  if (!tl.value.length) return empty(tr('Aucune activité récente.'));
   return '<ol class="adm-tl-list">' + tl.value.map((e) => {
     const kind = TIMELINE_KINDS.includes(e.kind) ? e.kind : 'audit';
     return '<li class="adm-tl"><span class="adm-tl-dot k-' + kind + '" aria-hidden="true"></span><span class="adm-tl-t">' + esc(e.label) +
@@ -116,16 +117,16 @@ function panelHTML(me, dis) {
 function dangerHTML(me, dis) {
   const a = me.detail.account;
   const owner = a.isOwner;
-  return '<section class="adm-zone" aria-labelledby="adm-zone-t"><h3 id="adm-zone-t">Zone sensible</h3>' +
+  return '<section class="adm-zone" aria-labelledby="adm-zone-t"><h3 id="adm-zone-t">' + tr('Zone sensible') + '</h3>' +
     '<div class="adm-actions">' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-do="reset"' + dis + '>Lien de réinitialisation</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-do="reset"' + dis + '>' + tr('Lien de réinitialisation') + '</button>' +
     (a.status === 'suspended'
-      ? '<button type="button" class="btn btn-ghost btn-sm" data-adm-do="reactivate"' + dis + '>Réactiver le compte</button>'
-      : '<button type="button" class="btn btn-danger btn-sm" data-adm-do="suspend"' + (owner ? ' disabled' : dis) + '>Suspendre</button>') +
-    '<button type="button" class="btn btn-danger btn-sm" data-adm-do="delete"' + (owner ? ' disabled' : dis) + '>Supprimer le compte</button></div>' +
-    (owner ? '<p class="set-hint">Le compte propriétaire ne peut être ni suspendu ni supprimé.</p>' : '') +
-    (me.link ? '<div class="adm-linkbox" role="status"><p class="set-hint">Lien à usage unique, valable jusqu’au ' + esc(fmtDateTime(me.link.expiresAt)) + '. Il ne sera plus affiché : copie-le maintenant.</p>' +
-      '<div class="adm-inline"><input class="set-input" type="text" readonly value="' + esc(me.link.url) + '" aria-label="Lien de réinitialisation" data-adm-linkval><button type="button" class="btn btn-primary btn-sm" data-adm-copy>Copier</button></div></div>' : '') +
+      ? '<button type="button" class="btn btn-ghost btn-sm" data-adm-do="reactivate"' + dis + '>' + tr('Réactiver le compte') + '</button>'
+      : '<button type="button" class="btn btn-danger btn-sm" data-adm-do="suspend"' + (owner ? ' disabled' : dis) + '>' + tr('Suspendre') + '</button>') +
+    '<button type="button" class="btn btn-danger btn-sm" data-adm-do="delete"' + (owner ? ' disabled' : dis) + '>' + tr('Supprimer le compte') + '</button></div>' +
+    (owner ? '<p class="set-hint">' + tr('Le compte propriétaire ne peut être ni suspendu ni supprimé.') + '</p>' : '') +
+    (me.link ? '<div class="adm-linkbox" role="status"><p class="set-hint">' + tr('Lien à usage unique, valable jusqu’au {expiresAt}. Il ne sera plus affiché : copie-le maintenant.', { expiresAt: esc(fmtDateTime(me.link.expiresAt)) }) + '</p>' +
+      '<div class="adm-inline"><input class="set-input" type="text" readonly value="' + esc(me.link.url) + '" aria-label="' + tr('Lien de réinitialisation') + '" data-adm-linkval><button type="button" class="btn btn-primary btn-sm" data-adm-copy>' + tr('Copier') + '</button></div></div>' : '') +
     '</section>';
 }
 
@@ -134,8 +135,8 @@ function drawerHTML(me) {
   const a = me.detail.account;
   const dis = me.busy ? ' disabled' : '';
   return '<div class="adm-detail" data-adm-detail="' + esc(a.id) + '">' +
-    '<div class="adm-who-h">' + avatarHTML(a.username, true) + '<div class="adm-who-meta"><div class="adm-detail-top">' + statusBadge(a.status) + (a.isOwner ? badge('Propriétaire') : '') + '</div>' +
-    '<p class="adm-dim">Inscrit le ' + esc(fmtDay(a.createdAt)) + (a.referrer ? ' · parrainé par ' + esc(a.referrer) : '') + '</p></div></div>' +
+    '<div class="adm-who-h">' + avatarHTML(a.username, true) + '<div class="adm-who-meta"><div class="adm-detail-top">' + statusBadge(a.status) + (a.isOwner ? badge(tr('Propriétaire')) : '') + '</div>' +
+    '<p class="adm-dim">' + tr('Inscrit le {createdAt}', { createdAt: esc(fmtDay(a.createdAt)) }) + (a.referrer ? ' ' + tr('· parrainé par {referrer}', { referrer: esc(a.referrer) }) : '') + '</p></div></div>' +
     tabsHTML(me, (me.detail.sessions || []).length) +
     '<div class="adm-tabpanel" role="tabpanel" id="adm-tabpanel" aria-labelledby="adm-tab-' + me.tab + '">' + panelHTML(me, dis) + '</div>' +
     dangerHTML(me, dis) +
@@ -160,7 +161,7 @@ function renderDetail() {
 /** Ouvre la fiche d'un compte dans le panneau latéral ; `ctx` est celui de la section qui l'a demandée. */
 export async function openAccount(ctx, id) {
   const me = { layer: null, id, ctx, detail: null, link: null, msg: '', tab: 'overview', timeline: idle(), busy: false };
-  me.layer = openLayer({ title: 'Compte', variant: 'drawer', html: '<p class="adm-empty" role="status">Chargement…</p>', onClose: () => { if (cur === me) cur = null; } });
+  me.layer = openLayer({ title: tr('Compte'), variant: 'drawer', html: '<p class="adm-empty" role="status">' + tr('Chargement…') + '</p>', onClose: () => { if (cur === me) cur = null; } });
   cur = me;
   me.layer.el.addEventListener('click', onLayerClick);
   me.layer.el.addEventListener('keydown', onLayerKeydown);
@@ -224,7 +225,7 @@ async function accountAction(kind) {
   if (cur !== me) return;
   if (ok && kind === 'reset') {
     me.link = { expiresAt: result.expiresAt, url: shareBase() + '/#/reset/' + encodeURIComponent(result.token) };
-    me.msg = 'Lien généré.';
+    me.msg = tr('Lien généré.');
   } else if (ok) me.msg = spec.done;
   if (ok && kind === 'delete') {
     cur = null;
@@ -247,7 +248,7 @@ async function stepQuota(delta) {
   const say = (t) => { if (cur === me) me.msg = t; };
   const ok = await attempt(() => api.setInviteQuota(me.id, next), say);
   me.busy = false;
-  if (ok && cur === me) me.msg = 'Quota enregistré.';
+  if (ok && cur === me) me.msg = tr('Quota enregistré.');
   await refreshAfterChange(me);
 }
 
@@ -260,7 +261,7 @@ async function revokeOneSession(sid) {
   const say = (t) => { if (cur === me) me.msg = t; };
   const ok = await attempt(() => api.revokeSession(me.id, sid), say);
   me.busy = false;
-  if (ok && cur === me) me.msg = 'Session révoquée.';
+  if (ok && cur === me) me.msg = tr('Session révoquée.');
   await refreshAfterChange(me);
 }
 
@@ -275,7 +276,7 @@ async function copyText(text, input) {
 async function copyLink() {
   const input = cur ? cur.layer.el.querySelector('[data-adm-linkval]') : null;
   const ok = input ? await copyText(input.value, input) : false;
-  toast(ok ? 'Lien copié' : 'Copie impossible : sélectionne le lien à la main');
+  toast(ok ? tr('Lien copié') : tr('Copie impossible : sélectionne le lien à la main'));
 }
 
 // ---------- Événements (délégués au calque) ----------

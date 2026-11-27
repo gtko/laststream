@@ -1,6 +1,7 @@
 import type { HomeTitleProgress, MediaKind } from '@laststream/protocol/social';
 import type { SocialState } from './socialStore';
 import type { FriendV3 } from './socialV3Api';
+import { t } from '../i18n';
 
 /* Accueil social : amis qui veulent voir un titre et soirée proposée (ligne du héros). Aucun appel réseau : tout vient de l'état du
  * store social (activité reçue en direct, listes partagées déjà chargées). Les soirées planifiées (LAST-198) viennent de
@@ -95,7 +96,7 @@ export function wantNames(names: readonly string[]): { shown: string[]; more: nu
 }
 
 /** Verbe qui suit les noms : « veut le voir » pour un seul ami, « veulent le voir » sinon. */
-export const wantVerb = (count: number): string => (count > 1 ? 'veulent le voir' : 'veut le voir');
+export const wantVerb = (count: number): string => (count > 1 ? t('veulent le voir') : t('veut le voir'));
 
 /** Heure d'une soirée : « 21 h », « 21 h 30 ». */
 export function eveningTime(ts: number): string {
@@ -111,8 +112,8 @@ const dayStart = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.
 export function eveningDay(ts: number, now: number = Date.now()): string {
   const d = new Date(ts);
   const days = Math.round((dayStart(d) - dayStart(new Date(now))) / 86_400_000);
-  if (days <= 0) return 'Ce soir';
-  if (days === 1) return 'Demain';
+  if (days <= 0) return t('Ce soir');
+  if (days === 1) return t('Demain');
   if (days < 7) return WEEKDAYS[d.getDay()];
   return d.getDate() + '/' + String(d.getMonth() + 1).padStart(2, '0');
 }
@@ -167,11 +168,11 @@ export function friendAhead(mine: MineProgress, items: readonly HomeTitleProgres
   if (mine.kind !== 'series') return { friend: best.friend, marker: Math.round(fFrac * 100), text: '' };
   const name = friendName(best.friend);
   if (fSeason < mSeason) return { friend: best.friend, marker: null, text: '' };
-  if (fSeason > mSeason) return { friend: best.friend, marker: 100, text: `${name} est à S${fSeason} · É${fEpisode}` };
+  if (fSeason > mSeason) return { friend: best.friend, marker: 100, text: `${name} ${t('est à S{fSeason} · É', { fSeason })}${fEpisode}` };
   const gap = fEpisode - mEpisode;
   const marker = gap === 0 ? Math.round(fFrac * 100) : gap > 0 ? 100 : null;
-  return { friend: best.friend, marker, text: gap >= 1 ? `${name} a ${gap} épisode${gap > 1 ? 's' : ''} d'avance` : '' };
+  return { friend: best.friend, marker, text: gap >= 1 ? `${name} ${t('a {gap} épisode{v} d\'avance', { gap, v: gap > 1 ? 's' : '' })}` : '' };
 }
 
 /** Mention d'un titre que personne d'autre n'a commencé. */
-export const NOBODY_ELSE = "Personne d'autre ne l'a commencé";
+export const NOBODY_ELSE = t('Personne d\'autre ne l\'a commencé');

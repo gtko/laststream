@@ -6,6 +6,7 @@ import { textFade } from './playback.js';
 import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
 import { fullTrailerAllowed } from '../player/playerState';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 let fv = null;
 // ---------- Fiche : vidéo d'ambiance ----------
@@ -43,7 +44,7 @@ export function heroVideoSetup(m, auto = null) {
     }
     const wrap = document.createElement('div');
     wrap.className = 'f-video';
-    wrap.innerHTML = '<iframe title="Bande-annonce en arrière-plan, sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(me.key, !auto)) + '"></iframe>';
+    wrap.innerHTML = '<iframe title="' + t('Bande-annonce en arrière-plan, sans son') + '" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(me.key, !auto)) + '"></iframe>';
     bg.appendChild(wrap);
     me.wrap = wrap;
     me.iframe = wrap.querySelector('iframe');

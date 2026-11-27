@@ -5,26 +5,27 @@ import { safeTmdbImage } from './safeImg.js';
 import { UserApiError } from '../data/userApi';
 import { avatarAttrs } from './avatar-art.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
-export const STATUS_OPTIONS = [['online', 'En ligne'], ['away', 'Absent'], ['dnd', 'Ne pas déranger'], ['invisible', 'Invisible']];
-export const SEEN_LABEL = { online: 'En ligne', away: 'Absent', dnd: 'Ne pas déranger', offline: 'Hors ligne' };
+export const STATUS_OPTIONS = [['online', t('En ligne')], ['away', t('Absent')], ['dnd', t('Ne pas déranger')], ['invisible', t('Invisible')]];
+export const SEEN_LABEL = { online: t('En ligne'), away: t('Absent'), dnd: t('Ne pas déranger'), offline: t('Hors ligne') };
 
 export const ADD_ERRORS = {
-  invalid_handle: 'Pseudo invalide : écris Nom#TAG (2 à 20 caractères, puis # et 4 caractères).',
-  handle_not_found: 'Aucun profil avec ce pseudo exact.',
-  already_friends: 'Vous êtes déjà amis.',
-  already_requested: 'Une demande est déjà en attente.',
-  self: 'Tu ne peux pas t’ajouter toi-même.',
-  friend_limit_reached: 'Limite d’amis atteinte.',
-  rate_limited: 'Trop de tentatives, réessaie dans un instant.',
-  forbidden: 'Action refusée.',
+  invalid_handle: t('Pseudo invalide : écris Nom#TAG (2 à 20 caractères, puis # et 4 caractères).'),
+  handle_not_found: t('Aucun profil avec ce pseudo exact.'),
+  already_friends: t('Vous êtes déjà amis.'),
+  already_requested: t('Une demande est déjà en attente.'),
+  self: t('Tu ne peux pas t’ajouter toi-même.'),
+  friend_limit_reached: t('Limite d’amis atteinte.'),
+  rate_limited: t('Trop de tentatives, réessaie dans un instant.'),
+  forbidden: t('Action refusée.'),
 };
 
 /** Message lisible d'une erreur de l'API sociale (les codes inconnus restent visibles pour le diagnostic). */
 export function socialErrorMessage(err) {
-  if (!(err instanceof UserApiError)) return 'Une erreur est survenue.';
-  if (err.status === 0 || err.code === 'network') return 'Serveur injoignable pour le moment.';
-  return ADD_ERRORS[err.code] || 'Erreur (' + err.code + ').';
+  if (!(err instanceof UserApiError)) return t('Une erreur est survenue.');
+  if (err.status === 0 || err.code === 'network') return t('Serveur injoignable pour le moment.');
+  return ADD_ERRORS[err.code] || t('Erreur ({code}).', { code: err.code });
 }
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -53,7 +54,7 @@ export function livePos(w, now = Date.now()) {
 
 /** « S01E03 · 34:12 » (ou « 1:02:03 » pour un film), suffixe « en pause » si la lecture est arrêtée. */
 export function watchLine(w) {
-  return [episodeCode(w), clock(livePos(w)), w.paused ? 'en pause' : ''].filter(Boolean).join(' · ');
+  return [episodeCode(w), clock(livePos(w)), w.paused ? t('en pause') : ''].filter(Boolean).join(' · ');
 }
 
 /** Temps restant avant la fin : « reste 34 min », « reste 1 h 05 » ; chaîne vide si la durée est inconnue. */
@@ -61,15 +62,15 @@ export function remainingLabel(w) {
   const d = Number(w.duration) || 0;
   if (d <= 0) return '';
   const min = Math.ceil(Math.max(0, d - livePos(w)) / 60);
-  if (min < 1) return 'terminé';
-  return min < 60 ? 'reste ' + min + ' min' : 'reste ' + Math.floor(min / 60) + ' h ' + pad(min % 60);
+  if (min < 1) return t('terminé');
+  return min < 60 ? t('reste {min} min', { min }) : t('reste {v} h {pad}', { v: Math.floor(min / 60), pad: pad(min % 60) });
 }
 
 /** État de la lecture d'un ami : « En lecture », ou « En pause » avec l'ancienneté de l'arrêt (`movedAt`) à partir d'une minute. */
 export function watchState(w, now = Date.now()) {
-  if (!w.paused) return { paused: false, label: 'En lecture' };
+  if (!w.paused) return { paused: false, label: t('En lecture') };
   const since = w.movedAt && now - w.movedAt >= 60000 ? ago(w.movedAt, now) : '';
-  return { paused: true, label: since ? 'En pause · ' + since : 'En pause' };
+  return { paused: true, label: since ? t('En pause · {since}', { since }) : t('En pause') };
 }
 
 /** Part de la durée déjà vue, en pourcentage entier (0 si la durée est inconnue). */
@@ -82,11 +83,18 @@ export function progressPct(w) {
 export function ago(ts, now = Date.now()) {
   if (!ts) return '';
   const m = Math.max(0, Math.round((now - ts) / 60000));
-  if (m < 1) return 'à l’instant';
-  if (m < 60) return m + ' min';
+  if (m < 1) return t('à l’instant');
+  if (m < 60) return t('{m} min', { m });
   const h = Math.round(m / 60);
-  if (h < 24) return h + ' h';
-  return Math.round(h / 24) + ' j';
+  if (h < 24) return t('{h} h', { h });
+  return t('{d} j', { d: Math.round(h / 24) });
+}
+
+/** « à l’instant » ou « il y a 12 min » (vide si inconnu). */
+export function agoText(ts, now = Date.now()) {
+  if (!ts) return '';
+  const a = ago(ts, now);
+  return Math.round((now - ts) / 60000) < 1 ? a : t('il y a {ago}', { ago: a });
 }
 
 /** Couleur d'avatar : seulement une couleur hexadécimale, sinon une couleur neutre. */

@@ -26,6 +26,7 @@ import { ensureExternalSubs, onReady, onTracks } from './sessionTracks.js';
 import { reopenTracksEvent } from './sessionReopen.js';
 import { partyBridge } from '../party/bridge';
 import { toast as pageToast } from '../ui/dom.js';
+import { t as tr } from '../i18n';
 
 
 export function ensureUI() {
@@ -61,7 +62,7 @@ export function ensureUI() {
   });
   miniState.onChange(applyMini);
   // Bascule automatique entre débrideurs : « AllDebrid indisponible → TorBox ».
-  debrid().setHandlers({ onSwitch: (from, to) => S.ui.toast(PROVIDER_LABEL[from] + ' indisponible → ' + PROVIDER_LABEL[to], 6000) });
+  debrid().setHandlers({ onSwitch: (from, to) => S.ui.toast(tr('{v} indisponible → {v2}', { v: PROVIDER_LABEL[from], v2: PROVIDER_LABEL[to] }), 6000) });
   mountPartyPanel(S.ui.root, { adapter: () => partyAdapter() });
   S.thumbs = new Thumbs(S.ui.thumbCanvas, {
     allowed: () => thumbsAllowedNow(),
@@ -230,7 +231,7 @@ export function bindEngine(e) {
     const msg = err && err.message ? err.message : 'inconnue';
     if (externalAfterError(S.P, msg)) return; // iPhone et iPad : format ou décodage refusé par le lecteur intégré → lecteur externe, sans changer de source
     if (retryOnLibvlc(S.P, e)) return; // mode auto : mpv a échoué avant la première image → libVLC, une seule fois
-    failover('Erreur de lecture (' + msg + ')');
+    failover(tr('Erreur de lecture ({msg})', { msg }));
   });
   // Après une réouverture (LAST-507), les pistes perdues au rechargement sont réappliquées au premier événement du moteur.
   e.on('tracks', () => { if (S.P && S.P.engine === e) { reopenTracksEvent(S.P); onTracks(); } });
@@ -246,7 +247,7 @@ export function bindEngine(e) {
   e.on('openParty', () => {
     if (!S.P || S.P.engine !== e) return;
     if (partyBridge.available() && !S.P.addon) togglePartyPanel(true);
-    else pageToast('Watch party indisponible pour cette lecture'); // toast de la page : celui du lecteur web est masqué
+    else pageToast(tr('Watch party indisponible pour cette lecture')); // toast de la page : celui du lecteur web est masqué
   });
   e.on('openFriends', () => { if (S.P && S.P.engine === e) openSidebar(); });
   e.on('selectEpisode', (d) => { if (S.P && S.P.engine === e) playEpisode(Number(d.season), Number(d.episode)); });

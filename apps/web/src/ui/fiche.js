@@ -25,7 +25,8 @@ import { applyRestore } from './router.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { tv } from './tv.js';
-import { esc, fmtDate, fmtMin, plural, store } from './util.js';
+import { esc, fmtDate, fmtMin, store } from './util.js';
+import { t as tr, tn, intlLocale } from '../i18n';
 
 let ficheIO = null;
 // ---------- Fiche : rendu ----------
@@ -36,13 +37,13 @@ export function ratingsHTML(m, r) {
 function metaLine(m) {
   const out = [];
   if (m.year) out.push('<li>' + esc(m.year) + '</li>');
-  if (m.cert) out.push('<li><span class="cert-badge" title="Classification ' + esc(getRegion().label) + '">' + esc(m.cert) + '</span></li>');
+  if (m.cert) out.push('<li><span class="cert-badge" title="' + tr('Classification {label}', { label: esc(getRegion().label) }) + '">' + esc(m.cert) + '</span></li>');
   if (m.type === 'tv') {
     const parts = [];
-    if (m.nSeasons) parts.push(plural(m.nSeasons, 'saison', 'saisons'));
-    if (m.nEpisodes) parts.push(plural(m.nEpisodes, 'épisode', 'épisodes'));
+    if (m.nSeasons) parts.push(tn(m.nSeasons, '{n} saison', '{n} saisons'));
+    if (m.nEpisodes) parts.push(tn(m.nEpisodes, '{n} épisode', '{n} épisodes'));
     if (parts.length) out.push('<li>' + parts.join(' · ') + '</li>');
-    if (m.minutes) out.push('<li>' + fmtMin(m.minutes) + ' / épisode</li>');
+    if (m.minutes) out.push('<li>' + tr('{minutes} / épisode', { minutes: fmtMin(m.minutes) }) + '</li>');
   } else if (m.minutes) {
     out.push('<li>' + fmtMin(m.minutes) + '</li>');
   }
@@ -85,7 +86,7 @@ export function nextToWatch(m) {
 
 function playText(m) {
   const n = nextToWatch(m);
-  return n ? (n.resume ? 'Reprendre · ' : 'Lecture ') + 'S' + n.s + ' É' + n.e : 'Lecture';
+  return n ? (n.resume ? tr('Reprendre ·') + ' ' : tr('Lecture') + ' ') + 'S' + n.s + ' É' + n.e : tr('Lecture');
 }
 
 const isUnreleased = (m) => isFuture(m.releaseFR);
@@ -93,10 +94,10 @@ export const getRemind = () => store('ls_remind') || [];
 function remindBtn(m, cls, extra) {
   const on = getRemind().includes(m.key);
   return '<button type="button" class="' + cls + '" data-remind aria-pressed="' + on + '"' + (extra || '') + '>' + (on ? ICON.check : ICON.bell) +
-    '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span></button>';
+    '<span class="f-play-label">' + (on ? tr('Rappel activé') : tr('Me rappeler')) + '</span></button>';
 }
 function primaryBtn(m) {
-  if (m.cinemaSince) return followBtn(m.key, 'btn btn-primary btn-pill is-cinema', '', 'Me prévenir');
+  if (m.cinemaSince) return followBtn(m.key, 'btn btn-primary btn-pill is-cinema', '', tr('Me prévenir'));
   return isUnreleased(m)
     ? remindBtn(m, 'btn btn-primary btn-pill')
     : '<button type="button" class="btn btn-primary btn-pill" data-play>' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>';
@@ -111,7 +112,7 @@ function resumeBarHTML(m) {
   const pct = Math.max(1, Math.min(99, Math.round((p.position / p.duration) * 100)));
   const left = Math.max(1, Math.round((p.duration - p.position) / 60));
   return '<div class="f-resume"><span class="f-resume-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></span>' +
-    '<span class="f-resume-t">reste ' + esc(left >= 60 ? fmtMin(left) : left + ' min') + '</span></div>';
+    '<span class="f-resume-t">' + tr('reste {v}', { v: esc(left >= 60 ? fmtMin(left) : tr('{left} min', { left })) }) + '</span></div>';
 }
 
 export function updatePlayLabel(m) {
@@ -123,12 +124,12 @@ export function updatePlayLabel(m) {
   const old = actions.querySelector('.f-resume');
   const html = resumeBarHTML(m);
   if (old) {
-    // eslint-disable-next-line no-restricted-syntax -- resumeBarHTML : pourcentage borné, temps restant passé par esc()
+    // eslint-disable-next-line laststream/no-html-sink -- resumeBarHTML : pourcentage borné, temps restant passé par esc()
     if (html) old.outerHTML = html; else old.remove();
     return;
   }
   const primary = actions.querySelector(':scope > .btn-pill');
-  // eslint-disable-next-line no-restricted-syntax -- resumeBarHTML : pourcentage borné, temps restant passé par esc()
+  // eslint-disable-next-line laststream/no-html-sink -- resumeBarHTML : pourcentage borné, temps restant passé par esc()
   if (html && primary) primary.insertAdjacentHTML('afterend', html);
 }
 
@@ -155,9 +156,9 @@ export function ficheHeroShell(m, it) {
 
 export function ficheSkeleton(it) {
   return topBar(false) +
-    '<article class="fiche is-loading" aria-busy="true" tabindex="-1" aria-label="' + esc(it ? it.name : 'Chargement de la fiche') + '">' +
+    '<article class="fiche is-loading" aria-busy="true" tabindex="-1" aria-label="' + esc(it ? it.name : tr('Chargement de la fiche')) + '">' +
     ficheHeroShell(null, it) +
-    '<section class="f-first"><div class="f-info"><p class="sr-only" role="status">Chargement de la fiche…</p>' +
+    '<section class="f-first"><div class="f-info"><p class="sr-only" role="status">' + tr('Chargement de la fiche…') + '</p>' +
     '<span class="sk sk-title"></span><span class="sk sk-line"></span><span class="sk sk-line short"></span>' +
     '<span class="sk sk-para"></span><span class="sk sk-para"></span>' +
     '<div class="f-actions"><span class="sk sk-btn"></span><span class="sk sk-round"></span><span class="sk sk-round"></span></div></div></section>' +
@@ -178,7 +179,7 @@ export const partyKind = (m) => {
 
 /** Menu « … » de la fiche : bande-annonce, bibliothèque, vu, sources, suivre, partage, watch party, « Ne plus proposer » (menu contextuel de l'app, voir ctxmenu.js). Les boutons ronds y sont rangés pour libérer la place. */
 const moreBtn = () =>
-  '<button type="button" class="btn-round f-more" data-fiche-more aria-haspopup="menu" aria-expanded="false" data-tip="Plus d’actions" aria-label="Plus d’actions">' + ICON.dots + '</button>';
+  '<button type="button" class="btn-round f-more" data-fiche-more aria-haspopup="menu" aria-expanded="false" data-tip="' + tr('Plus d’actions') + '" aria-label="' + tr('Plus d’actions') + '">' + ICON.dots + '</button>';
 
 
 function ficheHTML(m) {
@@ -193,12 +194,12 @@ function ficheHTML(m) {
   const info =
     '<div class="f-info">' + title +
     '<ul class="meta f-meta">' + metaLine(m) + '</ul>' +
-    (m.cinemaSince ? '<p class="f-release"><span>Au cinéma</span> depuis le <strong>' + esc(fmtDate(m.cinemaSince)) + '</strong> · pas encore disponible en streaming</p>' : '') +
-    (isUnreleased(m) ? '<p class="f-release"><span>Prochainement</span> Sortie le <strong>' + esc(fmtDate(m.releaseFR)) + '</strong> · ' + esc(countdown(m.releaseFR)) + '</p>' : '') +
-    '<ul class="rates" id="f-rates" aria-label="Notes"></ul>' +
+    (m.cinemaSince ? '<p class="f-release"><span>' + tr('Au cinéma') + '</span> ' + tr('depuis le <strong>{cinemaSince}</strong> · pas encore disponible en streaming', { cinemaSince: esc(fmtDate(m.cinemaSince)) }) + '</p>' : '') +
+    (isUnreleased(m) ? '<p class="f-release"><span>' + tr('Prochainement') + '</span> ' + tr('Sortie le <strong>{releaseFR}</strong> · {releaseFR2}', { releaseFR: esc(fmtDate(m.releaseFR)), releaseFR2: esc(countdown(m.releaseFR)) }) + '</p>' : '') +
+    '<ul class="rates" id="f-rates" aria-label="' + tr('Notes') + '"></ul>' +
     '<div class="f-prov" id="f-prov" data-nav></div>' +
-    '<div class="f-syn" data-nav><p class="f-ov">' + esc(m.overview || 'Pas de synopsis disponible.') + '</p>' +
-    (m.overview.length > 150 ? '<button type="button" class="link-btn" data-more>Plus</button>' : '') + '</div>' +
+    '<div class="f-syn" data-nav><p class="f-ov">' + esc(m.overview || tr('Pas de synopsis disponible.')) + '</p>' +
+    (m.overview.length > 150 ? '<button type="button" class="link-btn" data-more>' + tr('Plus') + '</button>' : '') + '</div>' +
     '<div class="f-actions" id="f-actions" data-nav>' +
     primaryBtn(m) +
     // Au cinéma ou pas encore sorti : la ligne de sortie le dit déjà, ni téléchargement ni note (LAST-500).
@@ -208,80 +209,80 @@ function ficheHTML(m) {
 
   const panels = [];
   if (tabs.includes('eps')) {
-    panels.push(fsec('eps', 'Épisodes <span class="f-newcount" id="f-newcount" hidden></span>',
-      '<div class="f-eps-head"><div class="pills" data-nav role="group" aria-label="Saison">' + m.seasons.map((s) =>
+    panels.push(fsec('eps', tr('Épisodes') + ' <span class="f-newcount" id="f-newcount" hidden></span>',
+      '<div class="f-eps-head"><div class="pills" data-nav role="group" aria-label="' + tr('Saison') + '">' + m.seasons.map((s) =>
         '<button type="button" class="pill" data-season="' + s.season_number + '" aria-pressed="' + (s.season_number === seasonN) + '">' +
-        esc(s.season_number === 0 ? 'Bonus' : 'Saison ' + s.season_number) + '</button>').join('') + '</div>' +
+        esc(s.season_number === 0 ? tr('Bonus') : tr('Saison {season_number}', { season_number: s.season_number })) + '</button>').join('') + '</div>' +
       seasonDownloadHTML() +
-      '<button type="button" class="btn btn-ghost btn-sm" data-season-watch>' + ICON.check + '<span class="sw-l">Marquer la saison comme vue</span><span class="sw-s">Saison vue</span></button>' +
-      '<span class="ep-menu-wrap"><button type="button" class="btn btn-ghost btn-sm ep-more" data-eps-menu aria-haspopup="menu" aria-expanded="false" aria-label="Plus d’actions sur la série">…</button>' +
-      '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-series-watch="1">Marquer toute la série comme vue</button>' +
-      '<button type="button" role="menuitem" data-series-watch="0">Marquer toute la série comme non vue</button></span></span>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-season-watch>' + ICON.check + '<span class="sw-l">' + tr('Marquer la saison comme vue') + '</span><span class="sw-s">' + tr('Saison vue') + '</span></button>' +
+      '<span class="ep-menu-wrap"><button type="button" class="btn btn-ghost btn-sm ep-more" data-eps-menu aria-haspopup="menu" aria-expanded="false" aria-label="' + tr('Plus d’actions sur la série') + '">…</button>' +
+      '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-series-watch="1">' + tr('Marquer toute la série comme vue') + '</button>' +
+      '<button type="button" role="menuitem" data-series-watch="0">' + tr('Marquer toute la série comme non vue') + '</button></span></span>' +
       '<p class="f-next" id="f-next"></p></div>' +
       '<ol class="row eps" id="f-eplist" data-nav aria-live="polite"><li class="sk sk-ep"></li><li class="sk sk-ep"></li><li class="sk sk-ep"></li></ol>'));
   }
   if (tabs.includes('cast')) {
-    panels.push(fsec('cast', 'Casting', '<ul class="cast-row" data-nav>' + m.cast.map((p) =>
+    panels.push(fsec('cast', tr('Casting'), '<ul class="cast-row" data-nav>' + m.cast.map((p) =>
       '<li><a class="cast" href="#/person/' + esc(p.id) + '" data-person="' + esc(p.id) + '">' +
       '<span class="cast-ph' + (p.photo ? '' : ' no-img') + '">' + (p.photo ? '<img src="' + esc(p.photo) + '" alt="' + esc(p.name) + '" loading="lazy" decoding="async">' : '') +
       '<span class="cast-ini" aria-hidden="true">' + esc(p.name.split(' ').map((w) => w[0]).slice(0, 2).join('')) + '</span></span>' +
       '<span class="cast-name">' + esc(p.name) + '</span><span class="cast-role">' + esc(p.role) + '</span></a></li>').join('') + '</ul>'));
   }
   if (tabs.includes('extras')) {
-    panels.push(fsec('extras', 'Bandes-annonces et bonus', '<ul class="vid-row" data-nav>' + m.videos.map((v) =>
+    panels.push(fsec('extras', tr('Bandes-annonces et bonus'), '<ul class="vid-row" data-nav>' + m.videos.map((v) =>
       '<li><button type="button" class="vid" data-vid="' + esc(v.key) + '"' + (v.vo ? ' data-vo="1"' : '') + ' data-vtitle="' + esc(v.label) + '" aria-label="' + esc(v.label + ' : ' + v.name) + '">' +
       '<span class="vid-th"><img src="https://img.youtube.com/vi/' + encodeURIComponent(v.key) + '/hqdefault.jpg" alt="" loading="lazy" decoding="async">' +
       '<span class="vid-play" aria-hidden="true">' + ICON.play + '</span></span>' +
       '<span class="vid-type">' + esc(v.label) + '</span><span class="vid-name">' + esc(v.name) + '</span></button></li>').join('') + '</ul>'));
   }
-  if (tabs.includes('coll')) panels.push(fsec('coll', 'Collection', '<div class="row f-posters" id="f-coll" data-nav><span class="sk sk-card"></span><span class="sk sk-card"></span><span class="sk sk-card"></span></div>'));
-  if (tabs.includes('sim')) panels.push(fsec('sim', 'Titres similaires', '<div class="row f-posters" data-nav>' + m.recs.map((it) => posterCard(it)).join('') + '</div>'));
-  panels.push(fsec('infos', 'Infos', infosHTML(m)));
+  if (tabs.includes('coll')) panels.push(fsec('coll', tr('Collection'), '<div class="row f-posters" id="f-coll" data-nav><span class="sk sk-card"></span><span class="sk sk-card"></span><span class="sk sk-card"></span></div>'));
+  if (tabs.includes('sim')) panels.push(fsec('sim', tr('Titres similaires'), '<div class="row f-posters" data-nav>' + m.recs.map((it) => posterCard(it)).join('') + '</div>'));
+  panels.push(fsec('infos', tr('Infos'), infosHTML(m)));
 
   return topBar(true) +
     '<article class="fiche" aria-labelledby="f-title" data-key="' + esc(m.key) + '">' + ficheHeroShell(m, null) +
-    '<section class="f-first" aria-label="Présentation">' + info + '</section>' +
+    '<section class="f-first" aria-label="' + tr('Présentation') + '">' + info + '</section>' +
     '<div class="f-panels">' + panels.join('') + '</div></article>' +
     '<div class="f-sticky" id="f-sticky" aria-hidden="true"><span class="f-sticky-title">' + esc(m.name) + '</span>' +
-    (m.cinemaSince ? followBtn(m.key, 'btn btn-primary', ' tabindex="-1"', 'Me prévenir') : isUnreleased(m) ? remindBtn(m, 'btn btn-primary', ' tabindex="-1"') : '<button type="button" class="btn btn-primary" data-play tabindex="-1">' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>') + '</div>';
+    (m.cinemaSince ? followBtn(m.key, 'btn btn-primary', ' tabindex="-1"', tr('Me prévenir')) : isUnreleased(m) ? remindBtn(m, 'btn btn-primary', ' tabindex="-1"') : '<button type="button" class="btn btn-primary" data-play tabindex="-1">' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>') + '</div>';
 }
 
 function infosHTML(m) {
   const rows = [];
-  const money = (n) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
-  if (m.original && m.original !== m.name) rows.push(['Titre original', m.original]);
-  if (m.countries.length) rows.push(['Pays', m.countries.join(', ')]);
-  if (m.origLang) rows.push(['Langue originale', m.origLang]);
-  if (m.spoken.length > 1) rows.push(['Langues audio', m.spoken.join(', ')]);
+  const money = (n) => new Intl.NumberFormat(intlLocale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  if (m.original && m.original !== m.name) rows.push([tr('Titre original'), m.original]);
+  if (m.countries.length) rows.push([tr('Pays'), m.countries.join(', ')]);
+  if (m.origLang) rows.push([tr('Langue originale'), m.origLang]);
+  if (m.spoken.length > 1) rows.push([tr('Langues audio'), m.spoken.join(', ')]);
   const studios = m.type === 'tv' ? m.networks : m.companies;
-  if (studios.length) rows.push([m.type === 'tv' ? 'Chaînes' : 'Studios', studios.join(', ')]);
-  if (m.type === 'tv' && m.companies.length) rows.push(['Production', m.companies.slice(0, 3).join(', ')]);
-  if (m.type === 'movie' && m.budget) rows.push(['Budget', money(m.budget)]);
-  if (m.type === 'movie' && m.revenue) rows.push(['Recettes', money(m.revenue)]);
-  if (m.releaseFR) rows.push([m.type === 'tv' ? 'Première diffusion' : 'Sortie en France', fmtDate(m.releaseFR)]);
-  if (m.type === 'tv' && m.lastAir) rows.push(['Dernière diffusion', fmtDate(m.lastAir)]);
-  if (m.status) rows.push(['Statut', m.status]);
+  if (studios.length) rows.push([m.type === 'tv' ? tr('Chaînes') : tr('Studios'), studios.join(', ')]);
+  if (m.type === 'tv' && m.companies.length) rows.push([tr('Production'), m.companies.slice(0, 3).join(', ')]);
+  if (m.type === 'movie' && m.budget) rows.push([tr('Budget'), money(m.budget)]);
+  if (m.type === 'movie' && m.revenue) rows.push([tr('Recettes'), money(m.revenue)]);
+  if (m.releaseFR) rows.push([m.type === 'tv' ? tr('Première diffusion') : tr('Sortie en France'), fmtDate(m.releaseFR)]);
+  if (m.type === 'tv' && m.lastAir) rows.push([tr('Dernière diffusion'), fmtDate(m.lastAir)]);
+  if (m.status) rows.push([tr('Statut'), m.status]);
 
   const creditsRows = [];
-  if (m.directors.length) creditsRows.push([m.type === 'tv' ? 'Création' : 'Réalisation', m.directors.map(personLink).join(', ')]);
-  if (m.writers.length) creditsRows.push(['Scénario', m.writers.map(personLink).join(', ')]);
-  if (m.cast.length) creditsRows.push(['Avec', m.cast.slice(0, 6).map(personLink).join(', ')]);
+  if (m.directors.length) creditsRows.push([m.type === 'tv' ? tr('Création') : tr('Réalisation'), m.directors.map(personLink).join(', ')]);
+  if (m.writers.length) creditsRows.push([tr('Scénario'), m.writers.map(personLink).join(', ')]);
+  if (m.cast.length) creditsRows.push([tr('Avec'), m.cast.slice(0, 6).map(personLink).join(', ')]);
 
-  return '<div class="f-infos-wrap"><div class="f-infos-text"><h3 class="f-sub">Synopsis</h3>' +
+  return '<div class="f-infos-wrap"><div class="f-infos-text"><h3 class="f-sub">' + tr('Synopsis') + '</h3>' +
     (m.tagline ? '<p class="f-tagline">' + esc(m.tagline) + '</p>' : '') +
-    '<p class="f-ov-full">' + esc(m.overview || 'Pas de synopsis disponible.') + '</p>' +
+    '<p class="f-ov-full">' + esc(m.overview || tr('Pas de synopsis disponible.')) + '</p>' +
     (creditsRows.length ? '<dl class="f-credits">' + creditsRows.map((r) => '<div><dt>' + esc(r[0]) + '</dt><dd>' + r[1] + '</dd></div>').join('') + '</dl>' : '') +
     '</div>' +
-    (rows.length ? '<div><h3 class="f-sub">Détails</h3><dl class="f-infos">' +
+    (rows.length ? '<div><h3 class="f-sub">' + tr('Détails') + '</h3><dl class="f-infos">' +
       rows.map((r) => '<div><dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd></div>').join('') + '</dl></div>' : '') +
-    '<p class="f-attrib">Disponibilités : JustWatch via TMDB</p></div>';
+    '<p class="f-attrib">' + tr('Disponibilités : JustWatch via TMDB') + '</p></div>';
 }
 
 function ficheError(type, id) {
   return topBar(false) +
-    '<article class="fiche f-error" tabindex="-1"><div class="state" role="alert"><p>Cette fiche n’a pas pu être chargée.</p>' +
-    '<div class="f-actions"><button type="button" class="btn btn-primary" data-fretry="' + esc(type + ':' + id) + '">Réessayer</button>' +
-    '<button type="button" class="btn btn-ghost" data-back>Retour</button></div></div></article>';
+    '<article class="fiche f-error" tabindex="-1"><div class="state" role="alert"><p>' + tr('Cette fiche n’a pas pu être chargée.') + '</p>' +
+    '<div class="f-actions"><button type="button" class="btn btn-primary" data-fretry="' + esc(type + ':' + id) + '">' + tr('Réessayer') + '</button>' +
+    '<button type="button" class="btn btn-ghost" data-back>' + tr('Retour') + '</button></div></div></article>';
 }
 
 export function scrollToSection(name) {
@@ -353,7 +354,7 @@ export async function showFiche(type, id, target = null) {
   let m;
   try {
     [m] = await Promise.all([fetchFull(type, id, { server: true }), Promise.resolve(userStore.loadWatched && userStore.loadWatched(key)).catch(() => undefined)]);
-    if (isKidProfile() && !kidAllows(m.certRaw, kidMaxAge())) throw new Error('profil enfant');
+    if (isKidProfile() && !kidAllows(m.certRaw, kidMaxAge())) throw new Error(tr('profil enfant'));
   } catch (_) {
     if (token !== state.token) return;
     detailEl.innerHTML = ficheError(type, id);
@@ -364,7 +365,7 @@ export async function showFiche(type, id, target = null) {
   if (token !== state.token) return;
   state.ficheName = m.name;
   detailEl.innerHTML = ficheHTML(m);
-  document.title = m.name + ' · Laststream';
+  document.title = tr('{name} · Laststream', { name: m.name });
   const h1 = detailEl.querySelector('#f-title');
   if (h1) h1.focus({ preventScroll: true });
   state.model = m;

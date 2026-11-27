@@ -90,7 +90,7 @@
 .evf-scope input { flex: none; appearance: none; width: 22px; height: 22px; margin: 0; border: 2px solid var(--input-border); border-radius: 50%; background: var(--bg); box-sizing: border-box; cursor: pointer; }
 .evf-scope input:checked { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 5px), var(--bg); }
 .evf-scope input:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-.evf-count { margin-left: 6px; font-weight: 600; color: var(--dim); font-variant-numeric: tabular-nums; }
+.evf-count { margin-inline-start: 6px; font-weight: 600; color: var(--dim); font-variant-numeric: tabular-nums; }
 .evf-friends { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .evf-friends li[hidden] { display: none; }
 .evf-friend { position: relative; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 4px 8px; border-radius: 12px; cursor: pointer; }

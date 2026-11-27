@@ -5,6 +5,7 @@ import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
 import { partyCreateErrorText } from '../party/createError';
 import { toast } from './dom.js';
+import { t } from '../i18n';
 
 /**
  * @param {unknown} err
@@ -19,7 +20,7 @@ export async function handlePartyCreateError(err, { retry, cancel, say = toast }
     try { const id = userStore.currentProfile().id; profile = auth.profiles.find((p) => p.id === id); } catch { profile = undefined; }
     if (profile) {
       const { pinPad, hidePad } = await import('./auth-ui.js');
-      pinPad({ title: 'Code de ' + profile.name, profile, onOk: async () => { hidePad(); retry(); }, onCancel: () => { if (cancel) cancel(); say(text); } });
+      pinPad({ title: t('Code de {name}', { name: profile.name }), profile, onOk: async () => { hidePad(); retry(); }, onCancel: () => { if (cancel) cancel(); say(text); } });
       return;
     }
   }

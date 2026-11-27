@@ -4,21 +4,21 @@
 .hero-social { display: flex; align-items: center; gap: 12px; margin-top: 4px; font-size: 14px; line-height: 1.4; color: var(--soft); }
 .hero-social:empty { display: none; }
 .hs-stack { display: inline-flex; flex: none; }
-.hs-av { width: 32px; height: 32px; margin-left: -8px; border-radius: 50%; border: 2px solid var(--bg); box-sizing: border-box; display: inline-grid; place-items: center; font-family: var(--ff-body); font-size: 12px; font-weight: 600; color: #fff; }
-.hs-av:first-child { margin-left: 0; }
+.hs-av { width: 32px; height: 32px; margin-inline-start: -8px; border-radius: 50%; border: 2px solid var(--bg); box-sizing: border-box; display: inline-grid; place-items: center; font-family: var(--ff-body); font-size: 12px; font-weight: 600; color: #fff; }
+.hs-av:first-child { margin-inline-start: 0; }
 .hs-text b { color: var(--text); font-weight: 700; }
 .hs-evening { display: contents; }
 
 /* ---------- Rail d'amis ---------- */
 .friend-rail { display: none; }
 @media (min-width: 768px) {
-  .page-a.has-rail { padding-right: 76px; }
+  .page-a.has-rail { padding-inline-end: 76px; }
   .page-a.has-rail .topbar { right: 76px; }
   body.ss-open .page-a.has-rail .topbar { right: 456px; } /* barre des amis (380 px) + rail */
   .friend-rail {
     position: fixed; top: var(--ann-h, 0px); right: 0; bottom: 0; z-index: 45; width: 76px; box-sizing: border-box;
     display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 0;
-    background: var(--bg); border-left: 1px solid var(--line); overflow-y: auto; scrollbar-width: none;
+    background: var(--bg); border-inline-start: 1px solid var(--line); overflow-y: auto; scrollbar-width: none;
   }
   .friend-rail::-webkit-scrollbar { display: none; }
   body.ss-open .friend-rail { right: 380px; } /* la barre des amis s'ouvre à côté du rail, qui reste utilisable */
@@ -41,7 +41,7 @@
 .friend-strip:empty { display: none; }
 .friend-strip::-webkit-scrollbar { display: none; }
 .friend-strip .fr-group { flex-direction: row; gap: 12px; }
-.friend-strip .fr-sep { width: 0; height: 32px; border-top: 0; border-left: 1px solid var(--line); }
+.friend-strip .fr-sep { width: 0; height: 32px; border-top: 0; border-inline-start: 1px solid var(--line); }
 @media (min-width: 768px) { .friend-strip { display: none; } }
 @media (max-width: 767px) {
   .hero-social { flex-wrap: wrap; }

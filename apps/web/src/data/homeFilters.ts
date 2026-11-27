@@ -1,6 +1,7 @@
 import { isFullyWatched, type SeenStore } from './seen';
 import { userStore } from './userStore';
 import { isAnime } from './anime';
+import { t as tr } from '../i18n';
 
 /*
  * Filtres d'accueil propres à chaque profil : titres « Ne plus proposer », genres bannis, séries marquées vues en entier.
@@ -53,36 +54,36 @@ export interface HomeItemLike extends ItemFacts {
 
 /** Genres proposés dans les réglages (libellés français). Les doublons TMDB (films / séries) partagent une puce. */
 export const GENRE_OPTIONS: ReadonlyArray<{ label: string; ids: GenreKey[] }> = [
-  { label: 'Action', ids: [28, 10759] },
-  { label: 'Aventure', ids: [12] },
-  { label: 'Animation', ids: [16] },
-  { label: 'Anime', ids: ['anime'] },
-  { label: 'Comédie', ids: [35] },
-  { label: 'Crime', ids: [80] },
-  { label: 'Documentaire', ids: [99] },
-  { label: 'Drame', ids: [18] },
-  { label: 'Familial', ids: [10751] },
-  { label: 'Enfants', ids: [10762] },
-  { label: 'Fantastique', ids: [14] },
-  { label: 'Histoire', ids: [36] },
-  { label: 'Horreur', ids: [27] },
-  { label: 'Musique', ids: [10402] },
-  { label: 'Mystère', ids: [9648] },
-  { label: 'Romance', ids: [10749] },
-  { label: 'Science-fiction', ids: [878, 10765] },
-  { label: 'Guerre et politique', ids: [10752, 10768] },
-  { label: 'Thriller', ids: [53] },
-  { label: 'Western', ids: [37] },
-  { label: 'Téléfilm', ids: [10770] },
-  { label: 'Feuilleton', ids: [10766] },
-  { label: 'Télénovelas', ids: ['telenovela'] },
-  { label: 'Talk-show', ids: [10767] },
-  { label: 'Téléréalité', ids: [10764] },
-  { label: 'Actualités', ids: [10763] },
+  { label: tr('Action'), ids: [28, 10759] },
+  { label: tr('Aventure'), ids: [12] },
+  { label: tr('Animation'), ids: [16] },
+  { label: tr('Anime'), ids: ['anime'] },
+  { label: tr('Comédie'), ids: [35] },
+  { label: tr('Crime'), ids: [80] },
+  { label: tr('Documentaire'), ids: [99] },
+  { label: tr('Drame'), ids: [18] },
+  { label: tr('Familial'), ids: [10751] },
+  { label: tr('Enfants'), ids: [10762] },
+  { label: tr('Fantastique'), ids: [14] },
+  { label: tr('Histoire'), ids: [36] },
+  { label: tr('Horreur'), ids: [27] },
+  { label: tr('Musique'), ids: [10402] },
+  { label: tr('Mystère'), ids: [9648] },
+  { label: tr('Romance'), ids: [10749] },
+  { label: tr('Science-fiction'), ids: [878, 10765] },
+  { label: tr('Guerre et politique'), ids: [10752, 10768] },
+  { label: tr('Thriller'), ids: [53] },
+  { label: tr('Western'), ids: [37] },
+  { label: tr('Téléfilm'), ids: [10770] },
+  { label: tr('Feuilleton'), ids: [10766] },
+  { label: tr('Télénovelas'), ids: ['telenovela'] },
+  { label: tr('Talk-show'), ids: [10767] },
+  { label: tr('Téléréalité'), ids: [10764] },
+  { label: tr('Actualités'), ids: [10763] },
   { label: 'K-drama', ids: ['kdrama'] },
-  { label: 'Bollywood (cinéma indien)', ids: ['bollywood'] },
-  { label: 'Cinéma chinois', ids: ['chinese'] },
-  { label: 'Classiques (avant 1980)', ids: ['classics'] },
+  { label: tr('Bollywood (cinéma indien)'), ids: ['bollywood'] },
+  { label: tr('Cinéma chinois'), ids: ['chinese'] },
+  { label: tr('Classiques (avant 1980)'), ids: ['classics'] },
 ];
 
 const isDerivedKey = (g: unknown): g is DerivedKey => typeof g === 'string' && (DERIVED_KEYS as readonly string[]).includes(g);

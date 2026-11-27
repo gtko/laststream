@@ -17,6 +17,7 @@ import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { state } from './state.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const SPACE_EVERY_MS = 2000;
 
@@ -44,8 +45,8 @@ function posterHTML(item) {
 
 function barHTML(item) {
   const p = itemPercent(item);
-  return '<div class="dl-bar' + (item.state === 'paused' ? ' is-paused' : '') + '" role="progressbar" aria-label="' + esc('Progression de ' + itemLabel(item)) + '" aria-valuemin="0" aria-valuemax="100"' +
-    (p == null ? ' aria-valuetext="Taille inconnue"' : ' aria-valuenow="' + p + '"') + ' data-dl-bar><i style="width:' + (p || 0) + '%"></i></div>';
+  return '<div class="dl-bar' + (item.state === 'paused' ? ' is-paused' : '') + '" role="progressbar" aria-label="' + esc(tr('Progression de {item}', { item: itemLabel(item) })) + '" aria-valuemin="0" aria-valuemax="100"' +
+    (p == null ? ' aria-valuetext="' + tr('Taille inconnue') + '"' : ' aria-valuenow="' + p + '"') + ' data-dl-bar><i style="width:' + (p || 0) + '%"></i></div>';
 }
 
 const pillBtn = (cls, act, label, icon, ring, pct) => '<button type="button" class="dl-pill ' + cls + '" data-dl-act="' + act + '" aria-label="' + esc(label) + '">' +
@@ -61,14 +62,14 @@ function rowHTML(item, off) {
   let acts = '';
   if (s === 'running' || s === 'paused') extra = barHTML(item);
   if (s === 'error') extra = '<p class="dl-err">' + esc(errorMessage(item.error ? item.error.code : 'resolve_failed')) + '</p>';
-  if (s === 'done') extra = '<span class="dl-tag is-ok">' + DL_ICON.check + 'Téléchargé</span>';
-  if (s === 'pending') extra = '<span class="dl-tag">' + DL_ICON.clock + 'En attente</span>';
-  if (s === 'running') acts = pillBtn('is-running', 'pause', 'Mettre en pause ' + label, 'pause', true, p) + iconBtn('remove', 'Annuler le téléchargement de ' + label, 'x');
-  else if (s === 'paused') acts = pillBtn('is-resume', 'resume', 'Reprendre ' + label, 'play') + iconBtn('remove', 'Annuler le téléchargement de ' + label, 'x');
-  else if (s === 'pending') acts = pillBtn('is-pending', 'remove', 'Annuler l’attente : ' + label, 'clock');
-  else if (s === 'error') acts = pillBtn('is-error', 'error', 'Erreur : ' + label + ', réessayer ou voir le détail', 'alert') + iconBtn('remove', 'Supprimer ' + label, 'x');
-  else acts = '<button type="button" class="btn btn-ghost btn-sm dl-play" data-dl-act="play" aria-label="' + esc('Lire ' + label) + '">' + DL_ICON.play + '<span>Lire</span></button>' +
-    '<button type="button" class="dl-ibtn dl-more" data-dl-act="more" aria-haspopup="dialog" aria-label="' + esc('Plus d’actions pour ' + label) + '">' + DL_ICON.more + '</button>';
+  if (s === 'done') extra = '<span class="dl-tag is-ok">' + DL_ICON.check + tr('Téléchargé') + '</span>';
+  if (s === 'pending') extra = '<span class="dl-tag">' + DL_ICON.clock + tr('En attente') + '</span>';
+  if (s === 'running') acts = pillBtn('is-running', 'pause', tr('Mettre en pause {label}', { label }), 'pause', true, p) + iconBtn('remove', tr('Annuler le téléchargement de {label}', { label }), 'x');
+  else if (s === 'paused') acts = pillBtn('is-resume', 'resume', tr('Reprendre {label}', { label }), 'play') + iconBtn('remove', tr('Annuler le téléchargement de {label}', { label }), 'x');
+  else if (s === 'pending') acts = pillBtn('is-pending', 'remove', tr('Annuler l’attente : {label}', { label }), 'clock');
+  else if (s === 'error') acts = pillBtn('is-error', 'error', tr('Erreur : {label}, réessayer ou voir le détail', { label }), 'alert') + iconBtn('remove', tr('Supprimer {label}', { label }), 'x');
+  else acts = '<button type="button" class="btn btn-ghost btn-sm dl-play" data-dl-act="play" aria-label="' + esc(tr('Lire {label}', { label })) + '">' + DL_ICON.play + '<span>' + tr('Lire') + '</span></button>' +
+    '<button type="button" class="dl-ibtn dl-more" data-dl-act="more" aria-haspopup="dialog" aria-label="' + esc(tr('Plus d’actions pour {label}', { label })) + '">' + DL_ICON.more + '</button>';
   const sub = itemSubtitle(item) || (item.source && item.source.quality ? item.source.quality : '');
   return '<li class="dl-row is-' + s + (off && s !== 'done' ? ' is-na' : '') + '" data-dl-row="' + esc(item.id) + '" data-nav>' + posterHTML(item) +
     '<div class="dl-meta"><p class="dl-ttl">' + esc(itemName(item)) + '</p><p class="dl-sub" data-dl-sub>' + esc(sub) + '</p>' + extra + '</div>' +
@@ -83,15 +84,14 @@ const section = (id, title, items, off) => (items.length
 function bannersHTML(items) {
   const out = [];
   if (!online()) {
-    out.push('<div class="dl-banner is-offline" role="status" data-dl-offline>' + DL_ICON.wifiOff + '<span>Hors connexion — seuls tes téléchargements sont disponibles.</span></div>');
+    out.push('<div class="dl-banner is-offline" role="status" data-dl-offline>' + DL_ICON.wifiOff + '<span>' + tr('Hors connexion — seuls tes téléchargements sont disponibles.') + '</span></div>');
   }
   const errs = items.filter((it) => it.state === 'error');
   if (errs.length) {
-    out.push('<div class="dl-banner is-err" role="alert"' + tvNav() + '>' + DL_ICON.alert + '<p>' + esc(errs.length === 1 ? '1 téléchargement a échoué.' : errs.length + ' téléchargements ont échoué.') +
-      ' Les fichiers déjà reçus sont conservés.</p><button type="button" class="btn btn-sm dl-btn-d" data-dl-act="retry-all">Tout réessayer</button></div>');
+    out.push('<div class="dl-banner is-err" role="alert"' + tvNav() + '>' + DL_ICON.alert + '<p>' + tr('{v} Les fichiers déjà reçus sont conservés.', { v: esc(errs.length === 1 ? tr('1 téléchargement a échoué.') : tr('{length} téléchargements ont échoué.', { length: errs.length })) }) + '</p><button type="button" class="btn btn-sm dl-btn-d" data-dl-act="retry-all">' + tr('Tout réessayer') + '</button></div>');
   }
   if (isWeb() && items.some((it) => it.state === 'running' || it.state === 'pending')) {
-    out.push('<div class="dl-banner is-err" role="status">' + DL_ICON.alert + '<span>Garde cet onglet ouvert : les téléchargements s’arrêtent si tu le fermes.</span></div>');
+    out.push('<div class="dl-banner is-err" role="status">' + DL_ICON.alert + '<span>' + tr('Garde cet onglet ouvert : les téléchargements s’arrêtent si tu le fermes.') + '</span></div>');
   }
   return out.join('');
 }
@@ -104,60 +104,60 @@ function destinationCardHTML() {
   let detail = '';
   if (dest === 'device') {
     if (!folderPickerSupported()) {
-      detail = '<p class="dl-card-p">Les fichiers vont dans le dossier de téléchargements du navigateur. Choisir un dossier n’est possible qu’avec Chrome ou Edge sur ordinateur.</p>';
+      detail = '<p class="dl-card-p">' + tr('Les fichiers vont dans le dossier de téléchargements du navigateur. Choisir un dossier n’est possible qu’avec Chrome ou Edge sur ordinateur.') + '</p>';
     } else if (v.folder) {
-      detail = '<p class="dl-card-p">Dossier : <b>' + esc(v.folder) + '</b></p><div class="dl-card-acts" data-nav>' +
-        '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="folder-pick">Changer de dossier</button>' +
-        '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="folder-forget">Utiliser le dossier du navigateur</button></div>';
+      detail = '<p class="dl-card-p">' + tr('Dossier : <b>{folder}</b>', { folder: esc(v.folder) }) + '</p><div class="dl-card-acts" data-nav>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="folder-pick">' + tr('Changer de dossier') + '</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="folder-forget">' + tr('Utiliser le dossier du navigateur') + '</button></div>';
     } else {
-      detail = '<p class="dl-card-p">Aucun dossier choisi : les fichiers vont dans le dossier de téléchargements du navigateur.</p><div class="dl-card-acts" data-nav>' +
-        '<button type="button" class="btn btn-primary btn-sm" data-dl-act="folder-pick">Choisir un dossier</button></div>';
+      detail = '<p class="dl-card-p">' + tr('Aucun dossier choisi : les fichiers vont dans le dossier de téléchargements du navigateur.') + '</p><div class="dl-card-acts" data-nav>' +
+        '<button type="button" class="btn btn-primary btn-sm" data-dl-act="folder-pick">' + tr('Choisir un dossier') + '</button></div>';
     }
-    detail += '<p class="dl-card-p dl-card-note">Les hébergeurs qui interdisent la lecture par la page (AllDebrid) passent toujours par les téléchargements du navigateur.</p>';
+    detail += '<p class="dl-card-p dl-card-note">' + tr('Les hébergeurs qui interdisent la lecture par la page (AllDebrid) passent toujours par les téléchargements du navigateur.') + '</p>';
   }
-  return '<section class="dl-card dl-dest" aria-labelledby="dl-dest-t"><p class="dl-card-h" id="dl-dest-t">' + DL_ICON.disk + 'Où enregistrer</p>' +
+  return '<section class="dl-card dl-dest" aria-labelledby="dl-dest-t"><p class="dl-card-h" id="dl-dest-t">' + DL_ICON.disk + tr('Où enregistrer') + '</p>' +
     '<div class="dl-dest-opts" role="radiogroup" aria-labelledby="dl-dest-t" data-nav>' +
-    opt('device', 'Sur cet appareil', 'Un fichier vidéo, lisible avec ton lecteur habituel') +
-    opt('app', 'Dans l’app, hors connexion', 'Seuls les hébergeurs qui l’autorisent fonctionnent (pas AllDebrid)') + '</div>' + detail + '</section>';
+    opt('device', tr('Sur cet appareil'), tr('Un fichier vidéo, lisible avec ton lecteur habituel')) +
+    opt('app', tr('Dans l’app, hors connexion'), tr('Seuls les hébergeurs qui l’autorisent fonctionnent (pas AllDebrid)')) + '</div>' + detail + '</section>';
 }
 
 function webCardsHTML() {
   if (!isWeb()) return '';
   if (downloadDestination() === 'device') return destinationCardHTML();
   const persist = v.persisted === true ? ''
-    : '<section class="dl-card dl-persist" aria-labelledby="dl-persist-t"><p class="dl-card-h" id="dl-persist-t">' + DL_ICON.lock + 'Stockage persistant</p>' +
-      '<p class="dl-card-p">Sans lui, le navigateur peut effacer les vidéos téléchargées quand l’espace manque. Active-le pour les garder.</p>' +
-      '<button type="button" class="btn btn-primary btn-sm" data-dl-act="persist">Activer le stockage persistant</button></section>';
+    : '<section class="dl-card dl-persist" aria-labelledby="dl-persist-t"><p class="dl-card-h" id="dl-persist-t">' + DL_ICON.lock + tr('Stockage persistant') + '</p>' +
+      '<p class="dl-card-p">' + tr('Sans lui, le navigateur peut effacer les vidéos téléchargées quand l’espace manque. Active-le pour les garder.') + '</p>' +
+      '<button type="button" class="btn btn-primary btn-sm" data-dl-act="persist">' + tr('Activer le stockage persistant') + '</button></section>';
   const safari = isSafariLike()
-    ? '<div class="dl-banner is-info">' + DL_ICON.info + '<p><b>Safari et iOS.</b> Sur iPhone et iPad, Safari peut supprimer les fichiers après 7 jours sans visite. Ouvre l’app de temps en temps, ou installe-la sur l’écran d’accueil.</p></div>'
+    ? '<div class="dl-banner is-info">' + DL_ICON.info + '<p>' + tr('<b>Safari et iOS.</b> Sur iPhone et iPad, Safari peut supprimer les fichiers après 7 jours sans visite. Ouvre l’app de temps en temps, ou installe-la sur l’écran d’accueil.') + '</p></div>'
     : '';
   return destinationCardHTML() + persist + safari;
 }
 
 function spaceCardHTML() {
-  return '<section class="dl-card dl-space" aria-label="Espace de stockage" data-dl-space>' +
-    '<div class="dl-space-h"' + tvNav() + '><p class="dl-space-l" data-dl-space-l>Espace utilisé…</p><a class="dl-link" href="#/settings" data-dl-act="storage-settings">Réglages de stockage</a></div>' +
-    '<div class="dl-bar dl-bar-lg" role="progressbar" aria-label="Espace utilisé" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-dl-space-bar><i style="width:0%"></i></div>' +
+  return '<section class="dl-card dl-space" aria-label="' + tr('Espace de stockage') + '" data-dl-space>' +
+    '<div class="dl-space-h"' + tvNav() + '><p class="dl-space-l" data-dl-space-l>' + tr('Espace utilisé…') + '</p><a class="dl-link" href="#/settings" data-dl-act="storage-settings">' + tr('Réglages de stockage') + '</a></div>' +
+    '<div class="dl-bar dl-bar-lg" role="progressbar" aria-label="' + tr('Espace utilisé') + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-dl-space-bar><i style="width:0%"></i></div>' +
     '<p class="dl-space-n" data-dl-space-n hidden></p></section>';
 }
 
 function headActionsHTML(items) {
   const active = items.some((it) => it.state === 'running' || it.state === 'pending');
   const paused = items.some((it) => it.state === 'paused');
-  return (active ? '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="pause-all">' + DL_ICON.pause + '<span>Tout mettre en pause</span></button>'
-    : paused ? '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="resume-all">' + DL_ICON.play + '<span>Tout reprendre</span></button>' : '') +
-    (items.length ? '<button type="button" class="btn btn-sm dl-btn-d" data-dl-act="remove-all">Tout supprimer</button>' : '');
+  return (active ? '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="pause-all">' + DL_ICON.pause + '<span>' + tr('Tout mettre en pause') + '</span></button>'
+    : paused ? '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="resume-all">' + DL_ICON.play + '<span>' + tr('Tout reprendre') + '</span></button>' : '') +
+    (items.length ? '<button type="button" class="btn btn-sm dl-btn-d" data-dl-act="remove-all">' + tr('Tout supprimer') + '</button>' : '');
 }
 
 const shell = (inner, actions = '') => topBar(false) +
-  '<article class="svc-page dl-page" aria-labelledby="svc-title"><header class="dl-head"><h1 class="dl-h1" id="svc-title" tabindex="-1">Téléchargements</h1>' +
-  '<div class="dl-head-acts" data-nav data-dl-head>' + actions + '</div></header><div class="dl-body" data-dl-body>' + inner + '</div>' + (isTvDevice() ? '<p class="dl-tv-hint" aria-hidden="true">OK : choisir · Retour : fermer</p>' : '') + '</article>';
+  '<article class="svc-page dl-page" aria-labelledby="svc-title"><header class="dl-head"><h1 class="dl-h1" id="svc-title" tabindex="-1">' + tr('Téléchargements') + '</h1>' +
+  '<div class="dl-head-acts" data-nav data-dl-head>' + actions + '</div></header><div class="dl-body" data-dl-body>' + inner + '</div>' + (isTvDevice() ? '<p class="dl-tv-hint" aria-hidden="true">' + tr('OK : choisir · Retour : fermer') + '</p>' : '') + '</article>';
 
-const emptyHTML = () => '<div class="dl-state"><span class="dl-state-ic" aria-hidden="true">' + DL_ICON.dl + '</span><h2>Rien de téléchargé</h2>' +
-  '<p>' + (isWeb() && downloadDestination() === 'device' ? 'Télécharge un film ou un épisode depuis sa fiche : le fichier est enregistré sur cet appareil.'
-    : 'Télécharge un film ou un épisode depuis sa fiche pour le regarder sans connexion.') + '</p><div data-nav><a class="btn btn-primary" href="#/">Parcourir le catalogue</a></div></div>';
+const emptyHTML = () => '<div class="dl-state"><span class="dl-state-ic" aria-hidden="true">' + DL_ICON.dl + '</span><h2>' + tr('Rien de téléchargé') + '</h2>' +
+  '<p>' + (isWeb() && downloadDestination() === 'device' ? tr('Télécharge un film ou un épisode depuis sa fiche : le fichier est enregistré sur cet appareil.')
+    : tr('Télécharge un film ou un épisode depuis sa fiche pour le regarder sans connexion.')) + '</p><div data-nav><a class="btn btn-primary" href="#/">' + tr('Parcourir le catalogue') + '</a></div></div>';
 
-const loadingHTML = () => '<p class="sr-only" role="status">Chargement des téléchargements…</p><div class="dl-sk" aria-hidden="true"><span class="sk sk-line"></span>' +
+const loadingHTML = () => '<p class="sr-only" role="status">' + tr('Chargement des téléchargements…') + '</p><div class="dl-sk" aria-hidden="true"><span class="sk sk-line"></span>' +
   '<span class="sk dl-sk-row"></span><span class="sk dl-sk-row"></span><span class="sk dl-sk-row"></span></div>';
 
 function stateHTML(icon, title, text, action = '') {
@@ -184,7 +184,7 @@ function renderList() {
   // Web « Sur cet appareil » sans téléchargement dans l'app : la jauge de l'espace de l'app ne dit rien d'utile.
   const space = isWeb() && downloadDestination() === 'device' && !items.length ? '' : spaceCardHTML();
   body.innerHTML = bannersHTML(items) + space + webCardsHTML() +
-    (items.length ? section('dl-s-run', 'En cours', running, off) + section('dl-s-done', off ? 'Disponibles hors connexion' : 'Terminés', done, off) : emptyHTML());
+    (items.length ? section('dl-s-run', tr('En cours'), running, off) + section('dl-s-done', off ? tr('Disponibles hors connexion') : tr('Terminés'), done, off) : emptyHTML());
   if (head) head.innerHTML = headActionsHTML(items);
   paintSpace();
   if (isTvDevice() && !body.contains(document.activeElement)) {
@@ -236,7 +236,7 @@ function paintSpace() {
   const l = card.querySelector('[data-dl-space-l]');
   const bar = card.querySelector('[data-dl-space-bar]');
   const note = card.querySelector('[data-dl-space-n]');
-  l.textContent = s.limit == null ? g.label : g.label.replace(' sur ', ' utilisés sur ');
+  l.textContent = g.usedLabel;
   bar.setAttribute('aria-valuenow', String(g.percent));
   bar.firstElementChild.style.width = g.percent + '%';
   bar.classList.toggle('is-warn', g.level === 'warn');
@@ -244,8 +244,8 @@ function paintSpace() {
   note.hidden = g.level === 'ok';
   note.className = 'dl-space-n is-' + g.level;
   note.innerHTML = g.level === 'full'
-    ? DL_ICON.alert + '<span>Espace plein : les téléchargements sont arrêtés.</span><button type="button" class="dl-link" data-dl-act="space-full">Libérer de l’espace</button>'
-    : g.level === 'warn' ? DL_ICON.alert + '<span>Bientôt plein : plus de 90 % de ta limite est utilisé.</span>' : '';
+    ? DL_ICON.alert + '<span>' + tr('Espace plein : les téléchargements sont arrêtés.') + '</span><button type="button" class="dl-link" data-dl-act="space-full">' + tr('Libérer de l’espace') + '</button>'
+    : g.level === 'warn' ? DL_ICON.alert + '<span>' + tr('Bientôt plein : plus de 90 % de ta limite est utilisé.') + '</span>' : '';
 }
 
 /** Espace relu au plus toutes les 2 s, et seulement sur cet écran. */
@@ -294,11 +294,11 @@ export async function showDownloads() {
   teardownFiche();
   teardownDownloads();
   state.kind = 'downloads';
-  document.title = 'Téléchargements · Laststream';
+  document.title = tr('Téléchargements · Laststream');
   const token = v.token;
   const av = platformAvailability();
   if (!av.ok) {
-    detailEl.innerHTML = shell(stateHTML('block', 'Téléchargements indisponibles', av.reason));
+    detailEl.innerHTML = shell(stateHTML('block', tr('Téléchargements indisponibles'), av.reason));
     focusTitle();
     return;
   }
@@ -311,8 +311,8 @@ export async function showDownloads() {
   if (token !== v.token) return;
   if (!m) {
     const body = detailEl.querySelector('[data-dl-body]');
-    if (body) body.innerHTML = stateHTML('alert', 'Les téléchargements n’ont pas pu être chargés', 'Le stockage de l’appareil ne répond pas. Réessaie dans un instant.',
-      '<button type="button" class="btn btn-primary" data-dl-act="reload">Réessayer</button>');
+    if (body) body.innerHTML = stateHTML('alert', tr('Les téléchargements n’ont pas pu être chargés'), tr('Le stockage de l’appareil ne répond pas. Réessaie dans un instant.'),
+      '<button type="button" class="btn btn-primary" data-dl-act="reload">' + tr('Réessayer') + '</button>');
     return;
   }
   if (isWeb() && folderPickerSupported()) {
@@ -337,18 +337,18 @@ const itemById = (id) => visibleItems(v.items).find((it) => it.id === id);
 function confirmAll(opener) {
   const items = visibleItems(v.items);
   openSheet({
-    title: 'Supprimer tous les téléchargements ?',
+    title: tr('Supprimer tous les téléchargements ?'),
     cls: 'is-center',
     opener,
     render: (body, close) => {
-      body.innerHTML = '<p class="dl-sheet-p">' + esc(items.length + (items.length > 1 ? ' titres seront effacés' : ' titre sera effacé') + ' de cet appareil.') + '</p>' +
-        '<div class="dl-sheet-acts"><button type="button" class="btn dl-btn-d" data-dl-yes>Tout supprimer</button><button type="button" class="btn btn-ghost" data-dl-close>Annuler</button></div>';
+      body.innerHTML = '<p class="dl-sheet-p">' + esc(items.length + (items.length > 1 ? ' ' + tr('titres seront effacés') : ' ' + tr('titre sera effacé')) + ' ' + tr('de cet appareil.')) + '</p>' +
+        '<div class="dl-sheet-acts"><button type="button" class="btn dl-btn-d" data-dl-yes>' + tr('Tout supprimer') + '</button><button type="button" class="btn btn-ghost" data-dl-close>' + tr('Annuler') + '</button></div>';
       body.querySelector('[data-dl-yes]').addEventListener('click', async () => {
         close();
         const m = await getDownloads();
         if (!m) return;
         await Promise.all(items.map((it) => m.remove(it.id).catch(() => undefined)));
-        toast('Téléchargements supprimés');
+        toast(tr('Téléchargements supprimés'));
       });
     },
   });
@@ -368,7 +368,7 @@ detailEl.addEventListener('click', async (e) => {
   if (act === 'persist') {
     const ok = await persistStorage();
     v.persisted = ok;
-    toast(ok ? 'Stockage persistant activé' : 'Le navigateur a refusé le stockage persistant');
+    toast(ok ? tr('Stockage persistant activé') : tr('Le navigateur a refusé le stockage persistant'));
     if (ok) renderList();
     return;
   }
@@ -381,13 +381,13 @@ detailEl.addEventListener('click', async (e) => {
   }
   if (act === 'folder-pick') {
     const h = await pickSaveFolder();
-    if (h) { v.folder = h.name; toast('Les téléchargements iront dans « ' + h.name + ' »'); renderList(); }
+    if (h) { v.folder = h.name; toast(tr('Les téléchargements iront dans « {name} »', { name: h.name })); renderList(); }
     return;
   }
   if (act === 'folder-forget') {
     await forgetSaveFolder();
     v.folder = null;
-    toast('Les téléchargements iront dans le dossier du navigateur');
+    toast(tr('Les téléchargements iront dans le dossier du navigateur'));
     renderList();
     return;
   }

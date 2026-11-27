@@ -1,5 +1,6 @@
 import { LANG_MAIN, LANG_NONE, LANG_VO, type EffectiveLangPrefs, type LangPrefs } from '../data/langPrefs';
 import { langName, normalizeLang, trackLang, type AudioTrack, type SubtitleTrack } from './tracks';
+import { t as tx } from '../i18n';
 
 /*
  * Politique de langue des pistes : choisit l'audio et les sous-titres (jusqu'à deux) au démarrage d'une lecture, d'après
@@ -220,13 +221,13 @@ export function pickTracks(audioTracks: readonly AudioTrack[], subTracks: readon
 export function autoSubsToast(pick: TrackPick): string {
   if (!pick.subLang) return '';
   const audio = pick.audioLang ? audioName(pick.audioLang) : '';
-  const both = pick.secondaryLang ? 'Sous-titres ' + subAdj(pick.subLang) + ' et ' + subAdj(pick.secondaryLang) + ' activés' : 'Sous-titres ' + subAdj(pick.subLang) + ' activés';
-  return both + (audio ? ' (audio : ' + audio + ')' : '');
+  const both = pick.secondaryLang ? tx('Sous-titres {subLang} et {secondaryLang} activés', { subLang: subAdj(pick.subLang), secondaryLang: subAdj(pick.secondaryLang) }) : tx('Sous-titres {subLang} activés', { subLang: subAdj(pick.subLang) });
+  return both + (audio ? ' ' + tx('(audio : {audio})', { audio }) : '');
 }
 
 /** Noms de langue accordés avec « sous-titres » (pluriel) ; à défaut, le nom de la langue en minuscules. */
 const ADJ: Record<string, string> = {
-  fr: 'français', en: 'anglais', ja: 'japonais', es: 'espagnols', de: 'allemands', it: 'italiens', ko: 'coréens', pt: 'portugais', zh: 'chinois', ru: 'russes', ar: 'arabes', nl: 'néerlandais', pl: 'polonais', tr: 'turcs', sv: 'suédois',
+  fr: tx('français'), en: 'anglais', ja: 'japonais', es: 'espagnols', de: 'allemands', it: 'italiens', ko: tx('coréens'), pt: 'portugais', zh: 'chinois', ru: 'russes', ar: 'arabes', nl: tx('néerlandais'), pl: 'polonais', tr: 'turcs', sv: tx('suédois'),
 };
 
 /** Nom d'une langue dans un message sur les sous-titres (« japonais », « espagnols »). */
@@ -259,17 +260,17 @@ interface LearnNoticeOpts {
 export function learnNotice(pick: TrackPick, prefs: LangPrefs, opts: LearnNoticeOpts = {}): string {
   const learned = normalizeLang(prefs.learnLang);
   const parts: string[] = [];
-  if (pick.learnAudioMissing) parts.push(`Pas d'audio ${audioName(learned)}` + (pick.audioLang ? ` : audio ${audioName(pick.audioLang)}` : ''));
-  if (pick.learnSubMissing && !opts.subsOff) parts.push(`Pas de sous-titres ${subAdj(learned)}` + (pick.subLang ? ` : ${subAdj(pick.subLang)} seuls` : ''));
+  if (pick.learnAudioMissing) parts.push(`${tx('Pas d\'audio')} ${audioName(learned)}` + (pick.audioLang ? ` ${tx(': audio')} ${audioName(pick.audioLang)}` : ''));
+  if (pick.learnSubMissing && !opts.subsOff) parts.push(`${tx('Pas de sous-titres')} ${subAdj(learned)}` + (pick.subLang ? ` ${tx(': {subLang} seuls', { subLang: subAdj(pick.subLang) })}` : ''));
   if (pick.secondaryBlocked && !opts.subsOff) {
-    parts.push(opts.engineKind === 'native' ? `Un seul sous-titre sur ce lecteur : ${subAdj(pick.subLang || learned)} seuls` : 'Second sous-titre indisponible (sous-titres intégrés)');
+    parts.push(opts.engineKind === 'native' ? `${tx('Un seul sous-titre sur ce lecteur : {subAdj} seuls', { subAdj: subAdj(pick.subLang || learned) })}` : tx('Second sous-titre indisponible (sous-titres intégrés)'));
   }
-  if (opts.audioUnknown) parts.push('Langue audio non modifiable avec cette source');
+  if (opts.audioUnknown) parts.push(tx('Langue audio non modifiable avec cette source'));
   return parts.join(' · ');
 }
 
 /* Messages sur le second sous-titre, affichés par session.js. */
-export const SECONDARY_OFF_MSG = 'Second sous-titre retiré';
-export const SECONDARY_UNSUPPORTED_MSG = 'Second sous-titre non pris en charge ici';
-export const SECONDARY_EMPTY_MSG = 'Second sous-titre vide ou illisible';
-export const SECONDARY_LOAD_FAIL_MSG = 'Impossible de charger le second sous-titre';
+export const SECONDARY_OFF_MSG = tx('Second sous-titre retiré');
+export const SECONDARY_UNSUPPORTED_MSG = tx('Second sous-titre non pris en charge ici');
+export const SECONDARY_EMPTY_MSG = tx('Second sous-titre vide ou illisible');
+export const SECONDARY_LOAD_FAIL_MSG = tx('Impossible de charger le second sous-titre');

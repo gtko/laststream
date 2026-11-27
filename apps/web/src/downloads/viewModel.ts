@@ -2,10 +2,11 @@
  * jamais d'URL : seul le code d'erreur est traduit. */
 import type { Availability } from './service';
 import type { DownloadErrorCode, DownloadItem, SpaceInfo } from './types';
+import { t } from '../i18n';
 
 export type ButtonState = 'available' | 'pending' | 'running' | 'paused' | 'done' | 'error' | 'unavailable';
 
-const UNITS = ['o', 'Ko', 'Mo', 'Go', 'To'];
+const UNITS = ['o', t('Ko'), t('Mo'), t('Go'), t('To')];
 
 /** Taille lisible en français, base 1024 : « 1,4 Go », « 820 Mo ». */
 export function formatBytes(n: number): string {
@@ -35,52 +36,55 @@ export function itemPercent(item: DownloadItem): number | null {
   return Math.min(100, Math.max(0, Math.floor((item.bytesDone / item.bytesTotal) * 100)));
 }
 
-/** Jauge d'espace : pourcentage, libellé et niveau (`warn` à 90 %, `full` à 100 %). */
-export function gauge(s: SpaceInfo): { percent: number; label: string; level: 'ok' | 'warn' | 'full' } {
+/** Jauge d'espace : pourcentage, libellés (court et « utilisés ») et niveau (`warn` à 90 %, `full` à 100 %). */
+export function gauge(s: SpaceInfo): { percent: number; label: string; usedLabel: string; level: 'ok' | 'warn' | 'full' } {
   const percent = s.ratio === null ? 0 : Math.min(100, Math.max(0, Math.round(s.ratio * 100)));
-  const label = s.limit === null ? `${formatBytes(s.used)} utilisés` : `${formatBytes(s.used)} sur ${formatBytes(s.limit)}`;
+  const used = formatBytes(s.used);
+  const limit = s.limit === null ? '' : formatBytes(s.limit);
+  const label = s.limit === null ? t('{used} utilisés', { used }) : t('{used} sur {limit}', { used, limit });
+  const usedLabel = s.limit === null ? label : t('{used} utilisés sur {limit}', { used, limit });
   const level = s.full ? 'full' : s.warn ? 'warn' : 'ok';
-  return { percent, label, level };
+  return { percent, label, usedLabel, level };
 }
 
 const ERRORS: Record<DownloadErrorCode, string> = {
-  link_expired: 'Le lien a expiré. Le téléchargement reprendra avec un lien neuf.',
-  resolve_failed: 'Impossible d’obtenir le fichier pour le moment.',
-  account: 'Ton compte débrideur est indisponible. Vérifie-le dans les réglages.',
-  content: 'Ce flux ne peut pas être téléchargé.',
-  network: 'Connexion interrompue. Le téléchargement reprendra quand le réseau reviendra.',
-  range_mismatch: 'Le fichier a changé pendant le téléchargement. Relance-le.',
-  quota_exceeded: 'Limite d’espace atteinte. Augmente la limite ou supprime des téléchargements.',
-  store_full: 'Le stockage de l’appareil est plein.',
-  store_failed: 'Impossible d’écrire le fichier sur l’appareil.',
-  store_denied: 'Windows refuse l’écriture du fichier (antivirus, droits ou fichier ouvert ailleurs). Autorise le dossier de téléchargement dans ton antivirus, puis réessaie.',
-  store_folder: 'Le dossier de téléchargement est introuvable ou protégé en écriture. Vérifie qu’il existe et qu’il est accessible, puis réessaie.',
-  store_timeout: 'Le disque n’a pas répondu à temps (disque lent ou antivirus). Réessaie : le téléchargement reprend là où il s’est arrêté.',
-  cancelled: 'Téléchargement annulé.',
+  link_expired: t('Le lien a expiré. Le téléchargement reprendra avec un lien neuf.'),
+  resolve_failed: t('Impossible d’obtenir le fichier pour le moment.'),
+  account: t('Ton compte débrideur est indisponible. Vérifie-le dans les réglages.'),
+  content: t('Ce flux ne peut pas être téléchargé.'),
+  network: t('Connexion interrompue. Le téléchargement reprendra quand le réseau reviendra.'),
+  range_mismatch: t('Le fichier a changé pendant le téléchargement. Relance-le.'),
+  quota_exceeded: t('Limite d’espace atteinte. Augmente la limite ou supprime des téléchargements.'),
+  store_full: t('Le stockage de l’appareil est plein.'),
+  store_failed: t('Impossible d’écrire le fichier sur l’appareil.'),
+  store_denied: t('Windows refuse l’écriture du fichier (antivirus, droits ou fichier ouvert ailleurs). Autorise le dossier de téléchargement dans ton antivirus, puis réessaie.'),
+  store_folder: t('Le dossier de téléchargement est introuvable ou protégé en écriture. Vérifie qu’il existe et qu’il est accessible, puis réessaie.'),
+  store_timeout: t('Le disque n’a pas répondu à temps (disque lent ou antivirus). Réessaie : le téléchargement reprend là où il s’est arrêté.'),
+  cancelled: t('Téléchargement annulé.'),
 };
 
 /** Message français pour un code d'erreur. Jamais d'URL. */
 export function errorMessage(code: DownloadErrorCode): string {
-  return ERRORS[code] ?? 'Le téléchargement a échoué.';
+  return ERRORS[code] ?? t('Le téléchargement a échoué.');
 }
 
 /** Ce qu'affiche le bouton de la fiche : état, libellé, avancement et raison éventuelle. */
 export function buttonState(item: DownloadItem | undefined, avail: Availability): { state: ButtonState; label: string; percent: number | null; reason?: string } {
-  if (!avail.ok) return { state: 'unavailable', label: 'Indisponible', percent: null, reason: avail.reason };
-  if (!item) return { state: 'available', label: 'Télécharger', percent: null };
+  if (!avail.ok) return { state: 'unavailable', label: t('Indisponible'), percent: null, reason: avail.reason };
+  if (!item) return { state: 'available', label: t('Télécharger'), percent: null };
   const percent = itemPercent(item);
   const reason = item.error ? errorMessage(item.error.code) : undefined;
   switch (item.state) {
     case 'pending':
-      return { state: 'pending', label: 'En attente', percent };
+      return { state: 'pending', label: t('En attente'), percent };
     case 'running':
-      return { state: 'running', label: percent === null ? 'Téléchargement…' : `Téléchargement ${percent} %`, percent };
+      return { state: 'running', label: percent === null ? t('Téléchargement…') : `${t('Téléchargement {percent} %', { percent })}`, percent };
     case 'paused':
-      return { state: 'paused', label: 'En pause', percent, ...(reason ? { reason } : {}) };
+      return { state: 'paused', label: t('En pause'), percent, ...(reason ? { reason } : {}) };
     case 'done':
-      return { state: 'done', label: 'Téléchargé', percent: 100 };
+      return { state: 'done', label: t('Téléchargé'), percent: 100 };
     case 'error':
-      return { state: 'error', label: 'Échec', percent, reason: reason ?? errorMessage('resolve_failed') };
+      return { state: 'error', label: t('Échec'), percent, reason: reason ?? errorMessage('resolve_failed') };
   }
 }
 

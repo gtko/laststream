@@ -1,5 +1,6 @@
 import { MAX_FRAME_BYTES } from '@laststream/protocol/party';
 import type { ClientMessage, Fingerprint, ServerMessage } from '@laststream/protocol/party';
+import { t as tr } from '../i18n';
 
 /* Messages JSON du salon (WebSocket /party/:id/ws), une trame = un message de 4 Ko au plus.
  * Constantes, objets échangés et unions ServerMsg / ClientMsg : source unique dans @laststream/protocol (partagée avec lastaddon). */
@@ -85,19 +86,19 @@ export const FINAL_CLOSE_CODES: Readonly<Record<number, 'ended' | 'expired' | 'k
 /** Messages lisibles des erreurs du salon. */
 export function partyErrorText(code: string): string {
   switch (code) {
-    case 'not_host': return 'Seul l’hôte peut faire ça.';
-    case 'muted': return 'Tu as été rendu muet par l’hôte.';
-    case 'rate_limited': return 'Trop de messages : ralentis un peu.';
+    case 'not_host': return tr('Seul l’hôte peut faire ça.');
+    case 'muted': return tr('Tu as été rendu muet par l’hôte.');
+    case 'rate_limited': return tr('Trop de messages : ralentis un peu.');
     // invalid_message : aucun message (un serveur antérieur refuse ainsi la trame source, sans fermer la connexion).
-    case 'invalid_reaction': return 'Réaction inconnue.';
-    case 'empty_message': return 'Message vide.';
-    case 'message_not_found': return 'Message introuvable.';
-    case 'cannot_report_self': return 'Tu ne peux pas signaler ton propre message.';
-    case 'cannot_target_self': return 'Action impossible sur toi-même.';
-    case 'user_not_found': return 'Participant introuvable.';
-    case 'not_series': return 'Ce salon ne lit pas une série.';
-    case 'already_playing': return 'La lecture a déjà démarré.';
-    case 'vote_already_open': return 'Un vote est déjà ouvert.';
+    case 'invalid_reaction': return tr('Réaction inconnue.');
+    case 'empty_message': return tr('Message vide.');
+    case 'message_not_found': return tr('Message introuvable.');
+    case 'cannot_report_self': return tr('Tu ne peux pas signaler ton propre message.');
+    case 'cannot_target_self': return tr('Action impossible sur toi-même.');
+    case 'user_not_found': return tr('Participant introuvable.');
+    case 'not_series': return tr('Ce salon ne lit pas une série.');
+    case 'already_playing': return tr('La lecture a déjà démarré.');
+    case 'vote_already_open': return tr('Un vote est déjà ouvert.');
     default: return ''; // type ou code inconnu (serveur plus ancien ou plus récent) : ignoré sans bruit
   }
 }

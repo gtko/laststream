@@ -3,7 +3,7 @@
 
 /* ---------- Performance : sélecteur de période en segments ---------- */
 .adm-perf-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
-.adm-perf-bar .adm-live { margin-left: auto; }
+.adm-perf-bar .adm-live { margin-inline-start: auto; }
 .adm-seg { display: inline-flex; max-width: 100%; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
 .adm-seg-b { min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; transition: background-color 0.15s, color 0.15s; }
 .adm-seg-b:hover { color: var(--text); }
@@ -45,7 +45,7 @@
 
 /* ---------- Responsive ---------- */
 @media (max-width: 759px) {
-  .adm-perf-bar .adm-live { margin-left: 0; width: 100%; }
+  .adm-perf-bar .adm-live { margin-inline-start: 0; width: 100%; }
   .adm-seg { display: flex; }
   .adm-seg-b { flex: 1 1 0; }
   .adm-test-cell { align-items: stretch; min-width: 0; }

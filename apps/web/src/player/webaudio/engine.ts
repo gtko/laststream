@@ -3,6 +3,7 @@ import {
   DRIFT_RESYNC_S, LOOKAHEAD_S, MAX_AHEAD_S, START_AHEAD_S, UNDERRUN_S,
   aheadSeconds, driftSeconds, driftVerdict, mappedMedia, placeChunk, readyToPlay, underrun, type Anchor,
 } from './timing';
+import { t } from '../../i18n';
 
 /* Moteur audio de repli (web) : le `<video>` garde l'image (muet sur sa piste native) ; ce moteur lit la piste son avec des
  * requêtes Range sur la même URL, la décode et la joue en WebAudio, calée sur `video.currentTime`.
@@ -233,7 +234,7 @@ export class WebAudioFallback {
         this.resumeVideo();
       } else if (Date.now() - this.holdSince > (this.opts.holdTimeoutMs ?? HOLD_TIMEOUT_MS)) {
         // Aucun son décodé à temps (source lente, plages refusées, MKV sans index) : on n'attend pas indéfiniment.
-        this.giveUp(new Error('son indisponible : délai dépassé'));
+        this.giveUp(new Error(t('son indisponible : délai dépassé')));
       }
       return;
     }

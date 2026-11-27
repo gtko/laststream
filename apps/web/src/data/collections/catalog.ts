@@ -5,6 +5,7 @@
  */
 import type { Folder, Source } from './engine';
 import focaleUrl from './focale.json?url';
+import { t as tr } from '../../i18n';
 
 export interface Category {
   id: string;
@@ -21,7 +22,7 @@ export interface Catalog {
   art: Map<string, Folder>;
 }
 
-export const CREDIT = 'Collections inspirées de Focale (MIT) et Kaptain';
+export const CREDIT = tr('Collections inspirées de Focale (MIT) et Kaptain');
 export const SERVICES_CATEGORY = 'collection-ERFS5GWK';
 const SPOTLIGHT_CATEGORY = 'collection-SPOTLIGHTS';
 const DISCOVER_CATEGORY = 'collection-UGED6TEZ';
@@ -82,7 +83,7 @@ export function loadCatalog(): Promise<Catalog> {
   if (!memo) {
     memo = fetch(focaleUrl)
       .then((r) => {
-        if (!r.ok) throw new Error(`catalogue de collections : HTTP ${r.status}`);
+        if (!r.ok) throw new Error(`${tr('catalogue de collections : HTTP')} ${r.status}`);
         return r.json() as Promise<unknown>;
       })
       .then((json) => buildCatalog(json));
@@ -206,7 +207,7 @@ export const FOR_YOU_ID = 'folder-25429024';
 const BEST_SERIES_ID = 'folder-XUX2DKEX';
 
 /** Source TMDB de remplacement pour « Meilleures séries » (la source d'origine est Trakt). */
-const BEST_SERIES_SOURCE: Source = { kind: 'DISCOVER', media: 'tv', name: 'Meilleures séries', sort: 'vote_average.desc', filters: { voteCountGte: 500, withoutGenres: '16,10764,10767,10763' } };
+const BEST_SERIES_SOURCE: Source = { kind: 'DISCOVER', media: 'tv', name: tr('Meilleures séries'), sort: 'vote_average.desc', filters: { voteCountGte: 500, withoutGenres: '16,10764,10767,10763' } };
 
 /** Dossier ouvrable par #/collection/{id} : un dossier du hub, ou « Meilleures séries » (remplacé par une requête TMDB). « Pour vous » : null (recommandations). */
 export function folderById(cat: Catalog, id: string): Folder | null {

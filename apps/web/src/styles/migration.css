@@ -1,7 +1,7 @@
 /* Carte « Importer depuis une autre app » : repliable, confidentialité, étapes, résultat, erreurs. Jetons de styles.css. */
 .si-card { padding: 0 20px; }
 .si-h { margin: 0; }
-.si-toggle { width: 100%; min-height: 56px; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "t c" "s c"; column-gap: 12px; align-items: center; padding: 12px 0; text-align: left; color: var(--text); }
+.si-toggle { width: 100%; min-height: 56px; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "t c" "s c"; column-gap: 12px; align-items: center; padding: 12px 0; text-align: start; color: var(--text); }
 .si-t { grid-area: t; font-family: var(--ff-title); font-size: 16px; font-weight: 700; }
 .si-sum { grid-area: s; font-size: 13px; color: var(--dim); }
 .si-chev { grid-area: c; color: var(--muted); transition: transform 0.2s ease; }
@@ -16,12 +16,12 @@
 .si-lock { flex: none; color: var(--accent); margin-top: 1px; }
 .si-priv-t { margin: 0 0 4px; font-size: 14px; font-weight: 700; color: var(--text); }
 .si-priv ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; line-height: 1.5; color: var(--muted); }
-.si-priv li { position: relative; padding-left: 14px; }
+.si-priv li { position: relative; padding-inline-start: 14px; }
 .si-priv li::before { content: ''; position: absolute; left: 2px; top: 0.62em; width: 5px; height: 5px; border-radius: 50%; background: var(--dim); }
 .si-alert { margin: 8px 0; padding: 12px 14px; border-radius: 10px; border: 1px solid #e5484d; background: rgba(229, 72, 77, 0.12); color: var(--text); font-size: 14px; line-height: 1.45; }
 .si-alert[hidden], .si-steps-w[hidden], .si-result[hidden], .si-form[hidden], .si-retry[hidden], .si-submit[hidden] { display: none; }
 .si-pwd { position: relative; display: block; width: 100%; }
-.si-pwd .set-input { padding-right: 52px; }
+.si-pwd .set-input { padding-inline-end: 52px; }
 .si-eye { position: absolute; top: 0; right: 0; width: 44px; height: 44px; display: grid; place-items: center; color: var(--muted); }
 .si-eye[aria-pressed="true"] { color: var(--accent); }
 .set-input[aria-invalid="true"] { border-color: #e5484d; }
@@ -51,7 +51,7 @@
 }
 /* Migration (Stremio, Nuvio, Simkl, Plex) : sources, avertissement, aperçu, progression, rapport, journal des addons. */
 .mg-srcs { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; gap: 8px; }
-.mg-src { width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); text-align: left; min-height: 56px; }
+.mg-src { width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); text-align: start; min-height: 56px; }
 .mg-src:hover, .mg-src:focus-visible { border-color: var(--accent); outline: none; }
 .mg-src-t { font-weight: 700; font-size: 15px; }
 .mg-src-d { font-size: 13px; color: var(--dim); }
@@ -78,7 +78,7 @@
 .si-form .set-row + .set-row { border-top: 0; }
 .si-form > .mg-chk { margin-top: 4px; }
 .si-form > .si-actions { margin-top: 16px; }
-.mg-cat b { margin-left: auto; color: var(--dim); font-weight: 700; }
+.mg-cat b { margin-inline-start: auto; color: var(--dim); font-weight: 700; }
 .mg-off { color: var(--dim); font-size: 13px; }
 .mg-addon-step { padding-top: 8px; border-top: 1px solid var(--line-2); }
 .mg-addons { list-style: none; margin: 0; padding: 0 0 0 28px; }
@@ -98,14 +98,14 @@
 .mg-pb-r { margin: 0; color: var(--text); }
 .mg-pb-n { color: var(--dim); }
 .mg-pb-t { margin: 2px 0 0; color: var(--dim); font-size: 13px; line-height: 1.45; }
-.mg-tag { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--line-2); color: var(--text); }
+.mg-tag { display: inline-block; margin-inline-end: 8px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--line-2); color: var(--text); }
 .mg-tag[data-status="ok"] { background: var(--accent); color: #fff; }
 .mg-tag[data-status="failed"] { background: rgba(229, 72, 77, 0.2); color: #ff8a8d; }
 .mg-sub { margin: 16px 0 8px; font-size: 14px; color: var(--text); }
 .mg-alog-l li, .mg-imp-l li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; }
 .mg-alog-n { font-weight: 700; color: var(--text); }
 .mg-alog-r { flex-basis: 100%; color: var(--dim); font-size: 13px; }
-.mg-imp-l .mg-chk { margin-left: auto; min-height: 44px; }
+.mg-imp-l .mg-chk { margin-inline-start: auto; min-height: 44px; }
 .mg-link { color: var(--accent); text-decoration: underline; font: inherit; padding: 0; }
 .mg-beta a { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .mg-bar i { transition: none; } }

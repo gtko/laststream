@@ -9,6 +9,7 @@
  */
 import { emitDataEvent } from './events';
 import { watchedTitlesFromSeen, type WatchedTitle } from './watchedHistory';
+import { t as tr } from '../i18n';
 
 export interface LibraryEntry {
   id: number;
@@ -397,7 +398,7 @@ export class LocalUserStore implements UserStore {
       const list = raw.filter((p): p is Profile => !!p && typeof p.id === 'string' && typeof p.name === 'string');
       if (list.length) return list;
     }
-    return [{ id: 'default', name: 'Greg' }];
+    return [{ id: 'default', name: tr('Greg') }];
   }
 
   currentProfile(): Profile {

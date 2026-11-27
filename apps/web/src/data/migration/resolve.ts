@@ -7,6 +7,7 @@ import { tmdb } from '../lt';
 import type { ResolvedTitle } from './sink';
 import type { MigrationItem } from './types';
 import type { BitfieldVideo } from './watchedBitfield';
+import { t } from '../../i18n';
 
 export const CINEMETA = 'https://v3-cinemeta.strem.io/meta/series/';
 
@@ -46,8 +47,8 @@ export function createResolver(tmdbFn: (path: string, params?: Record<string, st
       const pick = item.typeUnknown ? (movie ? 'movie' : tv ? 'tv' : null) : type === 'movie' ? (movie ? 'movie' : null) : (tv ? 'tv' : null);
       if (pick) return fromTmdb(pick, pick === 'movie' ? movie : tv, title, ref.imdb);
     }
-    const ids = [ref.imdb && 'IMDb ' + ref.imdb, ref.tvdb && 'TVDB ' + ref.tvdb].filter(Boolean).join(', ');
-    throw new NotFound('Introuvable sur TMDB' + (ids ? ' (' + ids + ')' : ''));
+    const ids = [ref.imdb && t('IMDb {imdb}', { imdb: ref.imdb }), ref.tvdb && t('TVDB {tvdb}', { tvdb: ref.tvdb })].filter(Boolean).join(', ');
+    throw new NotFound(t('Introuvable sur TMDB') + (ids ? ' (' + ids + ')' : ''));
   };
   return (item) => {
     const key = (item.typeUnknown ? '?' : item.type) + ':' + (item.ref.tmdb ?? item.ref.imdb ?? item.ref.tvdb);
@@ -71,7 +72,7 @@ export function createVideoLister(fetchFn: (url: string) => Promise<Response> = 
     if (!p) {
       p = (async () => {
         const res = await fetchFn(CINEMETA + encodeURIComponent(imdb) + '.json');
-        if (!res.ok) throw new NotFound('Liste des épisodes Stremio indisponible (HTTP ' + res.status + ')');
+        if (!res.ok) throw new NotFound(t('Liste des épisodes Stremio indisponible (HTTP {status})', { status: res.status }));
         const data: any = await res.json();
         const videos: any[] = Array.isArray(data?.meta?.videos) ? data.meta.videos : [];
         return videos.filter((v) => v && typeof v.id === 'string').map((v) => ({

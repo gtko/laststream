@@ -8,6 +8,7 @@ import {
   hasRef, isObject, num, refOfMediaId, str, timeOf, typeOf,
   type MigrationAddon, type MigrationBundle, type MigrationItem, type MigrationSource,
 } from './types';
+import { t } from '../../i18n';
 
 export const STREMIO_API = 'https://api.strem.io/api/';
 const TIMEOUT_MS = 30_000;
@@ -45,11 +46,11 @@ export function itemsOfLibraryItem(raw: Record<string, unknown>): MigrationItem[
   if (!type) {
     // Chaînes TV, vidéos d'addons : rien d'équivalent dans Laststream. Seuls les titres de la bibliothèque sont signalés.
     if (raw.removed === true) return [];
-    return [{ ...base, uid: 'stremio:' + id + ':library', action: 'library', skipReason: str(raw.type) === 'tv' || str(raw.type) === 'channel' ? 'Chaîne TV : pas de correspondance dans la bibliothèque' : 'Type « ' + str(raw.type) + ' » non pris en charge' }];
+    return [{ ...base, uid: 'stremio:' + id + ':library', action: 'library', skipReason: str(raw.type) === 'tv' || str(raw.type) === 'channel' ? t('Chaîne TV : pas de correspondance dans la bibliothèque') : t('Type « {type} » non pris en charge', { type: str(raw.type) }) }];
   }
   if (!hasRef(ref)) {
     if (raw.removed === true) return [];
-    return [{ ...base, uid: 'stremio:' + id + ':library', action: 'library', skipReason: 'Titre propre à un addon (identifiant « ' + id.split(':')[0] + ' »), sans équivalent TMDB' }];
+    return [{ ...base, uid: 'stremio:' + id + ':library', action: 'library', skipReason: t('Titre propre à un addon (identifiant « {v} »), sans équivalent TMDB', { v: id.split(':')[0] }) }];
   }
   const out: MigrationItem[] = [];
   const inLibrary = raw.removed !== true && raw.temp !== true;
@@ -102,7 +103,7 @@ export function addonOfDescriptor(d: unknown): MigrationAddon | null {
   const flags = isObject(d.flags) ? d.flags : {};
   let host = '';
   try { host = new URL(url).hostname; } catch { /* adresse illisible : signalée par le journal des addons */ }
-  return { manifestUrl: url, name: str(manifest.name) || str(d.name) || host || 'Addon', official: flags.official === true || flags.protected === true || OFFICIAL_HOSTS.test(host) };
+  return { manifestUrl: url, name: str(manifest.name) || str(d.name) || host || t('Addon'), official: flags.official === true || flags.protected === true || OFFICIAL_HOSTS.test(host) };
 }
 
 // ---------- Fichier d'export ----------
@@ -142,7 +143,7 @@ export function parseStremioExport(json: unknown, source: MigrationSource = 'str
   }
   if (isObject(json)) items.push(...likedItems(json));
   const notes: string[] = [];
-  if (!seen.size && !addons.length) notes.push('Aucune bibliothèque ni addon Stremio reconnu dans ce fichier.');
+  if (!seen.size && !addons.length) notes.push(t('Aucune bibliothèque ni addon Stremio reconnu dans ce fichier.'));
   return { source, items, addons, notes };
 }
 
@@ -157,7 +158,7 @@ async function apiCall<T>(method: string, body: Record<string, unknown>, fetchFn
   try {
     res = await fetchFn(STREMIO_API + method, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal });
   } catch {
-    throw new StremioError('network', 'Stremio est injoignable depuis cet appareil. Vérifie ta connexion puis réessaie.');
+    throw new StremioError('network', t('Stremio est injoignable depuis cet appareil. Vérifie ta connexion puis réessaie.'));
   } finally {
     clearTimeout(timer);
   }
@@ -165,10 +166,10 @@ async function apiCall<T>(method: string, body: Record<string, unknown>, fetchFn
   try { data = await res.json(); } catch { data = null; }
   if (isObject(data) && isObject(data.error)) {
     const e = data.error;
-    if (e.wrongPass === true || e.wrongEmail === true || e.code === 2 || e.code === 3) throw new StremioError('credentials', 'E-mail ou mot de passe Stremio incorrect.');
-    throw new StremioError('other', 'Stremio a refusé la demande : ' + (str(e.message) || 'erreur inconnue') + '.');
+    if (e.wrongPass === true || e.wrongEmail === true || e.code === 2 || e.code === 3) throw new StremioError('credentials', t('E-mail ou mot de passe Stremio incorrect.'));
+    throw new StremioError('other', t('Stremio a refusé la demande : {v}.', { v: (str(e.message) || t('erreur inconnue')) }));
   }
-  if (!res.ok || !isObject(data) || !('result' in data)) throw new StremioError('other', 'Réponse inattendue de Stremio (HTTP ' + res.status + ').');
+  if (!res.ok || !isObject(data) || !('result' in data)) throw new StremioError('other', t('Réponse inattendue de Stremio (HTTP {status}).', { status: res.status }));
   return data.result as T;
 }
 
@@ -189,12 +190,12 @@ export async function readStremioAccount(email: string, password: string, opts: 
   opts.onStep?.('login');
   const login = await apiCall<{ authKey?: string }>('login', { type: 'Login', email, password, facebook: false }, fetchFn);
   const authKey = isObject(login) ? str(login.authKey) : '';
-  if (!authKey) throw new StremioError('other', 'Stremio n’a pas ouvert de session.');
+  if (!authKey) throw new StremioError('other', t('Stremio n’a pas ouvert de session.'));
   try {
     opts.onStep?.('library');
     const lib = await apiCall<unknown[]>('datastoreGet', { authKey, collection: 'libraryItem', ids: [], all: true }, fetchFn);
     const bundle = parseStremioExport({ library: Array.isArray(lib) ? lib : [] }, 'stremio');
-    bundle.notes = bundle.notes.filter((n) => !n.startsWith('Aucune'));
+    bundle.notes = bundle.notes.filter((n) => n !== t('Aucune bibliothèque ni addon Stremio reconnu dans ce fichier.'));
     if (opts.addons) {
       opts.onStep?.('addons');
       const col = await apiCall<{ addons?: unknown[] }>('addonCollectionGet', { type: 'AddonCollectionGet', authKey, update: true }, fetchFn);

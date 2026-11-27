@@ -17,6 +17,7 @@ import { openSheet } from './sheet.js';
 import { avatarHTML, SEEN_LABEL } from './socialFmt.js';
 import { inviteToParty } from './socialHooks.js';
 import { esc, rewriteKeepingFocus } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Amis montrés au plus (les salons d'abord, puis les amis en ligne). */
 const ROWS_MAX = 8;
@@ -39,10 +40,10 @@ function watchWithRows(friends, rooms) {
 
 function rowHTML([f, room]) {
   const name = friendName(f);
-  const sub = room ? 'Dans un salon : ' + esc(room.title) : f.watching ? 'Regarde ' + esc(f.watching.title) : esc(SEEN_LABEL[f.status] || 'En ligne');
+  const sub = room ? tr('Dans un salon : {title}', { title: esc(room.title) }) : f.watching ? tr('Regarde {title}', { title: esc(f.watching.title) }) : esc(SEEN_LABEL[f.status] || tr('En ligne'));
   const act = room
-    ? '<a class="btn btn-primary ww-btn" href="#/party/' + encodeURIComponent(room.id) + '" data-go data-ww-go aria-label="Rejoindre le salon de ' + esc(name) + '">Rejoindre</a>'
-    : '<button type="button" class="btn btn-ghost ww-btn" data-ww-invite="' + esc(f.pid) + '" aria-label="Inviter ' + esc(name) + '">Inviter</button>';
+    ? '<a class="btn btn-primary ww-btn" href="#/party/' + encodeURIComponent(room.id) + '" data-go data-ww-go aria-label="' + tr('Rejoindre le salon de {name}', { name: esc(name) }) + '">' + tr('Rejoindre') + '</a>'
+    : '<button type="button" class="btn btn-ghost ww-btn" data-ww-invite="' + esc(f.pid) + '" aria-label="' + tr('Inviter {name}', { name: esc(name) }) + '">' + tr('Inviter') + '</button>';
   return '<li class="ww-row">' + avatarHTML(f, 'ss-av-m', f.status === 'offline' ? '' : f.status) + '<span class="ww-nm"><b>' + esc(name) + '</b><small>' + sub + '</small></span>' + act + '</li>';
 }
 
@@ -50,8 +51,8 @@ function rowHTML([f, room]) {
 function watchWithListHTML(friends, rooms) {
   const rows = watchWithRows(friends, rooms);
   if (rows.length) return '<ul class="ww-list">' + rows.map(rowHTML).join('') + '</ul>';
-  if (!friends.length) return '<p class="ww-empty">Tu n’as pas encore d’amis ici. <a href="#/friends" data-go data-ww-go>Ajouter des amis</a>, ou planifie une soirée pour les inviter plus tard.</p>';
-  return '<p class="ww-empty">Aucun ami n’est en ligne pour le moment. Planifie une soirée : ils recevront l’invitation.</p>';
+  if (!friends.length) return '<p class="ww-empty">' + tr('Tu n’as pas encore d’amis ici.') + ' <a href="#/friends" data-go data-ww-go>' + tr('Ajouter des amis') + '</a>' + tr(', ou planifie une soirée pour les inviter plus tard.') + '</p>';
+  return '<p class="ww-empty">' + tr('Aucun ami n’est en ligne pour le moment. Planifie une soirée : ils recevront l’invitation.') + '</p>';
 }
 
 /**
@@ -69,13 +70,13 @@ export function openWatchWith(opener, model) {
   let unsub = () => undefined;
   let last = '';
   const sheet = openSheet({
-    title: 'Regarder avec…',
+    title: tr('Regarder avec…'),
     cls: 'ww-sheet',
     opener,
     onClose: () => unsub(),
-    html: '<p class="ww-lead">Chacun lit avec son propre compte, au même moment.</p><div data-ww-slot></div>' +
-      '<button type="button" class="btn btn-ghost ww-plan" data-ww-plan>Planifier une soirée</button>' +
-      '<button type="button" class="ww-link" data-ww-room>Ouvrir un salon pour ce titre</button>',
+    html: '<p class="ww-lead">' + tr('Chacun lit avec son propre compte, au même moment.') + '</p><div data-ww-slot></div>' +
+      '<button type="button" class="btn btn-ghost ww-plan" data-ww-plan>' + tr('Planifier une soirée') + '</button>' +
+      '<button type="button" class="ww-link" data-ww-room>' + tr('Ouvrir un salon pour ce titre') + '</button>',
   });
   const slot = sheet.el.querySelector('[data-ww-slot]');
   if (!(slot instanceof HTMLElement)) return sheet;

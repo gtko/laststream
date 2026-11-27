@@ -2,6 +2,7 @@
 // l'ami a dans sa bibliothèque (jointure sur library_items). Un épisode regardé hors bibliothèque arrive donc sans titre ni
 // affiche : on les résout ici par l'identifiant TMDB, avec un libellé de repli si la résolution échoue.
 import type { HistoryItem } from './socialV2Api';
+import { t } from '../i18n';
 
 type HistoryMeta = { title: string; poster: string };
 /** Résout un titre par son identifiant TMDB (`tmdb('movie/603')` côté app) ; rejette si introuvable ou hors ligne. */
@@ -10,7 +11,7 @@ export type MetaFetcher = (kind: 'movie' | 'tv', id: number) => Promise<{ title?
 const kindOf = (x: Pick<HistoryItem, 'type'>): 'movie' | 'tv' => (x.type === 'series' ? 'tv' : 'movie');
 
 /** Libellé de repli quand rien n'est résolu : jamais « Sans titre » pour un titre qui existe. */
-export const fallbackTitle = (x: Pick<HistoryItem, 'type'>): string => (x.type === 'series' ? 'Série' : 'Film');
+export const fallbackTitle = (x: Pick<HistoryItem, 'type'>): string => (x.type === 'series' ? t('Série') : t('Film'));
 
 const needsMeta = (x: HistoryItem): boolean => !x.title || !x.poster;
 

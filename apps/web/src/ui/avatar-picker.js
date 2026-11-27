@@ -7,19 +7,20 @@ import { AVATAR_TABS, HERO_FAMILIES, parseAvatar, parseColAvatar, parseHero, ran
 import { avatarAttrs } from './avatar-art.js';
 import { creditsHTML } from './credits.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 export function avatarPickerHTML() {
-  return '<section class="pf-picker-avatars" aria-labelledby="pfe-av-title"><h3 class="pf-section-title" id="pfe-av-title">Avatar</h3>' +
-    '<div class="av-tabs pills" role="tablist" aria-label="Familles d’avatars">' + AVATAR_TABS.map((t) =>
+  return '<section class="pf-picker-avatars" aria-labelledby="pfe-av-title"><h3 class="pf-section-title" id="pfe-av-title">' + tr('Avatar') + '</h3>' +
+    '<div class="av-tabs pills" role="tablist" aria-label="' + tr('Familles d’avatars') + '">' + AVATAR_TABS.map((t) =>
       '<button type="button" class="pill" role="tab" data-av-tab="' + t.id + '" aria-pressed="false">' + esc(t.label) + '</button>').join('') + '</div>' +
-    '<div class="av-subs pills" role="group" aria-label="Types de héros" data-av-subs>' + HERO_FAMILIES.map((f) =>
+    '<div class="av-subs pills" role="group" aria-label="' + tr('Types de héros') + '" data-av-subs>' + HERO_FAMILIES.map((f) =>
       '<button type="button" class="pill" data-av-sub="' + f.id + '" aria-pressed="false">' + esc(f.label) + '</button>').join('') + '</div>' +
-    '<div class="av-tools"><input class="set-input" type="search" name="avsearch" maxlength="40" placeholder="Un prénom pour essayer…" aria-label="Chercher un avatar à partir d’un mot" autocomplete="off">' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-av-random>Au hasard</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-av-none>Initiale</button></div>' +
-    '<div class="av-grid" data-av-grid role="group" aria-label="Avatars"></div>' +
-    '<button type="button" class="btn btn-ghost btn-sm av-more" data-av-more>Voir plus</button>' +
-    '<details class="av-credits-more"><summary>Crédits des illustrations</summary>' + creditsHTML() + '</details></section>';
+    '<div class="av-tools"><input class="set-input" type="search" name="avsearch" maxlength="40" placeholder="' + tr('Un prénom pour essayer…') + '" aria-label="' + tr('Chercher un avatar à partir d’un mot') + '" autocomplete="off">' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-av-random>' + tr('Au hasard') + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-av-none>' + tr('Initiale') + '</button></div>' +
+    '<div class="av-grid" data-av-grid role="group" aria-label="' + tr('Avatars') + '"></div>' +
+    '<button type="button" class="btn btn-ghost btn-sm av-more" data-av-more>' + tr('Voir plus') + '</button>' +
+    '<details class="av-credits-more"><summary>' + tr('Crédits des illustrations') + '</summary>' + creditsHTML() + '</details></section>';
 }
 
 /**

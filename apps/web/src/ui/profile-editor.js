@@ -15,6 +15,7 @@ import { closeAvatarStudio, describeAvatar, describeAvatarSync, openAvatarStudio
 import { openHouseholdPanel, paintProfileInviteRow, profileInviteRowHTML } from './household.js';
 import { ICON } from './icons.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Les 8 couleurs de profil (fond de l'initiale ou de l'avatar). */
 export const PROFILE_COLORS = ['#ff5a36', '#7b5bf5', '#19c3a6', '#f5b700', '#3b82f6', '#ec4899', '#22c55e', '#94a3b8'];
@@ -37,7 +38,7 @@ function pinBoxesHTML(name, label, help) {
     '<p class="pfe-help" data-pfe-pin-help="' + name + '">' + help + '</p>' +
     '<div class="pfe-pin-boxes">' + [0, 1, 2, 3].map((i) =>
       '<input type="password" class="pfe-pin-box" inputmode="numeric" maxlength="1" autocomplete="one-time-code" data-pfe-digit="' + i + '"' +
-      ' aria-label="' + label + ', chiffre ' + (i + 1) + ' sur 4">').join('') + '</div>' +
+      ' aria-label="' + tr('{label}, chiffre {v} sur 4', { label, v: (i + 1) }) + '">').join('') + '</div>' +
     '</fieldset>';
 }
 
@@ -58,8 +59,8 @@ export function openProfileEditor(p, opts) {
   const state = { avatar: isValidAvatar(cur.avatar) ? cur.avatar : null, color: cur.avatarColor || PROFILE_COLORS[0], removePin: false, busy: false, pin: '', parental: '' };
   // Le profil principal (porteur du code parental) ne se supprime pas d'ici : pas de zone de danger.
   const isMain = !isNew && (!!cur.isMainProfile || cur.id === parentalProfile()?.id);
-  const saveLabel = isNew ? 'Créer le profil' : 'Enregistrer';
-  const dirtyHTML = '<span class="pfe-dirty" data-pfe-dirty role="status" hidden><span class="pfe-dot" aria-hidden="true"></span>Modifications non enregistrées</span>';
+  const saveLabel = isNew ? tr('Créer le profil') : tr('Enregistrer');
+  const dirtyHTML = '<span class="pfe-dirty" data-pfe-dirty role="status" hidden><span class="pfe-dot" aria-hidden="true"></span>' + tr('Modifications non enregistrées') + '</span>';
   const others = auth.profiles.filter((x) => x.id !== cur.id).slice(0, 3);
   const inviteRow = profileInviteRowHTML(p);
   const prevFocus = document.activeElement;
@@ -71,19 +72,19 @@ export function openProfileEditor(p, opts) {
   node.setAttribute('aria-labelledby', 'pfe-title');
   node.innerHTML = '<form class="pf-editor pfe" novalidate>' +
     '<header class="pfe-head"><div class="pfe-head-in">' +
-    '<button type="button" class="pfe-icon-btn" data-pfe-cancel aria-label="Retour">' + ICON.back + '</button>' +
-    '<h1 id="pfe-title" class="pfe-title">' + (isNew ? 'Nouveau profil' : 'Modifier le profil') + '</h1>' +
+    '<button type="button" class="pfe-icon-btn" data-pfe-cancel aria-label="' + tr('Retour') + '">' + ICON.back + '</button>' +
+    '<h1 id="pfe-title" class="pfe-title">' + (isNew ? tr('Nouveau profil') : tr('Modifier le profil')) + '</h1>' +
     '<div class="pfe-head-end">' + dirtyHTML +
-    '<button type="button" class="btn btn-ghost pfe-btn" data-pfe-cancel>Annuler</button>' +
+    '<button type="button" class="btn btn-ghost pfe-btn" data-pfe-cancel>' + tr('Annuler') + '</button>' +
     '<button type="submit" class="btn btn-primary pfe-btn" data-pfe-save disabled>' + saveLabel + '</button></div>' +
     '</div></header>' +
     '<div class="pfe-layout">' +
     // Aperçu en direct
-    '<aside class="pfe-preview" aria-label="Aperçu du profil">' +
+    '<aside class="pfe-preview" aria-label="' + tr('Aperçu du profil') + '">' +
     '<div class="pfe-preview-card"><span class="pfe-hero" data-pfe-hero></span>' +
     '<p class="pfe-hero-name" data-pfe-hero-name></p>' +
-    '<p class="pfe-pill" data-pfe-hero-kid hidden>' + ICON.shield + 'Profil enfant, protégé</p></div>' +
-    '<div class="pfe-mini" aria-hidden="true"><p class="pfe-mini-title">Qui regarde ?</p><div class="pfe-mini-row">' +
+    '<p class="pfe-pill" data-pfe-hero-kid hidden>' + ICON.shield + tr('Profil enfant, protégé') + '</p></div>' +
+    '<div class="pfe-mini" aria-hidden="true"><p class="pfe-mini-title">' + tr('Qui regarde ?') + '</p><div class="pfe-mini-row">' +
     others.map((o) => '<span class="pfe-mini-pf"><span class="pfe-art pfe-mini-art"' + avatarAttrs(o.avatar, o.avatarColor || PROFILE_COLORS[0]) + '>' +
       esc(initialOf(o.name)) + '</span><span class="pfe-mini-name">' + esc(o.name) + '</span></span>').join('') +
     '<span class="pfe-mini-pf is-me" data-pfe-mini-me></span></div></div>' +
@@ -91,53 +92,53 @@ export function openProfileEditor(p, opts) {
     '<div class="pfe-main">' +
     '<p class="pin-msg pfe-msg" id="pfe-msg" role="alert"></p>' +
     // Identité
-    '<section class="pfe-card" aria-labelledby="pfe-s-id"><h2 class="pfe-h2" id="pfe-s-id">Identité</h2>' +
-    '<div class="pfe-field"><div class="pfe-label-row"><label class="pfe-label" for="pfe-name">Nom du profil</label>' +
+    '<section class="pfe-card" aria-labelledby="pfe-s-id"><h2 class="pfe-h2" id="pfe-s-id">' + tr('Identité') + '</h2>' +
+    '<div class="pfe-field"><div class="pfe-label-row"><label class="pfe-label" for="pfe-name">' + tr('Nom du profil') + '</label>' +
     '<span class="pfe-count" data-pfe-count aria-hidden="true"></span></div>' +
     '<input id="pfe-name" class="pfe-input" type="text" name="name" maxlength="' + NAME_MAX + '" required autocomplete="off" spellcheck="false"' +
     ' aria-describedby="pfe-name-help" value="' + esc(cur.name) + '">' +
     '<p class="pfe-help" id="pfe-name-help" data-pfe-name-help></p></div></section>' +
     // Apparence
-    '<section class="pfe-card" aria-labelledby="pfe-s-look"><h2 class="pfe-h2" id="pfe-s-look">Apparence</h2>' +
-    '<div class="pfe-sub"><h3 class="pfe-h3" id="pfe-av-label">Avatar</h3>' +
+    '<section class="pfe-card" aria-labelledby="pfe-s-look"><h2 class="pfe-h2" id="pfe-s-look">' + tr('Apparence') + '</h2>' +
+    '<div class="pfe-sub"><h3 class="pfe-h3" id="pfe-av-label">' + tr('Avatar') + '</h3>' +
     '<p class="pfe-help pfe-avline"><span data-pfe-avname></span><span class="pfe-avsub" data-pfe-avsub></span></p>' +
     '<div class="pfe-tiles" role="group" aria-labelledby="pfe-av-label" data-pfe-quick></div>' +
-    '<div class="pfe-recent" data-pfe-recent hidden><span class="pfe-h4" id="pfe-recent-label">Récemment utilisés</span>' +
+    '<div class="pfe-recent" data-pfe-recent hidden><span class="pfe-h4" id="pfe-recent-label">' + tr('Récemment utilisés') + '</span>' +
     '<div class="pfe-tiles" role="group" aria-labelledby="pfe-recent-label" data-pfe-recent-list></div></div>' +
-    '<button type="button" class="btn btn-ghost pfe-btn pfe-change" data-pfe-studio>Changer d\'avatar</button>' +
-    '<div class="pfe-kidwarn" data-pfe-kidwarn hidden role="alert"><p>Cet avatar n\'est pas disponible pour un profil enfant : choisis-en un autre.</p>' +
-    '<button type="button" class="btn btn-ghost btn-sm pfe-btn" data-pfe-kidpick>Choisir un avatar enfant</button></div></div>' +
-    '<div class="pfe-sub"><h3 class="pfe-h3" id="pfe-color-label">Couleur</h3>' +
+    '<button type="button" class="btn btn-ghost pfe-btn pfe-change" data-pfe-studio>' + tr('Changer d\'avatar') + '</button>' +
+    '<div class="pfe-kidwarn" data-pfe-kidwarn hidden role="alert"><p>' + tr('Cet avatar n\'est pas disponible pour un profil enfant : choisis-en un autre.') + '</p>' +
+    '<button type="button" class="btn btn-ghost btn-sm pfe-btn" data-pfe-kidpick>' + tr('Choisir un avatar enfant') + '</button></div></div>' +
+    '<div class="pfe-sub"><h3 class="pfe-h3" id="pfe-color-label">' + tr('Couleur') + '</h3>' +
     '<div class="pfe-colors" role="group" aria-labelledby="pfe-color-label">' +
-    PROFILE_COLORS.map((c, i) => '<button type="button" class="pfe-color-btn" data-pfe-color="' + c + '" aria-label="Couleur ' + COLOR_NAMES[i] + '" aria-pressed="false" style="--c:' + c + '">' + ICON.check + '</button>').join('') +
+    PROFILE_COLORS.map((c, i) => '<button type="button" class="pfe-color-btn" data-pfe-color="' + c + '" aria-label="' + tr('Couleur {v}', { v: COLOR_NAMES[i] }) + '" aria-pressed="false" style="--c:' + c + '">' + ICON.check + '</button>').join('') +
     '</div></div></section>' +
     // Contrôle parental
-    '<section class="pfe-card" aria-labelledby="pfe-s-kid"><h2 class="pfe-h2" id="pfe-s-kid">Contrôle parental</h2>' +
-    '<label class="pfe-switch-row"><span class="pfe-switch-text"><strong>Profil enfant</strong>' +
-    '<small id="pfe-kid-desc">Seuls les avatars et les contenus pour enfants sont proposés. Le code parental est demandé pour quitter ce profil.</small></span>' +
+    '<section class="pfe-card" aria-labelledby="pfe-s-kid"><h2 class="pfe-h2" id="pfe-s-kid">' + tr('Contrôle parental') + '</h2>' +
+    '<label class="pfe-switch-row"><span class="pfe-switch-text">' + tr('<strong>Profil enfant</strong>') +
+    '<small id="pfe-kid-desc">' + tr('Seuls les avatars et les contenus pour enfants sont proposés. Le code parental est demandé pour quitter ce profil.</small>') + '</span>' +
     '<input type="checkbox" name="kid" role="switch" class="pfe-switch" aria-describedby="pfe-kid-desc"' + (cur.isKid ? ' checked' : '') + '></label>' +
-    '<p class="pfe-pill" data-pfe-kidpill hidden>' + ICON.shield + 'Profil enfant, protégé</p>' +
-    '<div class="pfe-sub" data-kidage hidden><label class="pfe-field"><span class="pfe-label">Âge maximal</span><select name="age" class="pfe-input">' +
-    KID_AGES.map((a) => '<option value="' + a + '"' + (a === (cur.kidMaxAge || 12) ? ' selected' : '') + '>' + a + ' ans</option>').join('') + '</select></label>' +
-    '<fieldset class="pf-sections"><legend>Rubriques autorisées</legend>' + KID_SECTIONS.map(([id, label]) =>
+    '<p class="pfe-pill" data-pfe-kidpill hidden>' + ICON.shield + tr('Profil enfant, protégé') + '</p>' +
+    '<div class="pfe-sub" data-kidage hidden><label class="pfe-field"><span class="pfe-label">' + tr('Âge maximal') + '</span><select name="age" class="pfe-input">' +
+    KID_AGES.map((a) => '<option value="' + a + '"' + (a === (cur.kidMaxAge || 12) ? ' selected' : '') + '>' + tr('{a} ans', { a }) + '</option>').join('') + '</select></label>' +
+    '<fieldset class="pf-sections"><legend>' + tr('Rubriques autorisées') + '</legend>' + KID_SECTIONS.map(([id, label]) =>
       '<label class="set-check"><input type="checkbox" name="sec" value="' + id + '"' + (sectionAllowed(cur.allowedCatalogs, id) ? ' checked' : '') + '> <span>' + esc(label) + '</span></label>').join('') +
     '</fieldset></div>' +
-    '<div class="pfe-sub" data-parental hidden>' + pinBoxesHTML('parental', 'Code parental',
-      'Il protège la sortie du profil enfant : c\'est le code du profil principal. Choisis-le maintenant (4 chiffres).') + '</div>' +
-    '<div class="pfe-sub">' + pinBoxesHTML('pin', 'Code PIN du profil', cur.hasPin
-      ? 'Ce profil a déjà un code. Saisis-en un nouveau pour le changer.'
-      : 'Facultatif. Ces 4 chiffres seront demandés pour ouvrir ce profil.') +
-    (cur.hasPin ? '<div class="pfe-nopin"><button type="button" class="btn btn-ghost btn-sm pfe-btn" data-pfe-nopin aria-pressed="false">Retirer le code</button>' +
-      '<p class="pfe-help" data-pfe-nopin-note hidden>Le code sera retiré à l\'enregistrement.</p></div>' : '') + '</div>' +
+    '<div class="pfe-sub" data-parental hidden>' + pinBoxesHTML('parental', tr('Code parental'),
+      tr('Il protège la sortie du profil enfant : c\'est le code du profil principal. Choisis-le maintenant (4 chiffres).')) + '</div>' +
+    '<div class="pfe-sub">' + pinBoxesHTML('pin', tr('Code PIN du profil'), cur.hasPin
+      ? tr('Ce profil a déjà un code. Saisis-en un nouveau pour le changer.')
+      : tr('Facultatif. Ces 4 chiffres seront demandés pour ouvrir ce profil.')) +
+    (cur.hasPin ? '<div class="pfe-nopin"><button type="button" class="btn btn-ghost btn-sm pfe-btn" data-pfe-nopin aria-pressed="false">' + tr('Retirer le code') + '</button>' +
+      '<p class="pfe-help" data-pfe-nopin-note hidden>' + tr('Le code sera retiré à l\'enregistrement.') + '</p></div>' : '') + '</div>' +
     '</section>' +
-    (inviteRow ? '<section class="pfe-card" aria-labelledby="pfe-s-share"><h2 class="pfe-h2" id="pfe-s-share">Accès</h2>' + inviteRow + '</section>' : '') +
-    (isNew || isMain ? '' : '<section class="pfe-card pfe-danger" aria-labelledby="pfe-s-danger"><h2 class="pfe-h2" id="pfe-s-danger">Zone de danger</h2>' +
-      '<p class="pfe-help">Supprimer ce profil efface sa bibliothèque, sa progression et ses réglages. Les autres profils ne changent pas.</p>' +
-      '<button type="button" class="btn pfe-btn pfe-danger-btn" data-pfe-delete>Supprimer le profil</button></section>') +
+    (inviteRow ? '<section class="pfe-card" aria-labelledby="pfe-s-share"><h2 class="pfe-h2" id="pfe-s-share">' + tr('Accès') + '</h2>' + inviteRow + '</section>' : '') +
+    (isNew || isMain ? '' : '<section class="pfe-card pfe-danger" aria-labelledby="pfe-s-danger"><h2 class="pfe-h2" id="pfe-s-danger">' + tr('Zone de danger') + '</h2>' +
+      '<p class="pfe-help">' + tr('Supprimer ce profil efface sa bibliothèque, sa progression et ses réglages. Les autres profils ne changent pas.') + '</p>' +
+      '<button type="button" class="btn pfe-btn pfe-danger-btn" data-pfe-delete>' + tr('Supprimer le profil') + '</button></section>') +
     '</div></div>' +
     // Barre d'actions collante (mobile)
     '<div class="pfe-bar">' + dirtyHTML + '<div class="pfe-bar-actions">' +
-    '<button type="button" class="btn btn-ghost pfe-btn" data-pfe-cancel>Annuler</button>' +
+    '<button type="button" class="btn btn-ghost pfe-btn" data-pfe-cancel>' + tr('Annuler') + '</button>' +
     '<button type="submit" class="btn btn-primary pfe-btn" data-pfe-save disabled>' + saveLabel + '</button></div></div>' +
     '</form>';
   document.body.appendChild(node);
@@ -193,10 +194,10 @@ export function openProfileEditor(p, opts) {
     if (state.busy) return; // enregistrement en cours : on ne quitte pas au milieu
     if (snapshot() === initial) { close(); return; }
     const back = openDialog('<div class="pfe-dialog" role="alertdialog" aria-modal="true" aria-labelledby="pfe-leave-title" aria-describedby="pfe-leave-desc">' +
-      '<h2 class="pfe-h2" id="pfe-leave-title">Quitter sans enregistrer ?</h2>' +
-      '<p class="pfe-help" id="pfe-leave-desc">Tes modifications seront perdues.</p>' +
-      '<div class="pfe-dialog-actions"><button type="button" class="btn btn-ghost pfe-btn" data-pfe-stay>Continuer l\'édition</button>' +
-      '<button type="button" class="btn btn-primary pfe-btn" data-pfe-leave>Quitter sans enregistrer</button></div></div>', '[data-pfe-stay]');
+      '<h2 class="pfe-h2" id="pfe-leave-title">' + tr('Quitter sans enregistrer ?') + '</h2>' +
+      '<p class="pfe-help" id="pfe-leave-desc">' + tr('Tes modifications seront perdues.') + '</p>' +
+      '<div class="pfe-dialog-actions"><button type="button" class="btn btn-ghost pfe-btn" data-pfe-stay>' + tr('Continuer l\'édition') + '</button>' +
+      '<button type="button" class="btn btn-primary pfe-btn" data-pfe-leave>' + tr('Quitter sans enregistrer') + '</button></div></div>', '[data-pfe-stay]');
     back.addEventListener('click', (e) => {
       const t = e.target instanceof Element ? e.target : null;
       if (!t) return;
@@ -208,13 +209,13 @@ export function openProfileEditor(p, opts) {
   /** Suppression : le nom du profil doit être saisi à l'identique ; « Annuler » a le focus. */
   function requestDelete() {
     const back = openDialog('<form class="pfe-dialog" role="alertdialog" aria-modal="true" aria-labelledby="pfe-del-title" aria-describedby="pfe-del-desc" novalidate>' +
-      '<h2 class="pfe-h2" id="pfe-del-title">Supprimer le profil « ' + esc(cur.name) + ' » ?</h2>' +
-      '<p class="pfe-help" id="pfe-del-desc">Sa bibliothèque, sa progression et ses réglages seront effacés. C\'est définitif.</p>' +
-      '<label class="pfe-field"><span class="pfe-label">Pour confirmer, saisis le nom du profil : <strong>' + esc(cur.name) + '</strong></span>' +
+      '<h2 class="pfe-h2" id="pfe-del-title">' + tr('Supprimer le profil « {name} » ?', { name: esc(cur.name) }) + '</h2>' +
+      '<p class="pfe-help" id="pfe-del-desc">' + tr('Sa bibliothèque, sa progression et ses réglages seront effacés. C\'est définitif.') + '</p>' +
+      '<label class="pfe-field"><span class="pfe-label">' + tr('Pour confirmer, saisis le nom du profil : <strong>{name}</strong>', { name: esc(cur.name) }) + '</span>' +
       '<input class="pfe-input" type="text" autocomplete="off" spellcheck="false" data-pfe-delname></label>' +
       '<p class="pin-msg pfe-msg" role="alert" data-pfe-delmsg></p>' +
-      '<div class="pfe-dialog-actions"><button type="button" class="btn btn-ghost pfe-btn" data-pfe-delcancel>Annuler</button>' +
-      '<button type="submit" class="btn pfe-btn pfe-danger-btn" data-pfe-delok disabled>Supprimer définitivement</button></div></form>', '[data-pfe-delcancel]');
+      '<div class="pfe-dialog-actions"><button type="button" class="btn btn-ghost pfe-btn" data-pfe-delcancel>' + tr('Annuler') + '</button>' +
+      '<button type="submit" class="btn pfe-btn pfe-danger-btn" data-pfe-delok disabled>' + tr('Supprimer définitivement') + '</button></div></form>', '[data-pfe-delcancel]');
     const input = back.querySelector('[data-pfe-delname]');
     const ok = back.querySelector('[data-pfe-delok]');
     const matches = () => input.value.trim() === String(cur.name).trim();
@@ -257,9 +258,9 @@ export function openProfileEditor(p, opts) {
     }
     const init = $('button[data-pfe-pick=""] .pfe-art');
     if (init && init.textContent !== initial) init.textContent = initial;
-    $('[data-pfe-hero-name]').textContent = name || (isNew ? 'Nouveau profil' : 'Sans nom');
+    $('[data-pfe-hero-name]').textContent = name || (isNew ? tr('Nouveau profil') : tr('Sans nom'));
     $('[data-pfe-hero-name]').classList.toggle('is-empty', !name);
-    $('[data-pfe-mini-name]').textContent = name || 'Profil';
+    $('[data-pfe-mini-name]').textContent = name || tr('Profil');
   }
 
   /** Ligne « avatar actuel » : nom et collection (chargés au besoin). */
@@ -284,7 +285,7 @@ export function openProfileEditor(p, opts) {
   };
 
   const tileHTML = (v, recent) => {
-    const label = v ? describeAvatarSync(v).name : 'Initiale sur la couleur du profil';
+    const label = v ? describeAvatarSync(v).name : tr('Initiale sur la couleur du profil');
     return '<button type="button" class="pfe-tile" ' + (recent ? 'data-pfe-recent="' + esc(v) + '"' : 'data-pfe-pick="' + esc(v || '') + '"') +
       ' aria-pressed="false" aria-label="' + esc(label) + '"><span class="pfe-art"' + avatarAttrs(v, state.color) + '>' +
       (v ? '' : esc(initialOf(f.name.value))) + '</span><span class="pfe-tick" aria-hidden="true">' + ICON.check + '</span></button>';
@@ -334,8 +335,8 @@ export function openProfileEditor(p, opts) {
     $$('[data-pfe-save]').forEach((b) => { b.disabled = !can; });
     $$('[data-pfe-dirty]').forEach((d) => { d.hidden = !dirty; });
     $('[data-pfe-count]').textContent = raw.length + '/' + NAME_MAX;
-    $('[data-pfe-name-help]').textContent = name ? 'Affiché sur l\'écran « Qui regarde ? ».'
-      : isNew ? 'Donne un nom au profil pour pouvoir le créer.' : 'Le nom ne peut pas être vide.';
+    $('[data-pfe-name-help]').textContent = name ? tr('Affiché sur l\'écran « Qui regarde ? ».')
+      : isNew ? tr('Donne un nom au profil pour pouvoir le créer.') : tr('Le nom ne peut pas être vide.');
     $('[data-pfe-name-help]').classList.toggle('is-warn', !name && (!isNew || raw !== ''));
     const kid = kidBox.checked;
     $('[data-kidage]').hidden = !kid;
@@ -364,7 +365,7 @@ export function openProfileEditor(p, opts) {
     for (const b of pinBoxes(fs)) { b.disabled = on; if (on) b.value = ''; }
     const btn = $('[data-pfe-nopin]');
     btn.setAttribute('aria-pressed', String(on));
-    btn.textContent = on ? 'Garder le code' : 'Retirer le code';
+    btn.textContent = on ? tr('Garder le code') : tr('Retirer le code');
     $('[data-pfe-nopin-note]').hidden = !on;
     syncPin(fs);
   }
@@ -473,7 +474,7 @@ export function openProfileEditor(p, opts) {
     e.preventDefault();
     if (state.busy) return;
     const input = { name: f.name.value.trim(), avatarColor: state.color, isKid: kidBox.checked };
-    if (!input.name) { msg.textContent = 'Donne un nom au profil.'; f.name.focus(); return; }
+    if (!input.name) { msg.textContent = tr('Donne un nom au profil.'); f.name.focus(); return; }
     if (!isNew && snapshot() === initial) return;
     msg.textContent = '';
     if (input.isKid) {
@@ -496,11 +497,11 @@ export function openProfileEditor(p, opts) {
     if (state.avatar !== (cur.avatar || null)) input.avatar = state.avatar;
     const pin = state.pin;
     const fail = (text, sel) => { msg.textContent = text; if (sel) $(sel)?.focus(); msg.scrollIntoView?.({ block: 'nearest' }); };
-    if (pin && !/^\d{4}$/.test(pin)) { fail('Le code PIN compte 4 chiffres.', '[data-pfe-pin="pin"] [data-pfe-digit]'); return; }
+    if (pin && !/^\d{4}$/.test(pin)) { fail(tr('Le code PIN compte 4 chiffres.'), '[data-pfe-pin="pin"] [data-pfe-digit]'); return; }
     const mustSetParental = input.isKid && needsParentalCode({ isKid: true });
     const parental = state.parental;
     if (mustSetParental && !/^\d{4}$/.test(parental)) {
-      fail('Choisis un code parental à 4 chiffres : il protège la sortie du profil enfant.', '[data-pfe-pin="parental"] [data-pfe-digit]');
+      fail(tr('Choisis un code parental à 4 chiffres : il protège la sortie du profil enfant.'), '[data-pfe-pin="parental"] [data-pfe-digit]');
       return;
     }
     if (pin) input.pin = pin;

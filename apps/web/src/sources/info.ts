@@ -3,6 +3,7 @@ import type { MediaCaps } from '../player/server';
 import { appAudioOf, conversionOf, unreadableContainer, webPlayback, type AppAudio, type WebPlayback } from './direct';
 import { parseDebridUrl } from './debrid/hosts';
 import { getLaststream, type Lang, type LastStreamInfo, type Resolution, type Stream } from '../data/stream';
+import { t as tr } from '../i18n';
 
 /* Fiche détaillée d'une source : transforme un stream lastAddon (objet `laststream` + indices Stremio) en
  * données d'affichage prêtes à l'emploi pour le sélecteur de sources. Fonctions pures, testées. */
@@ -116,7 +117,7 @@ export function hdrChips(raw: readonly string[]): string[] {
 
 const AUDIO_PATTERNS: Array<[RegExp, string]> = [
   [/truehd/i, 'TrueHD'],
-  [/dts-?hd[ .-]?ma|dts-?hd/i, 'DTS-HD MA'],
+  [/dts-?hd[ .-]?ma|dts-?hd/i, tr('DTS-HD MA')],
   [/dts-?x/i, 'DTS:X'],
   [/\bdts\b/i, 'DTS'],
   [/ddp|dd\+|e-?ac-?3|eac3/i, 'DDP'],
@@ -167,7 +168,7 @@ function providerOf(info: LastStreamInfo | null, text: string): string {
   const m = PROVIDERS.exec(text);
   if (!m) return '';
   const k = m[1].toLowerCase().replace('-', '');
-  const names: Record<string, string> = { alldebrid: 'AllDebrid', realdebrid: 'Real-Debrid', premiumize: 'Premiumize', torbox: 'TorBox', debridlink: 'Debrid-Link', offcloud: 'Offcloud' };
+  const names: Record<string, string> = { alldebrid: 'AllDebrid', realdebrid: tr('Real-Debrid'), premiumize: 'Premiumize', torbox: 'TorBox', debridlink: tr('Debrid-Link'), offcloud: tr('Offcloud') };
   return names[k] ?? m[1];
 }
 
@@ -233,7 +234,7 @@ export function originSummary(origins: readonly Origin[], max = 2): string {
 export function formatDuration(sec: number | null): string {
   if (!sec || sec <= 0 || !Number.isFinite(sec)) return '';
   const min = Math.round(sec / 60);
-  if (min < 60) return min + ' min';
+  if (min < 60) return tr('{min} min', { min });
   const h = Math.floor(min / 60);
   const m = min % 60;
   return h + ' h ' + String(m).padStart(2, '0');
@@ -241,9 +242,9 @@ export function formatDuration(sec: number | null): string {
 
 function statusLabelOf(status: SourceStatus): string {
   switch (status) {
-    case 'cached': return 'Débridé · En cache ⚡';
-    case 'uncached': return 'Débridé · À la demande';
-    default: return 'Lien direct';
+    case 'cached': return tr('Débridé · En cache ⚡');
+    case 'uncached': return tr('Débridé · À la demande');
+    default: return tr('Lien direct');
   }
 }
 
@@ -303,7 +304,7 @@ export function clientCopiesOf(s: Stream): { copies: Array<{ infoHash: string; f
   };
 }
 
-const PROVIDER_NAMES: Record<string, string> = { alldebrid: 'AllDebrid', torbox: 'TorBox', realdebrid: 'Real-Debrid' };
+const PROVIDER_NAMES: Record<string, string> = { alldebrid: 'AllDebrid', torbox: 'TorBox', realdebrid: tr('Real-Debrid') };
 
 /**
  * Statut d'après les verdicts de cache combinés (hash → { cached, by }) : « En cache » si au moins un fournisseur l'a, sinon
@@ -338,7 +339,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
   const client = isClientStream(stream);
   const debrid = isDebridLink(stream, info);
   // « Débridé » seulement pour un lien de débrideur : un lien HTTP direct reste « Lien direct », jamais « en cache ».
-  const provider = debrid ? providerOf(info, text) || (client ? 'Débrideur' : isDebridUrl(stream.url) ? 'AllDebrid' : 'Débrideur') : '';
+  const provider = debrid ? providerOf(info, text) || (client ? tr('Débrideur') : isDebridUrl(stream.url) ? 'AllDebrid' : tr('Débrideur')) : '';
   const cached = debrid && info?.cached === true;
   const status: SourceStatus = !debrid ? 'direct' : cached ? 'cached' : 'uncached';
   const sizeBytes = info?.sizeBytes ?? (typeof hints.videoSize === 'number' ? hints.videoSize : 0);

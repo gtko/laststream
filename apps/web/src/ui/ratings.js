@@ -1,6 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { certLabel } from './catalog.js';
 import { esc, fmtNum } from './util.js';
+import { t } from '../i18n';
 
 // ---------- Notes : puces avec icône et couleur de chaque source (SVG/CSS en ligne) ----------
 const NB = ' ';
@@ -28,11 +29,11 @@ export function ratingList(r, fallbackTmdb) {
   r = r || {};
   const out = [];
   if (r.imdb != null) out.push(rateChip('IMDb', RICON.imdb(), fmtNum(r.imdb, 1)));
-  if (r.rottentomatoes != null) out.push(rateChip('Rotten Tomatoes, critiques' + (r.rottentomatoes >= 60 ? ' (frais)' : ' (pourri)'), RICON.tomato(r.rottentomatoes), pct(r.rottentomatoes)));
-  if (r.rottentomatoes_audience != null) out.push(rateChip('Rotten Tomatoes, public', RICON.popcorn(r.rottentomatoes_audience), pct(r.rottentomatoes_audience)));
+  if (r.rottentomatoes != null) out.push(rateChip(t('Rotten Tomatoes, critiques') + (r.rottentomatoes >= 60 ? ' (frais)' : ' (pourri)'), RICON.tomato(r.rottentomatoes), pct(r.rottentomatoes)));
+  if (r.rottentomatoes_audience != null) out.push(rateChip(t('Rotten Tomatoes, public'), RICON.popcorn(r.rottentomatoes_audience), pct(r.rottentomatoes_audience)));
   if (r.metacritic != null) {
     const v = Math.round(r.metacritic);
-    out.push(rateChip('Metacritic', '<span class="rb-mc ' + (v >= 61 ? 'mc-g' : v >= 40 ? 'mc-y' : 'mc-r') + '" aria-hidden="true">' + v + '</span>', ''));
+    out.push(rateChip(t('Metacritic'), '<span class="rb-mc ' + (v >= 61 ? 'mc-g' : v >= 40 ? 'mc-y' : 'mc-r') + '" aria-hidden="true">' + v + '</span>', ''));
   }
   if (r.letterboxd != null) out.push(rateChip('Letterboxd', RICON.letterboxd(), fmtNum(r.letterboxd, 1)));
   const tm = r.tmdb != null ? r.tmdb : fallbackTmdb;
@@ -53,7 +54,7 @@ export function compactRates(r, fallback) {
   r = r || {};
   const out = [];
   if (r.imdb != null) out.push(rateChip('IMDb', RICON.imdb(), fmtNum(r.imdb, 1)));
-  if (r.rottentomatoes != null) out.push(rateChip('Rotten Tomatoes', RICON.tomato(r.rottentomatoes), pct(r.rottentomatoes)));
+  if (r.rottentomatoes != null) out.push(rateChip(t('Rotten Tomatoes'), RICON.tomato(r.rottentomatoes), pct(r.rottentomatoes)));
   if (!out.length && fallback) out.push(rateChip('TMDB', RICON.tmdb(), pct(fallback)));
   return out.join('');
 }

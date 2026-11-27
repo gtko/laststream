@@ -125,7 +125,7 @@
 .lp-cm-grid { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); gap: 2px 6px; }
 .lp-cm-op {
   display: flex; align-items: center; gap: 12px; box-sizing: border-box; width: 100%; min-height: 44px; padding: 0 10px; border: 0;
-  border-radius: 10px; background: none; color: inherit; font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+  border-radius: 10px; background: none; color: inherit; font: inherit; font-size: 14px; text-align: start; cursor: pointer;
 }
 .lp-cm-op.is-on.lp-cm-op:not(.lp-cm-chk) { background: #24212e; }
 .lp-cm-op:disabled { opacity: 0.5; cursor: default; }
@@ -167,7 +167,7 @@
 .lp-cs-line { color: var(--soft); font-weight: 700; }
 .lp-cs-empty { color: #a19dae; }
 .lp-cs-friends li { color: #c9c4d6; font-size: 13px; }
-.lp-cs-note { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0 8px; border: 0; border-radius: 10px; background: #24212e; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.lp-cs-note { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0 8px; border: 0; border-radius: 10px; background: #24212e; color: inherit; font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
 .lp-cs-note:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .lp-cs-body ul { display: flex; flex-direction: column; gap: 4px; }
 .lp-cs-av { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 28%; color: #fff; font-family: Sora, sans-serif; font-weight: 800; font-size: 11px; }

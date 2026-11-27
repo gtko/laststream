@@ -3,6 +3,7 @@
  * (localStorage, 50 identifiants au plus). Le texte est toujours inséré tel quel (textContent), jamais interprété comme HTML. */
 import { fetchPublicAnnouncements } from '../data/announcements';
 import '../styles/announcement-banner.css';
+import { t } from '../i18n';
 
 export const DISMISSED_KEY = 'ls.announcements.dismissed';
 const MAX_DISMISSED = 50;
@@ -46,13 +47,13 @@ function bannerEl(a, onClose) {
   const warning = a.level === 'warning';
   const root = document.createElement('section');
   root.className = 'ann-banner is-' + (warning ? 'warning' : 'info');
-  root.setAttribute('aria-label', 'Annonce');
+  root.setAttribute('aria-label', t('Annonce'));
   root.dataset.annId = a.id;
   const body = document.createElement('div');
   body.className = 'ann-body';
   const kind = document.createElement('p');
   kind.className = 'ann-kind';
-  kind.textContent = warning ? 'Attention' : 'Information';
+  kind.textContent = warning ? t('Attention') : t('Information');
   const title = document.createElement('p');
   title.className = 'ann-title';
   title.textContent = typeof a.title === 'string' ? a.title : '';
@@ -63,7 +64,7 @@ function bannerEl(a, onClose) {
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'ann-close';
-  close.setAttribute('aria-label', 'Fermer l’annonce');
+  close.setAttribute('aria-label', t('Fermer l’annonce'));
   close.textContent = '×';
   close.addEventListener('click', onClose);
   root.append(body, close);

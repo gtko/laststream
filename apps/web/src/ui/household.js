@@ -12,18 +12,19 @@ import { ICON } from './icons.js';
 import { card } from './settings-ui.js';
 import { esc } from './util.js';
 import '../styles/household.css';
+import { t as tr, intlLocale } from '../i18n';
 
 // Ce module n’importe ni dom.js (qui lit #detail et #modal à son chargement) ni invites.js : il est chargé par l’éditeur de profil.
 
 const HOUR = 3600000;
 const DEFAULT_TTL = 72;
-const TTLS = [[24, '24 heures'], [72, '3 jours'], [168, '7 jours']];
+const TTLS = [[24, tr('24 heures')], [72, tr('3 jours')], [168, tr('7 jours')]];
 const COPIED_MS = 1600;
 const CLOCK_MS = 30000;
 /** Périmètre de l’anneau (cercle de rayon 24). */
 const RING = 2 * Math.PI * 24;
 const ACCENT = '#ff5a36';
-const DATE_FMT = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const DATE_FMT = new Intl.DateTimeFormat(intlLocale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const pad2 = (n) => String(n).padStart(2, '0');
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
@@ -41,13 +42,13 @@ export function expiryLabel(iso) {
 /** Temps restant avant `iso` (« 2 j 23 h », « 5 h 04 min », « 42 min »), ou « expiré ». */
 export function remainingLabel(iso, now = Date.now()) {
   const ms = Date.parse(iso) - now;
-  if (!(ms > 0)) return 'expiré';
+  if (!(ms > 0)) return tr('expiré');
   const d = Math.floor(ms / (24 * HOUR));
   const h = Math.floor((ms % (24 * HOUR)) / HOUR);
   const m = Math.floor((ms % HOUR) / 60000);
   if (d > 0) return d + ' j ' + h + ' h';
-  if (h > 0) return h + ' h ' + pad2(m) + ' min';
-  return Math.max(m, 1) + ' min';
+  if (h > 0) return tr('{h} h {m} min', { h, m: pad2(m) });
+  return tr('{m} min', { m: Math.max(m, 1) });
 }
 
 /** Part du délai restant (0 à 1), pour l’anneau. */
@@ -68,30 +69,30 @@ function createLink(profileId, ttl) {
 
 /** Messages des codes d’erreur des routes foyer (création du lien, retrait de l’accès). */
 const ERROR_TEXT = {
-  profile_locked: 'Cette session est verrouillée sur un profil : cette action n’est pas disponible.',
-  profile_has_login: 'Ce profil a déjà son propre accès : il ne peut plus recevoir d’invitation.',
-  principal_profile: 'Le profil principal du compte ne peut pas recevoir d’invitation.',
-  kid_profile: 'Un profil enfant ne peut pas recevoir d’invitation.',
-  adult_profile_required: 'Seul un profil adulte du compte peut inviter quelqu’un : choisis un profil adulte.',
-  pin_required: 'Déverrouille ton profil avec ton code PIN, puis réessaie.',
-  invalid_body: 'La demande n’a pas pu être envoyée : recharge la page et réessaie.',
-  profile_not_found: 'Ce profil n’existe plus : il a peut-être été supprimé.',
-  no_login: 'Ce profil n’a pas d’accès à retirer.',
-  rate_limited: 'Trop de demandes en peu de temps : réessaie dans quelques minutes.',
-  network: 'Serveur injoignable : réessaie dans un instant.',
+  profile_locked: tr('Cette session est verrouillée sur un profil : cette action n’est pas disponible.'),
+  profile_has_login: tr('Ce profil a déjà son propre accès : il ne peut plus recevoir d’invitation.'),
+  principal_profile: tr('Le profil principal du compte ne peut pas recevoir d’invitation.'),
+  kid_profile: tr('Un profil enfant ne peut pas recevoir d’invitation.'),
+  adult_profile_required: tr('Seul un profil adulte du compte peut inviter quelqu’un : choisis un profil adulte.'),
+  pin_required: tr('Déverrouille ton profil avec ton code PIN, puis réessaie.'),
+  invalid_body: tr('La demande n’a pas pu être envoyée : recharge la page et réessaie.'),
+  profile_not_found: tr('Ce profil n’existe plus : il a peut-être été supprimé.'),
+  no_login: tr('Ce profil n’a pas d’accès à retirer.'),
+  rate_limited: tr('Trop de demandes en peu de temps : réessaie dans quelques minutes.'),
+  network: tr('Serveur injoignable : réessaie dans un instant.'),
 };
 
 /** Message affiché pour une erreur des routes foyer : le texte du code connu, sinon `fallback`. */
-export function householdErrorText(err, fallback = 'Action impossible : réessaie dans un instant.') {
+export function householdErrorText(err, fallback = tr('Action impossible : réessaie dans un instant.')) {
   return ERROR_TEXT[householdErrorCode(err)] || fallback;
 }
 const WHEN_TEXT = {
-  loading: 'Création du lien…',
-  error: 'Pas de lien valide : crée un nouveau lien.',
-  revoked: 'Lien révoqué.',
-  expired: 'Lien expiré : crée un nouveau lien pour inviter.',
+  loading: tr('Création du lien…'),
+  error: tr('Pas de lien valide : crée un nouveau lien.'),
+  revoked: tr('Lien révoqué.'),
+  expired: tr('Lien expiré : crée un nouveau lien pour inviter.'),
 };
-const PLACEHOLDER = { loading: 'Création du lien…', error: 'Lien indisponible', revoked: 'Lien révoqué', expired: 'Lien expiré' };
+const PLACEHOLDER = { loading: tr('Création du lien…'), error: tr('Lien indisponible'), revoked: tr('Lien révoqué'), expired: tr('Lien expiré') };
 
 async function copyText(text, input) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -122,29 +123,29 @@ function panelHTML(p) {
     '<header class="hh-head">' +
     '<span class="hh-who"><span class="hh-av"' + avatarAttrs(p.avatar, p.avatarColor || ACCENT) + '>' + (p.avatar ? '' : esc(initial)) + '</span>' +
     '<span class="hh-key" aria-hidden="true">' + KEY_ICON + '</span></span>' +
-    '<div class="hh-titles"><p class="hh-eyebrow">Inviter sur ce profil</p>' +
+    '<div class="hh-titles"><p class="hh-eyebrow">' + tr('Inviter sur ce profil') + '</p>' +
     '<h2 class="hh-title" id="hh-title" tabindex="-1">' + esc(p.name) + '</h2></div>' +
-    '<button type="button" class="hh-x" data-hh-close aria-label="Fermer">' + ICON.close + '</button></header>' +
-    '<p class="hh-lead" id="hh-lead">' + esc(p.name) + ' choisit son identifiant et son mot de passe, puis se connecte directement sur ce profil.</p>' +
-    '<div class="hh-sec"><p class="hh-label" id="hh-ttl-label">Validité du lien</p>' +
+    '<button type="button" class="hh-x" data-hh-close aria-label="' + tr('Fermer') + '">' + ICON.close + '</button></header>' +
+    '<p class="hh-lead" id="hh-lead">' + tr('{name} choisit son identifiant et son mot de passe, puis se connecte directement sur ce profil.', { name: esc(p.name) }) + '</p>' +
+    '<div class="hh-sec"><p class="hh-label" id="hh-ttl-label">' + tr('Validité du lien') + '</p>' +
     '<div class="hh-ttls" role="group" aria-labelledby="hh-ttl-label">' + ttls + '</div></div>' +
-    '<div class="hh-sec"><p class="hh-label" id="hh-link-label">Lien d’invitation</p>' +
+    '<div class="hh-sec"><p class="hh-label" id="hh-link-label">' + tr('Lien d’invitation') + '</p>' +
     '<div class="hh-linkbox">' + LINK_ICON +
     '<input class="hh-link" type="text" readonly data-hh-link value="" aria-labelledby="hh-link-label" spellcheck="false">' +
-    '<button type="button" class="hh-btn hh-copy" data-hh-copy>Copier</button></div>' +
-    '<div class="hh-pair"><button type="button" class="hh-btn hh-soft" data-hh-share>' + SHARE_ICON + 'Partager…</button>' +
-    '<button type="button" class="hh-btn hh-soft" data-hh-copy-big>Copier le lien</button></div>' +
-    '<button type="button" class="hh-btn hh-soft hh-regen" data-hh-regen>Nouveau lien</button>' +
+    '<button type="button" class="hh-btn hh-copy" data-hh-copy>' + tr('Copier') + '</button></div>' +
+    '<div class="hh-pair"><button type="button" class="hh-btn hh-soft" data-hh-share>' + SHARE_ICON + tr('Partager…') + '</button>' +
+    '<button type="button" class="hh-btn hh-soft" data-hh-copy-big>' + tr('Copier le lien') + '</button></div>' +
+    '<button type="button" class="hh-btn hh-soft hh-regen" data-hh-regen>' + tr('Nouveau lien') + '</button>' +
     '<p class="hh-msg" role="status" data-hh-msg></p></div>' +
     '<div class="hh-time"><svg class="hh-ring" viewBox="0 0 56 56" aria-hidden="true" focusable="false">' +
     '<circle class="hh-ring-bg" cx="28" cy="28" r="24"></circle>' +
     '<circle class="hh-ring-fg" data-hh-ring cx="28" cy="28" r="24" stroke-dasharray="' + RING + '" stroke-dashoffset="' + RING + '" transform="rotate(-90 28 28)"></circle></svg>' +
-    '<div class="hh-time-t"><p class="hh-time-main" data-hh-when>Création du lien…</p>' +
-    '<p class="hh-time-sub">Usage unique · révocable à tout moment</p></div></div>' +
-    '<ul class="hh-checks"><li>' + CHECK_ICON + 'Tu ne verras jamais son mot de passe</li>' +
-    '<li>' + CHECK_ICON + 'Accès limité au profil ' + esc(p.name) + ', pas aux autres</li></ul>' +
-    '<footer class="hh-foot"><button type="button" class="hh-btn hh-revoke" data-hh-revoke>' + ICON.close + 'Révoquer le lien</button>' +
-    '<button type="button" class="hh-btn hh-done" data-hh-close data-hh-done>Terminé</button></footer>' +
+    '<div class="hh-time-t"><p class="hh-time-main" data-hh-when>' + tr('Création du lien…') + '</p>' +
+    '<p class="hh-time-sub">' + tr('Usage unique · révocable à tout moment') + '</p></div></div>' +
+    '<ul class="hh-checks"><li>' + CHECK_ICON + tr('Tu ne verras jamais son mot de passe') + '</li>' +
+    '<li>' + CHECK_ICON + tr('Accès limité au profil {name}, pas aux autres', { name: esc(p.name) }) + '</li></ul>' +
+    '<footer class="hh-foot"><button type="button" class="hh-btn hh-revoke" data-hh-revoke>' + ICON.close + tr('Révoquer le lien') + '</button>' +
+    '<button type="button" class="hh-btn hh-done" data-hh-close data-hh-done>' + tr('Terminé') + '</button></footer>' +
     '</aside>';
 }
 
@@ -168,8 +169,8 @@ function paint() {
   q('[data-hh-copy-big]').disabled = !ready;
   q('[data-hh-share]').disabled = !ready;
   q('[data-hh-revoke]').disabled = !ready;
-  q('[data-hh-copy]').textContent = copied ? 'Copié !' : 'Copier';
-  q('[data-hh-copy-big]').textContent = copied ? 'Copié !' : 'Copier le lien';
+  q('[data-hh-copy]').textContent = copied ? tr('Copié !') : tr('Copier');
+  q('[data-hh-copy-big]').textContent = copied ? tr('Copié !') : tr('Copier le lien');
   q('[data-hh-copy]').classList.toggle('is-done', copied);
   q('[data-hh-copy-big]').classList.toggle('is-done', copied);
   paintTime();
@@ -186,7 +187,7 @@ function paintTime() {
     ring.style.strokeDashoffset = String(RING);
     return;
   }
-  when.textContent = 'Expire ' + expiryLabel(invite.expiresAt) + ' · dans ' + remainingLabel(invite.expiresAt);
+  when.textContent = tr('Expire {expiresAt} · dans {expiresAt2}', { expiresAt: expiryLabel(invite.expiresAt), expiresAt2: remainingLabel(invite.expiresAt) });
   ring.style.strokeDashoffset = String(RING * (1 - remainingFraction(invite.expiresAt, ttl)));
 }
 
@@ -195,7 +196,7 @@ function checkExpiry() {
   if (!panel || panel.status !== 'ready' || !panel.invite) return;
   if (!(Date.parse(panel.invite.expiresAt) <= Date.now())) { paintTime(); return; }
   panel.status = 'expired';
-  setMsg('Ce lien a expiré : crée un nouveau lien pour inviter.', true);
+  setMsg(tr('Ce lien a expiré : crée un nouveau lien pour inviter.'), true);
   paint();
 }
 
@@ -232,7 +233,7 @@ async function requestLink(ttl) {
     current.invite = null;
     current.status = 'error';
     if (householdErrorCode(err) === 'profile_has_login') current.changed = true; // l’éditeur affichera « Son propre accès »
-    setMsg(householdErrorText(err, 'Lien non créé : réessaie dans un instant.'), true);
+    setMsg(householdErrorText(err, tr('Lien non créé : réessaie dans un instant.')), true);
     paint();
   }
 }
@@ -242,9 +243,9 @@ async function copyLink() {
   if (!current || !current.invite) return;
   const ok = await copyText(foyerLink(shareBase(), current.invite.token), current.node.querySelector('[data-hh-link]'));
   if (panel !== current) return;
-  if (!ok) { setMsg('Copie impossible : sélectionne le lien et copie-le.', true); return; }
+  if (!ok) { setMsg(tr('Copie impossible : sélectionne le lien et copie-le.'), true); return; }
   current.copied = true;
-  setMsg('Lien copié.');
+  setMsg(tr('Lien copié.'));
   paint();
   clearTimeout(current.timers.copy);
   current.timers.copy = setTimeout(() => { if (panel === current) { current.copied = false; paint(); } }, COPIED_MS);
@@ -256,7 +257,7 @@ async function shareLink() {
   const url = foyerLink(shareBase(), current.invite.token);
   if (typeof navigator.share === 'function') {
     try {
-      await navigator.share({ title: 'Invitation Laststream', text: 'Rejoins ' + current.profile.name + ' sur Laststream :', url });
+      await navigator.share({ title: tr('Invitation Laststream'), text: tr('Rejoins {name} sur Laststream :', { name: current.profile.name }), url });
       return;
     } catch (err) {
       if (err && err.name === 'AbortError') return; // partage annulé
@@ -277,13 +278,13 @@ async function revokeLink() {
     current.invite = null;
     current.status = 'revoked';
     current.changed = true;
-    setMsg('Lien révoqué : il ne fonctionne plus. « Nouveau lien » en crée un autre.');
+    setMsg(tr('Lien révoqué : il ne fonctionne plus. « Nouveau lien » en crée un autre.'));
     paint();
     current.node.querySelector('[data-hh-done]')?.focus();
   } catch {
     if (panel !== current) return;
     trigger.disabled = false;
-    setMsg('Révocation impossible : réessaie.', true);
+    setMsg(tr('Révocation impossible : réessaie.'), true);
   }
 }
 
@@ -379,9 +380,9 @@ export function openHouseholdPanel(profile, opts = {}) {
 
 /* ---------- Indicateur dans l’éditeur d’un profil ---------- */
 
-const inviteButtonHTML = () => '<button type="button" class="btn btn-ghost hh-row-btn" data-hh-invite>Inviter quelqu’un sur ce profil</button>';
-const UNLINK_LABEL = 'Retirer son accès';
-const UNLINK_CONFIRM = 'Confirmer le retrait';
+const inviteButtonHTML = () => '<button type="button" class="btn btn-ghost hh-row-btn" data-hh-invite>' + tr('Inviter quelqu’un sur ce profil') + '</button>';
+const UNLINK_LABEL = tr('Retirer son accès');
+const UNLINK_CONFIRM = tr('Confirmer le retrait');
 
 /** Ligne « Inviter » de l’éditeur d’un profil (chaîne vide si le profil n’est pas invitable). */
 export function profileInviteRowHTML(profile) {
@@ -390,7 +391,7 @@ export function profileInviteRowHTML(profile) {
     '<p class="hh-row-state" data-hh-state role="status" hidden></p>' + inviteButtonHTML() +
     '<div data-hh-unlink-box hidden>' +
     '<button type="button" class="btn btn-ghost hh-row-btn" data-hh-unlink>' + UNLINK_LABEL + '</button>' +
-    '<p class="hh-row-help">Son profil et sa bibliothèque restent ; seul son identifiant est supprimé et ses appareils sont déconnectés.</p>' +
+    '<p class="hh-row-help">' + tr('Son profil et sa bibliothèque restent ; seul son identifiant est supprimé et ses appareils sont déconnectés.') + '</p>' +
     '</div></div>';
 }
 
@@ -428,8 +429,8 @@ export async function paintProfileInviteRow(row, profile) {
     const pending = mine
       .filter((i) => i.state === 'pending' && Date.parse(i.expiresAt) > Date.now())
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
-    if (own) text = 'Son propre accès';
-    else if (pending) text = 'Invitation en attente · expire dans ' + remainingLabel(pending.expiresAt);
+    if (own) text = tr('Son propre accès');
+    else if (pending) text = tr('Invitation en attente · expire dans {expiresAt}', { expiresAt: remainingLabel(pending.expiresAt) });
   } catch {
     text = ''; // indicatif : sans lui, le bouton reste utile
   }
@@ -476,13 +477,13 @@ async function unlinkFromRow(button) {
     await removeProfileLogin(profileId, actor && actor !== auth.profile?.id ? actor : undefined);
     done = true;
   } catch (err) {
-    setRowState(row, householdErrorText(err, 'Retrait impossible : réessaie dans un instant.'));
+    setRowState(row, householdErrorText(err, tr('Retrait impossible : réessaie dans un instant.')));
   }
   button.disabled = false;
   if (!done) return;
   await refreshHouseholdInvites();
   await paintProfileInviteRow(row, { id: profileId });
-  setRowState(row, 'Accès retiré.');
+  setRowState(row, tr('Accès retiré.'));
 }
 
 /* ---------- Liste « Invitations du foyer » (réglages) ---------- */
@@ -491,7 +492,7 @@ async function unlinkFromRow(button) {
 let listData = null;
 /** Message bref sous la liste (révocation réussie ou non). */
 let listNote = '';
-const STATE_LABEL = { pending: 'En attente', used: 'Utilisée', expired: 'Expirée', revoked: 'Révoquée' };
+const STATE_LABEL = { pending: tr('En attente'), used: tr('Utilisée'), expired: tr('Expirée'), revoked: tr('Révoquée') };
 
 /** Pas de liste : session verrouillée, profil enfant, ou repli local sans serveur. */
 const listHidden = () => isProfileLocked() || isKidProfile() || !isServerMode() || !isMainProfile();
@@ -503,30 +504,30 @@ function shownState(inv) {
 
 function itemHTML(inv) {
   const state = shownState(inv);
-  const detail = state === 'pending' ? 'expire dans ' + remainingLabel(inv.expiresAt)
-    : state === 'used' && inv.usedAt ? 'acceptée le ' + expiryLabel(inv.usedAt) : '';
+  const detail = state === 'pending' ? tr('expire dans {expiresAt}', { expiresAt: remainingLabel(inv.expiresAt) })
+    : state === 'used' && inv.usedAt ? tr('acceptée le {usedAt}', { usedAt: expiryLabel(inv.usedAt) }) : '';
   return '<li class="hh-item is-' + esc(state) + '">' +
     '<span class="hh-dot" aria-hidden="true"></span>' +
     '<span class="hh-item-name">' + esc(inv.profileName) + '</span>' +
     '<span class="hh-item-state">' + esc(STATE_LABEL[state] || state) + (detail ? ' · ' + esc(detail) : '') + '</span>' +
-    (state === 'pending' ? '<button type="button" class="link-btn hh-item-rev" data-hh-list-revoke="' + esc(inv.id) + '" aria-label="Révoquer l’invitation sur ' + esc(inv.profileName) + '">Révoquer</button>' : '') +
+    (state === 'pending' ? '<button type="button" class="link-btn hh-item-rev" data-hh-list-revoke="' + esc(inv.id) + '" aria-label="' + tr('Révoquer l’invitation sur {profileName}', { profileName: esc(inv.profileName) }) + '">' + tr('Révoquer') + '</button>' : '') +
     '</li>';
 }
 
 /** Contenu de la liste selon son état de chargement (exporté pour les tests). */
 export function householdInvitesHTML(d, note = '') {
   const noteHTML = note ? '<p class="set-hint" role="status">' + esc(note) + '</p>' : '';
-  if (d === null) return '<p class="set-hint" role="status">Chargement des invitations…</p>';
-  if (d === 'error') return '<p class="set-hint" role="alert">Invitations indisponibles : le serveur ne répond pas. <button type="button" class="link-btn" data-hh-reload>Réessayer</button></p>';
-  if (!d.invites.length) return '<p class="set-hint">Aucune invitation sur un profil ces 30 derniers jours.</p>' + noteHTML;
+  if (d === null) return '<p class="set-hint" role="status">' + tr('Chargement des invitations…') + '</p>';
+  if (d === 'error') return '<p class="set-hint" role="alert">' + tr('Invitations indisponibles : le serveur ne répond pas.') + ' <button type="button" class="link-btn" data-hh-reload>' + tr('Réessayer') + '</button></p>';
+  if (!d.invites.length) return '<p class="set-hint">' + tr('Aucune invitation sur un profil ces 30 derniers jours.') + '</p>' + noteHTML;
   return '<ul class="hh-list">' + d.invites.map(itemHTML).join('') + '</ul>' + noteHTML;
 }
 
 /** Carte des réglages « Profil et compte » ; vide en session verrouillée, pour un profil enfant ou sans serveur. */
 export function householdInvitesCard() {
   if (listHidden()) return '';
-  return card('Invitations du foyer', '<div id="hh-invites-slot">' + householdInvitesHTML(listData, listNote) + '</div>',
-    { desc: 'Les personnes invitées sur un de tes profils créent leur identifiant et ne se connectent que sur ce profil.' });
+  return card(tr('Invitations du foyer'), '<div id="hh-invites-slot">' + householdInvitesHTML(listData, listNote) + '</div>',
+    { desc: tr('Les personnes invitées sur un de tes profils créent leur identifiant et ne se connectent que sur ce profil.') });
 }
 
 function paintList() {
@@ -557,9 +558,9 @@ async function revokeFromList(id, button) {
   if (button) button.disabled = true;
   try {
     await revokeHouseholdInvite(id);
-    listNote = 'Invitation révoquée.';
+    listNote = tr('Invitation révoquée.');
   } catch {
-    listNote = 'Révocation impossible : réessaie.';
+    listNote = tr('Révocation impossible : réessaie.');
   }
   await refreshHouseholdInvites();
 }

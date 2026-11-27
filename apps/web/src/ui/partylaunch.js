@@ -15,6 +15,7 @@ import { playFrom, requestFrom } from './sources-ui.js';
 import { avatarHTML, nameOf, SEEN_LABEL } from './socialFmt.js';
 import { state } from './state.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 let opener = null;
 /** Titre de la boîte quand ce n'est pas celui de la fiche ouverte (menu contextuel d'une affiche) ; null : la fiche. */
@@ -27,39 +28,39 @@ const ICON_USERS = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" 
 const ICON_PLAY = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>';
 
 function titleCardHTML(model) {
-  const name = model && model.name ? String(model.name) : 'Ce titre';
+  const name = model && model.name ? String(model.name) : t('Ce titre');
   const poster = model ? safeTmdbImage(model.posterPath, 'w185') : null;
-  const kind = model && model.type === 'tv' ? 'Série' : 'Film';
+  const kind = model && model.type === 'tv' ? t('Série') : t('Film');
   return '<div class="pld-card">' +
     (poster ? '<span class="pld-poster"><img src="' + esc(poster) + '" alt=""></span>' : '<span class="pld-poster is-empty" aria-hidden="true">' + ICON_PLAY + '</span>') +
-    '<span class="pld-card-t"><span class="pl-lb">Watch party</span><b class="pld-name">' + esc(name) + '</b><span class="pld-sub">' + kind + ' · chacun lit avec sa propre source</span></span></div>';
+    '<span class="pld-card-t"><span class="pl-lb">' + t('Watch party') + '</span><b class="pld-name">' + esc(name) + '</b><span class="pld-sub">' + t('{kind} · chacun lit avec sa propre source', { kind }) + '</span></span></div>';
 }
 
 function visibilityHTML(choices, kid) {
   const opt = (value, label, hint, on) => '<label class="pld-seg-o"><input type="radio" name="vis" value="' + value + '"' + (on ? ' checked' : '') + '><span><b>' + esc(label) + '</b><i>' + esc(hint) + '</i></span></label>';
-  return '<fieldset class="pld-fs"><legend class="pl-lb">Qui peut rejoindre</legend><div class="pld-seg">' +
-    opt('private', 'Privé', kid ? 'Profil enfant : salon privé uniquement' : 'Amis invités', true) +
-    (choices.includes('public') ? opt('public', 'Public', 'Listé dans « Watch parties »', false) : '') + '</div></fieldset>';
+  return '<fieldset class="pld-fs"><legend class="pl-lb">' + t('Qui peut rejoindre') + '</legend><div class="pld-seg">' +
+    opt('private', t('Privé'), kid ? t('Profil enfant : salon privé uniquement') : t('Amis invités'), true) +
+    (choices.includes('public') ? opt('public', t('Public'), t('Listé dans « Watch parties »'), false) : '') + '</div></fieldset>';
 }
 
 function friendsHTML() {
   const friends = sortedFriends();
-  if (!friends.length) return '<div class="pld-sec"><div class="pl-lb">Inviter des amis</div><p class="pl-empty pld-empty">Aucun ami pour l’instant : tu pourras partager le lien depuis le salon.</p></div>';
-  return '<div class="pld-sec"><div class="pl-lb">Inviter des amis maintenant</div><ul class="pld-friends">' + friends.map((f) =>
+  if (!friends.length) return '<div class="pld-sec"><div class="pl-lb">' + t('Inviter des amis') + '</div><p class="pl-empty pld-empty">' + t('Aucun ami pour l’instant : tu pourras partager le lien depuis le salon.') + '</p></div>';
+  return '<div class="pld-sec"><div class="pl-lb">' + t('Inviter des amis maintenant') + '</div><ul class="pld-friends">' + friends.map((f) =>
     '<li><label class="pld-friend">' + avatarHTML(f, 'ss-av-m', f.status === 'offline' ? '' : f.status) +
-    '<span class="pld-friend-t"><b>' + esc(nameOf(f)) + '</b><span>' + (f.watching ? 'Regarde ' + esc(f.watching.title) : esc(SEEN_LABEL[f.status] || 'Hors ligne')) + '</span></span>' +
-    '<input type="checkbox" name="friend" value="' + esc(f.pid) + '" aria-label="Inviter ' + esc(nameOf(f)) + '"><span class="pld-check" aria-hidden="true"></span></label></li>').join('') + '</ul></div>';
+    '<span class="pld-friend-t"><b>' + esc(nameOf(f)) + '</b><span>' + (f.watching ? t('Regarde {title}', { title: esc(f.watching.title) }) : esc(SEEN_LABEL[f.status] || t('Hors ligne'))) + '</span></span>' +
+    '<input type="checkbox" name="friend" value="' + esc(f.pid) + '" aria-label="' + t('Inviter {f}', { f: esc(nameOf(f)) }) + '"><span class="pld-check" aria-hidden="true"></span></label></li>').join('') + '</ul></div>';
 }
 
 /** Contenu de la boîte. `lobby` : le salon d'attente est possible (compte Laststream, profil adulte). */
 export function partyDialogHTML(kid, lobby = false, model = state.model) {
   const choices = partyVisibilityChoices(kid);
-  return '<form class="pld" data-wp-launch><h2 id="modal-title" class="sr-only">Watch party</h2>' + titleCardHTML(model) + visibilityHTML(choices, kid) +
-    (lobby ? friendsHTML() : '<p class="pld-note">La lecture démarre et un salon est créé : tes amis te rejoignent avec le lien.</p>') +
+  return '<form class="pld" data-wp-launch><h2 id="modal-title" class="sr-only">' + t('Watch party') + '</h2>' + titleCardHTML(model) + visibilityHTML(choices, kid) +
+    (lobby ? friendsHTML() : '<p class="pld-note">' + t('La lecture démarre et un salon est créé : tes amis te rejoignent avec le lien.') + '</p>') +
     '<div class="pld-actions">' + (lobby
-      ? '<button type="submit" class="pl-btn is-pri is-lg" data-wp-mode="lobby">' + ICON_USERS + esc('Ouvrir le salon d’attente') + '</button>' +
-        '<button type="submit" class="pld-link" data-wp-mode="direct">' + esc('Lancer tout de suite') + '</button>'
-      : '<button type="submit" class="pl-btn is-pri is-lg" data-wp-mode="direct">' + ICON_PLAY + esc('Lancer la watch party') + '</button>') + '</div></form>';
+      ? '<button type="submit" class="pl-btn is-pri is-lg" data-wp-mode="lobby">' + ICON_USERS + esc(t('Ouvrir le salon d’attente')) + '</button>' +
+        '<button type="submit" class="pld-link" data-wp-mode="direct">' + esc(t('Lancer tout de suite')) + '</button>'
+      : '<button type="submit" class="pl-btn is-pri is-lg" data-wp-mode="direct">' + ICON_PLAY + esc(t('Lancer la watch party')) + '</button>') + '</div></form>';
 }
 
 /**
@@ -75,7 +76,7 @@ export function openPartyDialog(btn, model = null) {
 }
 
 // Salon créé à la volée (« Lancer tout de suite ») : amis choisis invités, échec expliqué (PIN redemandé si besoin).
-partyBridge.onInvites = (room, pids) => { void partyBridge.waitForHost().then((ok) => { if (ok) return import('./partylobby.js').then((m) => m.inviteMany(room.id, pids), () => toast('Impossible de charger cet écran, vérifiez la connexion.')); }); };
+partyBridge.onInvites = (room, pids) => { void partyBridge.waitForHost().then((ok) => { if (ok) return import('./partylobby.js').then((m) => m.inviteMany(room.id, pids), () => toast(t('Impossible de charger cet écran, vérifiez la connexion.'))); }); };
 partyBridge.onCreateError = (err, retry, cancel) => { void handlePartyCreateError(err, { retry, cancel }); };
 
 modalBody.addEventListener('submit', (e) => {
@@ -94,7 +95,7 @@ modalBody.addEventListener('submit', (e) => {
   if (req && (model || !btn.dataset.playKey)) {
     const m = model || state.model;
     // Pas deux salons pour un même titre sur un double envoi.
-    void runOnce('party-create:' + req.key, () => import('./partylobby.js').then((l) => l.createLobbyFor(req, (m && m.posterPath) || null, visibility, btn, invite), () => toast('Impossible de charger cet écran, vérifiez la connexion.')), { cooldown: TOGGLE_COOLDOWN_MS, maxMs: 60000 });
+    void runOnce('party-create:' + req.key, () => import('./partylobby.js').then((l) => l.createLobbyFor(req, (m && m.posterPath) || null, visibility, btn, invite), () => toast(t('Impossible de charger cet écran, vérifiez la connexion.'))), { cooldown: TOGGLE_COOLDOWN_MS, maxMs: 60000 });
     return;
   }
   partyBridge.pending = { visibility };

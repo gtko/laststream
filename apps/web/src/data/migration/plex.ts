@@ -8,6 +8,7 @@ import {
   hasRef, imdbOf, isObject, num, posInt, str,
   type EpisodeRef, type MigrationBundle, type MigrationItem, type TitleRef,
 } from './types';
+import { t } from '../../i18n';
 
 export const PLEX_TV = 'https://plex.tv/api/v2/';
 const PRODUCT = 'Laststream';
@@ -48,14 +49,14 @@ async function getJson(url: string, init: RequestInit, fetchFn: FetchFn): Promis
   try {
     res = await fetchFn(url, { ...init, signal: ctrl.signal });
   } catch {
-    throw new PlexError('network', 'Plex est injoignable depuis cet appareil.');
+    throw new PlexError('network', t('Plex est injoignable depuis cet appareil.'));
   } finally {
     clearTimeout(timer);
   }
-  if (res.status === 401 || res.status === 403) throw new PlexError('denied', 'Plex a refusé l’accès : autorise Laststream puis réessaie.');
-  if (res.status === 404) throw new PlexError('expired', 'Demande d’autorisation expirée.');
-  if (!res.ok) throw new PlexError('other', 'Réponse inattendue de Plex (HTTP ' + res.status + ').');
-  try { return await res.json(); } catch { throw new PlexError('other', 'Réponse illisible de Plex.'); }
+  if (res.status === 401 || res.status === 403) throw new PlexError('denied', t('Plex a refusé l’accès : autorise Laststream puis réessaie.'));
+  if (res.status === 404) throw new PlexError('expired', t('Demande d’autorisation expirée.'));
+  if (!res.ok) throw new PlexError('other', t('Réponse inattendue de Plex (HTTP {status}).', { status: res.status }));
+  try { return await res.json(); } catch { throw new PlexError('other', t('Réponse illisible de Plex.')); }
 }
 
 // ---------- Autorisation ----------
@@ -67,7 +68,7 @@ export async function createPlexPin(fetchFn: FetchFn = defaultFetch): Promise<Pl
   const data = await getJson(PLEX_TV + 'pins?strong=true', { method: 'POST', headers: headers() }, fetchFn);
   const id = isObject(data) ? posInt(data.id) : undefined;
   const code = isObject(data) ? str(data.code) : '';
-  if (!id || !code) throw new PlexError('other', 'Plex n’a pas fourni de code.');
+  if (!id || !code) throw new PlexError('other', t('Plex n’a pas fourni de code.'));
   const q = new URLSearchParams({ clientID: plexClientId(), code, 'context[device][product]': PRODUCT });
   return { id, code, authUrl: 'https://app.plex.tv/auth#?' + q.toString() };
 }
@@ -92,7 +93,7 @@ export async function listPlexServers(token: string, fetchFn: FetchFn = defaultF
     const conns = (Array.isArray(o.connections) ? o.connections : []).filter(isObject);
     const rank = (c: Record<string, unknown>): number => (c.relay === true ? 3 : 0) + (str(c.protocol) === 'https' ? 0 : 2) + (c.local === true ? 0 : 1);
     const uris = conns.sort((a, b) => rank(a) - rank(b)).map((c) => str(c.uri)).filter(Boolean);
-    return { name: str(o.name) || 'Serveur Plex', token: str(o.accessToken) || token, uris, owned: o.owned === true };
+    return { name: str(o.name) || t('Serveur Plex'), token: str(o.accessToken) || token, uris, owned: o.owned === true };
   }).filter((s) => s.uris.length > 0);
 }
 
@@ -104,7 +105,7 @@ async function reachable(server: PlexServer, fetchFn: FetchFn): Promise<string> 
       return uri.replace(/\/+$/, '');
     } catch { /* adresse suivante */ }
   }
-  throw new PlexError('network', 'Le serveur « ' + server.name + ' » ne répond à aucune de ses adresses depuis cet appareil.');
+  throw new PlexError('network', t('Le serveur « {name} » ne répond à aucune de ses adresses depuis cet appareil.', { name: server.name }));
 }
 
 // ---------- Historique ----------
@@ -194,10 +195,10 @@ export async function readPlexHistory(server: PlexServer, userToken: string, opt
     const ref = refs.get(k) ?? {};
     const isMovie = group[0].type === 'movie';
     const at = Math.max(...group.map((r) => r.viewedAt));
-    const title = group[0].title || 'Sans titre';
+    const title = group[0].title || t('Sans titre');
     const uid = 'plex:' + server.name + ':' + k;
     if (!hasRef(ref)) {
-      items.push({ uid, action: 'watched', type: isMovie ? 'movie' : 'tv', ref, title, at, skipReason: 'Fiche Plex sans identifiant IMDb, TMDB ni TVDB (agent local ou fiche supprimée)' });
+      items.push({ uid, action: 'watched', type: isMovie ? 'movie' : 'tv', ref, title, at, skipReason: t('Fiche Plex sans identifiant IMDb, TMDB ni TVDB (agent local ou fiche supprimée)') });
       continue;
     }
     if (isMovie) { items.push({ uid, action: 'watched', type: 'movie', ref, title, at }); continue; }
@@ -205,7 +206,7 @@ export async function readPlexHistory(server: PlexServer, userToken: string, opt
     for (const r of group) if (r.season !== undefined && r.season > 0 && r.episode !== undefined && r.episode > 0) eps.set(r.season + ':' + r.episode, { season: r.season, episode: r.episode });
     if (eps.size) items.push({ uid: uid + ':' + eps.size, action: 'watched', type: 'tv', ref, title, at, episodes: [...eps.values()] });
   }
-  const notes = account === null && !server.owned ? ['Compte introuvable sur ce serveur partagé : l’historique de tous ses utilisateurs est lu.'] : [];
-  if (!rows.length) notes.push('Aucun visionnage dans l’historique de ce serveur.');
+  const notes = account === null && !server.owned ? [t('Compte introuvable sur ce serveur partagé : l’historique de tous ses utilisateurs est lu.')] : [];
+  if (!rows.length) notes.push(t('Aucun visionnage dans l’historique de ce serveur.'));
   return { source: 'plex', items, addons: [], notes };
 }
