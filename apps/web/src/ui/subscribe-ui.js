@@ -43,6 +43,8 @@ function errorText(err) {
   if (err instanceof UserApiError) {
     if (err.code === 'already_subscribed') return 'Ton abonnement est déjà actif.';
     if (err.code === 'manage_in_portal') return 'Ton abonnement est résilié mais encore en cours : réactive-le depuis les réglages (« Reprendre mon abonnement »).';
+    if (err.code === 'amount_too_low') return 'Le tarif « J’adore » commence au prix de base.';
+    if (err.code === 'amount_too_high' || err.code === 'invalid_amount') return 'Ce montant n’est pas accepté : choisis un nombre entier d’euros.';
     if (err.code === 'not_subscribed') return 'Aucun abonnement en cours sur ce compte.';
     if (err.code === 'billing_unavailable' || err.code === 'network') return 'Le paiement est momentanément indisponible. Réessaie dans un instant.';
     if (err.code === 'profile_locked') return 'Seul le titulaire du compte peut gérer l’abonnement.';
@@ -64,12 +66,72 @@ function factsHTML() {
     '</ul>';
 }
 
+// ---------- Choix du tarif : « Soutenir » (prix de base) ou « Soutenir, J'adore » (prix libre, au moins le prix de base) ----------
+
+/** Choix en cours, partagé entre l'écran d'activation et la carte des réglages. */
+const tier = { kind: 'standard', euros: '' };
+const QUICK_EUROS = [36, 50, 100];
+
+const minEuros = (p) => Math.ceil(p.amount / 100);
+/** Montant annuel choisi en centimes, undefined pour le tarif de base, ou null si la saisie n'est pas valable. */
+function chosenCents(p, max) {
+  if (tier.kind !== 'jadore') return undefined;
+  const euros = Number(tier.euros.replace(',', '.').trim());
+  if (!Number.isInteger(euros) || euros < minEuros(p) || euros * 100 > (max || 99999999)) return null;
+  return euros * 100 === p.amount ? undefined : euros * 100;
+}
+
+/** Texte du bouton de paiement selon le tarif choisi. */
+function ctaText(p, prefix, max) {
+  const cents = chosenCents(p, max);
+  if (cents === null) return prefix + ' · choisis ton montant';
+  return prefix + ' · ' + money(cents === undefined ? p.amount : cents, p.currency) + ' par ' + per(p.interval);
+}
+
+/** Les deux tarifs, sous forme de choix ; `half` : remise filleul (tarif de base seulement). */
+function tiersHTML(p, half) {
+  if (!tier.euros) tier.euros = String(Math.max(50, minEuros(p)));
+  const opt = (kind, title, price, sub) =>
+    '<button type="button" class="sub-tier' + (tier.kind === kind ? ' is-on' : '') + '" role="radio" aria-checked="' + (tier.kind === kind) + '" data-tier="' + kind + '">' +
+      '<span class="sub-tier-k">' + title + '</span><span class="sub-tier-p">' + esc(price) + '</span><span class="sub-tier-s">' + esc(sub) + '</span></button>';
+  const base = money(p.amount, p.currency);
+  const monthly = p.interval === 'year' ? 'soit ' + money(Math.round(p.amount / 12), p.currency) + ' par mois' : 'par ' + per(p.interval);
+  const chips = QUICK_EUROS.filter((e) => e > minEuros(p)).map((e) => '<button type="button" class="sub-chip" data-tier-pick="' + e + '">' + esc(money(e * 100, p.currency)) + '</button>').join('');
+  return '<div class="sub-tiers" role="radiogroup" aria-label="Tarif">' +
+      opt('standard', 'Soutenir', base + ' par ' + per(p.interval), half ? 'moitié prix la 1re année avec ton billet' : monthly) +
+      opt('jadore', 'Soutenir, J’adore', 'Ton prix, dès ' + base, 'pour aller plus loin, sans plafond') +
+    '</div>' +
+    '<div class="sub-jadore"' + (tier.kind === 'jadore' ? '' : ' hidden') + '>' +
+      '<label class="sub-jadore-l" for="sub-amount">Ton montant par ' + per(p.interval) + '</label>' +
+      '<div class="sub-jadore-row"><div class="auth-input sub-amount-input"><input id="sub-amount" type="text" inputmode="numeric" autocomplete="off" value="' + esc(tier.euros) + '" data-tier-amount aria-describedby="sub-amount-hint"><span class="sub-cur">€</span></div>' + chips + '</div>' +
+      '<p class="sub-jadore-hint" id="sub-amount-hint">' + esc(base) + ' minimum, en euros entiers. Le même montant est prélevé chaque ' + (p.interval === 'month' ? 'mois' : 'année') + ', résiliable quand tu veux.' +
+        (half ? ' La remise du billet de parrainage vaut pour le tarif de base.' : '') + '</p>' +
+    '</div>';
+}
+
+/** Met à jour le choix et le bouton sans redessiner (la saisie garde le focus). */
+function syncTier(hostEl, p, max) {
+  hostEl.querySelectorAll('[data-tier]').forEach((b) => {
+    const on = b.getAttribute('data-tier') === tier.kind;
+    b.classList.toggle('is-on', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+  const box = hostEl.querySelector('.sub-jadore');
+  if (box) box.hidden = tier.kind !== 'jadore';
+  const cta = hostEl.querySelector('[data-tier-cta]');
+  if (cta && !cta.hasAttribute('data-busy')) {
+    cta.textContent = ctaText(p, cta.getAttribute('data-tier-cta') || '', max);
+    cta.toggleAttribute('disabled', chosenCents(p, max) === null);
+  }
+  const input = hostEl.querySelector('[data-tier-amount]');
+  if (input) input.setAttribute('aria-invalid', String(tier.kind === 'jadore' && chosenCents(p, max) === null));
+}
+
 /** Écran bloquant « Activer ton accès » (compte sans abonnement en cours sur le service en ligne). */
 function subscribeHTML(b, state) {
   const p = priceOf(b);
   const half = b && b.referral && b.referral.discount;
   const canManage = !b || b.canManage !== false;
-  const monthly = p.interval === 'year' ? ' (soit ' + money(Math.round(p.amount / 12), p.currency) + ' par mois)' : '';
   const expired = b && (b.status === 'canceled' || b.status === 'unpaid' || b.status === 'past_due' || b.status === 'incomplete_expired');
   const lead = expired
     ? 'Ton abonnement de soutien est arrivé à échéance. Renouvelle-le pour retrouver tes profils et ta bibliothèque.'
@@ -78,16 +140,18 @@ function subscribeHTML(b, state) {
     ? '<p class="sub-offer"><strong>Invité par un ami :</strong> ta première année est à moitié prix, ' + esc(money(Math.round(p.amount / 2), p.currency)) + ' au lieu de ' + esc(money(p.amount, p.currency)) + '.</p>'
     : '';
   const msg = state.msg ? '<p class="auth-msg' + (state.info ? ' is-info' : '') + '" role="status">' + esc(state.msg) + '</p>' : '';
+  const max = b && b.maxAmount;
+  const invalid = chosenCents(p, max) === null;
   const actions = canManage
-    ? '<button type="button" class="btn btn-primary auth-btn" data-sub-checkout' + (state.busy ? ' disabled' : '') + '>' +
-        (state.busy === 'checkout' ? SPIN + 'Ouverture du paiement…' : 'Activer mon accès · ' + esc(money(p.amount, p.currency)) + ' par ' + per(p.interval)) + '</button>' +
+    ? tiersHTML(p, half) +
+      '<button type="button" class="btn btn-primary auth-btn" data-sub-checkout data-tier-cta="Activer mon accès"' + (state.busy ? ' data-busy' : '') + (state.busy || invalid ? ' disabled' : '') + '>' +
+        (state.busy === 'checkout' ? SPIN + 'Ouverture du paiement…' : esc(ctaText(p, 'Activer mon accès', max))) + '</button>' +
       (b && b.hasCustomer ? '<button type="button" class="btn auth-btn auth-btn-alt" data-sub-portal' + (state.busy ? ' disabled' : '') + '>Gérer mon abonnement</button>' : '') +
       '<button type="button" class="auth-link" data-sub-check' + (state.busy ? ' disabled' : '') + '>' + (state.busy === 'check' ? 'Vérification…' : 'J’ai payé, vérifier') + '</button>'
     : '<p class="auth-note">Seul le titulaire du compte peut activer l’abonnement. Il couvre tout le foyer : demande-lui de le renouveler.</p>' +
       '<button type="button" class="auth-link" data-sub-check>Vérifier à nouveau</button>';
-  return '<div class="auth-card auth-panel sub-panel"><div class="auth-brand">' + brand() + '</div>' +
+  return '<div class="auth-card auth-panel sub-panel" data-tier-host><div class="auth-brand">' + brand() + '</div>' +
     '<div class="auth-head"><h1 class="auth-title">Activer ton accès</h1><p class="auth-lead">' + esc(lead) + '</p></div>' +
-    '<p class="sub-price"><span class="sub-amount">' + esc(money(p.amount, p.currency)) + '</span> par ' + per(p.interval) + esc(monthly) + '</p>' +
     offer + factsHTML() + msg + '<div class="sub-actions">' + actions + '</div>' +
     '<button type="button" class="btn btn-ghost" data-auth-signout>Se déconnecter</button></div>';
 }
@@ -157,7 +221,9 @@ async function startCheckout() {
   state = { busy: 'checkout', msg: '', info: false };
   paint();
   try {
-    const { url } = await billingCheckout();
+    const cents = chosenCents(priceOf(current), current && current.maxAmount);
+    if (cents === null) throw new UserApiError(400, 'invalid_amount');
+    const { url } = await billingCheckout(cents);
     if (openStripe(url) === 'outside') state = { busy: '', msg: 'Termine le paiement dans ton navigateur, puis reviens ici.', info: true };
   } catch (err) {
     state = { busy: '', msg: errorText(err), info: false };
@@ -177,6 +243,17 @@ async function openPortal(after) {
 document.addEventListener('click', (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t) return;
+  const tierBtn = t.closest('[data-tier], [data-tier-pick]');
+  const tierHost = tierBtn && tierBtn.closest('[data-tier-host]');
+  if (tierBtn && tierHost) {
+    const pick = tierBtn.getAttribute('data-tier-pick');
+    if (pick) { tier.kind = 'jadore'; tier.euros = pick; const input = tierHost.querySelector('[data-tier-amount]'); if (input) input.value = pick; }
+    else tier.kind = tierBtn.getAttribute('data-tier') === 'jadore' ? 'jadore' : 'standard';
+    const b = tierHost.classList.contains('sub-panel') ? current : cardBilling;
+    syncTier(tierHost, priceOf(b), b && b.maxAmount);
+    if (tier.kind === 'jadore' && !pick) { const input = tierHost.querySelector('[data-tier-amount]'); if (input) input.focus(); }
+    return;
+  }
   if (t.closest('.sub-panel')) {
     if (t.closest('[data-sub-checkout]')) { void startCheckout(); return; }
     if (t.closest('[data-sub-portal]')) { void openPortal((msg) => { state = { busy: '', msg, info: false }; paint(); }); return; }
@@ -187,7 +264,12 @@ document.addEventListener('click', (e) => {
     }
     return;
   }
-  if (t.closest('[data-bill-checkout]')) { void billingCheckout().then(({ url }) => openStripe(url), (err) => setCardMsg(errorText(err))); return; }
+  if (t.closest('[data-bill-checkout]')) {
+    const cents = chosenCents(priceOf(cardBilling), cardBilling && cardBilling.maxAmount);
+    if (cents === null) { setCardMsg(errorText(new UserApiError(400, 'invalid_amount'))); return; }
+    void billingCheckout(cents).then(({ url }) => openStripe(url), (err) => setCardMsg(errorText(err)));
+    return;
+  }
   if (t.closest('[data-bill-portal]')) { void openPortal(setCardMsg); return; }
   if (t.closest('[data-bill-cancel]')) { cardConfirm = true; void refreshBillingCard(); return; }
   if (t.closest('[data-bill-keep]')) { cardConfirm = false; void refreshBillingCard(); return; }
@@ -195,7 +277,20 @@ document.addEventListener('click', (e) => {
   if (t.closest('[data-bill-resume]')) void changeCancel(false);
 });
 
+document.addEventListener('input', (e) => {
+  const input = e.target instanceof HTMLInputElement && e.target.hasAttribute('data-tier-amount') ? e.target : null;
+  const tierHost = input && input.closest('[data-tier-host]');
+  if (!input || !tierHost) return;
+  tier.kind = 'jadore';
+  tier.euros = input.value;
+  const b = tierHost.classList.contains('sub-panel') ? current : cardBilling;
+  syncTier(tierHost, priceOf(b), b && b.maxAmount);
+});
+
 // ---------- Réglages : carte « Abonnement de soutien » ----------
+
+/** Dernier état lu pour la carte (prix, plafond du tarif « J'adore »). */
+let cardBilling = null;
 
 /** Vrai pendant la confirmation de la résiliation (deuxième clic). */
 let cardConfirm = false;
@@ -243,7 +338,12 @@ function billingCardBody(b) {
   const p = priceOf(b);
   const manage = b.canManage !== false;
   const buttons = [];
-  if (manage && !b.subscribed && b.reason !== 'owner') buttons.push('<button type="button" class="btn btn-primary btn-sm" data-bill-checkout>S’abonner · ' + esc(money(p.amount, p.currency)) + ' par ' + per(p.interval) + '</button>');
+  const canSubscribe = manage && !b.subscribed && b.reason !== 'owner';
+  const half = b.referral && b.referral.discount;
+  const subscribeRow = canSubscribe
+    ? '<div class="sub-card-tiers" data-tier-host>' + tiersHTML(p, half) +
+        '<button type="button" class="btn btn-primary btn-sm" data-bill-checkout data-tier-cta="S’abonner"' + (chosenCents(p, b.maxAmount) === null ? ' disabled' : '') + '>' + esc(ctaText(p, 'S’abonner', b.maxAmount)) + '</button></div>'
+    : '';
   if (manage && b.hasCustomer) buttons.push('<button type="button" class="btn btn-ghost btn-sm" data-bill-portal>Carte et factures</button>');
   const active = manage && b.subscribed && b.reason === 'paid';
   let cancelRow = '';
@@ -259,7 +359,7 @@ function billingCardBody(b) {
   const referral = r && r.rewardMonths > 0
     ? rowHTML('Parrainage', 'Chaque ami qui s’abonne avec un de tes billets t’offre ' + r.rewardMonths + ' mois, et paie sa première année à moitié prix.', () => '<span class="set-val">' + (r.earnedMonths > 0 ? r.earnedMonths + ' mois gagnés' : 'Aucun mois gagné') + '</span>')
     : '';
-  return rowHTML('État', statusText(b), () => buttons.join('')) + cancelRow + referral +
+  return rowHTML('État', statusText(b), () => buttons.join('')) + subscribeRow + cancelRow + referral +
     '<p class="set-hint" data-bill-msg role="status"></p>' +
     '<p class="set-hint">L’abonnement de soutien couvre tout ton foyer. Laststream ne fournit aucune extension Stremio : tes sources restent les tiennes. Le code est public sur <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">GitHub</a>.</p>';
 }
@@ -279,6 +379,7 @@ export async function refreshBillingCard() {
   }
   const slot = document.querySelector('[data-bill-slot]');
   if (!slot || !b.enabled) return;
+  cardBilling = b;
   // eslint-disable-next-line no-restricted-syntax -- gabarit local, textes dynamiques échappés par esc (prix, état)
   slot.innerHTML = card('Abonnement de soutien', billingCardBody(b));
 }

@@ -27,6 +27,16 @@ invité du foyer suivent l'abonnement du compte hôte. Limite connue : les route
 configuration chiffrée et non par la session ; un client qui garde une ancienne configuration en cache peut encore s'en
 servir. L'app, elle, ne démarre pas sans accès.
 
+## Deux tarifs
+
+- **Soutenir** : le prix `STRIPE_PRICE_ID` (24 € par an).
+- **Soutenir, J'adore** : la personne choisit son montant annuel, au moins le prix de base, sans autre plafond que la
+  limite de Stripe (999 999,99 €). `POST /user/billing/checkout` reçoit `{ "amount": <centimes> }` ; Checkout crée alors
+  un prix (`price_data`) sur le **produit** du prix de base, renouvelé chaque année au même montant. Un montant égal au
+  prix de base revient au tarif « Soutenir ». La remise du filleul (moitié prix) ne vaut que pour le tarif de base. Le
+  tarif choisi est noté dans `metadata.tier` (`standard` ou `jadore`). Pour changer de montant : résilier puis reprendre
+  un abonnement à la fin de la période.
+
 ## Parcours
 
 1. L'app reçoit `402` au chargement des profils et affiche « Activer ton accès » (`apps/web/src/ui/subscribe-ui.js`).

@@ -19,7 +19,7 @@ export class StripeError extends Error {
   }
 }
 
-type FormValue = string | number | boolean | undefined | null | FormValue[] | { [key: string]: FormValue };
+export type FormValue = string | number | boolean | undefined | null | FormValue[] | { [key: string]: FormValue };
 
 /** Encode des paramètres imbriqués à la manière de Stripe : a[b][0][c]=… ; undefined et null sont omis. */
 export function encodeForm(params: Record<string, FormValue>): string {

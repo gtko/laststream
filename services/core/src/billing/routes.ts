@@ -7,7 +7,7 @@ import { assertNotLocked, nowIso, type Session, sessionOf } from '../user/sessio
 import { UserApiError } from '../user/validation.js';
 import { accessReason, accessUntil, addMonths, type BillingState, EMPTY_BILLING } from './access.js';
 import { type BillingConfig, billingConfig } from './config.js';
-import { createStripeClient, periodEnd, StripeError, type StripeClient, type StripeSubscription, verifyStripeSignature } from './stripe.js';
+import { createStripeClient, type FormValue, periodEnd, StripeError, type StripeClient, type StripeSubscription, verifyStripeSignature } from './stripe.js';
 
 /** Statuts d'un abonnement encore en cours (paiement à venir ou en relance). */
 const RUNNING: ReadonlySet<string> = new Set(['active', 'trialing', 'past_due']);
@@ -20,6 +20,24 @@ interface PriceView {
   amount: number;
   currency: string;
   interval: string;
+  /** Produit Stripe du prix (le tarif « J'adore » crée un prix libre sur ce même produit). */
+  product: string | null;
+}
+
+/** Plus grand montant qu'accepte Stripe pour un prix (8 chiffres, en centimes). */
+const MAX_AMOUNT = 99_999_999;
+
+/**
+ * Montant annuel demandé par le tarif « Soutenir, J'adore » (centimes, entier), ou undefined pour le tarif de base.
+ * Le minimum est le prix de base : un montant égal revient au tarif de base.
+ */
+function chosenAmount(body: unknown, base: PriceView): number | undefined {
+  const raw = isRecord(body) ? body.amount : undefined;
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) throw new UserApiError(400, 'invalid_amount');
+  if (raw < base.amount) throw new UserApiError(400, 'amount_too_low');
+  if (raw > MAX_AMOUNT) throw new UserApiError(400, 'amount_too_high');
+  return raw === base.amount ? undefined : raw;
 }
 
 let priceCache: { id: string; at: number; value: PriceView | null } | undefined;
@@ -28,9 +46,12 @@ async function priceOf(stripe: StripeClient, priceId: string): Promise<PriceView
   if (priceCache !== undefined && priceCache.id === priceId && Date.now() - priceCache.at < PRICE_TTL_MS) return priceCache.value;
   let value: PriceView | null = null;
   try {
-    const price = await stripe.get<{ unit_amount?: number; currency?: string; recurring?: { interval?: string } }>(`/prices/${encodeURIComponent(priceId)}`);
+    const price = await stripe.get<{ unit_amount?: number; currency?: string; recurring?: { interval?: string }; product?: string | { id?: string } }>(
+      `/prices/${encodeURIComponent(priceId)}`,
+    );
     if (typeof price.unit_amount === 'number' && typeof price.currency === 'string') {
-      value = { amount: price.unit_amount, currency: price.currency, interval: price.recurring?.interval ?? 'year' };
+      const product = typeof price.product === 'string' ? price.product : (price.product?.id ?? null);
+      value = { amount: price.unit_amount, currency: price.currency, interval: price.recurring?.interval ?? 'year', product };
     }
   } catch {
     value = null;
@@ -184,7 +205,8 @@ export function registerBillingUserRoutes(router: App, deps: AppDeps, backend: U
       freeUntil: config.freeUntil ?? null,
       canManage: session.lockedProfileId === null,
       hasCustomer: state.customerId !== null,
-      price: await priceOf(stripeOf(deps, config), config.priceId),
+      price: await priceOf(stripeOf(deps, config), config.priceId).then((p) => (p === null ? null : { amount: p.amount, currency: p.currency, interval: p.interval })),
+      maxAmount: MAX_AMOUNT,
       referral: {
         discount: inviter !== null && config.referralCouponId !== undefined,
         rewardMonths: config.referralRewardMonths,
@@ -208,18 +230,36 @@ export function registerBillingUserRoutes(router: App, deps: AppDeps, backend: U
     // Accès déjà acquis (offert, transition) : le premier prélèvement attend la fin de cet accès.
     const covered = later(state.compUntil, config.freeUntil ?? null);
     const trialEnd = covered !== null && Date.parse(covered) - now > MIN_TRIAL_MS ? Math.floor(Date.parse(covered) / 1000) : undefined;
-    const discount = state.firstPaidAt === null && config.referralCouponId !== undefined && (await users.billingInviterOf(accountId)) !== null;
-    const base = baseUrl(c, config);
     const stripe = stripeOf(deps, config);
+    // Tarif « Soutenir, J'adore » : montant libre, au moins le prix de base, renouvelé chaque année au même montant.
+    let amount: number | undefined;
+    let lineItem: Record<string, FormValue> = { price: config.priceId, quantity: 1 };
+    const body: unknown = c.get('body');
+    if (isRecord(body) && body.amount !== undefined && body.amount !== null) {
+      const basePrice = await priceOf(stripe, config.priceId);
+      if (basePrice === null || basePrice.product === null) throw new UserApiError(502, 'billing_unavailable');
+      amount = chosenAmount(body, basePrice);
+      if (amount !== undefined) {
+        lineItem = {
+          quantity: 1,
+          price_data: { currency: basePrice.currency, product: basePrice.product, unit_amount: amount, recurring: { interval: basePrice.interval } },
+        };
+      }
+    }
+    // La remise du filleul (moitié prix) vaut pour le tarif de base seulement.
+    const discount =
+      amount === undefined && state.firstPaidAt === null && config.referralCouponId !== undefined && (await users.billingInviterOf(accountId)) !== null;
+    const tier = amount === undefined ? 'standard' : 'jadore';
+    const base = baseUrl(c, config);
     try {
       const checkout = await stripe.post<{ url?: string }>('/checkout/sessions', {
         mode: 'subscription',
-        line_items: [{ price: config.priceId, quantity: 1 }],
+        line_items: [lineItem],
         client_reference_id: accountId,
         customer: state.customerId ?? undefined,
         customer_update: state.customerId !== null && config.automaticTax ? { address: 'auto', name: 'auto' } : undefined,
-        metadata: { account_id: accountId },
-        subscription_data: { metadata: { account_id: accountId }, trial_end: trialEnd },
+        metadata: { account_id: accountId, tier },
+        subscription_data: { metadata: { account_id: accountId, tier }, trial_end: trialEnd },
         discounts: discount ? [{ coupon: config.referralCouponId }] : undefined,
         allow_promotion_codes: discount ? undefined : true,
         automatic_tax: config.automaticTax ? { enabled: true } : undefined,
