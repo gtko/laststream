@@ -63,10 +63,10 @@ jobs:
         run: npm run build:ci
 
       # Budget du premier chargement (chunks du démarrage, manifeste Vite, LAST-129) : aucun chunk au-dessus de 500 Ko brut,
-      # et total gzip plafonné à 452 Ko (bloquant, ratchet : ~419 Ko aujourd'hui ; un lecteur rechargé au démarrage le pousse à ~637 Ko).
+      # et total gzip plafonné à 462 Ko (bloquant ; relevé de 452 à 462 Ko par LAST-1658 : moteur de traduction et appels t() ≈ 9 Ko ; ratchet : ~419 Ko aujourd'hui ; un lecteur rechargé au démarrage le pousse à ~637 Ko).
       # Objectif web : 350 Ko gzip, à atteindre en abaissant ce plafond.
       - name: Budget du premier chargement
-        run: npm run budget -- --max-kb 500 --max-total-gzip-kb 452 --strict-gzip
+        run: npm run budget -- --max-kb 500 --max-total-gzip-kb 462 --strict-gzip
 
       # knip : version exacte épinglée en devDependencies, exécutée depuis node_modules par npm run knip.
       - name: Code mort (knip)
