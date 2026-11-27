@@ -1,0 +1,278 @@
+<!doctype html>
+<!-- Page générée par guides-capture/build-guides.mjs (texte : guides-content.mjs) : modifier la source, pas ce fichier. -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실시간 TV 설정하기 (M3U 재생 목록) - Laststream 가이드</title>
+<meta name="description" content="실시간 TV는 공급자나 IPTV 서비스의 M3U 재생 목록과, 선택 사항인 XMLTV 편성표를 읽어요.">
+<meta name="theme-color" content="#0c0b11">
+<link rel="canonical" href="https://laststream.app/ko/guides/live-tv/">
+<link rel="alternate" hreflang="fr" href="https://laststream.app/guides/tv-en-direct/">
+<link rel="alternate" hreflang="en" href="https://laststream.app/en/guides/live-tv/">
+<link rel="alternate" hreflang="af" href="https://laststream.app/af/guides/live-tv/">
+<link rel="alternate" hreflang="ar" href="https://laststream.app/ar/guides/live-tv/">
+<link rel="alternate" hreflang="be" href="https://laststream.app/be/guides/live-tv/">
+<link rel="alternate" hreflang="bg" href="https://laststream.app/bg/guides/live-tv/">
+<link rel="alternate" hreflang="bn" href="https://laststream.app/bn/guides/live-tv/">
+<link rel="alternate" hreflang="ca" href="https://laststream.app/ca/guides/live-tv/">
+<link rel="alternate" hreflang="cs" href="https://laststream.app/cs/guides/live-tv/">
+<link rel="alternate" hreflang="cy" href="https://laststream.app/cy/guides/live-tv/">
+<link rel="alternate" hreflang="da" href="https://laststream.app/da/guides/live-tv/">
+<link rel="alternate" hreflang="de" href="https://laststream.app/de/guides/live-tv/">
+<link rel="alternate" hreflang="el" href="https://laststream.app/el/guides/live-tv/">
+<link rel="alternate" hreflang="eo" href="https://laststream.app/eo/guides/live-tv/">
+<link rel="alternate" hreflang="es" href="https://laststream.app/es/guides/live-tv/">
+<link rel="alternate" hreflang="et" href="https://laststream.app/et/guides/live-tv/">
+<link rel="alternate" hreflang="eu" href="https://laststream.app/eu/guides/live-tv/">
+<link rel="alternate" hreflang="fa" href="https://laststream.app/fa/guides/live-tv/">
+<link rel="alternate" hreflang="fi" href="https://laststream.app/fi/guides/live-tv/">
+<link rel="alternate" hreflang="fil" href="https://laststream.app/fil/guides/live-tv/">
+<link rel="alternate" hreflang="gl" href="https://laststream.app/gl/guides/live-tv/">
+<link rel="alternate" hreflang="he" href="https://laststream.app/he/guides/live-tv/">
+<link rel="alternate" hreflang="hi" href="https://laststream.app/hi/guides/live-tv/">
+<link rel="alternate" hreflang="hr" href="https://laststream.app/hr/guides/live-tv/">
+<link rel="alternate" hreflang="hu" href="https://laststream.app/hu/guides/live-tv/">
+<link rel="alternate" hreflang="id" href="https://laststream.app/id/guides/live-tv/">
+<link rel="alternate" hreflang="is" href="https://laststream.app/is/guides/live-tv/">
+<link rel="alternate" hreflang="it" href="https://laststream.app/it/guides/live-tv/">
+<link rel="alternate" hreflang="ja" href="https://laststream.app/ja/guides/live-tv/">
+<link rel="alternate" hreflang="kk" href="https://laststream.app/kk/guides/live-tv/">
+<link rel="alternate" hreflang="ko" href="https://laststream.app/ko/guides/live-tv/">
+<link rel="alternate" hreflang="lt" href="https://laststream.app/lt/guides/live-tv/">
+<link rel="alternate" hreflang="lv" href="https://laststream.app/lv/guides/live-tv/">
+<link rel="alternate" hreflang="mk" href="https://laststream.app/mk/guides/live-tv/">
+<link rel="alternate" hreflang="ml" href="https://laststream.app/ml/guides/live-tv/">
+<link rel="alternate" hreflang="mr" href="https://laststream.app/mr/guides/live-tv/">
+<link rel="alternate" hreflang="ms" href="https://laststream.app/ms/guides/live-tv/">
+<link rel="alternate" hreflang="my" href="https://laststream.app/my/guides/live-tv/">
+<link rel="alternate" hreflang="nb" href="https://laststream.app/nb/guides/live-tv/">
+<link rel="alternate" hreflang="ne" href="https://laststream.app/ne/guides/live-tv/">
+<link rel="alternate" hreflang="nl" href="https://laststream.app/nl/guides/live-tv/">
+<link rel="alternate" hreflang="pa" href="https://laststream.app/pa/guides/live-tv/">
+<link rel="alternate" hreflang="pl" href="https://laststream.app/pl/guides/live-tv/">
+<link rel="alternate" hreflang="pt-BR" href="https://laststream.app/pt-BR/guides/live-tv/">
+<link rel="alternate" hreflang="ro" href="https://laststream.app/ro/guides/live-tv/">
+<link rel="alternate" hreflang="ru" href="https://laststream.app/ru/guides/live-tv/">
+<link rel="alternate" hreflang="sk" href="https://laststream.app/sk/guides/live-tv/">
+<link rel="alternate" hreflang="sl" href="https://laststream.app/sl/guides/live-tv/">
+<link rel="alternate" hreflang="sq" href="https://laststream.app/sq/guides/live-tv/">
+<link rel="alternate" hreflang="sr" href="https://laststream.app/sr/guides/live-tv/">
+<link rel="alternate" hreflang="sv" href="https://laststream.app/sv/guides/live-tv/">
+<link rel="alternate" hreflang="ta" href="https://laststream.app/ta/guides/live-tv/">
+<link rel="alternate" hreflang="te" href="https://laststream.app/te/guides/live-tv/">
+<link rel="alternate" hreflang="th" href="https://laststream.app/th/guides/live-tv/">
+<link rel="alternate" hreflang="tr" href="https://laststream.app/tr/guides/live-tv/">
+<link rel="alternate" hreflang="uk" href="https://laststream.app/uk/guides/live-tv/">
+<link rel="alternate" hreflang="ur" href="https://laststream.app/ur/guides/live-tv/">
+<link rel="alternate" hreflang="vi" href="https://laststream.app/vi/guides/live-tv/">
+<link rel="alternate" hreflang="zh-CN" href="https://laststream.app/zh-CN/guides/live-tv/">
+<link rel="alternate" hreflang="zh-TW" href="https://laststream.app/zh-TW/guides/live-tv/">
+<link rel="alternate" hreflang="x-default" href="https://laststream.app/guides/tv-en-direct/">
+<link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Laststream">
+<meta property="og:locale" content="ko">
+<meta property="og:title" content="실시간 TV 설정하기 (M3U 재생 목록) - Laststream 가이드">
+<meta property="og:description" content="실시간 TV는 공급자나 IPTV 서비스의 M3U 재생 목록과, 선택 사항인 XMLTV 편성표를 읽어요.">
+<meta property="og:url" content="https://laststream.app/ko/guides/live-tv/">
+<meta property="og:image" content="https://laststream.app/ko/guides/live-tv/img/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="설정, 실시간 TV: M3U 재생 목록 항목이 1부터 4까지 표시돼요.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="실시간 TV 설정하기 (M3U 재생 목록) - Laststream 가이드">
+<meta name="twitter:description" content="실시간 TV는 공급자나 IPTV 서비스의 M3U 재생 목록과, 선택 사항인 XMLTV 편성표를 읽어요.">
+<meta name="twitter:image" content="https://laststream.app/ko/guides/live-tv/img/og.jpg">
+<meta name="twitter:image:alt" content="설정, 실시간 TV: M3U 재생 목록 항목이 1부터 4까지 표시돼요.">
+<link rel="preload" href="/assets/fonts/sora-latin-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/jakarta-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/guides/guides.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Guides",
+      "item": "https://laststream.app/ko/guides/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Set up live TV (M3U playlist)",
+      "item": "https://laststream.app/ko/guides/live-tv/"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#contenu">본문으로 건너뛰기</a>
+
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="/ko/" aria-label="Laststream, 홈">
+      <img src="/assets/logo.svg" width="36" height="36" alt=""> <span>Laststream</span>
+    </a>
+    <nav class="nav" aria-label="기본 탐색">
+      <a href="/ko/#fonctions">기능</a>
+      <a href="/ko/#etapes">작동 방식</a>
+      <a href="/ko/#apercu">미리 보기</a>
+      <a href="/ko/#ensemble">함께 보기</a>
+      <a href="/ko/#telecharger">다운로드</a>
+      <a href="/ko/#faq">자주 묻는 질문</a>
+      <a href="/ko/guides/" aria-current="page">가이드</a>
+    </nav>
+    <a class="btn btn-sm" href="/ko/#telecharger">다운로드</a>
+    <nav class="lang" aria-label="Language">
+      <a href="/guides/tv-en-direct/" hreflang="fr" lang="fr">FR</a>
+      <a href="/en/guides/live-tv/" hreflang="en" lang="en">EN</a><!-- langues:début (scripts/i18n-site.mjs) --><details class="lang-more"><summary aria-current="page"><span aria-hidden="true">KO</span><span class="sr-only">Languages</span></summary><ul><li><a href="/af/guides/live-tv/" hreflang="af" lang="af">Afrikaans</a></li><li><a href="/ar/guides/live-tv/" hreflang="ar" lang="ar">العربية</a></li><li><a href="/be/guides/live-tv/" hreflang="be" lang="be">Беларуская</a></li><li><a href="/bg/guides/live-tv/" hreflang="bg" lang="bg">Български</a></li><li><a href="/bn/guides/live-tv/" hreflang="bn" lang="bn">বাংলা</a></li><li><a href="/ca/guides/live-tv/" hreflang="ca" lang="ca">Català</a></li><li><a href="/cs/guides/live-tv/" hreflang="cs" lang="cs">Čeština</a></li><li><a href="/cy/guides/live-tv/" hreflang="cy" lang="cy">Cymraeg</a></li><li><a href="/da/guides/live-tv/" hreflang="da" lang="da">Dansk</a></li><li><a href="/de/guides/live-tv/" hreflang="de" lang="de">Deutsch</a></li><li><a href="/el/guides/live-tv/" hreflang="el" lang="el">Ελληνικά</a></li><li><a href="/eo/guides/live-tv/" hreflang="eo" lang="eo">Esperanto</a></li><li><a href="/es/guides/live-tv/" hreflang="es" lang="es">Español (España)</a></li><li><a href="/et/guides/live-tv/" hreflang="et" lang="et">Eesti</a></li><li><a href="/eu/guides/live-tv/" hreflang="eu" lang="eu">Euskara</a></li><li><a href="/fa/guides/live-tv/" hreflang="fa" lang="fa">فارسی</a></li><li><a href="/fi/guides/live-tv/" hreflang="fi" lang="fi">Suomi</a></li><li><a href="/fil/guides/live-tv/" hreflang="fil" lang="fil">Filipino</a></li><li><a href="/gl/guides/live-tv/" hreflang="gl" lang="gl">Galego</a></li><li><a href="/he/guides/live-tv/" hreflang="he" lang="he">עברית</a></li><li><a href="/hi/guides/live-tv/" hreflang="hi" lang="hi">हिन्दी</a></li><li><a href="/hr/guides/live-tv/" hreflang="hr" lang="hr">Hrvatski</a></li><li><a href="/hu/guides/live-tv/" hreflang="hu" lang="hu">Magyar</a></li><li><a href="/id/guides/live-tv/" hreflang="id" lang="id">Bahasa Indonesia</a></li><li><a href="/is/guides/live-tv/" hreflang="is" lang="is">Íslenska</a></li><li><a href="/it/guides/live-tv/" hreflang="it" lang="it">Italiano</a></li><li><a href="/ja/guides/live-tv/" hreflang="ja" lang="ja">日本語</a></li><li><a href="/kk/guides/live-tv/" hreflang="kk" lang="kk">Қазақ тілі</a></li><li><a href="/ko/guides/live-tv/" hreflang="ko" lang="ko" aria-current="page">한국어</a></li><li><a href="/lt/guides/live-tv/" hreflang="lt" lang="lt">Lietuvių</a></li><li><a href="/lv/guides/live-tv/" hreflang="lv" lang="lv">Latviešu</a></li><li><a href="/mk/guides/live-tv/" hreflang="mk" lang="mk">Македонски</a></li><li><a href="/ml/guides/live-tv/" hreflang="ml" lang="ml">മലയാളം</a></li><li><a href="/mr/guides/live-tv/" hreflang="mr" lang="mr">मराठी</a></li><li><a href="/ms/guides/live-tv/" hreflang="ms" lang="ms">Bahasa Melayu</a></li><li><a href="/my/guides/live-tv/" hreflang="my" lang="my">မြန်မာ</a></li><li><a href="/nb/guides/live-tv/" hreflang="nb" lang="nb">Norsk bokmål</a></li><li><a href="/ne/guides/live-tv/" hreflang="ne" lang="ne">नेपाली</a></li><li><a href="/nl/guides/live-tv/" hreflang="nl" lang="nl">Nederlands</a></li><li><a href="/pa/guides/live-tv/" hreflang="pa" lang="pa">ਪੰਜਾਬੀ</a></li><li><a href="/pl/guides/live-tv/" hreflang="pl" lang="pl">Polski</a></li><li><a href="/pt-BR/guides/live-tv/" hreflang="pt-BR" lang="pt-BR">Português (Brasil)</a></li><li><a href="/ro/guides/live-tv/" hreflang="ro" lang="ro">Română</a></li><li><a href="/ru/guides/live-tv/" hreflang="ru" lang="ru">Русский</a></li><li><a href="/sk/guides/live-tv/" hreflang="sk" lang="sk">Slovenčina</a></li><li><a href="/sl/guides/live-tv/" hreflang="sl" lang="sl">Slovenščina</a></li><li><a href="/sq/guides/live-tv/" hreflang="sq" lang="sq">Shqip</a></li><li><a href="/sr/guides/live-tv/" hreflang="sr" lang="sr">Српски</a></li><li><a href="/sv/guides/live-tv/" hreflang="sv" lang="sv">Svenska</a></li><li><a href="/ta/guides/live-tv/" hreflang="ta" lang="ta">தமிழ்</a></li><li><a href="/te/guides/live-tv/" hreflang="te" lang="te">తెలుగు</a></li><li><a href="/th/guides/live-tv/" hreflang="th" lang="th">ไทย</a></li><li><a href="/tr/guides/live-tv/" hreflang="tr" lang="tr">Türkçe</a></li><li><a href="/uk/guides/live-tv/" hreflang="uk" lang="uk">Українська</a></li><li><a href="/ur/guides/live-tv/" hreflang="ur" lang="ur">اردو</a></li><li><a href="/vi/guides/live-tv/" hreflang="vi" lang="vi">Tiếng Việt</a></li><li><a href="/zh-CN/guides/live-tv/" hreflang="zh-CN" lang="zh-CN">简体中文</a></li><li><a href="/zh-TW/guides/live-tv/" hreflang="zh-TW" lang="zh-TW">繁體中文（台灣）</a></li></ul></details><!-- langues:fin -->
+    </nav>
+  </div>
+</header>
+
+<main id="contenu">
+  <header class="guide-hero">
+    <div class="wrap narrow">
+      <nav class="guide-crumbs" aria-label="현재 위치">
+        <ol>
+          <li><a href="/ko/guides/">가이드</a></li>
+          <li aria-current="page">실시간 TV 설정하기 (M3U 재생 목록)</li>
+        </ol>
+      </nav>
+      <h1>실시간 TV 설정하기 (M3U 재생 목록)</h1>
+      <p class="lead">실시간 TV는 공급자나 IPTV 서비스의 M3U 재생 목록과, 선택 사항인 XMLTV 편성표를 읽어요.</p>
+      <ul class="guide-badges" aria-label="기간 및 플랫폼">
+        <li class="is-time">5분</li>
+        <li>Windows</li>
+        <li>Android</li>
+      </ul>
+      <figure class="shot">
+        <video class="clip" src="/en/guides/live-tv/clip.mp4" poster="/en/guides/live-tv/img/poster.webp" width="1280" height="800" autoplay muted loop playsinline controls preload="metadata" aria-label="소리 없는 전체 안내 영상"></video>
+      </figure>
+    </div>
+  </header>
+
+  <article class="wrap narrow guide-body">
+    <section class="guide-prereq" aria-labelledby="h-prereq">
+      <h2 id="h-prereq">시작하기 전에</h2>
+      <ul>
+        <li>Windows 또는 Android 앱을 사용하세요. 브라우저로는 대부분의 재생 목록에 접근할 수 없어요.</li>
+        <li>M3U 재생 목록 주소(있다면 XMLTV 편성표 주소도).</li>
+      </ul>
+    </section>
+    <section aria-labelledby="h-steps">
+      <h2 id="h-steps">단계</h2>
+      <p class="guide-note">각 스크린샷에서 노란 테두리는 탭하거나 클릭할 위치를, 숫자는 순서를 보여 줘요. 앱은 프랑스어로 되어 있으며, 스크린샷에는 영어 번역이 표시돼요.</p>
+      <ol class="guide-steps">
+        <li>
+          <p>아바타를 누른 다음 “설정”을 고르고, 왼쪽 열의 “실시간 TV”를 선택하세요.</p>
+          <figure class="shot">
+            <img src="/en/guides/live-tv/img/01-reglages-tv-1280.webp" srcset="./img/01-reglages-tv-1280.webp 1280w, ./img/01-reglages-tv.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="설정: “실시간 TV” 카테고리가 강조돼요.">
+          </figure>
+        </li>
+        <li>
+          <p>“M3U 재생 목록 추가”에서 이름(1, 선택 사항), “재생 목록 주소”(2), 그리고 있다면 “편성표(XMLTV)”(3, <code>.xml</code> 또는 <code>.xml.gz</code>)를 입력하세요.</p>
+          <p>“재생 목록 추가”(4)를 누르세요. 기기에서 <code>.m3u</code> 파일을 “파일 가져오기”로 추가할 수도 있어요.</p>
+          <figure class="shot">
+            <img src="/en/guides/live-tv/img/02-formulaire-1280.webp" srcset="./img/02-formulaire-1280.webp 1280w, ./img/02-formulaire.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="“M3U 재생 목록 추가” 양식을 채운 모습: 이름, 재생 목록 주소, XMLTV 편성표, 1부터 4까지 번호가 붙은 “재생 목록 추가” 버튼.">
+          </figure>
+        </li>
+        <li>
+          <p>“… 채널 추가됨, 편성표 업데이트됨” 메시지가 나타나면 홈으로 돌아가 “실시간” 탭을 여세요.</p>
+          <figure class="shot">
+            <img src="/en/guides/live-tv/img/03-onglet-direct-1280.webp" srcset="./img/03-onglet-direct-1280.webp 1280w, ./img/03-onglet-direct.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="홈 화면 상단 바: “실시간” 탭이 강조돼요.">
+          </figure>
+        </li>
+        <li>
+          <p>채널은 “Box” 배지와 함께 편성 정보가 표시돼요. 왼쪽 열에서 카테고리별로 필터링할 수 있어요.</p>
+          <figure class="shot">
+            <img src="/en/guides/live-tv/img/04-chaines-1280.webp" srcset="./img/04-chaines-1280.webp 1280w, ./img/04-chaines.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="“실시간 TV” 페이지: 재생 목록의 첫 번째 채널과 편성표가 강조돼요.">
+          </figure>
+        </li>
+        <li>
+          <p>프로그램을 탭해 세부 정보를 확인한 다음 “시청하기”를 누르세요.</p>
+          <figure class="shot">
+            <img src="/en/guides/live-tv/img/05-guide-1280.webp" srcset="./img/05-guide-1280.webp 1280w, ./img/05-guide.webp 2560w" sizes="(min-width: 900px) 700px, calc(100vw - 84px)" width="1280" height="800" loading="lazy" alt="지금 방영 중인 프로그램의 세부 정보와 “시청하기” 버튼이 편성표 위에 강조돼 있어요.">
+          </figure>
+        </li>
+      </ol>
+    </section>
+    <aside class="guide-tip" aria-label="알아두면 좋은 점">
+      <p class="guide-tip-title">알아두면 좋은 점</p>
+      <ul>
+        <li>Freebox 가입자라면 “내 Freebox 감지”를 눌러 아무것도 입력하지 않고 박스의 채널을 추가할 수 있어요.</li>
+        <li>각 재생 목록은 “M3U 재생 목록” 아래에서 줄마다 사용 안 함, 새로고침, 삭제할 수 있어요.</li>
+        <li>계정의 재생 목록은 메인 프로필에서 관리해요.</li>
+      </ul>
+    </aside>
+    <section aria-labelledby="h-format">
+      <h2 id="h-format">예상 형식</h2>
+      <pre><code>#EXTM3U
+      #EXTINF:-1 tvg-id="channel1.fr" tvg-name="Channel 1" tvg-logo="https://example.com/logo1.png" group-title="General" tvg-chno="1",Channel 1
+      https://example.com/live/channel1.m3u8</code></pre>
+      <p>첫 줄은 반드시 <code>#EXTM3U</code>여야 해요. 각 <code>#EXTINF</code> 뒤에는 스트림 주소(http, https, rtsp, rtp 또는 udp)가 와요. <code>group-title</code>은 카테고리, <code>tvg-chno</code>는 번호(1~9999), <code>tvg-id</code>는 XMLTV 편성표와 연결돼요.</p>
+      <table class="guide-table">
+        <thead>
+          <tr><th scope="col">제한</th><th scope="col">값</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">재생 목록 크기</th><td>20MB</td></tr>
+          <tr><th scope="row">로딩 제한 시간</th><td>20 s</td></tr>
+          <tr><th scope="row">자동 새로고침</th><td>24시간마다</td></tr>
+          <tr><th scope="row">계정당 재생 목록 수</th><td>20</td></tr>
+          <tr><th scope="row">편성표</th><td>지금부터 +24시간까지</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section aria-labelledby="h-trouble">
+      <h2 id="h-trouble">작동하지 않는 경우</h2>
+      <ul>
+        <li><strong>“이 주소는 M3U 재생 목록을 반환하지 않아요.”</strong> → 주소가 웹 페이지나 다른 형식의 파일을 가리키고 있어요.</li>
+        <li><strong>“이 재생 목록에서 채널을 찾을 수 없어요.”</strong> → 파일이 비어 있거나 형식이 잘못됐어요.</li>
+        <li><strong>“주소에 연결할 수 없음”</strong> → 주소와 인터넷 연결을 확인하세요(Freebox라면 박스의 네트워크도 확인하세요).</li>
+        <li><strong>브라우저에서</strong> → 웹 브라우저로는 대부분의 재생 목록에 접근할 수 없어요. Windows 또는 Android 앱을 사용하세요.</li>
+      </ul>
+      <p>앱은 이 메시지를 프랑스어로 표시해요.</p>
+    </section>
+    <nav class="guide-pager" aria-label="다른 가이드">
+      <a class="prev" href="/ko/guides/add-a-source/">
+        <small>이전 가이드</small> <strong>소스 추가하기 (Stremio 애드온)</strong>
+      </a>
+      <a class="next" href="/ko/guides/invite-someone/">
+        <small>다음 가이드</small> <strong>초대하기</strong>
+      </a>
+    </nav>
+  </article>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <a class="brand" href="/ko/"><img src="/assets/logo.svg" width="28" height="28" alt=""><span>Laststream</span></a>
+    <div class="foot-txt">
+      <p>Laststream은 콘텐츠를 호스팅하지 않아요. 설정한 애드온을 읽을 뿐이에요. 초대로만 이용할 수 있어요.</p>
+      <p><a href="/ko/guides/">가이드</a></p>
+      <p class="legal">Laststream은 Stremio와 제휴 관계가 아니에요.</p>
+      <p class="legal">이 제품은 TMDB API를 사용하지만 TMDB의 보증이나 인증을 받지 않았어요.</p>
+      <p class="legal">데모 카탈로그로 찍은 스크린샷: 가상의 작품과 AI로 만든 포스터예요.</p>
+    </div>
+  </div>
+</footer>
+<script>
+  // Vidéos du guide : pas de lecture automatique si l'utilisateur réduit les animations
+  (function () {
+    try {
+      if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      document.querySelectorAll('video.clip').forEach(function (v) { v.removeAttribute('autoplay'); v.pause(); v.setAttribute('preload', 'none'); });
+    } catch (e) { /* sans effet */ }
+  })();
+</script>
+<script type="application/json" id="ls-i18n">{"mb":"MB","others":"다른 플랫폼은 아래에 있어요.","label":{"windows":["Windows용 다운로드","감지됨: Windows"],"android":["Android APK 다운로드","감지됨: Android"],"ios":["웹 버전 설치","감지됨: iPhone 또는 iPad"],"mac":["Mac용 다운로드","감지됨: macOS"],"linux":["Linux용 다운로드","감지됨: Linux"],"web":["브라우저에서 열기","플랫폼을 인식하지 못했어요"]},"close":"닫기","dialog":"확대된 스크린샷","badge":"사용 중인 기기"}</script>
+</body>
+</html>
