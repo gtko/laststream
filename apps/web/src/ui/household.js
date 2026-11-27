@@ -12,7 +12,7 @@ import { ICON } from './icons.js';
 import { card } from './settings-ui.js';
 import { esc } from './util.js';
 import '../styles/household.css';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 // Ce module n’importe ni dom.js (qui lit #detail et #modal à son chargement) ni invites.js : il est chargé par l’éditeur de profil.
 
@@ -24,7 +24,7 @@ const CLOCK_MS = 30000;
 /** Périmètre de l’anneau (cercle de rayon 24). */
 const RING = 2 * Math.PI * 24;
 const ACCENT = '#ff5a36';
-const DATE_FMT = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const DATE_FMT = new Intl.DateTimeFormat(intlLocale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const pad2 = (n) => String(n).padStart(2, '0');
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
@@ -48,7 +48,7 @@ export function remainingLabel(iso, now = Date.now()) {
   const m = Math.floor((ms % HOUR) / 60000);
   if (d > 0) return d + ' j ' + h + ' h';
   if (h > 0) return tr('{h} h {m} min', { h, m: pad2(m) });
-  return Math.max(m, 1) + ' min';
+  return tr('{m} min', { m: Math.max(m, 1) });
 }
 
 /** Part du délai restant (0 à 1), pour l’anneau. */

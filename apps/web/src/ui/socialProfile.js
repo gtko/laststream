@@ -20,7 +20,7 @@ import {
 } from './socialProfileModel.js';
 import { registerSocialHook } from './socialHooks.js';
 import { state as uiState } from './state.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 const POSTER_BGS = ['#3a2a1c', '#1f3b5c', '#5c1f2e', '#1f4a3a', '#3b2a5c', '#5c4a1f'];
 const TAG_COOLDOWN_NOTE = tr('Changer de tag : une fois par mois, tes amis restent tes amis.');
@@ -348,7 +348,7 @@ export function mountProfileEditor(root, deps) {
     h('span', { text: tr('Effacer') }),
     ...EXPIRIES.map(([v, text]) => h('button', { type: 'button', class: 'spf-chip' + (draft.expiry === v ? ' on' : ''), 'aria-pressed': String(draft.expiry === v), text,
       on: { click: () => { draft.expiry = v; paint('expiry'); touched(); } } })),
-    draft.expiry === 'keep' && draft.expiresAt ? h('span', { class: 'spf-hint', text: tr('Efface le {v}', { v: new Date(draft.expiresAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }) }) : null,
+    draft.expiry === 'keep' && draft.expiresAt ? h('span', { class: 'spf-hint', text: tr('Efface le {v}', { v: new Date(draft.expiresAt).toLocaleString(intlLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }) }) : null,
   ]);
   const presence = zone('presence', h('div', {}), () => {
     const acc = { get: () => draft.presence, set: (v) => { draft.presence = v; } };

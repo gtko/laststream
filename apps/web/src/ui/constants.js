@@ -8,12 +8,13 @@ export const DWELL_MS = 4000; // accueil : aperçu après 4 s sur la mise en ava
 export const FICHE_IDLE_MS = 3000; // fiche : bande-annonce après 3 s
 export const REDUCE = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 export const STILL = new URLSearchParams(location.search).has('still');
+/** Onglets : identifiants en français (voir tabHref), libellés traduits à l'affichage. */
 export const TABS = [
-  [t('Accueil'), 'home', true],
-  [t('Découvrir'), 'compass', false],
-  [t('Bibliothèque'), 'list', false],
-  [t('Stats'), 'stats', false],
-  [t('Profil'), '', false],
+  ['Accueil', 'home', true],
+  ['Découvrir', 'compass', false],
+  ['Bibliothèque', 'list', false],
+  ['Stats', 'stats', false],
+  ['Profil', '', false],
 ];
 export const EMPTY_DETAIL = {
   name: '', overview: '', tagline: '', logo: '', trailer: '', trailerVO: false, genres: [], minutes: 0, runtime: '',

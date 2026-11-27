@@ -6,7 +6,7 @@ import * as store from '../data/socialStore';
 import { toast } from './dom.js';
 import { customStatusText, socialErrorMessage } from './socialFmt.js';
 import { EMOJIS, EXPIRIES, STATUS_TEXT_MAX, charCount, customStatusOf } from './socialProfileModel.js';
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 const FOCUSABLE = 'input:not([disabled]), button:not([disabled])';
 
@@ -92,7 +92,7 @@ export function openStatusEditor(host, opener = document.activeElement) {
       chips[i].setAttribute('aria-pressed', String(d.expiry === v));
     });
     keepHint.hidden = !(d.expiry === 'keep' && d.expiresAt);
-    if (!keepHint.hidden) keepHint.textContent = t('Efface le {v}', { v: new Date(d.expiresAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) });
+    if (!keepHint.hidden) keepHint.textContent = t('Efface le {v}', { v: new Date(d.expiresAt).toLocaleString(intlLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) });
   }
 
   function pick(e) {

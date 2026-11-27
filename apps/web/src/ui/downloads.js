@@ -236,7 +236,7 @@ function paintSpace() {
   const l = card.querySelector('[data-dl-space-l]');
   const bar = card.querySelector('[data-dl-space-bar]');
   const note = card.querySelector('[data-dl-space-n]');
-  l.textContent = s.limit == null ? g.label : g.label.replace(' sur ', ' utilisés sur ');
+  l.textContent = g.usedLabel;
   bar.setAttribute('aria-valuenow', String(g.percent));
   bar.firstElementChild.style.width = g.percent + '%';
   bar.classList.toggle('is-warn', g.level === 'warn');

@@ -33,7 +33,7 @@ export function continueCardHTML(p) {
   const pct = next || !p.duration ? 0 : Math.max(0, Math.min(100, Math.round((p.position / p.duration) * 100)));
   const left = !next && p.duration ? Math.max(1, Math.round((p.duration - p.position) / 60)) : 0;
   const rs = next ? null : progressResume(p); // timecode + pourcentage, absents hors de la plage affichée
-  const restTxt = left ? 'reste ' + (left >= 60 ? fmtMin(left) : left + ' min') : '';
+  const restTxt = left ? 'reste ' + (left >= 60 ? fmtMin(left) : tr('{left} min', { left })) : '';
   const code = p.type === 'tv' && p.season != null ? 'S' + p.season + ' · É' + p.episode : '';
   const src = IMG('w780', p.backdrop) || IMG('w500', p.poster);
   const info = next ? tr('À suivre') + (code ? ' : ' + code : '') : (code || (left ? '' : tr('Film')));

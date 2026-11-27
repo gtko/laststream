@@ -55,9 +55,9 @@ export function tileCard(it, o) {
   if (o.pct != null) label.push(o.pct + ' % vu');
   // Film entamé (affiche seulement) : pastille et barre de reprise. Masquées en CSS une fois le film vu.
   const rs = !land && it.type === 'movie' && o.pct == null ? progressResume(userStore.getProgress(it.key)) : null;
-  if (rs && !userStore.isWatched(it.key)) label.push('reprise ' + rs.label);
+  if (rs && !userStore.isWatched(it.key)) label.push(tr('reprise {label}', { label: rs.label }));
   if (o.sub) label.push(o.sub);
-  else if (!upDate && score) label.push('note ' + score);
+  else if (!upDate && score) label.push(tr('note {score}', { score }));
 
   const ribbon = upDate
     ? '<span class="rib-up" aria-hidden="true"><span>' + tr('Prochainement') + '</span></span>'
@@ -111,7 +111,7 @@ export function continueCard(it, pct) {
 // Chargement paresseux (tuiles visibles seulement) : fournisseur FR ou chaîne, logo du titre, fraîcheur.
 import { isKidProfile, kidMaxAge } from '../data/auth';
 import { kidAllows, kidGenreOk } from '../data/kid';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 export function enrich(it, needLogo) {
   const ck = it.key + (needLogo ? '#l' : '');
@@ -304,7 +304,7 @@ export function observeTiles(root) {
 export function upCard(it) {
   const d = new Date(String(it.upDate) + 'T00:00:00');
   const day = d.getDate();
-  const mon = d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '').toUpperCase();
+  const mon = d.toLocaleDateString(intlLocale(), { month: 'short' }).replace('.', '').toUpperCase();
   const cd = countdown(it.upDate);
   const cdTxt = cd ? cd.charAt(0).toUpperCase() + cd.slice(1).replace(/^Dans/, 'Dans') : '';
   const type = it.type === 'tv' ? it.upLabel || tr('Série') : tr('Film');

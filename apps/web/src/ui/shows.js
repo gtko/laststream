@@ -21,9 +21,9 @@ import { state } from './state.js';
 import { fallbackHTML } from './typo.js';
 import { ensureEpg, epgKey, favSnaps, getFavs, logoOf, normChannel, snapChannel, tv } from './tv.js';
 import { esc, fmtMin } from './util.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
-const shortDate = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+const shortDate = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long' });
 const nowSec = () => Math.floor(Date.now() / 1000);
 
 /** Libellé court de la prochaine diffusion : « En direct · TF1 », « Aujourd’hui 21:10 · TF1 ». */
@@ -397,14 +397,14 @@ export async function showShowsPage() {
 
 // ---------- Fiche d'une émission (classes sf-*) ----------
 const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-const shortDay = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-const weekSlot = (sec) => capital(new Date(sec * 1000).toLocaleDateString('fr-FR', { weekday: 'long' })) + ' ' + hhmm(sec);
+const shortDay = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' });
+const weekSlot = (sec) => capital(new Date(sec * 1000).toLocaleDateString(intlLocale(), { weekday: 'long' })) + ' ' + hhmm(sec);
 
 /** Jour d'une diffusion, en grand : « Ce soir » (à partir de 18 h), « Aujourd’hui », « Demain », « Mardi 27 ». */
 export function dayWord(sec, now) {
   if (localDate(sec) === localDate(now)) return new Date(sec * 1000).getHours() >= 18 ? tr('Ce soir') : tr('Aujourd’hui');
   if (localDate(sec) === localDate(now + 86400)) return tr('Demain');
-  return capital(new Date(sec * 1000).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric' }));
+  return capital(new Date(sec * 1000).toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric' }));
 }
 
 /** Délai avant une diffusion : « Dans 14 min », « Dans 2 h 14 min ». */
@@ -436,7 +436,7 @@ export function nextCardInner(d, airings, platform, pr, now) {
   let head;
   if (a) {
     const ch = a.channel;
-    const sub = [ch.name, ch.num ? 'canal ' + ch.num : '', fmtMin(Math.round((a.stop - a.start) / 60))].filter(Boolean).join(' · ');
+    const sub = [ch.name, ch.num ? tr('canal {num}', { num: ch.num }) : '', fmtMin(Math.round((a.stop - a.start) / 60))].filter(Boolean).join(' · ');
     head = '<p class="sf-next-k">' + tr('Prochaine diffusion') + '</p>' +
       '<p class="sf-next-big">' + esc(dayWord(a.start, now)) + ' ' + hhmm(a.start) + '</p>' +
       '<p class="sf-next-sub">' + esc(sub) + '</p>' +

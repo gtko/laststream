@@ -119,7 +119,7 @@ export function openProfileEditor(p, opts) {
     '<input type="checkbox" name="kid" role="switch" class="pfe-switch" aria-describedby="pfe-kid-desc"' + (cur.isKid ? ' checked' : '') + '></label>' +
     '<p class="pfe-pill" data-pfe-kidpill hidden>' + ICON.shield + tr('Profil enfant, protégé') + '</p>' +
     '<div class="pfe-sub" data-kidage hidden><label class="pfe-field"><span class="pfe-label">' + tr('Âge maximal') + '</span><select name="age" class="pfe-input">' +
-    KID_AGES.map((a) => '<option value="' + a + '"' + (a === (cur.kidMaxAge || 12) ? ' selected' : '') + '>' + a + ' ans</option>').join('') + '</select></label>' +
+    KID_AGES.map((a) => '<option value="' + a + '"' + (a === (cur.kidMaxAge || 12) ? ' selected' : '') + '>' + tr('{a} ans', { a }) + '</option>').join('') + '</select></label>' +
     '<fieldset class="pf-sections"><legend>' + tr('Rubriques autorisées') + '</legend>' + KID_SECTIONS.map(([id, label]) =>
       '<label class="set-check"><input type="checkbox" name="sec" value="' + id + '"' + (sectionAllowed(cur.allowedCatalogs, id) ? ' checked' : '') + '> <span>' + esc(label) + '</span></label>').join('') +
     '</fieldset></div>' +

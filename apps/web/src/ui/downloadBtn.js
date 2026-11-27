@@ -522,13 +522,13 @@ const langName = (code) => {
   return n ? n.charAt(0).toLowerCase() + n.slice(1) : code;
 };
 /** Libellé d'une langue : « audio français » ; « multi » et « original » ne sont pas des codes de langue ISO. */
-const langTitle = (code) => (code === 'multi' ? 'multi-audio' : code === 'original' ? tr('version originale') : 'audio ' + langName(code));
+const langTitle = (code) => (code === 'multi' ? 'multi-audio' : code === 'original' ? tr('version originale') : tr('audio {code}', { code: langName(code) }));
 /** « 1080p · WEB-DL · H.265 » */
 const choiceTitle = (c) => [c.quality, c.sourceType, c.codec].filter(Boolean).join(' · ');
 /** « Audio français · AAC 5.1 · via Torrentio » */
 const choiceSub = (c) => {
   const langs = c.langs.map(langTitle).join(' + ');
-  return [langs ? langs.charAt(0).toUpperCase() + langs.slice(1) : '', c.audio, c.origin ? 'via ' + c.origin : ''].filter(Boolean).join(' · ');
+  return [langs ? langs.charAt(0).toUpperCase() + langs.slice(1) : '', c.audio, c.origin ? tr('via {origin}', { origin: c.origin }) : ''].filter(Boolean).join(' · ');
 };
 
 const SEARCHING = tr('Recherche des sources…');
@@ -852,7 +852,7 @@ function setBusy(el) {
   if (txt) txt.textContent = tr('Recherche…');
   return () => {
     delete el.dataset.dlBusy;
-    if (txt && txt.textContent === 'Recherche…') txt.textContent = tr('Télécharger');
+    if (txt && txt.textContent === tr('Recherche…')) txt.textContent = tr('Télécharger');
   };
 }
 

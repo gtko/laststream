@@ -7,7 +7,7 @@
  */
 import { pad2 } from './format';
 import type { WatchedTitle } from './watchedHistory';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 /** Titres détaillés au plus par calcul : le reste est estimé (appels TMDB limités). */
 export const DETAIL_LIMIT = 50;
@@ -321,9 +321,9 @@ export function computeStats({ titles: all, metas, ratings, now }: StatsInput): 
     weekday,
     dayparts,
     streak: dayStreaks(titles.map((t) => t.lastWatchedAt), now),
-    genres: [...genres].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'fr')).slice(0, 8),
+    genres: [...genres].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, intlLocale())).slice(0, 8),
     decades,
-    people: [...people.values()].sort((a, b) => b.minutes - a.minutes || b.titles - a.titles || a.name.localeCompare(b.name, 'fr')).slice(0, 10),
+    people: [...people.values()].sort((a, b) => b.minutes - a.minutes || b.titles - a.titles || a.name.localeCompare(b.name, intlLocale())).slice(0, 10),
     topSeries,
     lastWatch,
     estimate,

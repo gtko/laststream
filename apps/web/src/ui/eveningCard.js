@@ -4,7 +4,7 @@
 import { eveningDay, friendName } from '../data/homeSocial';
 import { avatarHTML } from './socialFmt.js';
 import { esc } from './util.js';
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 /** Fenêtre d'ouverture du salon par l'hôte : de T-15 min à T+2 h (miroir du serveur). */
 const OPEN_BEFORE_MS = 15 * 60 * 1000;
@@ -12,9 +12,9 @@ const OPEN_AFTER_MS = 2 * 3600 * 1000;
 /** Invités montrés sur la carte ; les suivants sont comptés. */
 const GUESTS_SHOWN = 6;
 
-const TIME = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' });
-const DATE = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
-const WEEKDAY = new Intl.DateTimeFormat('fr-FR', { weekday: 'long' });
+const TIME = new Intl.DateTimeFormat(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+const DATE = new Intl.DateTimeFormat(intlLocale(), { weekday: 'short', day: 'numeric', month: 'short' });
+const WEEKDAY = new Intl.DateTimeFormat(intlLocale(), { weekday: 'long' });
 
 /** [glyphe de la pastille, libellé] de chaque réponse. */
 const RESP = { yes: ['✓', 'vient'], maybe: ['?', t('peut-être')], no: ['×', t('ne vient pas')], pending: ['…', t('n’a pas répondu')] };
@@ -28,7 +28,7 @@ export function dayLabel(ts, now = Date.now()) {
   today.setHours(0, 0, 0, 0);
   if (d.getTime() >= today.getTime()) {
     const word = eveningDay(ts, now);
-    if (word === 'Ce soir' || word === 'Demain') return word;
+    if (word === t('Ce soir') || word === t('Demain')) return word;
   }
   return DATE.format(d);
 }

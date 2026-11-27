@@ -121,7 +121,7 @@ export function openHover(tile) {
       if (sb) {
         sb.hidden = false;
         sb.dataset.vid = d.trailer;
-        sb.dataset.vtitle = 'Bande-annonce : ' + it.name;
+        sb.dataset.vtitle = tr('Bande-annonce : {name}', { name: it.name });
         if (d.trailerVO) sb.dataset.vo = '1'; else delete sb.dataset.vo;
       }
       if (!REDUCE && !STILL) {

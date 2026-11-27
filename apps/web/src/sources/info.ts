@@ -234,7 +234,7 @@ export function originSummary(origins: readonly Origin[], max = 2): string {
 export function formatDuration(sec: number | null): string {
   if (!sec || sec <= 0 || !Number.isFinite(sec)) return '';
   const min = Math.round(sec / 60);
-  if (min < 60) return min + ' min';
+  if (min < 60) return tr('{min} min', { min });
   const h = Math.floor(min / 60);
   const m = min % 60;
   return h + ' h ' + String(m).padStart(2, '0');

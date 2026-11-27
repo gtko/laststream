@@ -70,7 +70,7 @@ async function fetchManifest(url) {
   const timer = setTimeout(() => ctrl.abort(), 8000);
   try {
     const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) throw new Error(tr('HTTP {status}', { status: res.status }));
     return await res.json();
   } finally {
     clearTimeout(timer);

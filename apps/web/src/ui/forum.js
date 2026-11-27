@@ -14,9 +14,9 @@ import { go } from './router.js';
 import { teardownFiche } from './fiche.js';
 import { avatarEl, h } from './socialConvDom.js';
 import { openDialog } from './socialConvDialog.js';
-import { ago } from './socialFmt.js';
+import { ago, agoText } from './socialFmt.js';
 import { quoteOf, renderMarkdown } from './forumMarkdown.js';
-import { t as tr, tn } from '../i18n';
+import { t as tr, tn, intlLocale } from '../i18n';
 
 /** Accueil en cache le temps de la visite (rôle, catégories) : rafraîchi à chaque ouverture de l'accueil. */
 let homeCache = null;
@@ -60,7 +60,7 @@ const nameOf = (a) => (a && a.handle ? a.handle.name : tr('Compte supprimé'));
 const fullOf = (a) => (a && a.handle ? a.handle.full : '');
 const roleBadge = (a) => (a.role === 'owner' ? h('span', 'fo-badge is-owner', tr('Équipe')) : a.role === 'mod' ? h('span', 'fo-badge is-mod', tr('Modération')) : null);
 const av = (a, size) => avatarEl({ name: nameOf(a), avatarColor: a.avatarColor, avatar: a.avatar }, size);
-const dateText = (ms) => new Date(ms).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const dateText = (ms) => new Date(ms).toLocaleString(intlLocale(), { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const link = (href, cls, text) => h('a', cls, text, { href, 'data-go': '' });
 
 /** Coquille de page : barre du haut et article ; rend le conteneur du contenu. */
@@ -207,15 +207,15 @@ function untilText(ms, now = Date.now()) {
   if (min < 60) return tr('dans {min} min', { min });
   const hrs = Math.round(min / 60);
   if (hrs < 24) return tr('dans {hrs} h', { hrs });
-  return 'dans ' + tn(Math.round(hrs / 24), '{n} jour', '{n} jours');
+  return tr('dans {plural}', { plural: tn(Math.round(hrs / 24), '{n} jour', '{n} jours') });
 }
-const whenText = (ms) => new Date(ms).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
-const timeText = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+const whenText = (ms) => new Date(ms).toLocaleString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+const timeText = (ms) => new Date(ms).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
 
 function dateChip(ms, big = false) {
   const d = new Date(ms);
   const chip = h('span', 'fo-ev-date' + (big ? ' is-big' : ''), null, { 'aria-hidden': 'true' });
-  chip.append(h('span', 'fo-ev-day', String(d.getDate())), h('span', 'fo-ev-mon', d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')));
+  chip.append(h('span', 'fo-ev-day', String(d.getDate())), h('span', 'fo-ev-mon', d.toLocaleDateString(intlLocale(), { month: 'short' }).replace('.', '')));
   return chip;
 }
 
@@ -334,7 +334,7 @@ function sectionHead(title, lede, action) {
 
 /** Compteur animé (ou direct si l'utilisateur limite les animations). */
 function countUp(el, to) {
-  const fmt = (n) => n.toLocaleString('fr-FR');
+  const fmt = (n) => n.toLocaleString(intlLocale());
   if (reduceMotion() || to < 10) { el.textContent = fmt(to); return; }
   const start = performance.now();
   const step = (t) => {
@@ -362,7 +362,7 @@ function feedItem(t, cats, i) {
   li.append(av(t.lastPoster, 38));
   const main = h('div', 'fo-feed-main');
   const who = h('p', 'fo-feed-who');
-  who.append(h('strong', null, nameOf(t.lastPoster)), document.createTextNode(t.replyCount ? ' ' + tr('a répondu') : ' ' + tr('a ouvert le sujet')), h('span', 'fo-dim', ' · il y a ' + ago(t.lastPostAt)));
+  who.append(h('strong', null, nameOf(t.lastPoster)), document.createTextNode(t.replyCount ? ' ' + tr('a répondu') : ' ' + tr('a ouvert le sujet')), h('span', 'fo-dim', ' · ' + agoText(t.lastPostAt)));
   main.append(who, link('#/forum/t/' + encodeURIComponent(t.id), 'fo-feed-t', t.title));
   if (t.excerpt) main.append(h('p', 'fo-feed-ex', t.excerpt));
   const meta = h('div', 'fo-feed-meta');
@@ -480,7 +480,7 @@ async function showHome(seq) {
   if (!banned()) acts.append(link('#/forum/new', 'btn btn-primary', tr('Nouveau sujet')), link('#/forum/new/' + EVENT_CAT, 'btn btn-ghost', tr('Proposer une watch party')));
   if (staff()) {
     const mod = link('#/forum/mod', 'btn btn-ghost fo-modbtn', tr('Modération'));
-    if (data.openReports) mod.append(h('span', 'fo-pill', String(data.openReports), { 'aria-label': data.openReports + ' signalements' }));
+    if (data.openReports) mod.append(h('span', 'fo-pill', String(data.openReports), { 'aria-label': tr('{openReports} signalements', { openReports: data.openReports }) }));
     acts.append(mod);
   }
   ht.append(acts);
@@ -940,7 +940,7 @@ async function showTopic(seq, id) {
   if (topic.pinned) title.append(h('span', 'fo-flag', '📌', { 'aria-label': tr('Épinglé') }));
   if (topic.locked) title.append(h('span', 'fo-flag', '🔒', { 'aria-label': tr('Verrouillé') }));
   title.append(document.createTextNode(topic.title));
-  head.append(title, h('p', 'fo-dim', (topic.replyCount + 1) + (topic.replyCount ? ' messages' : ' message') + ' ' + tr('· ouvert par {author}', { author: nameOf(topic.author) }) + ' ' + (ago(topic.createdAt) === 'à l’instant' ? tr('à l’instant') : 'il y a ' + ago(topic.createdAt))));
+  head.append(title, h('p', 'fo-dim', tn(topic.replyCount + 1, '{n} message', '{n} messages') + ' ' + tr('· ouvert par {author}', { author: nameOf(topic.author) }) + ' ' + agoText(topic.createdAt)));
   body.append(head);
   const reload = () => { if (seq === renderSeq) void showTopic(++renderSeq, id); };
   if (topic.event) body.append(eventPanel(topic, data.me, reload));

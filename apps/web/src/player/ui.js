@@ -548,7 +548,7 @@ export function createPlayerUI(h) {
       q('.lp-time').textContent = remaining && dur ? '−' + formatClock(Math.max(0, dur - st.time)) + ' / ' + formatClock(dur) : formatClock(st.time) + ' / ' + formatClock(dur);
       seek.setAttribute('aria-valuemax', String(Math.round(dur)));
       seek.setAttribute('aria-valuenow', String(Math.round(st.time)));
-      seek.setAttribute('aria-valuetext', formatClock(st.time) + ' sur ' + formatClock(dur));
+      seek.setAttribute('aria-valuetext', tr('{time} sur {dur}', { time: formatClock(st.time), dur: formatClock(dur) }));
       for (const sel of ['[data-role="play"]', '[data-role="bigplay"]']) {
         const b = q(sel);
         const stt = st.paused ? 'paused' : 'playing';

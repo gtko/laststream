@@ -97,7 +97,7 @@ export async function setAll(visibility) {
       if (!type || kindOf(key) === type) { vis.set(key, visibility); paint(key); }
     });
     const note = detailEl.querySelector('[data-libshare-note]');
-    const text = res.updated + ' titre' + (res.updated > 1 ? 's' : '') + (visibility === 'friends' ? ' ' + tr('visibles par tes amis.') : ' ' + tr('remis en privé.'));
+    const text = tr('{updated} titre', { updated: res.updated }) + (res.updated > 1 ? 's' : '') + (visibility === 'friends' ? ' ' + tr('visibles par tes amis.') : ' ' + tr('remis en privé.'));
     if (note) note.textContent = text;
     toast(text);
     return true;

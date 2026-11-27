@@ -6,7 +6,7 @@ import { dayDiff, fmtShort, todayStr } from './dates.js';
 import { ICON } from './icons.js';
 import { esc } from './util.js';
 import './epStill.js'; // repli des vignettes cassées (voir epStill.js)
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 const IMG = (size, p) => (p ? 'https://image.tmdb.org/t/p/' + size + p : '');
 
@@ -42,7 +42,7 @@ export const playableBadge = (iso) => tr('Diffusion TV le {iso} · déjà en lig
 export function soonInnerHTML(o) {
   const d = new Date(o.airDate + 'T00:00:00');
   const day = isNaN(d) ? '' : d.getDate();
-  const mon = isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '').toUpperCase();
+  const mon = isNaN(d) ? '' : d.toLocaleDateString(intlLocale(), { month: 'short' }).replace('.', '').toUpperCase();
   // Fond net : image de l'épisode, sinon fond de la série. Le flou n'est que le tout dernier repli (affiche seule).
   const sharp = o.still ? IMG('w500', o.still) : IMG('w780', o.backdrop);
   const blurred = !sharp && !!o.poster;

@@ -14,7 +14,7 @@ import {
   EMOJI_TABS, GROUP_MEMBERS_MAX, GROUP_NAME_MAX, POLL_OPTIONS_MAX, POLL_OPTIONS_MIN, POLL_OPTION_MAX, POLL_QUESTION_MAX, authorName, convInfo, loadRecentEmojis,
   messageText, personName, pushRecentEmoji, timeline, typingText, watchingLine,
 } from './socialConvModel.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 const PAGE = 30;
 const NEAR_BOTTOM_PX = 48;
@@ -427,7 +427,7 @@ export function createThread(o) {
       }
     }
     const seenAt = seenInfo(list, me);
-    if (seenAt) log.append(h('div', 'cvm-seen', 'Vu · ' + new Date(seenAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })));
+    if (seenAt) log.append(h('div', 'cvm-seen', 'Vu · ' + new Date(seenAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' })));
     const names = typingNames();
     if (names.length) {
       const t = h('div', 'cvm-typing');

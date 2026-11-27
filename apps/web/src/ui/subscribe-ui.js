@@ -8,7 +8,7 @@ import { connectShell, isShellEnvironment, openExternal } from '../player/shell'
 import { brand } from './fragments.js';
 import { card, rowHTML } from './settings-ui.js';
 import { esc } from './util.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 const SOURCE_URL = 'https://github.com/gtko/laststream';
 const SPIN = '<svg class="auth-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9"/></svg>';
@@ -16,13 +16,13 @@ const SPIN = '<svg class="auth-spin" width="18" height="18" viewBox="0 0 24 24" 
 /** Montant Stripe (centimes) en texte : « 24 € ». */
 function money(amount, currency) {
   try {
-    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: (currency || 'eur').toUpperCase(), maximumFractionDigits: amount % 100 === 0 ? 0 : 2 }).format(amount / 100);
+    return new Intl.NumberFormat(intlLocale(), { style: 'currency', currency: (currency || 'eur').toUpperCase(), maximumFractionDigits: amount % 100 === 0 ? 0 : 2 }).format(amount / 100);
   } catch {
     return (amount / 100) + ' ' + (currency || '').toUpperCase();
   }
 }
 
-const day = (iso) => (iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
+const day = (iso) => (iso ? new Date(iso).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 const per = (interval) => (interval === 'month' ? 'mois' : 'an');
 /** Prix annuel affiché (24 € par défaut si Stripe ne répond pas). */
 const priceOf = (b) => b && b.price ? b.price : { amount: 2400, currency: 'eur', interval: 'year' };
@@ -96,10 +96,10 @@ function tiersHTML(p, half) {
     '<button type="button" class="sub-tier' + (tier.kind === kind ? ' is-on' : '') + '" role="radio" aria-checked="' + (tier.kind === kind) + '" data-tier="' + kind + '">' +
       '<span class="sub-tier-k">' + title + '</span><span class="sub-tier-p">' + esc(price) + '</span><span class="sub-tier-s">' + esc(sub) + '</span></button>';
   const base = money(p.amount, p.currency);
-  const monthly = p.interval === 'year' ? tr('soit {money} par mois', { money: money(Math.round(p.amount / 12), p.currency) }) : 'par ' + per(p.interval);
+  const monthly = p.interval === 'year' ? tr('soit {money} par mois', { money: money(Math.round(p.amount / 12), p.currency) }) : tr('par {interval}', { interval: per(p.interval) });
   const chips = QUICK_EUROS.filter((e) => e > minEuros(p)).map((e) => '<button type="button" class="sub-chip" data-tier-pick="' + e + '">' + esc(money(e * 100, p.currency)) + '</button>').join('');
   return '<div class="sub-tiers" role="radiogroup" aria-label="' + tr('Tarif') + '">' +
-      opt('standard', tr('Soutenir'), base + ' par ' + per(p.interval), half ? tr('moitié prix la 1re année avec ton billet') : monthly) +
+      opt('standard', tr('Soutenir'), tr('{base} par {interval}', { base, interval: per(p.interval) }), half ? tr('moitié prix la 1re année avec ton billet') : monthly) +
       opt('jadore', tr('Soutenir, J’adore'), tr('Ton prix, dès {base}', { base }), tr('pour aller plus loin, sans plafond')) +
     '</div>' +
     '<div class="sub-jadore"' + (tier.kind === 'jadore' ? '' : ' hidden') + '>' +

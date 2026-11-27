@@ -1,7 +1,7 @@
 /* Social v3 (lot F4) : modèle pur de la fenêtre « Partager », des listes partagées et de la page publique d'un lien.
  * Aucun accès au réseau ni au DOM ; tout texte venant du serveur reste à afficher avec textContent. */
 import { fold, posLabel } from './socialConvModel.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 export { posLabel };
 
@@ -265,7 +265,7 @@ export function adderName(pid, list, mePid) {
 
 // ---- Mes liens publics (section « Mes liens » de la fenêtre Partager) ----
 
-const dayMonth = (ms) => new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+const dayMonth = (ms) => new Date(ms).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' });
 
 /**
  * Textes d'une ligne de « Mes liens » : titre (avec le moment s'il y en a un) et ligne d'état.

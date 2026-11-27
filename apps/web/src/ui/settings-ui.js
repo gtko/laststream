@@ -83,7 +83,7 @@ export function navHTML(cats, active, badges) {
   return '<nav class="set-nav" aria-label="' + t('Catégories de réglages') + '"><ul class="set-nav-list">' + list + '</ul>' +
     '<div class="set-sel"><button type="button" class="set-sel-b" data-set-sel aria-haspopup="listbox" aria-expanded="false" aria-controls="set-sel-l">' +
     '<span class="set-sel-ic" data-sel-ic>' + SET_ICON[cur.icon] + '</span><span class="set-nav-t" data-sel-name>' + esc(cur.short) + '</span>' +
-    '<span class="set-sel-n" data-sel-pos>' + (idx + 1) + ' sur ' + cats.length + '</span>' + CHEVRON + '</button>' +
+    '<span class="set-sel-n" data-sel-pos>' + (idx + 1) + ' ' + t('sur {length}', { length: cats.length }) + '</span>' + CHEVRON + '</button>' +
     '<div class="set-sel-l" id="set-sel-l" role="listbox" aria-label="' + t('Catégories de réglages') + '" hidden>' + opts + '</div></div></nav>';
 }
 

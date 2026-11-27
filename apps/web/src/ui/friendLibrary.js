@@ -69,7 +69,7 @@ function pill(attr, value, label, count, on) {
 function headHTML() {
   const n = usable(fl.lib.items).length;
   const common = fl.lib.status === 'ok' ? countsOf(fl.lib.items, ctx()).common : 0;
-  const sub = fl.lib.status === 'ok' && n ? n + ' titre' + (n > 1 ? 's' : '') + (common ? ' ' + tr('· {common} déjà dans ta bibliothèque', { common }) : '') : '';
+  const sub = fl.lib.status === 'ok' && n ? tr('{n} titre', { n }) + (n > 1 ? 's' : '') + (common ? ' ' + tr('· {common} déjà dans ta bibliothèque', { common }) : '') : '';
   return '<p class="svc-eyebrow">' + tr('Bibliothèque partagée') + '</p><h1 class="svc-title" id="svc-title" tabindex="-1">' + tr('Bibliothèque de {name}', { name: esc(fl.name) }) + '</h1>' +
     (sub ? '<p class="fl-sub" id="fl-sub">' + esc(sub) + '</p>' : '<p class="fl-sub" id="fl-sub" hidden></p>');
 }
@@ -241,7 +241,7 @@ detailEl.addEventListener('click', (e) => {
     if (sub && fl.lib.status === 'ok') {
       const n = usable(fl.lib.items).length;
       const common = countsOf(fl.lib.items, ctx()).common;
-      sub.textContent = n + ' titre' + (n > 1 ? 's' : '') + (common ? ' ' + tr('· {common} déjà dans ta bibliothèque', { common }) : '');
+      sub.textContent = tr('{n} titre', { n }) + (n > 1 ? 's' : '') + (common ? ' ' + tr('· {common} déjà dans ta bibliothèque', { common }) : '');
       sub.hidden = false;
     }
   }

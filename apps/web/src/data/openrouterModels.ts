@@ -4,7 +4,7 @@
  * Aucune clé API n'est jamais envoyée à cet endpoint : la requête part sans en-tête d'authentification ni cookie.
  */
 import { appFetch } from './crossFetch';
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 export const MODELS_URL = 'https://openrouter.ai/api/v1/models';
 export const CACHE_KEY = 'ls_openrouter_models_v1';
@@ -68,7 +68,7 @@ export function parseModels(json: unknown): OrModel[] {
   return raw.map((r) => ({
     id: r.id, name: r.name, ctx: r.ctx, inPrice: r.inPrice, outPrice: r.outPrice,
     provider: r.label || slugLabel.get(r.slug) || titleCase(r.slug || 'autres'),
-  })).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  })).sort((a, b) => a.name.localeCompare(b.name, intlLocale()));
 }
 
 export function isFreeModel(m: OrModel): boolean {
@@ -87,7 +87,7 @@ const NBSP = ' ';
 export function money(n: number): string {
   if (n === 0) return '0' + NBSP + '$';
   const digits = n < 0.1 ? 3 : 2;
-  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: digits }) + NBSP + '$';
+  return n.toLocaleString(intlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: digits }) + NBSP + '$';
 }
 
 /** « 0,15 $ / 0,60 $ » (par million, entrée / sortie), « Gratuit », ou « Prix variable » (routeurs). */
@@ -100,7 +100,7 @@ export function priceLabel(m: OrModel): string {
 /** « 128 k », « 1 M », « 1,05 M » ; '' si inconnu. */
 export function ctxLabel(ctx: number): string {
   if (!ctx) return '';
-  if (ctx >= 1e6) return (Math.round(ctx / 1e4) / 100).toLocaleString('fr-FR') + NBSP + 'M';
+  if (ctx >= 1e6) return (Math.round(ctx / 1e4) / 100).toLocaleString(intlLocale()) + NBSP + 'M';
   return Math.round(ctx / 1000) + NBSP + 'k';
 }
 
@@ -117,7 +117,7 @@ export function estimateText(m: OrModel | undefined): string {
   const cost = m ? estimateCost(m) : null;
   if (cost === null) return t('Coût inconnu pour cet identifiant : vérifie son prix sur openrouter.ai.');
   if (cost < 0.005) return t('≈ moins de 0,01{NBSP}${per}.', { NBSP, per });
-  return '≈ ' + cost.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + NBSP + '$' + per + '.';
+  return '≈ ' + cost.toLocaleString(intlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + NBSP + '$' + per + '.';
 }
 
 /** Minuscules sans accents, pour une recherche tolérante. */
@@ -135,9 +135,9 @@ export function filterModels(list: OrModel[], query: string): OrModel[] {
 
 const totalPrice = (m: OrModel) => (isFreeModel(m) ? 0 : m.inPrice === null || m.outPrice === null ? Infinity : m.inPrice + m.outPrice);
 const COMPARE: Record<SortKey, (a: OrModel, b: OrModel) => number> = {
-  price: (a, b) => totalPrice(a) - totalPrice(b) || a.name.localeCompare(b.name, 'fr'),
-  ctx: (a, b) => b.ctx - a.ctx || a.name.localeCompare(b.name, 'fr'),
-  name: (a, b) => a.name.localeCompare(b.name, 'fr') || a.id.localeCompare(b.id),
+  price: (a, b) => totalPrice(a) - totalPrice(b) || a.name.localeCompare(b.name, intlLocale()),
+  ctx: (a, b) => b.ctx - a.ctx || a.name.localeCompare(b.name, intlLocale()),
+  name: (a, b) => a.name.localeCompare(b.name, intlLocale()) || a.id.localeCompare(b.id),
 };
 
 /** Groupes par fournisseur (ordre alphabétique), modèles triés dans chaque groupe. */
@@ -194,7 +194,7 @@ export async function loadModels(opts: { force?: boolean; now?: number } = {}): 
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await appFetch(MODELS_URL, { method: 'GET', headers: { Accept: 'application/json' }, credentials: 'omit', signal: ctrl.signal });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) throw new Error(t('HTTP {status}', { status: res.status }));
     const models = parseModels(await res.json());
     if (!models.length) throw new Error(t('Liste vide'));
     try { globalThis.localStorage?.setItem(CACHE_KEY, JSON.stringify({ at: now, models } satisfies CacheEntry)); } catch { /* quota : pas de cache */ }

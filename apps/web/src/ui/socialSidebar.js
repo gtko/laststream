@@ -13,7 +13,7 @@ import { copyInvite, refreshInvites, shareInvite, usableInvite } from './invites
 import { createFriendCard } from './socialCard.js';
 import { activityHTML } from './socialActivity.js';
 import {
-  ADD_ERRORS, STATUS_OPTIONS, SEEN_LABEL, ago, avatarHTML, byName, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf,
+  ADD_ERRORS, STATUS_OPTIONS, SEEN_LABEL, ago, agoText, avatarHTML, byName, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf,
   posterBox, progressPct, remainingLabel, shortName, socialErrorMessage, watchLine, watchState,
 } from './socialFmt.js';
 import { inviteToParty, openConversation as openConvHook, openProfileEditor, renderConversationList } from './socialHooks.js';
@@ -37,7 +37,7 @@ function presenceText(f) {
   const cs = customStatusText(f.customStatus);
   if (cs && f.status !== 'offline') return cs;
   const base = SEEN_LABEL[f.status] || '';
-  if (f.status === 'offline') return f.lastSeen ? base + ' · il y a ' + ago(f.lastSeen) : base;
+  if (f.status === 'offline') return f.lastSeen ? base + ' · ' + agoText(f.lastSeen) : base;
   if (f.status === 'away' && f.lastSeen) return base + ' · ' + ago(f.lastSeen);
   return base;
 }

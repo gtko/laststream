@@ -40,7 +40,7 @@ import { recentError } from '../data/feedback';
 import { refreshUI, saveProgress } from './sessionTick.js';
 import { allSubtitleTracks, clearSecondary, effectiveSubMode, ensureExternalSubs, finishAutoSync, forceTranscoding, saveSync, selectSecondary, selectSubtitle, startAutoSync, stopAutoSync, trackContext, transcodeAction } from './sessionTracks.js';
 import { canMinimize, expandPlayer, leavePlayer, minimizePlayer, rememberVolume } from './sessionUi.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 
 // ---------- Actions ----------
@@ -170,7 +170,7 @@ export function playEpisode(season, episode) {
 }
 
 /** Message quand un épisode pas encore diffusé n'a aucune source (la recherche décide de la lecture). */
-export const notYetAiredMessage = (iso) => tr('Pas encore disponible — diffusion le {v}', { v: new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) });
+export const notYetAiredMessage = (iso) => tr('Pas encore disponible — diffusion le {v}', { v: new Date(iso + 'T12:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long', year: 'numeric' }) });
 
 /** Le marquage d'un segment demande un épisode identifié (IMDb) et un lastAddon configuré. */
 export const markAllowed = (p) => !!p.imdb && isConfigured();

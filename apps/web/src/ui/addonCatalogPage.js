@@ -8,7 +8,7 @@ import { topBar } from './fragments.js';
 import { infiniteList } from './infinite.js';
 import { fallbackHTML } from './typo.js';
 import { esc } from './util.js';
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 /** Pages lues au plus pour un catalogue (défilement infini). */
 const ADDON_PAGES_MAX = 100;
@@ -107,7 +107,7 @@ export function showAddonCatalog(root, { addonKey, type, catId }) {
     const yr = (el) => Number(el.dataset.sortYear) || 0;
     const orders = {
       default: (a, b) => Number(a.dataset.seq) - Number(b.dataset.seq),
-      name: (a, b) => a.dataset.sortName.localeCompare(b.dataset.sortName, 'fr'),
+      name: (a, b) => a.dataset.sortName.localeCompare(b.dataset.sortName, intlLocale()),
       'year-desc': (a, b) => yr(b) - yr(a),
       'year-asc': (a, b) => (yr(a) || 9999) - (yr(b) || 9999),
     };

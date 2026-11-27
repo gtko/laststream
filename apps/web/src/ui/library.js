@@ -19,7 +19,7 @@ import { state } from './state.js';
 import { fillMissingPosters } from './posters.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { loadVisibility, sharingAvailable, shareControlsHTML, visButtonHTML } from './libshare.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 // Bibliothèque : toutes les lectures/écritures passent par userStore (adaptateur local aujourd'hui, API lastAddon ensuite).
 export const inLib = (key) => userStore.inLibrary(key);
@@ -101,7 +101,7 @@ export function renderLibraryPage(restore) {
   const v = state.libView;
   let items = libItems();
   items = items.filter(byType(v.type, animeKeys()));
-  items.sort(v.sort === 'title' ? (a, b) => a.name.localeCompare(b.name, 'fr') : (a, b) => b.added - a.added);
+  items.sort(v.sort === 'title' ? (a, b) => a.name.localeCompare(b.name, intlLocale()) : (a, b) => b.added - a.added);
   syncPills();
   box.innerHTML = '';
   if (!items.length) {

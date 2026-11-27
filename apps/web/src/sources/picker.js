@@ -61,8 +61,8 @@ function itemHtml(v, opts) {
   const l3 = [];
   if (v.bitrateLabel) l3.push(esc(v.bitrateLabel));
   if (v.durationLabel) l3.push('≈ ' + esc(v.durationLabel));
-  if (v.seeders != null) l3.push(v.seeders + ' seeders' + (v.peers != null ? ' ' + t('/ {peers} peers', { peers: v.peers }) : ''));
-  if (v.copies > 1) l3.push(v.copies + ' copies');
+  if (v.seeders != null) l3.push(t('{seeders} seeders', { seeders: v.seeders }) + (v.peers != null ? ' ' + t('/ {peers} peers', { peers: v.peers }) : ''));
+  if (v.copies > 1) l3.push(t('{copies} copies', { copies: v.copies }));
   if (v.origins.length) l3.push('<span class="s-orig" title="' + esc(v.origins.map((o) => o.name).join(', ')) + '">' + v.origins.slice(0, 2).map((o) => '<span class="s-o">' + originIcon(o) + esc(o.name) + '</span>').join('') + (v.origins.length > 2 ? '<span class="s-o s-o-more">+' + (v.origins.length - 2) + '</span>' : '') + '</span>');
   if (v.viaDevice) l3.push('<span class="s-dev" title="' + t('Trouvée par cet appareil : l’addon refusait le serveur') + '">' + t('via ton appareil') + '</span>');
 

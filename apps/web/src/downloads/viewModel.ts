@@ -36,12 +36,15 @@ export function itemPercent(item: DownloadItem): number | null {
   return Math.min(100, Math.max(0, Math.floor((item.bytesDone / item.bytesTotal) * 100)));
 }
 
-/** Jauge d'espace : pourcentage, libellé et niveau (`warn` à 90 %, `full` à 100 %). */
-export function gauge(s: SpaceInfo): { percent: number; label: string; level: 'ok' | 'warn' | 'full' } {
+/** Jauge d'espace : pourcentage, libellés (court et « utilisés ») et niveau (`warn` à 90 %, `full` à 100 %). */
+export function gauge(s: SpaceInfo): { percent: number; label: string; usedLabel: string; level: 'ok' | 'warn' | 'full' } {
   const percent = s.ratio === null ? 0 : Math.min(100, Math.max(0, Math.round(s.ratio * 100)));
-  const label = s.limit === null ? `${formatBytes(s.used)} ${t('utilisés')}` : `${formatBytes(s.used)} sur ${formatBytes(s.limit)}`;
+  const used = formatBytes(s.used);
+  const limit = s.limit === null ? '' : formatBytes(s.limit);
+  const label = s.limit === null ? t('{used} utilisés', { used }) : t('{used} sur {limit}', { used, limit });
+  const usedLabel = s.limit === null ? label : t('{used} utilisés sur {limit}', { used, limit });
   const level = s.full ? 'full' : s.warn ? 'warn' : 'ok';
-  return { percent, label, level };
+  return { percent, label, usedLabel, level };
 }
 
 const ERRORS: Record<DownloadErrorCode, string> = {

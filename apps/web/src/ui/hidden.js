@@ -71,7 +71,7 @@ function paintControls(all) {
   if (summary) {
     summary.textContent = current.length === all.length
       ? tn(all.length, '{n} titre masqué', '{n} titres masqués')
-      : current.length + ' sur ' + tn(all.length, '{n} titre masqué', '{n} titres masqués');
+      : tr('{length} sur {length2}', { length: current.length, length2: tn(all.length, '{n} titre masqué', '{n} titres masqués') });
   }
   const clear = detailEl.querySelector('[data-hid-qclear]');
   if (clear) clear.hidden = !view.query;

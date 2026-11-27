@@ -1,7 +1,7 @@
 import type {
   AccountList, AdminAccount, GroupStats, Inbox, InboxItem, LiveFeedEntry, Metrics, PurgeJob, Range, ReferralNode, ServiceStatus, StatusReport,
 } from './adminApi';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 /* Fonctions pures de la console d'administration : accès, métriques, pagination, purge, parrainage, formats. */
 
@@ -10,7 +10,7 @@ export interface AccessInput { serverMode: boolean; owner: boolean; kid: boolean
 export const adminAllowed = (a: AccessInput): boolean => a.serverMode && a.owner && !a.kid;
 
 // ---- Formats ----
-export const fmtInt = (n: number | null | undefined): string => (n == null || !Number.isFinite(n) ? '—' : Math.round(n).toLocaleString('fr-FR'));
+export const fmtInt = (n: number | null | undefined): string => (n == null || !Number.isFinite(n) ? '—' : Math.round(n).toLocaleString(intlLocale()));
 export const fmtMs = (ms: number | null | undefined): string => {
   if (ms == null || !Number.isFinite(ms)) return '—';
   if (ms < 1000) return Math.round(ms) + ' ms';
@@ -18,7 +18,7 @@ export const fmtMs = (ms: number | null | undefined): string => {
 };
 export const fmtPct = (r: number | null | undefined, digits = 1): string =>
   r == null || !Number.isFinite(r) ? '—' : (r * 100).toFixed(digits).replace('.', ',') + ' %';
-export const fmtRate = (n: number): string => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10).toLocaleString('fr-FR');
+export const fmtRate = (n: number): string => (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10).toLocaleString(intlLocale());
 
 /** Instant en millisecondes : nombre (secondes ou ms) ou date ISO. */
 export function toMs(v: unknown): number {
@@ -28,20 +28,20 @@ export function toMs(v: unknown): number {
 }
 export function fmtDateTime(v: unknown): string {
   const t = toMs(v);
-  return Number.isFinite(t) ? new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  return Number.isFinite(t) ? new Date(t).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 }
 export function fmtDay(v: unknown): string {
   const t = toMs(v);
-  return Number.isFinite(t) ? new Date(t).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+  return Number.isFinite(t) ? new Date(t).toLocaleDateString(intlLocale(), { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 }
 export function fmtAgo(v: unknown, now = Date.now()): string {
   const t = toMs(v);
-  if (!Number.isFinite(t)) return 'jamais';
+  if (!Number.isFinite(t)) return tr('jamais');
   const s = Math.max(0, Math.round((now - t) / 1000));
   if (s < 60) return tr('à l’instant');
   if (s < 3600) return tr('il y a {v} min', { v: Math.floor(s / 60) });
-  if (s < 86_400) return 'il y a ' + Math.floor(s / 3600) + ' h';
-  return 'il y a ' + Math.floor(s / 86_400) + ' j';
+  if (s < 86_400) return tr('il y a {v} h', { v: Math.floor(s / 3600) });
+  return tr('il y a {v} j', { v: Math.floor(s / 86_400) });
 }
 
 // ---- Métriques ----
@@ -292,8 +292,8 @@ export function seriesLabels(points: ReadonlyArray<{ t: number | string }>, rang
     const d = new Date(toMs(p.t));
     if (!Number.isFinite(d.getTime())) return '';
     return range === '7d'
-      ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
-      : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+      ? d.toLocaleDateString(intlLocale(), { day: '2-digit', month: '2-digit' })
+      : d.toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
   });
 }
 
@@ -304,7 +304,7 @@ export function feedRows(feed: LiveFeedEntry[] | null | undefined, max = 8): Fee
   return (Array.isArray(feed) ? feed : []).slice(0, max).map((e) => {
     const t = toMs(e.at);
     return {
-      at: Number.isFinite(t) ? new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—',
+      at: Number.isFinite(t) ? new Date(t).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '—',
       label: String(e.label ?? ''),
       target: e.target ? String(e.target) : '',
     };

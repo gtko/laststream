@@ -30,7 +30,7 @@ const yearOf = (v) => {
   const m = /\d{4}/.exec(s);
   return m ? m[0] : '';
 };
-const runtimeText = (r) => (typeof r === 'number' ? r + ' min' : typeof r === 'string' ? r.trim() : '');
+const runtimeText = (r) => (typeof r === 'number' ? t('{r} min', { r }) : typeof r === 'string' ? r.trim() : '');
 
 /** Aperçu gardé par la rangée ou le catalogue (sessionStorage), nettoyé comme à l'écriture. Null si absent ou illisible. */
 function readPreview(slug, type, id) {

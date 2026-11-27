@@ -47,7 +47,7 @@ export function createResolver(tmdbFn: (path: string, params?: Record<string, st
       const pick = item.typeUnknown ? (movie ? 'movie' : tv ? 'tv' : null) : type === 'movie' ? (movie ? 'movie' : null) : (tv ? 'tv' : null);
       if (pick) return fromTmdb(pick, pick === 'movie' ? movie : tv, title, ref.imdb);
     }
-    const ids = [ref.imdb && 'IMDb ' + ref.imdb, ref.tvdb && 'TVDB ' + ref.tvdb].filter(Boolean).join(', ');
+    const ids = [ref.imdb && t('IMDb {imdb}', { imdb: ref.imdb }), ref.tvdb && t('TVDB {tvdb}', { tvdb: ref.tvdb })].filter(Boolean).join(', ');
     throw new NotFound(t('Introuvable sur TMDB') + (ids ? ' (' + ids + ')' : ''));
   };
   return (item) => {

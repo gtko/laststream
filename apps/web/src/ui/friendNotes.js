@@ -8,7 +8,7 @@ import { fetchServerMeta } from '../data/lt';
 import { deleteNote, getFriendNotes, updateNote } from '../data/socialV2Api';
 import { UserApiError } from '../data/userApi';
 import { playAt } from '../data/watchWith';
-import { ago, clock, episodeCode, posterBox, socialErrorMessage } from './socialFmt.js';
+import { ago, agoText, clock, episodeCode, posterBox, socialErrorMessage } from './socialFmt.js';
 import { launchPlayback } from './socialHooks.js';
 import { esc } from './util.js';
 import { t as tr } from '../i18n';
@@ -68,7 +68,7 @@ export function createFriendNotes(opts) {
 
   function whenText(n) {
     const a = ago(n.createdAt);
-    return 'à ' + clock(n.pos) + (a ? ' · ' + (a === 'à l’instant' ? a : 'il y a ' + a) : '');
+    return tr('à {pos}', { pos: clock(n.pos) }) + (a ? ' · ' + agoText(n.createdAt) : '');
   }
 
   function bodyHTML(n) {

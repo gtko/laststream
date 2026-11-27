@@ -66,7 +66,7 @@ const adminCard = () => (canAdmin() ? card(tr('Administration'), rowHTML(tr('Con
 function accountPanel() {
   const p = userStore.currentProfile();
   const lib = userStore.getLibrary().length;
-  const data = card(tr('Données de ce navigateur'), rowHTML(tr('Bibliothèque'), tr('Titres gardés pour le profil « {name} » dans ce navigateur.', { name: p.name }), () => '<span class="set-val">' + lib + ' titre(s)</span>') +
+  const data = card(tr('Données de ce navigateur'), rowHTML(tr('Bibliothèque'), tr('Titres gardés pour le profil « {name} » dans ce navigateur.', { name: p.name }), () => '<span class="set-val">' + tr('{lib} titre(s)', { lib }) + '</span>') +
     rowHTML(tr('Vider le cache'), tr('Supprime les réponses mémorisées du catalogue ; rien d’autre n’est effacé.'), () => '<button type="button" class="btn btn-ghost btn-sm" data-set-clear>' + tr('Vider le cache') + '</button>'));
   if (!isServerMode()) {
     return card(tr('Compte'), '<p class="set-hint">' + (auth.status === 'offline'

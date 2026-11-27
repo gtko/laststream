@@ -195,7 +195,7 @@ export async function readStremioAccount(email: string, password: string, opts: 
     opts.onStep?.('library');
     const lib = await apiCall<unknown[]>('datastoreGet', { authKey, collection: 'libraryItem', ids: [], all: true }, fetchFn);
     const bundle = parseStremioExport({ library: Array.isArray(lib) ? lib : [] }, 'stremio');
-    bundle.notes = bundle.notes.filter((n) => !n.startsWith('Aucune'));
+    bundle.notes = bundle.notes.filter((n) => n !== t('Aucune bibliothèque ni addon Stremio reconnu dans ce fichier.'));
     if (opts.addons) {
       opts.onStep?.('addons');
       const col = await apiCall<{ addons?: unknown[] }>('addonCollectionGet', { type: 'AddonCollectionGet', authKey, update: true }, fetchFn);

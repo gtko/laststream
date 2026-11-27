@@ -18,7 +18,7 @@ import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { palette } from './typo.js';
 import { esc } from './util.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 const GIF_DELAY_MS = 150;
 const HUB_PREVIEW = 12; // tuiles par catégorie dans la vue « Toutes »
@@ -295,7 +295,7 @@ export function startFolderGrid(o) {
 
 // ---------- Page d'un dossier #/collection/{id} ----------
 
-const nTitres = (n) => n.toLocaleString('fr-FR') + (n > 1 ? ' titres' : ' titre');
+const nTitres = (n) => n.toLocaleString(intlLocale()) + (n > 1 ? ' titres' : ' titre');
 
 export async function showCollection(id) {
   teardownFiche();

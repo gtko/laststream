@@ -69,7 +69,7 @@ export function readySummary(list: readonly (PrepSource & Pick<PartyParticipant,
 /** « 3 prêts sur 4 » (ou « Tout le monde est prêt »). */
 export function readyText(sum: ReadySummary): string {
   if (sum.total > 0 && sum.ready === sum.total) return sum.total === 1 ? tr('Tu es prêt') : tr('Tout le monde est prêt');
-  return sum.ready + (sum.ready > 1 ? ' ' + tr('prêts') : ' ' + tr('prêt')) + ' sur ' + sum.total;
+  return sum.ready + (sum.ready > 1 ? ' ' + tr('prêts') : ' ' + tr('prêt')) + ' ' + tr('sur {total}', { total: sum.total });
 }
 
 /** Libellé du bouton « Démarrer sans … » (un pseudo, ou le nombre de retardataires). */
@@ -103,7 +103,7 @@ export function formatDelta(sec: number): string {
   if (s < 60) return s + ' s';
   const m = Math.floor(s / 60);
   const r = s % 60;
-  return m + ' min' + (r ? ' ' + r + ' s' : '');
+  return tr('{m} min', { m }) + (r ? ' ' + r + ' s' : '');
 }
 
 /** Phrase d'un événement du salon : « Hugo a reculé de 10 s ». */

@@ -66,7 +66,7 @@ export function codecLabel(codec: string | undefined): string {
 
 function channelsLabel(n: number | undefined): string {
   if (!n || n <= 0) return '';
-  return ({ 1: tx('Mono'), 2: tx('Stéréo'), 6: '5.1', 7: '6.1', 8: '7.1' } as Record<number, string>)[n] ?? n + ' canaux';
+  return ({ 1: tx('Mono'), 2: tx('Stéréo'), 6: '5.1', 7: '6.1', 8: '7.1' } as Record<number, string>)[n] ?? tx('{n} canaux', { n });
 }
 
 export interface AudioTrack {

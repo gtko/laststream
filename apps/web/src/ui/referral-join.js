@@ -6,7 +6,7 @@ import '../styles/referral.css';
 import { safeImageUrl } from '../data/imageUrl';
 import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
 import { esc } from './util.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 /** Couleur de repli des avatars (le billet ne transmet pas la couleur du parrain). */
 const AVATAR_COLOR = '#ff5a36';
@@ -80,7 +80,7 @@ function toEpochMs(v) {
 export function expiryText(v) {
   const ms = toEpochMs(v);
   if (!Number.isFinite(ms)) return '';
-  return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  return new Date(ms).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' });
 }
 
 /** Score du mot de passe (0 à 4) : longueur, mélange de types, signes. Indicatif, comme dans la maquette. */

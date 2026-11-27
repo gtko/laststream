@@ -77,7 +77,7 @@ function remainingText(expiresAt, now = Date.now()) {
   const m = min % 60;
   if (d > 0) return d + ' j ' + h + ' h';
   if (h > 0) return t('{h} h {v} min', { h, v: String(m).padStart(2, '0') });
-  return m + ' min';
+  return t('{m} min', { m });
 }
 
 /** Fonds acceptés : même règle que les billets (https, hôte autorisé, voir data/imageUrl.ts), les autres sont écartés. */

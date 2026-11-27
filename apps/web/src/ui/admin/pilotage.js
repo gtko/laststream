@@ -11,7 +11,7 @@ import { lineChart, sparkline } from '../admin-charts.js';
 import { confirmDialog } from '../admin-dialog.js';
 import { esc } from '../util.js';
 import { admCard, adminErr, attempt, empty, loaded, sectionHead } from './common.js';
-import { t as tx } from '../../i18n';
+import { t as tx, intlLocale } from '../../i18n';
 
 const TODO_PREVIEW = 4;
 const RANGES = [['1h', '1 h'], ['24h', '24 h'], ['7d', '7 j']];
@@ -149,10 +149,10 @@ function kpisHTML(ov, tr) {
   // Mini-courbe seulement quand la série existe (au moins deux tranches) : sinon rien, pas de tracé vide.
   const curve = (values, label, cls) => (pts.length >= 2 ? sparkline(values, label, cls) : '');
   return '<ul class="adm-kpis adm-kpis-dash" aria-label="' + tx('Indicateurs') + '">' +
-    kpiCard(tx('Comptes'), acc((x) => fmtInt(x.total)), accHint((x) => (x.suspended != null ? fmtInt(x.suspended) + ' suspendu(s)' : ''))) +
+    kpiCard(tx('Comptes'), acc((x) => fmtInt(x.total)), accHint((x) => (x.suspended != null ? tx('{suspended} suspendu(s)', { suspended: fmtInt(x.suspended) }) : ''))) +
     kpiCard(tx('Actifs 24 h'), acc((x) => (x.truncated ? '≥ ' : '') + fmtInt(x.active24)), accHint((x) => (x.truncated ? tx('sur les {scanned} derniers comptes', { scanned: fmtInt(x.scanned) }) : tx('dernière activité sur 24 h')))) +
     kpiCard(tx('Inscriptions 7 j'), acc((x) => fmtInt(x.signups7)), accHint(() => tx('nouveaux comptes'))) +
-    kpiCard(tx('Requêtes / min'), m ? fmtRate(m.rpm) : traf, m ? fmtInt(m.requests) + ' sur ' + name : '', m ? delta(dl.requests, true) : null,
+    kpiCard(tx('Requêtes / min'), m ? fmtRate(m.rpm) : traf, m ? tx('{requests} sur {name}', { requests: fmtInt(m.requests), name }) : '', m ? delta(dl.requests, true) : null,
       curve(pts.map((p) => p.requests), tx('Requêtes par tranche, sur {name}', { name }))) +
     kpiCard(tx('Erreurs 5xx'), m ? fmtPct(m.errorRate, 2) : traf, m ? tx('réponses 5xx') : '', m ? delta(dl.errors5xx, false) : null,
       curve(pts.map((p) => (p.requests > 0 ? p.errors5xx / p.requests : 0)), tx('Taux d’erreur 5xx, sur {name}', { name }), 'is-bad')) +
@@ -190,7 +190,7 @@ function trafficHTML(d) {
 export function overviewHTML(S) {
   const at = (k) => S[k] || IDLE;
   const ov = at('ov');
-  const updated = S.liveAt ? '<p class="adm-live" role="status">' + tx('Dernier relevé « En direct » : {v} · actualisé toutes les 30 s.', { v: new Date(S.liveAt).toLocaleTimeString('fr-FR') }) + '</p>' : '';
+  const updated = S.liveAt ? '<p class="adm-live" role="status">' + tx('Dernier relevé « En direct » : {v} · actualisé toutes les 30 s.', { v: new Date(S.liveAt).toLocaleTimeString(intlLocale()) }) + '</p>' : '';
   return sectionHead(tx('Tableau de bord'), tx('Ce qui demande ton attention, puis l’état du serveur en un coup d’œil.'),
     '<div class="adm-head-tools"><div class="pills adm-ranges" role="group" aria-label="' + tx('Période') + '" data-nav>' + RANGES.map(([v, l]) => pill(v, l)).join('') + '</div>' +
     '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>' + tx('Actualiser') + '</button></div>') +

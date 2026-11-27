@@ -116,7 +116,7 @@ function titleCard(m, mine, ctx) {
   card.append(posterEl(t.poster, t.title, 54, 80, t));
   const col = h('div', 'cvm-card-col');
   const who = authorName(m.from, ctx.info, ctx.s);
-  col.append(h('div', 'cvm-card-kicker', mine ? tr('Tu recommandes') : (who === 'Toi' ? tr('Recommandé') : tr('{who} te recommande', { who }))));
+  col.append(h('div', 'cvm-card-kicker', mine ? tr('Tu recommandes') : (who === tr('Toi') ? tr('Recommandé') : tr('{who} te recommande', { who }))));
   col.append(h('div', 'cvm-card-title', t.title));
   const meta = [t.year ? String(t.year) : '', typeof t.rating === 'number' ? '★ ' + t.rating + ' de ' + who.replace(/^Toi$/, 'moi') : ''].filter(Boolean).join(' · ');
   if (meta) col.append(h('div', 'cvm-card-meta', meta));

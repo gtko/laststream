@@ -2,7 +2,7 @@
  * conversations (résolution d'une conversation, aperçus, jours, heures, emojis, persistance de l'état ouvert).
  * Aucun accès au réseau ; tout texte venant du serveur reste à afficher avec textContent. */
 import { hhmm, posLabel } from './socialChat.js';
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 export { hhmm, posLabel };
 
@@ -157,7 +157,7 @@ export function dayLabel(ms, now = Date.now()) {
   const diff = startOfDay(now) - startOfDay(ms);
   if (diff <= 0) return t('Aujourd’hui · {ms}', { ms: hhmm(ms) });
   if (diff < 2 * DAY) return t('Hier');
-  return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  return new Date(ms).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long' });
 }
 
 /** Messages chronologiques → éléments { day } et { msg }, un séparateur à chaque changement de jour. */

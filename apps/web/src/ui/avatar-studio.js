@@ -182,7 +182,7 @@ export function openAvatarStudio(opts = {}) {
     return url ? '<img src="' + esc(url) + '" alt="" loading="lazy" decoding="async">' : '<span class="as-cell"></span>';
   }).join('') + '</span>';
 
-  const countLabel = (n) => (n ? fmt(n) + ' personnages' : '');
+  const countLabel = (n) => (n ? tr('{n} personnages', { n: fmt(n) }) : '');
 
   /** Carte d'une collection (ou d'un univers : le premier style ouvre la collection). */
   const cardHTML = (name, col) => '<button type="button" class="as-card" data-as-col="' + esc(col.id) + '" aria-label="' + esc(name + (col.total ? tr(', {total} personnages', { total: fmt(col.total) }) : '')) + '">' +
@@ -300,7 +300,7 @@ export function openAvatarStudio(opts = {}) {
     const col = v.kind === 'collection' && st.cat ? st.cat.collections.find((c) => c.id === v.colId) : null;
     input.placeholder = col ? tr('Chercher dans {name}', { name: col.name }) + (col.total ? ' (' + fmt(col.total) + ')' : '') : tr('Rechercher un personnage, une série, un jeu…');
     input.setAttribute('aria-label', col ? tr('Chercher dans la collection') : tr('Rechercher un avatar'));
-    count.textContent = st.scope ? st.scope.collections.length + ' collections' : '';
+    count.textContent = st.scope ? tr('{length} collections', { length: st.scope.collections.length }) : '';
   }
 
   function renderRail() {

@@ -51,7 +51,7 @@ const initialOfName = (name) => (name || '?').trim().slice(0, 1).toUpperCase();
 /** Message lisible d'une erreur de l'API utilisateur. */
 export function errorText(err) {
   if (!(err instanceof UserApiError)) return tr('Une erreur est survenue.');
-  const wait = err.retryAfterSec ? ' ' + tr('Réessaie dans {v}.', { v: (err.retryAfterSec > 90 ? Math.ceil(err.retryAfterSec / 60) + ' min' : err.retryAfterSec + ' s') }) : '';
+  const wait = err.retryAfterSec ? ' ' + tr('Réessaie dans {v}.', { v: (err.retryAfterSec > 90 ? tr('{v} min', { v: Math.ceil(err.retryAfterSec / 60) }) : err.retryAfterSec + ' s') }) : '';
   switch (err.code) {
     case 'network': return tr('lastAddon est injoignable.');
     case 'invalid_credentials': return tr('Nom d’utilisateur ou mot de passe incorrect.');

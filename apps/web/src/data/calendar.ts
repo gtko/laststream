@@ -1,7 +1,7 @@
 /** Calendrier des suivis : grille du mois, libellés de sortie, regroupement par jour. */
 
 import { pad2 } from './format';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 export interface CalEvent {
   /** AAAA-MM-JJ. */
@@ -74,7 +74,7 @@ export function movieReleases(results: ReleaseResult[] | undefined, region: stri
 
 export function groupByDate(events: CalEvent[]): Map<string, CalEvent[]> {
   const map = new Map<string, CalEvent[]>();
-  [...events].sort((a, b) => a.date.localeCompare(b.date) || (a.start ?? 0) - (b.start ?? 0) || a.title.localeCompare(b.title, 'fr')).forEach((e) => {
+  [...events].sort((a, b) => a.date.localeCompare(b.date) || (a.start ?? 0) - (b.start ?? 0) || a.title.localeCompare(b.title, intlLocale())).forEach((e) => {
     (map.get(e.date) ?? map.set(e.date, []).get(e.date)!).push(e);
   });
   return map;
@@ -167,12 +167,12 @@ export function dotKinds(events: ReadonlyArray<Pick<CalEvent, 'kind'>>): { shown
 /** « 21 octobre, 4 sorties » : nom accessible d'une cellule. */
 export function dayAriaLabel(date: string, count: number): string {
   const d = new Date(date + 'T00:00:00');
-  const day = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  const day = d.toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long' });
   return day + ', ' + (count === 0 ? tr('aucune sortie') : count + (count > 1 ? ' sorties' : ' sortie'));
 }
 
 /** « mercredi 21 octobre » : titre du panneau du jour. */
-export const dayTitle = (date: string): string => new Date(date + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+export const dayTitle = (date: string): string => new Date(date + 'T00:00:00').toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
 
 /** Deux initiales d'un titre, pour l'affiche absente. */
 export const initials = (title: string): string => title.split(/\s+/).filter(Boolean).map((w) => Array.from(w)[0]).join('').slice(0, 2).toUpperCase();

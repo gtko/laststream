@@ -21,7 +21,7 @@ import { addonLogHTML, importedAddonsHTML, reportHTML } from './migrationReport.
 import { fieldRow } from './settings-ui.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 const OPEN_KEY = 'ls_migration_open';
 /** Page publique du programme bêta des migrants (site laststream.app). */
@@ -81,7 +81,7 @@ function summary() {
   const j = ui.job;
   if (ui.busy) return tr('Import en cours…');
   if (j && j.status === 'paused') return tr('Import {v} en pause', { v: SOURCE_LABEL[j.source] });
-  if (j && j.finishedAt) return tr('Dernier import : {v}, le {v2}', { v: SOURCE_LABEL[j.source], v2: new Date(j.finishedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) });
+  if (j && j.finishedAt) return tr('Dernier import : {v}, le {v2}', { v: SOURCE_LABEL[j.source], v2: new Date(j.finishedAt).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long', year: 'numeric' }) });
   return tr('Stremio, Nuvio, Simkl, Plex');
 }
 

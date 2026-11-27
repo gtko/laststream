@@ -84,10 +84,17 @@ export function ago(ts, now = Date.now()) {
   if (!ts) return '';
   const m = Math.max(0, Math.round((now - ts) / 60000));
   if (m < 1) return t('à l’instant');
-  if (m < 60) return m + ' min';
+  if (m < 60) return t('{m} min', { m });
   const h = Math.round(m / 60);
-  if (h < 24) return h + ' h';
-  return Math.round(h / 24) + ' j';
+  if (h < 24) return t('{h} h', { h });
+  return t('{d} j', { d: Math.round(h / 24) });
+}
+
+/** « à l’instant » ou « il y a 12 min » (vide si inconnu). */
+export function agoText(ts, now = Date.now()) {
+  if (!ts) return '';
+  const a = ago(ts, now);
+  return Math.round((now - ts) / 60000) < 1 ? a : t('il y a {ago}', { ago: a });
 }
 
 /** Couleur d'avatar : seulement une couleur hexadécimale, sinon une couleur neutre. */

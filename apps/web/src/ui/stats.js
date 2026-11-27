@@ -15,7 +15,7 @@ import { topBar } from './fragments.js';
 import { columnsSvg, rowsSvg } from './statsCharts.js';
 import { state } from './state.js';
 import { esc, fmtMin } from './util.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 const MONTH_SHORT = ['jan', tr('fév'), 'mar', 'avr', 'mai', 'juin', 'juil', tr('août'), 'sep', 'oct', 'nov', tr('déc')];
 const WEEK_SHORT = [tr('Lun'), tr('Mar'), tr('Mer'), tr('Jeu'), tr('Ven'), tr('Sam'), tr('Dim')];
@@ -28,10 +28,10 @@ const storage = () => {
     return undefined;
   }
 };
-const int = (n) => Math.round(n).toLocaleString('fr-FR');
+const int = (n) => Math.round(n).toLocaleString(intlLocale());
 const count = (n, one, many) => int(n) + ' ' + (n === 1 ? one : many);
 const argmax = (a) => a.indexOf(Math.max(...a));
-const fmtDay = (ts) => new Date(ts).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const fmtDay = (ts) => new Date(ts).toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 const fmtDuration = (minutes) => fmtMin(minutes) || tr('0 min');
 
 let runId = 0;

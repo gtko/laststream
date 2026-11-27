@@ -60,7 +60,7 @@ export function testNoteHTML(t) {
   const r = t.result || {};
   const ms = Number.isFinite(r.latencyMs) ? Math.round(r.latencyMs) + ' ms' : '';
   if (r.ok) return '<span class="adm-test-r is-ok">' + tr('Clé valide') + (ms ? ' · ' + ms : '') + '</span>';
-  const why = [r.status != null ? 'HTTP ' + r.status : '', TEST_ERROR[r.error] || r.error || ''].filter(Boolean).join(' · ');
+  const why = [r.status != null ? tr('HTTP {status}', { status: r.status }) : '', TEST_ERROR[r.error] || r.error || ''].filter(Boolean).join(' · ');
   return '<span class="adm-test-r is-bad">' + tr('Échec') + (why ? ' · ' + esc(why) : '') + (ms ? ' · ' + ms : '') + '</span>';
 }
 

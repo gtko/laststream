@@ -273,7 +273,7 @@ function summaryText(list) {
   const free = list.filter((i) => i.state === 'free' && !isRevoked(i)).length;
   const sent = list.filter((i) => i.state === 'sent' && !isRevoked(i)).length;
   const used = list.filter((i) => i.state === 'used').length;
-  const parts = [free ? plural(free, 'billet') + ' disponible' + (free > 1 ? 's' : '') : tr('Aucun billet disponible')];
+  const parts = [free ? tr('{free} disponible', { free: plural(free, 'billet') }) + (free > 1 ? 's' : '') : tr('Aucun billet disponible')];
   if (sent) parts.push(plural(sent, tr('envoyé')));
   parts.push(plural(used, tr('validé')));
   return parts.join(' · ');

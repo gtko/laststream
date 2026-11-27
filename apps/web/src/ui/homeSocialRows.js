@@ -64,7 +64,7 @@ function liveCard(r) {
   const nb = Number(r.participants) || 0;
   return '<article class="hsr-mlive"><span class="hsr-live"><i aria-hidden="true">' + t('</i>{host} regarde en ce moment', { host: esc(r.host) }) + '</span>' +
     '<div class="hsr-top">' + posterHTML(r.poster, r.title) + '<div class="hsr-body"><h3 class="hsr-t">' + esc(r.title) + '</h3>' +
-    '<p class="hsr-sub">' + nb + ' spectateur' + (nb > 1 ? 's' : '') + '</p></div></div>' +
+    '<p class="hsr-sub">' + t('{nb} spectateur', { nb }) + (nb > 1 ? 's' : '') + '</p></div></div>' +
     '<a class="btn btn-primary hsr-btn hsr-mjoin" href="#/party/' + encodeURIComponent(r.id) + '" data-go aria-label="' + t('Rejoindre le salon de {host} : {title}', { host: esc(r.host), title: esc(r.title) }) + '">' + t('Rejoindre le salon') + '</a></article>';
 }
 

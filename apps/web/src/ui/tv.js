@@ -17,11 +17,11 @@ import { ICON } from './icons.js';
 import { initialStatus } from './tvStatus.js';
 import { state } from './state.js';
 import { esc, names, store } from './util.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 export const tv = {
   user: [], epg: new Map(), epgReq: new Set(), epgPending: new Map(), w0: 0,
-  cat: tr('Toutes'), list: [], shown: 0, homeList: [], favHome: [], play: null,
+  cat: 'Toutes', list: [], shown: 0, homeList: [], favHome: [], play: null,
   hls: null, hlsPromise: null, bannerTimer: null, stallTimer: null, playToken: 0, attempt: 0, info: false, opener: null, io: null,
   // Signal d'état du lecteur (tvStatus.js), son minuteur, et chaînes en échec pendant cette session (ids).
   status: initialStatus(), statusTimer: 0, failed: new Set(),
@@ -31,7 +31,8 @@ export const tv = {
   // Playlists de l'utilisateur (box, IPTV) : chaînes absentes du catalogue chargé, et leurs catégories.
   boxOnly: [], boxCats: [],
 };
-export const TV_CATS = [tr('Toutes'), tr('Favoris'), tr('Info'), tr('Sport'), tr('Cinéma'), tr('Jeunesse'), tr('Musique'), tr('Divertissement'), tr('Documentaires'), 'FAST', tr('Ma playlist')];
+/** Catégories : identifiants en français (comparés aux catégories des chaînes), traduits à l'affichage (LAST-1658). */
+export const TV_CATS = ['Toutes', 'Favoris', 'Info', 'Sport', 'Cinéma', 'Jeunesse', 'Musique', 'Divertissement', 'Documentaires', 'FAST', 'Ma playlist'];
 export const PX_MIN = 160 / 30; // 30 min = 160 px
 export const EPG_H = 6;
 export const EPG_CH_W = 220;
@@ -86,8 +87,8 @@ document.addEventListener('error', (e) => {
  */
 export function playableChannels() {
   const f = initFilters();
-  const cat = Array.from(tv.byId.values()).filter((c) => matchesFilters(c, f, tr('Toutes')));
-  return rankChannels(cat, f.country).concat(tv.boxOnly.filter((c) => matchesFilters(c, f, tr('Toutes'))), tv.user);
+  const cat = Array.from(tv.byId.values()).filter((c) => matchesFilters(c, f, 'Toutes'));
+  return rankChannels(cat, f.country).concat(tv.boxOnly.filter((c) => matchesFilters(c, f, 'Toutes')), tv.user);
 }
 
 /**
@@ -104,7 +105,7 @@ export function syncBox() {
   tv.boxOnly = box.length ? boxOnlyChannels(box, matched, q) : [];
   tv.boxCats = boxGroups(box).map(boxCat);
   SPECIAL_CATS.length = BASE_CATS.length;
-  if (box.length) SPECIAL_CATS.push(tr('Ma box'), ...tv.boxCats);
+  if (box.length) SPECIAL_CATS.push('Ma box', ...tv.boxCats);
 }
 
 /** Chaîne uniquement présente dans une playlist et illisible ici (navigateur, hors du réseau de la box) : { ok, note }. */
@@ -116,7 +117,7 @@ export const boxLocked = (c) => !boxStatus(c).ok;
 const FAV_SNAP_KEY = 'ls_tv_favch';
 const FILTERS_KEY = 'ls_tv_filters';
 const PAGE_LIMIT = 500; // maximum accepté par le serveur : la liste est classée ici, il faut donc tout le catalogue du pays
-const BASE_CATS = [tr('Toutes'), tr('Favoris'), tr('Ma playlist')];
+const BASE_CATS = ['Toutes', 'Favoris', 'Ma playlist'];
 // Catégories locales : s'y ajoutent « Ma box » et les group-title des playlists de l'utilisateur (voir syncBox).
 const SPECIAL_CATS = BASE_CATS.slice();
 export const favSnaps = () => store(FAV_SNAP_KEY) || {};
@@ -171,7 +172,7 @@ export function matchesFilters(c, f, cat) {
 // Chaîne de playlist : guide local (XMLTV de l'utilisateur, clé = id de la chaîne) sinon identifiant de guide du catalogue.
 // Chaîne du catalogue : guide du serveur, clé = id de la chaîne.
 export const epgKey = (c) => (c.source === 'box' ? (hasLocalGuide(c.id) ? c.id : c.epgId || '') : c.source === 'user' ? c.epgId || '' : c.id);
-export const fmtHM = (sec) => new Date(sec * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+export const fmtHM = (sec) => new Date(sec * 1000).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
 
 export function tvWindow() {
   const now = Math.floor(Date.now() / 1000);
@@ -192,7 +193,7 @@ export function loadUserPlaylist() {
 export async function loadTvChannels() {
   // Rangée d'accueil : pays + langue de l'utilisateur, chaînes fiables seulement.
   const f = initFilters();
-  const r = await fetchChannels({ country: f.country, language: langCode3(f.language), page: 1, limit: PAGE_LIMIT }, { country: f.country, language: f.language, reliable: true }, tr('Toutes'));
+  const r = await fetchChannels({ country: f.country, language: langCode3(f.language), page: 1, limit: PAGE_LIMIT }, { country: f.country, language: f.language, reliable: true }, 'Toutes');
   return rankChannels(r.channels, f.country);
 }
 
@@ -250,7 +251,7 @@ function normFacet(x, labelOf) {
   const arr = Array.isArray(x)
     ? x.map((e) => ({ id: String(e.id != null ? e.id : e.code != null ? e.code : e.value != null ? e.value : ''), label: e.label || e.name || '', count: Number(e.count != null ? e.count : e.n) || 0 }))
     : Object.entries(x).map(([k, v]) => (typeof v === 'number' ? { id: k, label: '', count: v } : { id: k, label: (v && (v.label || v.name)) || '', count: Number(v && v.count) || 0 }));
-  return arr.filter((e) => e.id).map((e) => Object.assign(e, { label: e.label || labelOf(e.id) })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'fr'));
+  return arr.filter((e) => e.id).map((e) => Object.assign(e, { label: e.label || labelOf(e.id) })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, intlLocale()));
 }
 
 export function normFacets(raw) {
@@ -377,8 +378,8 @@ export function catCount(cat) {
 export function catsHTML() {
   const kid = isKidProfile();
   const server = tv.catFacets && tv.catFacets.categories.length ? tv.catFacets.categories.filter((k) => !kid || isKidCat(k)).map((k) => ({ id: k.id, label: k.label })) : null;
-  const list = [tr('Toutes'), tr('Favoris')].map((c) => ({ id: c, label: c }))
-    .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c) && (!kid || /jeunesse/i.test(c))).map((c) => ({ id: c, label: c })))
+  const list = ['Toutes', 'Favoris'].map((c) => ({ id: c, label: tr(c) }))
+    .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c) && (!kid || /jeunesse/i.test(c))).map((c) => ({ id: c, label: c === 'FAST' ? c : tr(c) })))
     .concat(kid || !tv.boxOnly.length && !activeBoxChannels().length ? [] : [{ id: 'Ma box', label: tr('Ma box') }].concat(tv.boxCats.map((g) => ({ id: g, label: g }))))
     .concat(kid ? [] : [{ id: 'Ma playlist', label: tr('Ma playlist') }]);
   return list.map((c) => {
@@ -595,7 +596,7 @@ export async function tvTest(save) {
 
 /** Choix d'une catégorie (navigation latérale ou liste déroulante) : nouvelle requête au serveur. */
 export async function setCategory(cat) {
-  tv.cat = cat || tr('Toutes');
+  tv.cat = cat || 'Toutes';
   await reloadList();
   const nb = detailEl.querySelector('[data-tvcat="' + tv.cat.replace(/"/g, '\\"') + '"]');
   if (nb) nb.focus({ preventScroll: true });

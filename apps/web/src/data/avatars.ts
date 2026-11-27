@@ -6,7 +6,7 @@
  */
 
 import { HERO_FAMILIES, HERO_FAMILY_IDS, type HeroFamily } from './heroes/render';
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 export type { HeroFamily } from './heroes/render';
 export { HERO_FAMILIES } from './heroes/render';
@@ -234,5 +234,5 @@ export function avatarCredits(): AvatarCredit[] {
     cur.styles.push({ label: st.label, source: st.source });
     map.set(key, cur);
   }
-  return [...map.values()].sort((a, b) => a.creator.localeCompare(b.creator, 'fr'));
+  return [...map.values()].sort((a, b) => a.creator.localeCompare(b.creator, intlLocale()));
 }

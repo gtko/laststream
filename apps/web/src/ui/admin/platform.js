@@ -10,7 +10,7 @@ import { confirmDialog } from '../admin-dialog.js';
 import { esc } from '../util.js';
 import { admCard, adminErr, attempt, badge, empty, kpi, loaded, sectionHead, table } from './common.js';
 import { loadInto } from './view-state.js';
-import { t as tr } from '../../i18n';
+import { t as tr, intlLocale } from '../../i18n';
 
 // ---------- Performance ----------
 const RANGES = [['1h', '1 h', tr('1 heure')], ['24h', '24 h', tr('24 heures')], ['7d', '7 j', tr('7 jours')]];
@@ -19,7 +19,7 @@ const rangeLabel = (r) => (RANGES.find((x) => x[0] === r) || [0, 0, r])[2];
 function timeLabels(series, range) {
   return series.map((s) => {
     const d = new Date(toMs(s.t));
-    return range === '7d' ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    return range === '7d' ? d.toLocaleDateString(intlLocale(), { day: '2-digit', month: '2-digit' }) : d.toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
   });
 }
 
@@ -56,7 +56,7 @@ function errorsCard(m) {
 export function performanceHTML(S) {
   const picker = '<div class="adm-seg" role="group" aria-label="' + tr('Période') + '" data-nav>' + RANGES.map(([v, short]) =>
     '<button type="button" class="adm-seg-b" data-adm-range="' + v + '" data-adm-focus="range:' + v + '" aria-pressed="' + (S.range === v) + '">' + short + '</button>').join('') + '</div>';
-  const upd = '<p class="adm-live" role="status">' + (S.updatedAt ? tr('Mis à jour à {v} · actualisation automatique toutes les 30 s (en pause si l’onglet est masqué).', { v: new Date(S.updatedAt).toLocaleTimeString('fr-FR') }) : '') + '</p>';
+  const upd = '<p class="adm-live" role="status">' + (S.updatedAt ? tr('Mis à jour à {v} · actualisation automatique toutes les 30 s (en pause si l’onglet est masqué).', { v: new Date(S.updatedAt).toLocaleTimeString(intlLocale()) }) : '') + '</p>';
   return sectionHead(tr('Performance'), tr('Trafic, erreurs et latences du serveur.'), '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>' + tr('Actualiser') + '</button>') +
     '<div class="adm-perf-bar">' + picker + upd + '</div>' +
     loaded(S.perf, (m) => {
@@ -84,7 +84,7 @@ export function performanceHTML(S) {
 }
 
 function fmtRate(n) {
-  return (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10).toLocaleString('fr-FR');
+  return (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10).toLocaleString(intlLocale());
 }
 
 function bindPerformance(root, ctx) {
@@ -155,7 +155,7 @@ function testNote(t) {
       const r = t.result || {};
       const ms = fmtMs(r.latencyMs);
       if (r.ok) return '<span class="adm-test-r is-ok">OK · ' + esc(ms) + '</span>';
-      const why = [r.status != null ? 'HTTP ' + r.status : '', TEST_ERROR[r.error] || r.error || ''].filter(Boolean).join(' · ');
+      const why = [r.status != null ? tr('HTTP {status}', { status: r.status }) : '', TEST_ERROR[r.error] || r.error || ''].filter(Boolean).join(' · ');
       return '<span class="adm-test-r is-bad">' + tr('Échec{v} · {ms}', { v: (why ? ' · ' + esc(why) : ''), ms: esc(ms) }) + '</span>';
     }
     default: return '';

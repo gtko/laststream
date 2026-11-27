@@ -2,7 +2,7 @@ import { addonUrl, ltUrl } from './config';
 import { getBandwidthSetting, type BandwidthSetting } from './prefs';
 import { getLaststream, type Lang, type LastStreamInfo, type Stream } from './stream';
 import { requestJson } from './transport';
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 /* Sources de lecture : récupération des streams lastAddon, tri par score, regroupement par qualité,
  * mesure du débit et choix de la source automatique. Fonctions pures testées dans tests/sources.test.ts. */
@@ -79,7 +79,7 @@ export function notYetDigitalOf(raw: { notYetDigital?: unknown; digitalDate?: un
 export function notYetDigitalText(digitalDate?: string): string {
   if (digitalDate === undefined) return t('Pas encore disponible en streaming.');
   const d = new Date(digitalDate + 'T00:00:00');
-  const label = Number.isNaN(d.getTime()) ? digitalDate : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const label = Number.isNaN(d.getTime()) ? digitalDate : d.toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long', year: 'numeric' });
   return t('Pas encore disponible en streaming (sortie numérique prévue le {label}).', { label });
 }
 

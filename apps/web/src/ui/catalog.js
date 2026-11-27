@@ -9,7 +9,7 @@ import { EMPTY_DETAIL, GENRE_FR, IMG } from './constants.js';
 import { fetchProviders } from './providers.js';
 import { state } from './state.js';
 import { fmtMin, fmtNum } from './util.js';
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 
 export const detailPromises = new Map();
 export const detailOf = (it) => state.details.get(it.key) || EMPTY_DETAIL;
@@ -84,7 +84,7 @@ export function availOf(raw) {
 
 export function seriesNote(raw) {
   const next = raw.next_episode_to_air;
-  const short = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const short = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' });
   if (next && next.air_date) {
     const d = dayDiff(next.air_date);
     if (d >= 0 && d <= 45) return tr('Nouvel épisode le {air_date}', { air_date: short(next.air_date) });

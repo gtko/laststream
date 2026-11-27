@@ -28,7 +28,7 @@ export function railGroups(s) {
 }
 
 function itemHTML(f, group) {
-  const state = group === 'watching' ? 'regarde ' + f.watching.title : (SEEN_LABEL[f.status] || '').toLowerCase();
+  const state = group === 'watching' ? tr('regarde {title}', { title: f.watching.title }) : (SEEN_LABEL[f.status] || '').toLowerCase();
   return '<li><button type="button" class="fr-item is-' + group + '" data-fr-pid="' + esc(f.pid) + '" title="' + esc(shortName(f)) + '"' +
     ' aria-label="' + esc(shortName(f) + (f.household ? ' (foyer)' : '') + (state ? ', ' + state : '')) + '">' +
     avatarHTML(f, 'fr-av', group === 'watching' ? 'watch' : f.status) + '</button></li>';

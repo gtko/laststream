@@ -13,7 +13,7 @@ import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { ICON } from './icons.js';
 import { sortedFriends } from './partyfriends.js';
-import { ago, clock, episodeCode, livePos, shortName, watchLine } from './socialFmt.js';
+import { agoText, clock, episodeCode, livePos, shortName, watchLine } from './socialFmt.js';
 import { state } from './state.js';
 import { joinErrorMessage } from './socialChat.js';
 import { esc, rewriteKeepingFocus } from './util.js';
@@ -71,8 +71,8 @@ function allFriends() {
 export const hostFriend = (host, friends) => friends.find((f) => !f.muted && (norm(f.handle.name) === norm(host) || norm(f.handle.full) === norm(host))) || null;
 
 const openedText = (r) => {
-  const t = ago(Date.parse(r.createdAt));
-  return t ? ' ' + tr('· ouvert') + ' ' + (t.startsWith('à') ? t : 'il y a ' + t) : '';
+  const t = agoText(Date.parse(r.createdAt));
+  return t ? ' ' + tr('· ouvert') + ' ' + t : '';
 };
 
 const posterHTML = (poster) => '<span class="wp-poster' + (poster ? '' : ' no-img') + '">' + (poster ? '<img src="' + esc(IMG('w185', poster)) + '" alt="" loading="lazy" decoding="async">' : '') + '</span>';

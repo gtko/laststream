@@ -12,7 +12,7 @@ import { connectShell, isShellEnvironment } from '../player/shell';
 import { browserFetchHttp, capacitorHttp, capacitorNative, shellHttp, type HttpFn } from '../sources/debrid/http';
 import { isLanHost } from './lan';
 import { nationalEntry, normText } from './tvRank';
-import { t as tx } from '../i18n';
+import { t as tx, intlLocale } from '../i18n';
 
 export const FREEBOX_PLAYLIST_URL = 'http://mafreebox.freebox.fr/freeboxtv/playlist.m3u';
 /** Commande IPC de la coque (même signal de réponse que `native-http`). */
@@ -315,7 +315,7 @@ export function mergeBox(catalog: MergeableChannel[], box: readonly BoxChannel[]
 }
 
 /** Catégorie d'une chaîne de playlist dans la liste TV : « Box · Sport » (préfixée pour ne jamais se confondre avec une catégorie du catalogue). */
-export const boxCat = (group: string): string => (group ? `${tx('Box ·')} ${group}` : tx('Ma box'));
+export const boxCat = (group: string): string => (group ? `Box · ${group}` : 'Ma box');
 
 /** Chaînes de la box absentes du catalogue chargé, sous la forme d'une chaîne de la liste TV (badge « Box »). */
 export function boxOnlyChannels(box: readonly BoxChannel[], matched: ReadonlySet<string>, quality: QualityKey = 'hd'): Array<Record<string, unknown>> {
@@ -326,7 +326,7 @@ export function boxOnlyChannels(box: readonly BoxChannel[], matched: ReadonlySet
     if (!ref) return;
     const e = nationalEntry(b, 'FR');
     out.push({
-      id: b.id, name: b.name, logo: b.logo, group: b.group || tx('Ma box'), cat: boxCat(b.group), source: 'box', fast: false, url: ref.url, sig: null,
+      id: b.id, name: b.name, logo: b.logo, group: b.group || 'Ma box', cat: boxCat(b.group), source: 'box', fast: false, url: ref.url, sig: null,
       epgId: e ? `fr:${e.epg}` : '', tvgId: b.tvgId, flaky: false, lowRel: false, alternatives: [], num: b.num || null, box: ref, boxOnly: true,
     });
   });
@@ -335,7 +335,7 @@ export function boxOnlyChannels(box: readonly BoxChannel[], matched: ReadonlySet
 
 /** Catégories (group-title) des chaînes de la box, par ordre alphabétique. */
 export function boxGroups(box: readonly BoxChannel[]): string[] {
-  return Array.from(new Set(box.map((b) => b.group).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'fr')).slice(0, 40);
+  return Array.from(new Set(box.map((b) => b.group).filter(Boolean))).sort((a, b) => a.localeCompare(b, intlLocale())).slice(0, 40);
 }
 
 // ---------- États : web, hors du réseau local ----------

@@ -63,7 +63,7 @@ function overviewHTML(me, dis) {
     '<dl class="adm-dl">' + dd(tr('Créé le'), esc(fmtDateTime(a.createdAt))) + dd(tr('Parrain'), a.referrer ? esc(a.referrer) : '—') + dd(tr('Dernière activité'), esc(fmtAgo(a.lastActivityAt))) +
     (a.suspendedAt ? dd(tr('Suspendu le'), esc(fmtDateTime(a.suspendedAt)))  : '') + '</dl>' +
     '<h4 class="adm-sub">' + tr('Profils') + '</h4>' + listHTML(d.profiles, tr('Aucun profil.'), (p) => '<li>' + esc(p.name) + ((p.isKid ?? p.kid) ? ' ' + badge(tr('Enfant')) : '') + ((p.hasPin ?? p.pin) ? ' ' + badge('PIN') : '') +
-      ' <span class="adm-dim">' + fmtInt(p.libraryCount ?? p.library ?? 0) + ' titre(s)</span></li>') +
+      ' <span class="adm-dim">' + tr('{fmtInt} titre(s)', { fmtInt: fmtInt(p.libraryCount ?? p.library ?? 0) }) + '</span></li>') +
     '<h4 class="adm-sub">' + tr('Quota d’invitations') + '</h4>' +
     '<div class="adm-quota"><p class="adm-quota-t">' + tr('<strong>{invitesUsed} utilisée(s)</strong> sur un quota de {inviteQuota}', { invitesUsed: fmtInt(a.invitesUsed), inviteQuota: fmtInt(a.inviteQuota) }) + '</p>' +
     '<div class="adm-stepper" role="group" aria-label="' + tr('Quota d’invitations') + '">' +

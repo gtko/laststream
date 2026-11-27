@@ -3,7 +3,7 @@
  * réseau : la source (serveur ou repli local) est choisie par userStore, l'affichage par library.js.
  */
 
-import { t as tr } from '../i18n';
+import { t as tr, intlLocale } from '../i18n';
 /** Un titre vu. `watched` : 1 pour un film, nombre d'épisodes vus hors saison 0 pour une série. */
 export interface WatchedTitle {
   /** `movie:550` ou `tv:1399`. */
@@ -32,7 +32,7 @@ export interface WatchedSortable {
   year: string;
 }
 
-const byTitle = (a: WatchedSortable, b: WatchedSortable): number => a.name.localeCompare(b.name, 'fr');
+const byTitle = (a: WatchedSortable, b: WatchedSortable): number => a.name.localeCompare(b.name, intlLocale());
 
 /** Comparateur du sélecteur de tri ; à égalité, le titre (ordre français). `recent` : le plus récemment vu d'abord. */
 export function compareWatched(sort: WatchedSort): (a: WatchedSortable, b: WatchedSortable) => number {

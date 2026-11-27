@@ -13,7 +13,7 @@ import {
   type ItemResult, type ItemStatus, type MigrationAction, type MigrationBundle, type MigrationItem, type MigrationList, type MigrationSource,
 } from './types';
 import { decodeWatched, type Inflate } from './watchedBitfield';
-import { t as tr } from '../../i18n';
+import { t as tr, intlLocale } from '../../i18n';
 
 const JOB_PREFIX = 'laststream.migration.job:';
 const SAVE_EVERY = 20;
@@ -102,7 +102,7 @@ export function reportOf(job: MigrationJob): MigrationReport {
 /** Rapport en texte brut (à copier ou à télécharger). */
 export function reportText(rep: MigrationReport, at = Date.now()): string {
   const lines = [
-    tr('Import {v} vers Laststream, {v2}', { v: SOURCE_LABEL[rep.source], v2: new Date(at).toLocaleString('fr-FR') }),
+    tr('Import {v} vers Laststream, {v2}', { v: SOURCE_LABEL[rep.source], v2: new Date(at).toLocaleString(intlLocale()) }),
     tr('Réussis : {ok} · Ignorés : {skipped} · Échoués : {failed} (sur {total})', { ok: rep.ok, skipped: rep.skipped, failed: rep.failed, total: rep.total }),
     '',
   ];

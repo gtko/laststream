@@ -26,7 +26,7 @@ import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { tv } from './tv.js';
 import { esc, fmtDate, fmtMin, store } from './util.js';
-import { t as tr, tn } from '../i18n';
+import { t as tr, tn, intlLocale } from '../i18n';
 
 let ficheIO = null;
 // ---------- Fiche : rendu ----------
@@ -112,7 +112,7 @@ function resumeBarHTML(m) {
   const pct = Math.max(1, Math.min(99, Math.round((p.position / p.duration) * 100)));
   const left = Math.max(1, Math.round((p.duration - p.position) / 60));
   return '<div class="f-resume"><span class="f-resume-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></span>' +
-    '<span class="f-resume-t">reste ' + esc(left >= 60 ? fmtMin(left) : left + ' min') + '</span></div>';
+    '<span class="f-resume-t">' + tr('reste {v}', { v: esc(left >= 60 ? fmtMin(left) : tr('{left} min', { left })) }) + '</span></div>';
 }
 
 export function updatePlayLabel(m) {
@@ -249,7 +249,7 @@ function ficheHTML(m) {
 
 function infosHTML(m) {
   const rows = [];
-  const money = (n) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  const money = (n) => new Intl.NumberFormat(intlLocale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
   if (m.original && m.original !== m.name) rows.push([tr('Titre original'), m.original]);
   if (m.countries.length) rows.push([tr('Pays'), m.countries.join(', ')]);
   if (m.origLang) rows.push([tr('Langue originale'), m.origLang]);

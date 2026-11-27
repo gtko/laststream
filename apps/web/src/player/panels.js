@@ -9,7 +9,7 @@ import { isEpFolded } from './epfold.js';
 import { localDay } from './episodes';
 import { partLabel } from '../data/episodeParts';
 import '../ui/epStill.js'; // repli des vignettes cassées (écouteur global)
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 export const head = (title, sub) => '<div class="lp-panel-head"><div><h2>' + esc(title) + '</h2>' + (sub ? '<p class="lp-panel-sub">' + esc(sub) + '</p>' : '') + '</div>' +
   '<button type="button" class="lp-btn lp-btn-s" data-act="panel-close" aria-label="' + t('Fermer le panneau') + '">' + LI.close + '</button></div>';
@@ -60,7 +60,7 @@ export function tracksHtml(d) {
   const subRows = (sec) => '<h4 class="lp-sec-h">' + esc(sec.title) + '</h4>' + sec.groups.map((g) =>
     (sec.groups.length > 1 ? '<h5 class="lp-grp-h">' + esc(g.name) + '</h5>' : '') +
     g.items.map((it) => opt('sub', { id: it.track.id }, it.label,
-      (it.unsupported ? '<em>' + esc(it.unsupported) + '</em>' : it.chips.map((c) => '<b class="lp-tag' + (c.startsWith('Synchronisé') ? ' is-sync' : '') + '">' + esc(c) + '</b>').join('')),
+      (it.unsupported ? '<em>' + esc(it.unsupported) + '</em>' : it.chips.map((c) => '<b class="lp-tag' + (c === t('Synchronisé avec ce fichier') ? ' is-sync' : '') + '">' + esc(c) + '</b>').join('')),
       it.track.id === s.selectedId, it.track.renderable ? '' : ' disabled')).join('')).join('');
 
   const st = s.style;
@@ -88,14 +88,14 @@ export function tracksHtml(d) {
 
 export function episodesHtml(d) {
   const cur = d.current;
-  const fmtDate = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso; } };
-  const fmtShort = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }); } catch (_) { return iso; } };
+  const fmtDate = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso; } };
+  const fmtShort = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' }); } catch (_) { return iso; } };
   const today = localDay(new Date());
   const rows = d.loading ? '<p class="lp-empty">' + t('Chargement…') + '</p>' : d.episodes.map((ep) => {
     const on = d.season === cur.season && ep.episode === cur.episode;
     // Diffusé, ou diffusion dans les 14 prochains jours : lisible (la recherche de sources décide), sinon « Bientôt ».
     const open = ep.aired || !!ep.playable;
-    const meta = [ep.runtime ? ep.runtime + ' min' : '', ep.airDate ? fmtDate(ep.airDate) : ''].filter(Boolean).join(' · ');
+    const meta = [ep.runtime ? t('{runtime} min', { runtime: ep.runtime }) : '', ep.airDate ? fmtDate(ep.airDate) : ''].filter(Boolean).join(' · ');
     // Pastille discrète : « Aujourd’hui » pour l’épisode du jour ; « À venir · 21 oct. » pour une diffusion dans la fenêtre
     // (« peut-être déjà en ligne » dans l’infobulle) ; « Bientôt » au-delà ; rien pour un épisode déjà diffusé.
     const pill = ep.airDate === today ? { text: t('Aujourd’hui'), tip: t('Diffusé aujourd’hui'), now: true }

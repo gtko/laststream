@@ -9,7 +9,7 @@ import { avatarAttrs } from './avatar-art.js';
 import { toast } from './dom.js';
 import { avatarHTML, nameOf, SEEN_LABEL } from './socialFmt.js';
 import { esc } from './util.js';
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 /** Amis déjà invités dans le salon affiché (pid). */
 export const invitedPids = new Set();
@@ -18,7 +18,7 @@ export const invitedPids = new Set();
 export function sortedFriends() {
   const st = socialState();
   const rank = { online: 0, away: 1, dnd: 2, offline: 3 };
-  return [...st.friends, ...st.household].sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3) || a.handle.full.localeCompare(b.handle.full, 'fr'));
+  return [...st.friends, ...st.household].sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3) || a.handle.full.localeCompare(b.handle.full, intlLocale()));
 }
 
 /** Liste des amis à inviter (HTML) ; message si le social n'est pas disponible. `attr` : nom de l'attribut des boutons (sans « data- »). */

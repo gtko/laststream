@@ -181,7 +181,7 @@ export async function renderFollowRow() {
     return it ? tileCard(it, { variant: 'land', alwaysMeta: true, sub: e.label + ' · ' + (e.date < today ? 'sorti' : countdown(e.date) || fmtShort(e.date)) }) : '';
   }).filter(Boolean);
   if (!items.length) return;
-  fresh.innerHTML = section('suivis', tr('Cette semaine dans tes suivis'), items, () => row(items.join(''))).replace('</h2>', ' <a class="row-link" href="#/calendar" data-calnav>Calendrier</a></h2>');
+  fresh.innerHTML = section('suivis', tr('Cette semaine dans tes suivis'), items, () => row(items.join(''))).replace('</h2>', ' <a class="row-link" href="#/calendar" data-calnav>' + tr('Calendrier') + '</a></h2>');
   observeTiles(fresh);
 }
 

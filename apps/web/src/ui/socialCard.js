@@ -20,7 +20,7 @@ import { SI } from './socialIcons.js';
 import { joinErrorMessage, reportErrorMessage } from './socialChat.js';
 import { inviteToParty, openShareDialog } from './socialHooks.js';
 import {
-  ago, avatarHTML, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf, posterBox, progressPct, shortName, socialErrorMessage,
+  agoText, avatarHTML, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf, posterBox, progressPct, shortName, socialErrorMessage,
   watchLine,
 } from './socialFmt.js';
 import { createFriendNotes } from './friendNotes.js';
@@ -28,7 +28,7 @@ import { playDirect } from './sources-ui.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { esc } from './util.js';
-import { t } from '../i18n';
+import { t, intlLocale } from '../i18n';
 
 const TABS = [['recent', t('Récemment')], ['lib', t('Bibliothèque')], ['notes', t('Ses notes')]];
 const REASONS = [['spam', t('Spam')], ['harassment', t('Harcèlement')], ['other', t('Autre')]];
@@ -57,7 +57,7 @@ function sinceText(ts) {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
   const same = d.getFullYear() === new Date().getFullYear();
-  return t('Amis depuis {v}', { v: d.toLocaleDateString('fr-FR', same ? { month: 'long' } : { month: 'long', year: 'numeric' }) });
+  return t('Amis depuis {v}', { v: d.toLocaleDateString(intlLocale(), same ? { month: 'long' } : { month: 'long', year: 'numeric' }) });
 }
 
 /** Crée le contrôleur de la fiche. `deps` : root (la barre), box (zone de la fiche), toast, findFriend(pid), back(), openChat(pid), watchWith(friend). */
@@ -78,7 +78,7 @@ export function createFriendCard(deps) {
   const resolveTitle = createTitleResolver((kind, id) => tmdb(kind + '/' + id), {
     known: (kind, id) => {
       const it = state.byKey.get(kind + ':' + id);
-      return it && it.name && it.name !== 'Sans titre' ? { title: it.name, poster: it.posterPath || '' } : null;
+      return it && it.name && it.name !== t('Sans titre') ? { title: it.name, poster: it.posterPath || '' } : null;
     },
   });
 
@@ -146,9 +146,9 @@ export function createFriendCard(deps) {
     return '<ul class="ss-list ss-hist">' + h.items.map((x) => {
       const code = episodeCode(x);
       const state2 = x.watched ? t('Terminé') : t('En cours · {pos}', { pos: clock(x.pos) });
-      const when = ago(x.updatedAt);
+      const when = agoText(x.updatedAt);
       return '<li class="ss-hrow">' + posterBox(x.poster, x.title, 'ss-poster-s') + '<span class="ss-row-t"><span class="ss-name">' + esc(x.title || fallbackTitle(x)) + (code ? ' · ' + esc(code) : '') + '</span>' +
-        '<span class="ss-sub">' + esc(state2 + (when ? ' · il y a ' + when : '')) + '</span></span></li>';
+        '<span class="ss-sub">' + esc(state2 + (when ? ' · ' + when : '')) + '</span></span></li>';
     }).join('') + '</ul>';
   }
 
