@@ -291,7 +291,31 @@ function langMenu(group, langs, current, all) {
     '><span aria-hidden="true">' + esc(label) + '</span><span class="sr-only">Languages</span></summary><ul>' + items + '</ul></details><!-- langues:fin -->';
 }
 
+/**
+ * Langue du navigateur par défaut. Sur une page française, redirige vers la même page dans la langue préférée du
+ * visiteur : son dernier choix dans le sélecteur (mémorisé), sinon la première langue de navigator.languages qui a
+ * une version du site, sinon l'anglais. Les robots d'indexation restent sur la page demandée.
+ */
+function langScript(group, langs, current) {
+  const codes = ['en', ...langs.map((l) => l.code)];
+  const js = "(function(){var K='ls-lang',C=" + JSON.stringify(current) + ',L=' + JSON.stringify(codes) + ',R=' + JSON.stringify(group.en.slice(3)) + ';' +
+    "function pick(x){var l=String(x||'').toLowerCase(),b=l.split('-')[0],j;if(b==='fr')return 'fr';" +
+    'for(j=0;j<L.length;j++)if(L[j].toLowerCase()===l)return L[j];' +
+    "if(b==='zh')return /-(tw|hk|mo|hant)/.test(l)?'zh-TW':'zh-CN';if(b==='pt')return 'pt-BR';if(b==='no'||b==='nn')return 'nb';" +
+    "for(j=0;j<L.length;j++)if(L[j].split('-')[0]===b)return L[j];return ''}" +
+    "try{document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('nav.lang a[hreflang]');" +
+    "if(a)try{localStorage.setItem(K,a.getAttribute('hreflang'))}catch(_){}});" +
+    "if(C!=='fr'||/bot|crawl|spider|slurp|lighthouse/i.test(navigator.userAgent))return;" +
+    "var s=null;try{s=localStorage.getItem(K)}catch(_){}" +
+    'var p=s?[s]:(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language]);' +
+    "for(var i=0;i<p.length;i++){var t=pick(p[i]);if(t==='fr')return;if(t){location.replace('/'+t+R+location.search+location.hash);return}}" +
+    "location.replace('/en'+R+location.search+location.hash)}catch(_){}})();";
+  return '<!-- langue-auto:début (scripts/i18n-site.mjs) --><script>' + js + '</script><!-- langue-auto:fin -->';
+}
+
 function applyShared(html, group, langs, current, all) {
+  html = html.replace(/<!-- langue-auto:début[\s\S]*?<!-- langue-auto:fin -->\n?/g, '');
+  html = html.replace('</head>', langScript(group, langs, current) + '\n</head>');
   html = html.replace(/(<link rel="alternate" hreflang="[^"]+" href="[^"]*">\n?)+/, alternates(group, langs) + '\n');
   html = html.replace(/<!-- langues:début[\s\S]*?<!-- langues:fin -->/g, '');
   html = html.replace(/(<nav class="lang"[^>]*>[\s\S]*?)(\s*<\/nav>)/, (m, a, b) => a + langMenu(group, langs, current, all) + b);

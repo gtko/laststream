@@ -111,6 +111,7 @@
   ]
 }
 </script>
+<!-- langue-auto:début (scripts/i18n-site.mjs) --><script>(function(){var K='ls-lang',C="id",L=["en","af","ar","be","bg","bn","ca","cs","cy","da","de","el","eo","es","et","eu","fa","fi","fil","gl","he","hi","hr","hu","id","is","it","ja","kk","ko","lt","lv","mk","ml","mr","ms","my","nb","ne","nl","pa","pl","pt-BR","ro","ru","sk","sl","sq","sr","sv","ta","te","th","tr","uk","ur","vi","zh-CN","zh-TW"],R="/guides/invite-someone/";function pick(x){var l=String(x||'').toLowerCase(),b=l.split('-')[0],j;if(b==='fr')return 'fr';for(j=0;j<L.length;j++)if(L[j].toLowerCase()===l)return L[j];if(b==='zh')return /-(tw|hk|mo|hant)/.test(l)?'zh-TW':'zh-CN';if(b==='pt')return 'pt-BR';if(b==='no'||b==='nn')return 'nb';for(j=0;j<L.length;j++)if(L[j].split('-')[0]===b)return L[j];return ''}try{document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('nav.lang a[hreflang]');if(a)try{localStorage.setItem(K,a.getAttribute('hreflang'))}catch(_){}});if(C!=='fr'||/bot|crawl|spider|slurp|lighthouse/i.test(navigator.userAgent))return;var s=null;try{s=localStorage.getItem(K)}catch(_){}var p=s?[s]:(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language]);for(var i=0;i<p.length;i++){var t=pick(p[i]);if(t==='fr')return;if(t){location.replace('/'+t+R+location.search+location.hash);return}}location.replace('/en'+R+location.search+location.hash)}catch(_){}})();</script><!-- langue-auto:fin -->
 </head>
 <body>
 <a class="skip" href="#contenu">Lewati ke konten</a>
