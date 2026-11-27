@@ -69,7 +69,8 @@
   ],
   // TV : passe complète toutes les 6 h ; reprise toutes les 30 min (seules les sources en échec et les sondages restants,
   // voir src/lt/tv-passes.ts). Les deux déclencheurs coïncident à 00:00, 06:00… : la reprise s'efface alors.
-  "triggers": { "crons": ["0 */6 * * *", "*/30 * * * *"] },
+  // Classiques libres : Cron quotidien séparé (src/platform/workers/libres-refresh.ts), index reconstruit une fois par semaine.
+  "triggers": { "crons": ["0 */6 * * *", "*/30 * * * *", "23 4 * * *"] },
 
   // Interface web : build de laststream-app copié dans worker-ui/ par `npm run deploy:worker`.
   // Le Worker passe en premier (en-têtes de cache, routes API) ; html_handling « none » garde les chemins exacts.

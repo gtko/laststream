@@ -661,6 +661,12 @@ Rapport : chaque passage écrit dans `probe.json` un champ `report` (date, flux 
 
 Le proxy HLS reste désactivé (`tvHls: false`, annoncé par `/lt/health`) : les chaînes sont renvoyées avec `sig: null` et le lecteur lit l'URL du flux directement (hls.js, mpv, libVLC). Le Cron sonde chaque flux https (requête avec l'origine de l'application, réponse `Access-Control-Allow-Origin`) et renseigne `direct` (`true` lisible depuis une page web, `false` : http ou sans CORS, absent : inconnu). `GET /lt/tv/channels?direct=1` écarte les chaînes dont aucun flux n'est lisible sans relais (pages web) ; mpv et libVLC n'en ont pas besoin et gardent tout.
 
+### Classiques libres (Cron + R2)
+
+Films libres de droits partout, servis sans source ni extension (rangée d'accueil `GET /:config/lt/libres` et liens
+directs en tête des flux du film). Index construit par un Cron quotidien dédié (`23 4 * * *`, reconstruit une fois par
+semaine) dans R2 (`libres/index.json`). Règle juridique, sources et détails : [docs/classiques-libres.md](docs/classiques-libres.md).
+
 ### Migration des données vers le Durable Object
 
 `npx tsx scripts/export-cloud.ts [--db fichier] [--url https://…] [--force] [--dry-run] [--verify-only]` copie les tables utilisateur d'une base

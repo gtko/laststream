@@ -27,6 +27,11 @@ export function top10<T = Json>(scope: 'movie' | 'tv' | 'all', page = 1, period?
   return api<T>('top10/' + scope, { page: String(page), region: getRegion().code, language: getVideoLang().tag, ...(period ? { window: period } : {}) });
 }
 
+/** Classiques libres (lt/libres.ts) : une page de 20 films libres de droits partout, identifiés par TMDB et IMDb. */
+export function libres<T = Json>(page = 1): Promise<T> {
+  return api<T>('libres', { page: String(page) });
+}
+
 export function postLt<T = Json>(path: string, body: unknown, opts: { timeoutMs?: number } = {}): Promise<T> {
   return requestJson<T>(ltUrl(path), { method: 'POST', body, timeoutMs: opts.timeoutMs });
 }

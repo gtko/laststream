@@ -29,7 +29,8 @@ describe('rangées des pages du menu principal', () => {
     const ctx = { region: 'FR', today: '2026-10-22', month: 10, kidMaxAge: null };
     const typeOf = (id: string) => {
       const f = rowById(id)!.fetch;
-      return f.k === 'discover' || f.k === 'top10' ? f.type : f.k === 'list' ? f.path.split('/')[0] : '';
+      // Classiques libres : films uniquement (lt/libres.ts).
+      return f.k === 'discover' || f.k === 'top10' ? f.type : f.k === 'list' ? f.path.split('/')[0] : f.k === 'libres' ? 'movie' : '';
     };
     HUBS.films.rows.forEach((id) => expect(typeOf(id), id).toBe('movie'));
     HUBS.series.rows.forEach((id) => expect(typeOf(id), id).toBe('tv'));

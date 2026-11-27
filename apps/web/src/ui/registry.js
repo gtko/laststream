@@ -6,7 +6,7 @@ import { closeHover } from './hover.js';
 import { filterAvailable } from './avail.js';
 import { isReleasedItem, releasedParams, todayStr } from './dates.js';
 import { isKidProfile, kidMaxAge, kidSection } from '../data/auth';
-import { tmdb, top10 } from '../data/lt';
+import { libres, tmdb, top10 } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { keepVisible } from '../data/homeFilters';
 import { activeRows, Appearances, fillRow, passesQuality, pickSeed, rankTop, kidBase, makeCtx, MIN_ITEMS, PROBES, ROW_MAX, rowById, TOP_COUNT } from '../data/rows';
@@ -126,6 +126,20 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
       if (first) items.push(register(listOf({ results: [first] }, 'movie')[0]));
     });
     return { title: def.title, items };
+  }
+  if (f.k === 'libres') {
+    // Classiques libres : identifiants servis par lastAddon, fiches lues chez TMDB (une par film, en cache). `raw` = films
+    // reçus (0 : fin de la liste), pour que la rangée s'arrête au lieu de demander des pages vides.
+    const json = await libres(page);
+    const ids = (Array.isArray(json?.results) ? json.results : []).map((r) => r && r.tmdb).filter((id) => Number.isInteger(id));
+    const res = await Promise.allSettled(ids.map((id) => tmdb('movie/' + id)));
+    const items = [];
+    res.forEach((r) => {
+      if (r.status !== 'fulfilled' || !r.value || !r.value.poster_path) return;
+      const item = listOf({ results: [r.value] }, 'movie')[0];
+      if (item) items.push(register(item));
+    });
+    return { title: def.title, raw: ids.length, items };
   }
   if (f.k === 'provider') {
     let services;
