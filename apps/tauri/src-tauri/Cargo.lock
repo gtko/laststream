@@ -2347,7 +2347,7 @@ dependencies = [
 
 [[package]]
 name = "laststream-tauri"
-version = "1.0.81"
+version = "1.0.82"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

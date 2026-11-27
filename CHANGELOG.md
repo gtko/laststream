@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.82 – 2026-11-27
+
+- Données utilisateur : retire le TODO obsolète de l'adaptateur serveur (#44) — @gtko
+
 ## v1.0.81 – 2026-11-27
 
 - LAST-1655 Tarif « Soutenir, J'adore » : montant annuel libre, 24 € minimum (#62) — @gtko
