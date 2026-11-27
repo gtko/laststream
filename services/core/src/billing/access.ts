@@ -61,6 +61,8 @@ const EXEMPT: readonly { method: string; path: RegExp }[] = [
   { method: 'POST', path: /^\/user\/(refresh|logout|logout-all|password)\/?$/ },
   { method: 'DELETE', path: /^\/user\/account\/?$/ },
   { method: '*', path: /^\/user\/billing(\/.*)?$/ },
+  // Forum (LAST-1651) : lecture gratuite, écriture pour tout compte connecté ; les sections payantes sont filtrées par les routes du forum.
+  { method: '*', path: /^\/user\/forum(\/.*)?$/ },
   { method: '*', path: /^\/admin(\/.*)?$/ },
 ];
 

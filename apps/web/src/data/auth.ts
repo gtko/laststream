@@ -61,6 +61,13 @@ export const isOwner = (): boolean => auth.isOwner;
 /** Forum communautaire disponible : service en ligne seulement (désactivé sur un serveur auto-hébergé). */
 export const hasCommunity = (): boolean => auth.community && isServerMode() && !isKidProfile();
 /**
+ * Forum ouvert sans session prête (visiteur sans compte, ou compte sans abonnement) : lecture seule de `#/forum`, le reste
+ * de l'app passe par l'écran de connexion. Le serveur le traite en visiteur (aucun profil envoyé).
+ */
+let forumVisitor = false;
+export const isForumVisitor = (): boolean => forumVisitor;
+export const setForumVisitor = (on: boolean): void => { forumVisitor = on; };
+/**
  * Profil principal du compte : seul à voir Sources, Serveur lastAddon et les clés. Hors mode serveur (repli local) : toujours ;
  * serveur ancien qui n'annonce rien : traité comme principal. Les profils secondaires et enfants n'ont que leurs préférences.
  */

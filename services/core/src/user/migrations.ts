@@ -1161,6 +1161,15 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX forum_feedback_topic ON forum_feedback(topic_id, created_at);
     `,
   },
+  {
+    version: 39,
+    name: 'forum : sections réservées aux abonnés de soutien (lecture libre ailleurs)',
+    sql: `
+      -- Le forum se lit gratuitement ; une catégorie paid_only (les watch parties) est réservée aux abonnés de soutien.
+      ALTER TABLE forum_categories ADD COLUMN paid_only INTEGER NOT NULL DEFAULT 0;
+      UPDATE forum_categories SET paid_only = 1 WHERE id = 'watch-parties';
+    `,
+  },
 ];
 
 /**

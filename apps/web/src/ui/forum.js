@@ -1,7 +1,8 @@
 /* Forum communautaire (LAST-1651) : accueil (#/forum), catégorie (#/forum/c/<id>), sujet (#/forum/t/<id>), nouveau sujet
- * (#/forum/new[/<catégorie>]) et modération (#/forum/mod). Réservé aux comptes qui ont accès au service (abonnement de
- * soutien sur le service en ligne) ; profil enfant exclu. Tout texte de membre passe par textContent ou par le rendu Markdown
- * en nœuds DOM (forumMarkdown.js). */
+ * (#/forum/new[/<catégorie>]) et modération (#/forum/mod). Service en ligne seulement ; profil enfant exclu. Lecture libre :
+ * un visiteur (sans compte, ou compte sans abonnement, voir isForumVisitor) lit sans écrire et est invité à se connecter.
+ * Les sections réservées aux abonnés (watch parties) arrivent sans titre (`restricted`) : cartes floutées. Tout texte de
+ * membre passe par textContent ou par le rendu Markdown en nœuds DOM (forumMarkdown.js). */
 import '../styles/convwin.css';
 import '../styles/forum.css';
 import * as api from '../data/forumApi';
@@ -39,6 +40,7 @@ function errText(e) {
   if (code === 'forum_banned') return 'Tu ne peux plus écrire sur le forum pour le moment.';
   if (code === 'topic_locked') return 'Ce sujet est verrouillé.';
   if (code === 'staff_only') return 'Seule l’équipe peut publier dans cette catégorie.';
+  if (code === 'paid_only') return 'Réservé aux membres qui soutiennent Laststream.';
   if (code === 'moderator_only' || code === 'owner_only' || code === 'forbidden') return 'Action réservée.';
   if (code === 'forum_unavailable') return 'Le forum n’existe que sur le service en ligne Laststream.';
   if (code === 'kid_profile') return 'Le forum n’est pas disponible sur un profil enfant.';
@@ -55,6 +57,46 @@ function errText(e) {
 
 const staff = () => !!homeCache && homeCache.me.role !== 'member';
 const banned = () => !!homeCache && homeCache.me.bannedUntil !== undefined;
+/** Visiteur sans compte (ou sans profil prêt) : lecture seule. */
+const visitor = () => !homeCache || homeCache.me.guest === true;
+/** Abonné de soutien ou équipe : voit les sections réservées. */
+const paid = () => !!homeCache && (homeCache.me.paid === true || staff());
+const canWrite = () => !visitor() && !banned();
+/** Titre factice d'un sujet réservé, flouté à l'écran (le vrai titre n'est pas envoyé aux non-abonnés). */
+const LOCKED_TITLE = 'Séance réservée aux membres qui soutiennent';
+const titleOf = (t) => (t.restricted ? LOCKED_TITLE : t.title);
+/** Floute un titre de sujet réservé ; les lecteurs d'écran entendent « réservé aux abonnés ». */
+function blurIf(el, t) {
+  if (!t.restricted) return el;
+  el.classList.add('fo-blur');
+  el.setAttribute('aria-label', 'Sujet réservé aux abonnés de soutien');
+  return el;
+}
+
+/** Connexion (ou abonnement) demandée depuis le forum en visiteur : écran d'accès, puis l'app complète sur la même page. */
+async function openAccess() {
+  const m = await import('./auth-ui.js');
+  await m.runAuthFlow();
+  location.reload();
+}
+const accessLabel = () => (auth.status === 'needs-subscription' ? 'Soutenir Laststream' : 'Se connecter');
+function accessButton(label = accessLabel(), cls = 'btn btn-primary') {
+  const b = h('button', cls, label, { type: 'button' });
+  b.addEventListener('click', () => { void openAccess(); });
+  return b;
+}
+/** Encart d'invitation : `text` dit ce que la connexion (ou l'abonnement) débloque ; bouton d'accès pour un visiteur. */
+function accessPanel(text, button = true) {
+  const box = h('div', 'fo-access', null, { role: 'note' });
+  box.append(h('p', null, text));
+  if (button) box.append(accessButton());
+  return box;
+}
+const writeInvite = () =>
+  auth.status === 'needs-subscription'
+    ? 'Ton accès de soutien est arrivé à échéance : renouvelle-le pour écrire sur le forum.'
+    : 'Connecte-toi pour poser une question, répondre ou réagir. La lecture reste libre.';
+const paidInvite = 'Les watch parties sont réservées aux membres qui soutiennent Laststream (24 € par an) : séances, inscriptions et salons de visionnage.';
 const nameOf = (a) => (a && a.handle ? a.handle.name : 'Compte supprimé');
 const fullOf = (a) => (a && a.handle ? a.handle.full : '');
 const roleBadge = (a) => (a.role === 'owner' ? h('span', 'fo-badge is-owner', 'Équipe') : a.role === 'mod' ? h('span', 'fo-badge is-mod', 'Modération') : null);
@@ -223,7 +265,7 @@ function dateChip(ms, big = false) {
 function rsvpButton(topic, after) {
   const ev = topic.event;
   const b = h('button', 'btn ' + (ev.mine ? 'btn-ghost fo-going' : 'btn-primary'), ev.mine ? 'Inscrit' : 'Je participe', { type: 'button', 'aria-pressed': String(!!ev.mine) });
-  if (banned() || Date.now() > ev.startsAt + OPEN_GRACE) b.disabled = true;
+  if (!canWrite() || Date.now() > ev.startsAt + OPEN_GRACE) b.disabled = true;
   b.addEventListener('click', async () => {
     b.disabled = true;
     try {
@@ -247,12 +289,13 @@ function eventCard(t, now) {
   card.append(dateChip(ev.startsAt));
   const main = h('div', 'fo-ev-main');
   main.append(h('span', 'fo-ev-when' + (live ? ' is-live' : ''), (live ? 'En cours' : untilText(ev.startsAt, now)) + ' · ' + timeText(ev.startsAt)));
-  main.append(link('#/forum/t/' + encodeURIComponent(t.id), 'fo-ev-t', t.title));
+  main.append(blurIf(link('#/forum/t/' + encodeURIComponent(t.id), 'fo-ev-t', titleOf(t)), t));
   main.append(h('span', 'fo-dim', plural(ev.going, 'inscrit', 'inscrits') + ' · proposée par ' + nameOf(t.author)));
   const acts = h('div', 'fo-ev-acts');
   const draw = () => {
     acts.replaceChildren();
-    if (ev.roomId) acts.append(link('#/party/' + encodeURIComponent(ev.roomId), 'btn btn-primary', 'Rejoindre le salon'));
+    if (t.restricted) acts.append(visitor() ? accessButton('🔒 Débloquer', 'btn btn-ghost') : h('span', 'fo-dim', '🔒 Abonnés'));
+    else if (ev.roomId) acts.append(link('#/party/' + encodeURIComponent(ev.roomId), 'btn btn-primary', 'Rejoindre le salon'));
     else acts.append(rsvpButton(t, (next) => { Object.assign(ev, next); main.lastChild.textContent = plural(ev.going, 'inscrit', 'inscrits') + ' · proposée par ' + nameOf(t.author); draw(); }));
   };
   draw();
@@ -304,7 +347,8 @@ function topicRow(t, cats) {
   if (t.pinned) title.append(h('span', 'fo-flag', '📌', { title: 'Épinglé', 'aria-label': 'Épinglé' }));
   if (t.locked) title.append(h('span', 'fo-flag', '🔒', { title: 'Verrouillé', 'aria-label': 'Verrouillé' }));
   if (t.hidden) title.append(h('span', 'fo-flag', '🚫', { title: 'Masqué', 'aria-label': 'Masqué' }));
-  title.append(document.createTextNode(t.title));
+  if (t.restricted) title.append(h('span', 'fo-flag', '🔒', { title: 'Réservé aux abonnés', 'aria-hidden': 'true' }));
+  title.append(blurIf(h('span', null, titleOf(t)), t));
   const sub = h('div', 'fo-topic-sub');
   sub.append(h('span', null, nameOf(t.author)));
   if (t.event) sub.append(h('span', 'fo-dim', '· ' + whenText(t.event.startsAt) + ' · ' + plural(t.event.going, 'inscrit', 'inscrits')));
@@ -363,7 +407,7 @@ function feedItem(t, cats, i) {
   const main = h('div', 'fo-feed-main');
   const who = h('p', 'fo-feed-who');
   who.append(h('strong', null, nameOf(t.lastPoster)), document.createTextNode(t.replyCount ? ' a répondu' : ' a ouvert le sujet'), h('span', 'fo-dim', ' · il y a ' + ago(t.lastPostAt)));
-  main.append(who, link('#/forum/t/' + encodeURIComponent(t.id), 'fo-feed-t', t.title));
+  main.append(who, blurIf(link('#/forum/t/' + encodeURIComponent(t.id), 'fo-feed-t', titleOf(t)), t));
   if (t.excerpt) main.append(h('p', 'fo-feed-ex', t.excerpt));
   const meta = h('div', 'fo-feed-meta');
   const cat = cats.find((c) => c.id === t.categoryId);
@@ -381,7 +425,7 @@ function trendingEl(list) {
     const li = h('li', 'fo-trend-item fo-rise', null, { style: '--i:' + i });
     li.append(h('span', 'fo-trend-rank', String(i + 1), { 'aria-hidden': 'true' }));
     const main = h('div', 'fo-trend-main');
-    main.append(link('#/forum/t/' + encodeURIComponent(t.id), 'fo-trend-t', t.title));
+    main.append(blurIf(link('#/forum/t/' + encodeURIComponent(t.id), 'fo-trend-t', titleOf(t)), t));
     const bar = h('span', 'fo-heat', null, { 'aria-hidden': 'true' });
     bar.append(h('span', 'fo-heat-in', null, { style: 'width:' + Math.round((t.heat / max) * 100) + '%' }));
     main.append(bar, h('span', 'fo-dim', plural(t.heat, 'message', 'messages') + ' cette semaine'));
@@ -413,8 +457,9 @@ function pulseInto(box, data) {
   const now = Date.now();
   box.replaceChildren();
   const events = h('section', 'fo-sec', null, { 'aria-label': 'Prochaines watch parties' });
-  const propose = banned() ? null : link('#/forum/new/' + EVENT_CAT, 'btn btn-ghost', 'Proposer une séance');
+  const propose = canWrite() && paid() ? link('#/forum/new/' + EVENT_CAT, 'btn btn-ghost', 'Proposer une séance') : null;
   events.append(sectionHead('Prochaines watch parties', 'Une date, un film, et tout le monde lance la lecture en même temps.', propose));
+  if (!paid()) events.append(accessPanel(paidInvite, visitor()));
   if (pulse.events.length) {
     const row = h('div', 'fo-evs');
     pulse.events.forEach((t) => row.append(eventCard(t, now)));
@@ -426,7 +471,7 @@ function pulseInto(box, data) {
 
   const grid = h('div', 'fo-grid');
   const feed = h('section', 'fo-sec fo-feed', null, { 'aria-label': 'Dernières discussions' });
-  feed.append(sectionHead('Dernières discussions', null, banned() ? null : link('#/forum/new', 'btn btn-ghost', 'Nouveau sujet')));
+  feed.append(sectionHead('Dernières discussions', null, canWrite() ? link('#/forum/new', 'btn btn-ghost', 'Nouveau sujet') : null));
   if (pulse.recent.length) {
     const ul = h('ul', 'fo-feed-list');
     pulse.recent.forEach((t, i) => ul.append(feedItem(t, categories, i)));
@@ -477,7 +522,11 @@ async function showHome(seq) {
   const ht = h('div', 'fo-hero-t');
   ht.append(h('p', 'fo-eyebrow', 'Forum des membres'), h('h1', 'fo-h1', 'Communauté'), h('p', 'fo-lede', 'Entraide, bugs, idées, guides, cinéma et watch parties : l’espace des membres qui font vivre Laststream.'));
   const acts = h('div', 'fo-hero-acts');
-  if (!banned()) acts.append(link('#/forum/new', 'btn btn-primary', 'Nouveau sujet'), link('#/forum/new/' + EVENT_CAT, 'btn btn-ghost', 'Proposer une watch party'));
+  if (visitor()) acts.append(accessButton(auth.status === 'needs-subscription' ? 'Soutenir Laststream' : 'Se connecter pour participer'));
+  else if (!banned()) {
+    acts.append(link('#/forum/new', 'btn btn-primary', 'Nouveau sujet'));
+    if (paid()) acts.append(link('#/forum/new/' + EVENT_CAT, 'btn btn-ghost', 'Proposer une watch party'));
+  }
   if (staff()) {
     const mod = link('#/forum/mod', 'btn btn-ghost fo-modbtn', 'Modération');
     if (data.openReports) mod.append(h('span', 'fo-pill', String(data.openReports), { 'aria-label': data.openReports + ' signalements' }));
@@ -564,8 +613,10 @@ async function showCategory(seq, id) {
   const ht = h('div');
   ht.append(h('h1', 'fo-h1', cat.icon + ' ' + cat.name), h('p', 'fo-lede', cat.description));
   head.append(ht);
-  if (!banned() && (!cat.staffOnly || staff())) head.append(link('#/forum/new/' + encodeURIComponent(cat.id), 'btn btn-primary', 'Nouveau sujet'));
+  if (canWrite() && (!cat.staffOnly || staff()) && (!cat.paidOnly || paid())) head.append(link('#/forum/new/' + encodeURIComponent(cat.id), 'btn btn-primary', 'Nouveau sujet'));
   body.append(head);
+  if (cat.paidOnly && !paid()) body.append(accessPanel(paidInvite, visitor()));
+  else if (visitor()) body.append(accessPanel(writeInvite()));
   const notice = banNotice();
   if (notice) body.append(notice);
   const ul = h('ul', 'fo-topics');
@@ -605,8 +656,9 @@ async function showNew(seq, catId) {
     return;
   }
   if (seq !== renderSeq) return;
-  const allowed = data.categories.filter((c) => !c.staffOnly || staff());
+  const allowed = data.categories.filter((c) => (!c.staffOnly || staff()) && (!c.paidOnly || paid()));
   body.append(crumbs([['Forum', '#/forum'], ['Nouveau sujet']]), h('h1', 'fo-h1', 'Nouveau sujet'));
+  if (visitor()) { body.append(accessPanel(writeInvite())); return; }
   if (banned()) { body.append(banNotice()); return; }
   const form = h('div', 'fo-newform');
   const catLab = h('label', 'fo-field');
@@ -675,10 +727,11 @@ function reactionBar(post, onChange) {
     bar.replaceChildren();
     for (const r of post.reactions) {
       const b = h('button', 'fo-react' + (r.mine ? ' is-mine' : ''), r.emoji + ' ' + r.count, { type: 'button', 'aria-pressed': String(r.mine), 'aria-label': r.emoji + ' : ' + r.count });
-      b.addEventListener('click', () => toggle(r.emoji, !r.mine));
+      if (canWrite()) b.addEventListener('click', () => toggle(r.emoji, !r.mine));
+      else b.disabled = true;
       bar.append(b);
     }
-    if (post.hidden || banned()) return;
+    if (post.hidden || !canWrite()) return;
     const add = h('button', 'fo-react fo-react-add', '☺+', { type: 'button', 'aria-label': 'Réagir', 'aria-expanded': 'false' });
     const pal = h('div', 'fo-palette', null, { hidden: '' });
     for (const emoji of api.FORUM_REACTIONS) {
@@ -803,7 +856,7 @@ function postEl(post, topic, ctx) {
     acts.append(b);
     return b;
   };
-  const canReply = !banned() && (!topic.locked || staff());
+  const canReply = canWrite() && (!topic.locked || staff());
   if (canReply && post.hidden === '') act('Citer', () => ctx.quote(post));
   if (post.canEdit) {
     act('Modifier', () => {
@@ -842,7 +895,7 @@ function postEl(post, topic, ctx) {
       }
     }, 'is-danger');
   }
-  if (ctx.me.pid !== post.author.pid && post.hidden !== 'author') {
+  if (!visitor() && ctx.me.pid !== post.author.pid && post.hidden !== 'author') {
     const rep = act(post.reported ? 'Signalé' : 'Signaler', (b) => reportDialog(post, b));
     if (post.reported) rep.disabled = true;
   }
@@ -928,6 +981,11 @@ async function showTopic(seq, id) {
     topic = (await api.topic(id)).topic;
   } catch (e) {
     if (seq !== renderSeq) return;
+    if (e && e.code === 'paid_only') {
+      body.replaceChildren(crumbs([['Forum', '#/forum'], ['Watch parties', '#/forum/c/' + EVENT_CAT], ['Séance réservée']]), h('h1', 'fo-h1', '🔒 Séance réservée'));
+      body.append(accessPanel(paidInvite, visitor()));
+      return;
+    }
     stateMsg(body, errText(e), () => route());
     return;
   }
@@ -979,6 +1037,7 @@ async function showTopic(seq, id) {
   });
   body.append(more);
 
+  if (visitor()) { body.append(accessPanel(writeInvite())); return; }
   if (banned()) return;
   if (topic.locked && !staff()) { body.append(h('p', 'fo-notice', '🔒 Ce sujet est verrouillé : on ne peut plus y répondre.')); return; }
   comp = composer({
@@ -1021,7 +1080,7 @@ function eventPanel(topic, me, reload) {
   const acts = h('div', 'fo-ev-acts');
   if (ev.roomId) acts.append(link('#/party/' + encodeURIComponent(ev.roomId), 'btn btn-primary', 'Rejoindre le salon'));
   acts.append(rsvpButton(topic, () => reload()));
-  const host = topic.author.pid === me.pid || me.role !== 'member';
+  const host = !visitor() && (topic.author.pid === me.pid || me.role !== 'member');
   if (host && !ev.roomId && !banned() && now <= ev.startsAt + OPEN_GRACE) {
     const open = h('button', 'btn btn-primary', 'Ouvrir le salon', { type: 'button' });
     const tooEarly = now < ev.startsAt - OPEN_LEAD;

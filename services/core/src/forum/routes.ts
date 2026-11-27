@@ -1,5 +1,6 @@
 import type { AppDeps } from '../deps.js';
 import type { App, Ctx } from '../http/app-env.js';
+import { accessReason, EMPTY_BILLING } from '../billing/access.js';
 import { billingConfig } from '../billing/config.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import { createPartyRoom } from '../party/create-room.js';
@@ -10,7 +11,7 @@ import { sessionOf } from '../user/session.js';
 import { parseHandle } from '../user/social-handles.js';
 import { actorOf, pidParam } from '../user/social-v2-routes.js';
 import { parseWith, UserApiError } from '../user/validation.js';
-import { type ForumMe, type ForumWrite, isStaff } from './store.js';
+import { FORUM_GUEST, type ForumMe, type ForumWrite, isStaff } from './store.js';
 import {
   banSchema,
   cleanForumText,
@@ -29,10 +30,12 @@ import {
 } from './validation.js';
 
 /**
- * Routes du forum communautaire (`/user/forum`, LAST-1651). Chaque route agit au nom d'un profil non enfant (X-Profile-Id,
- * comme le social) et ouvre une session : un compte sans abonnement de soutien reçoit donc 402 `subscription_required`
- * avant toute lecture (voir billing/access.ts). Le forum est réservé au service en ligne : sans Stripe (serveur
- * auto-hébergé), il est désactivé (404 `forum_unavailable`). Les routes `/forum/mod/*` et les actions de modération demandent le rôle `owner` ou `mod`.
+ * Routes du forum communautaire (`/user/forum`, LAST-1651). La lecture est libre : sans jeton (ou sans profil), le lecteur
+ * est un visiteur (`guest`). Écrire demande une session et un profil non enfant (X-Profile-Id, comme le social), avec ou
+ * sans abonnement (le forum est exempté du 402, voir billing/access.ts). Les sections réservées (watch parties) suivent
+ * l'abonnement de soutien : sujets floutés dans les listes, 403 `paid_only` sur leur contenu et leurs écritures. Le forum
+ * est réservé au service en ligne : sans Stripe (serveur auto-hébergé), il est désactivé (404 `forum_unavailable`). Les
+ * routes `/forum/mod/*` et les actions de modération demandent le rôle `owner` ou `mod`.
  */
 export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBackend): void {
   const forum = () => backend.forum();
@@ -42,9 +45,19 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
    * soutien configuré) : un serveur auto-hébergé, sans Stripe, répond 404 `forum_unavailable` à toutes les routes.
    */
   const meOf = async (c: Ctx): Promise<ForumMe> => {
+    const config = billingConfig();
+    if (config === undefined) throw new UserApiError(404, 'forum_unavailable');
+    const session = await sessionOf(backend.users(), c);
+    const actor = await actorOf(c, backend.users(), backend.socialV2(), deps.secret, session);
+    const now = Date.now();
+    const paid = accessReason(config, session.account.isOwner, { ...EMPTY_BILLING, ...session.access }, now) !== null;
+    return forum().me(actor.accountId, actor.pid, actor.lockedProfileId !== null, paid, now);
+  };
+  /** Lecteur : visiteur sans jeton ni profil (connexion ou choix du profil pas encore faits), sinon comme `meOf`. */
+  const viewerOf = async (c: Ctx): Promise<ForumMe> => {
     if (billingConfig() === undefined) throw new UserApiError(404, 'forum_unavailable');
-    const actor = await actorOf(c, backend.users(), backend.socialV2(), deps.secret);
-    return forum().me(actor.accountId, actor.pid, actor.lockedProfileId !== null, Date.now());
+    if ((c.req.header('authorization') ?? '') === '' || (c.req.header('x-profile-id') ?? '') === '') return FORUM_GUEST;
+    return meOf(c);
   };
   const staffOf = async (c: Ctx): Promise<ForumMe> => {
     const me = await meOf(c);
@@ -67,6 +80,9 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
         throw new UserApiError(403, 'forum_banned');
       case 'staff_only':
         throw new UserApiError(403, 'staff_only');
+      case 'paid_only':
+        // 403 et non 402 : l'app réserve 402 à l'abonnement expiré (écran d'abonnement global).
+        throw new UserApiError(403, 'paid_only');
       case 'invalid_event':
         throw new UserApiError(400, 'invalid_body', ['startsAt:invalid']);
       case 'event_not_open':
@@ -87,7 +103,7 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
    * vue, membres actifs, prochaines watch parties), et pour l'équipe le nombre de messages signalés.
    */
   router.get('/forum', async (c) => {
-    const me = await meOf(c);
+    const me = await viewerOf(c);
     const body: Record<string, unknown> = {
       me,
       categories: await forum().categories(),
@@ -99,18 +115,18 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
 
   /** Sujets d'une catégorie : `{ topics, more }` (épinglés en tête de la première page ; `?before=` lastPostAt). */
   router.get('/forum/categories/:id/topics', async (c) => {
-    const me = await meOf(c);
+    const me = await viewerOf(c);
     const query = parseWith(topicsQuery, queryParams(c));
-    const page = await forum().topics(String(c.req.param('id')), me.role, query.before);
+    const page = await forum().topics(String(c.req.param('id')), me, query.before);
     if (page === undefined) throw new UserApiError(404, 'category_not_found');
     return sendJson(c, page);
   });
 
   /** Recherche (titres et messages) : `{ topics }`. */
   router.get('/forum/search', async (c) => {
-    const me = await meOf(c);
+    const me = await viewerOf(c);
     const query = parseWith(searchQuery, queryParams(c));
-    return sendJson(c, { topics: await forum().search(query.q, me.role) });
+    return sendJson(c, { topics: await forum().search(query.q, me) });
   });
 
   /** Ouvre un sujet. 201 `{ topic }`. */
@@ -215,12 +231,13 @@ export function registerForumRoutes(router: App, deps: AppDeps, backend: UserBac
     return sendJson(c, { roomId: effective });
   });
 
-  /** Sujet et une page de messages (`?after=` createdAt du dernier message reçu). */
+  /** Sujet et une page de messages (`?after=` createdAt du dernier message reçu). 403 `paid_only` : section réservée. */
   router.get('/forum/topics/:id', async (c) => {
-    const me = await meOf(c);
+    const me = await viewerOf(c);
     const query = parseWith(topicQuery, queryParams(c));
     const topic = await forum().topic(String(c.req.param('id')), me, query.after);
     if (topic === undefined) throw new UserApiError(404, 'topic_not_found');
+    if (topic === 'paid_only') throw new UserApiError(403, 'paid_only');
     return sendJson(c, { topic });
   });
 

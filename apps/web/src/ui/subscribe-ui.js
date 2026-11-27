@@ -153,7 +153,8 @@ function subscribeHTML(b, state) {
   return '<div class="auth-card auth-panel sub-panel" data-tier-host><div class="auth-brand">' + brand() + '</div>' +
     '<div class="auth-head"><h1 class="auth-title">Activer ton accès</h1><p class="auth-lead">' + esc(lead) + '</p></div>' +
     offer + factsHTML() + msg + '<div class="sub-actions">' + actions + '</div>' +
-    '<button type="button" class="btn btn-ghost" data-auth-signout>Se déconnecter</button></div>';
+    '<button type="button" class="btn btn-ghost" data-auth-signout>Se déconnecter</button>' +
+    '<a class="auth-link" href="#/forum" data-forum-visit>Lire le forum de la communauté</a></div>';
 }
 
 let current = null;
@@ -255,6 +256,8 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (t.closest('.sub-panel')) {
+    // Forum : lecture libre sans abonnement (rechargement en mode visiteur, voir main.js).
+    if (t.closest('[data-forum-visit]')) { e.preventDefault(); location.hash = '#/forum'; location.reload(); return; }
     if (t.closest('[data-sub-checkout]')) { void startCheckout(); return; }
     if (t.closest('[data-sub-portal]')) { void openPortal((msg) => { state = { busy: '', msg, info: false }; paint(); }); return; }
     if (t.closest('[data-sub-check]')) {
