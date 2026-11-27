@@ -22,7 +22,7 @@
 .lp-bubble-card.is-open { background: rgba(23, 21, 31, 0.72); }
 .lp-bubble-main {
   display: flex; gap: 10px; align-items: flex-start; min-width: 0; margin: 0; padding: 0; border: 0; background: none;
-  color: inherit; font: inherit; text-align: left; cursor: pointer;
+  color: inherit; font: inherit; text-align: start; cursor: pointer;
 }
 .lp-bubble-main:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); border-radius: 10px; }
 .lp-bubble-av {
@@ -63,10 +63,10 @@
 .lp-bubble-send:focus-visible, .lp-bubble-emo:focus-visible, .lp-bubble-x:focus-visible, .lp-bubble-open:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .lp-bubble-err { flex: 1 0 100%; margin: 0; color: #ffb4b4; font-size: 12px; }
 .lp-bubble-hint { flex: 1 0 100%; margin: 0; color: #c9c4d6; font-size: 11px; }
-.lp-bubble-open { display: none; flex: 1 0 100%; padding: 6px 0 0; border: 0; background: none; color: #ff9b82; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.lp-bubble-open { display: none; flex: 1 0 100%; padding: 6px 0 0; border: 0; background: none; color: #ff9b82; font: inherit; font-size: 12px; text-align: start; cursor: pointer; }
 
 /* Message suivant, empilé dessous, en transparence. */
-.lp-bubble-stack { display: flex; align-items: center; gap: 8px; margin-left: 12px; font-size: 14px; opacity: 0.85; min-width: 0; }
+.lp-bubble-stack { display: flex; align-items: center; gap: 8px; margin-inline-start: 12px; font-size: 14px; opacity: 0.85; min-width: 0; }
 .lp-bubble-stack .lp-bubble-who { flex: none; max-width: 40%; }
 .lp-bubble-stack-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

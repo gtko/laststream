@@ -77,8 +77,8 @@
 }
 .pj.is-joined .pj-title { flex: none; font-size: 18px; white-space: nowrap; }
 .pj.is-joined .pj-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pj.is-joined .pj-head [data-pj-retry], .pj.is-joined .pj-head [data-pj-leave] { flex: none; width: auto; margin-left: auto; }
-.pj.is-joined .pj-head [data-pj-retry]:not([hidden]) + [data-pj-leave] { margin-left: 0; }
+.pj.is-joined .pj-head [data-pj-retry], .pj.is-joined .pj-head [data-pj-leave] { flex: none; width: auto; margin-inline-start: auto; }
+.pj.is-joined .pj-head [data-pj-retry]:not([hidden]) + [data-pj-leave] { margin-inline-start: 0; }
 .pj.is-joined .pj-player { position: relative; flex: 1 1 auto; min-height: 0; gap: 0; align-items: center; justify-content: center; }
 .pj.is-joined .pj-stage {
   flex: none;
@@ -144,7 +144,7 @@
 .gp .lp-btn:disabled, .gp .lp-btn:disabled:hover { opacity: 0.4; cursor: default; background: transparent; }
 .gp .lp-btn.is-active { color: var(--accent); }
 /* Le temps reste dans sa rangée : player.css le met en pleine largeur sous 700 px (lecteur principal). */
-.gp .lp-time { width: auto; order: 0; margin-left: 4px; font-size: 14px; }
+.gp .lp-time { width: auto; order: 0; margin-inline-start: 4px; font-size: 14px; }
 .gp .lp-vslider { accent-color: var(--accent); }
 @media (hover: none) { .gp .lp-vslider { width: 84px; opacity: 1; margin: 0 8px 0 4px; } }
 
@@ -159,7 +159,7 @@
   pointer-events: auto;
   transition: opacity 0.3s, transform 0.3s;
 }
-.gp .gp-grp-r { margin-left: auto; }
+.gp .gp-grp-r { margin-inline-start: auto; }
 .gp .gp-menu { display: inline-flex; align-items: center; gap: 4px; }
 .gp .gp-menu:empty { display: none; }
 .gp .gp-badge {
@@ -237,7 +237,7 @@
 .gp .gp-info h3 { margin: 0 0 10px; color: var(--dim); font-size: 12px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; }
 .gp .gp-info dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 18px; margin: 0; font-size: 13px; }
 .gp .gp-info dt { color: var(--muted); font-weight: 700; white-space: nowrap; }
-.gp .gp-info dd { margin: 0; color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+.gp .gp-info dd { margin: 0; color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; text-align: end; }
 
 /* Sous-titres : calque bas-centre, remonte au-dessus de la barre quand elle est visible. Tiroir latéral (chat) : à droite. */
 .gp .gp-subs {
@@ -291,7 +291,7 @@
   font: inherit;
   font-size: 14px;
   font-weight: 700;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .gp .gs-item:hover, .gp .gs-item:focus-visible { background: rgba(255, 255, 255, 0.06); color: var(--text); outline: none; }
@@ -333,7 +333,7 @@
   min-height: 60px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 4px;
+  padding-inline-end: 4px;
 }
 .gp .gc-msg { line-height: 1.35; }
 .gp .gc-meta { display: flex; align-items: baseline; gap: 8px; font-size: 12px; color: var(--dim); }
@@ -399,7 +399,7 @@
 @media (max-width: 599px) {
   .gp .lp-row, .gp .lp-grp { flex-wrap: nowrap; }
   .gp .lp-vslider { display: none; }
-  .gp .lp-time { font-size: 12px; padding: 0; margin-left: 2px; }
+  .gp .lp-time { font-size: 12px; padding: 0; margin-inline-start: 2px; }
 }
 /* Téléphone tenu droit : le cadre 16:9 ne fait qu'environ 200 px de haut, le tiroir du chat n'y tenait pas (réactions et champ
  * de message débordaient sur la barre de lecture ou étaient coupés). Le cadre monte sous l'en-tête et le chat occupe toute la

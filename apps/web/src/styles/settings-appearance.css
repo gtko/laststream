@@ -11,7 +11,7 @@
   --a: #c9c4d6;
   position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 44px;
   padding: 8.5px; border-radius: 14px; border: 1.5px solid #6f6a80; background: transparent;
-  color: var(--muted); text-align: left; cursor: pointer;
+  color: var(--muted); text-align: start; cursor: pointer;
   transition: border-color 0.15s, background-color 0.15s, color 0.15s;
 }
 .set-ap-th:hover { border-color: #8a859b; color: var(--text); }
@@ -56,7 +56,7 @@
 /* Curseurs Teinte et Luminosité : la piste montre le résultat (--ap-track posé en ligne). */
 .set-ap-sliders { display: flex; flex-direction: column; gap: 6px; }
 .set-ap-sl { display: grid; grid-template-columns: 96px minmax(0, 1fr) 52px; align-items: center; gap: 14px; min-height: 44px; }
-.set-ap-val { font-size: 13px; font-weight: 700; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.set-ap-val { font-size: 13px; font-weight: 700; color: var(--muted); text-align: end; font-variant-numeric: tabular-nums; }
 .set-ap-range { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; margin: 0; background: transparent; cursor: pointer; }
 .set-ap-range:focus { outline: none; }
 .set-ap-range::-webkit-slider-runnable-track { height: 12px; border-radius: 999px; background: var(--ap-track); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12); }

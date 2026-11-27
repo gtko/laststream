@@ -3,7 +3,7 @@
 
 /* ---------- En-tête : période et actualisation ---------- */
 .adm-head-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-.adm-head-tools .adm-ranges { margin-left: 0; }
+.adm-head-tools .adm-ranges { margin-inline-start: 0; }
 
 /* ---------- Santé des services ---------- */
 .adm-health-wrap { min-width: 0; }
