@@ -1,5 +1,6 @@
 import { appFetch } from './crossFetch';
 import { LastAddonError } from './errors';
+import { t } from '../i18n';
 
 export const DEFAULT_TTL_MS = 10 * 60 * 1000;
 /** Le serveur répond `private, max-age=300` : un cache client plus court ne ferait que refetcher. */
@@ -156,7 +157,7 @@ async function send(url: string, options: RequestOptions = {}): Promise<Response
     const abort = (): void => controller.abort();
     // Rejet même si le fetch sous-jacent ignore le signal : le créneau doit toujours se libérer.
     const gone = new Promise<never>((_, reject) => {
-      controller.signal.addEventListener('abort', () => reject(Object.assign(new Error('Requête annulée'), { name: 'AbortError' })), { once: true });
+      controller.signal.addEventListener('abort', () => reject(Object.assign(new Error(t('Requête annulée')), { name: 'AbortError' })), { once: true });
     });
     const timer = setTimeout(abort, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
     options.signal?.addEventListener('abort', abort, { once: true });
@@ -174,7 +175,7 @@ async function send(url: string, options: RequestOptions = {}): Promise<Response
       return await limited(attempt);
     } catch (error) {
       if (options.signal?.aborted) throw error;
-      throw new LastAddonError('network', 'lastAddon est injoignable.');
+      throw new LastAddonError('network', t('lastAddon est injoignable.'));
     }
   };
 
@@ -190,14 +191,14 @@ async function send(url: string, options: RequestOptions = {}): Promise<Response
 
 async function httpError(response: Response): Promise<LastAddonError> {
   const { code, issues } = await readErrorBody(response);
-  return new LastAddonError('http', `lastAddon a répondu HTTP ${response.status}.`, { status: response.status, code, issues });
+  return new LastAddonError('http', `${t('lastAddon a répondu HTTP {status}.', { status: response.status })}`, { status: response.status, code, issues });
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
   try {
     return (await response.json()) as T;
   } catch {
-    throw new LastAddonError('invalid_response', 'Réponse lastAddon illisible.');
+    throw new LastAddonError('invalid_response', t('Réponse lastAddon illisible.'));
   }
 }
 

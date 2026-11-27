@@ -10,6 +10,7 @@
  *    Une navigation n'est pas soumise à CORS : le navigateur enregistre le fichier dans son dossier de téléchargements.
  * Le lien débridé ne sort jamais de l'appareil, n'est ni journalisé ni mémorisé. Seule la poignée du dossier est gardée (IndexedDB). */
 import { DownloadError } from './types';
+import { t as tr } from '../i18n';
 
 // ---------- Types minimaux de File System Access (absents des types DOM de TypeScript) ----------
 
@@ -298,10 +299,10 @@ export function openBrowserTab(open: (url: string, target: string) => Window | n
   }
   if (!win) return null;
   try {
-    win.document.title = 'Téléchargement…';
+    win.document.title = tr('Téléchargement…');
     win.document.body.innerHTML =
       '<meta name="referrer" content="no-referrer"><p style="font:16px system-ui,sans-serif;color:#ccc;background:#111;margin:0;padding:24px">' +
-      'Préparation du téléchargement… Cet onglet se fermera de lui-même, ou affichera la vidéo : utilise alors « Enregistrer sous ».</p>';
+      tr('Préparation du téléchargement… Cet onglet se fermera de lui-même, ou affichera la vidéo : utilise alors « Enregistrer sous ».') + '</p>';
     win.document.body.style.background = '#111';
   } catch {
     /* page d'attente facultative */

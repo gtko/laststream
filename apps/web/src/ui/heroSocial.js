@@ -7,6 +7,7 @@ import { toast } from './dom.js';
 import { ICON } from './icons.js';
 import { socialAvailable } from './socialButton.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 const colorOf = (c) => (typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c) ? c : '#3b3750');
 const kindOf = (it) => (it.type === 'tv' ? 'series' : 'movie');
@@ -32,7 +33,7 @@ export function heroSocialInner(it, s = getState(), now = Date.now()) {
   const ev = eveningFor(ref.type, ref.tmdbId, now);
   const stack = friends.slice(0, 3).map((f) => '<span class="hs-av" style="background:' + colorOf(f.avatarColor) + '">' + initials(f) + '</span>').join('');
   return '<span class="hs-stack" aria-hidden="true">' + stack + '</span>' +
-    '<span class="hs-text">' + names + ' ' + wantVerb(friends.length) + (ev ? ' — soirée proposée à ' + eveningTime(ev.startsAt) : '') + '</span>';
+    '<span class="hs-text">' + names + ' ' + wantVerb(friends.length) + (ev ? ' ' + t('— soirée proposée à {startsAt}', { startsAt: eveningTime(ev.startsAt) }) : '') + '</span>';
 }
 
 /** Bouton « Je viens à 21 h » : seulement quand une soirée est proposée sur ce titre et qu'une action d'inscription est branchée. */
@@ -40,7 +41,7 @@ export function heroEveningInner(it, _s, now = Date.now()) {
   const ref = socialAvailable() && hasEveningJoin() ? refOf(it) : null;
   const ev = ref ? eveningFor(ref.type, ref.tmdbId, now) : null;
   if (!ev) return '';
-  return '<button type="button" class="btn btn-ghost" data-hero-evening="' + esc(ev.id) + '">' + ICON.users + '<span>Je viens à ' + eveningTime(ev.startsAt) + '</span></button>';
+  return '<button type="button" class="btn btn-ghost" data-hero-evening="' + esc(ev.id) + '">' + ICON.users + '<span>' + t('Je viens à {startsAt}', { startsAt: eveningTime(ev.startsAt) }) + '</span></button>';
 }
 
 /** Conteneurs de la diapositive : remplis ici, puis tenus à jour par paintHeroSocial. Vides hors social. */
@@ -65,7 +66,7 @@ export function paintHeroSocial(items, s = getState()) {
     const html = inner(it, s);
     if (written.get(el) === html) return;
     written.set(el, html);
-    // eslint-disable-next-line no-restricted-syntax -- noms échappés par esc (heroSocialInner, heroEveningInner)
+    // eslint-disable-next-line laststream/no-html-sink -- noms échappés par esc (heroSocialInner, heroEveningInner)
     el.innerHTML = html;
   });
   fill('#app [data-hero-social]', 'heroSocial', heroSocialInner);
@@ -87,5 +88,5 @@ document.addEventListener('click', (e) => {
   const b = e.target instanceof Element ? e.target.closest('[data-hero-evening]') : null;
   if (!b) return;
   e.preventDefault();
-  void joinEvening(b.dataset.heroEvening).then((ok) => { if (!ok) toast('Cette soirée n’est plus disponible.'); });
+  void joinEvening(b.dataset.heroEvening).then((ok) => { if (!ok) toast(t('Cette soirée n’est plus disponible.')); });
 });

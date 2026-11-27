@@ -7,6 +7,7 @@
 import { normalizeLang } from '../player/tracks';
 import { readSubStyle } from '../player/subs';
 import { getVideoLang } from './prefs';
+import { t as tr } from '../i18n';
 
 export const LANG_PREFS_KEY = 'laststream.langprefs';
 
@@ -28,8 +29,8 @@ export interface AnimePrefs {
   ifForeign: boolean;
 }
 
-export const ANIME_AUDIO_CHOICES: ReadonlyArray<readonly [string, string]> = [['fr', 'Français (VF)'], ['ja', 'Japonais (VO)'], [LANG_VO, 'Langue d’origine'], ['en', 'Anglais']];
-export const ANIME_SUBS_CHOICES: ReadonlyArray<readonly [string, string]> = [['none', 'Aucun'], ['fr', 'Français'], ['en', 'Anglais'], ['forced', 'Forcés seulement']];
+export const ANIME_AUDIO_CHOICES: ReadonlyArray<readonly [string, string]> = [['fr', tr('Français (VF)')], ['ja', tr('Japonais (VO)')], [LANG_VO, tr('Langue d’origine')], ['en', tr('Anglais')]];
+export const ANIME_SUBS_CHOICES: ReadonlyArray<readonly [string, string]> = [['none', tr('Aucun')], ['fr', tr('Français')], ['en', tr('Anglais')], ['forced', tr('Forcés seulement')]];
 const DEFAULT_ANIME_PREFS: AnimePrefs = { on: false, audio: 'ja', subs: 'fr', ifForeign: true };
 
 export interface LangPrefs {
@@ -52,8 +53,8 @@ export const DEFAULT_LANG_PREFS: LangPrefs = { audio: 'fr', audio2: LANG_VO, sub
 
 /** Langues proposées (code, libellé), dans l'ordre d'affichage. */
 export const LANG_CHOICES: ReadonlyArray<readonly [string, string]> = [
-  ['fr', 'Français'], ['en', 'Anglais'], ['ja', 'Japonais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'],
-  ['ko', 'Coréen'], ['pt', 'Portugais'], ['zh', 'Chinois'], ['ru', 'Russe'], ['ar', 'Arabe'], ['nl', 'Néerlandais'], ['pl', 'Polonais'], ['tr', 'Turc'], ['sv', 'Suédois'],
+  ['fr', tr('Français')], ['en', tr('Anglais')], ['ja', tr('Japonais')], ['es', tr('Espagnol')], ['de', tr('Allemand')], ['it', tr('Italien')],
+  ['ko', tr('Coréen')], ['pt', tr('Portugais')], ['zh', tr('Chinois')], ['ru', tr('Russe')], ['ar', tr('Arabe')], ['nl', tr('Néerlandais')], ['pl', tr('Polonais')], ['tr', tr('Turc')], ['sv', tr('Suédois')],
 ];
 const KNOWN = new Set(LANG_CHOICES.map(([c]) => c));
 

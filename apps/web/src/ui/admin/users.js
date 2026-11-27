@@ -10,14 +10,15 @@ import { toast } from '../dom.js';
 import { esc } from '../util.js';
 import { admCard, attempt, badge, bindPager, empty, loaded, pager, sectionHead, statusBadge, table } from './common.js';
 import { avatarHTML, openAccount } from './account-drawer.js';
+import { t as tx } from '../../i18n';
 
 const ACCOUNT_PAGE = 25;
-const ACCOUNT_FILTERS = [['all', 'Tous'], ['online', 'En ligne'], ['inactive30', 'Inactifs 30 j'], ['suspended', 'Suspendus'], ['noInvites', 'Sans invitation']];
-const ACCOUNT_FILTER_HINT = { noInvites: 'Comptes sans lien d’invitation restant' };
-const INVITE_FILTERS = [['', 'Tous'], ['active', 'Actifs'], ['used', 'Utilisés'], ['expired', 'Expirés'], ['revoked', 'Révoqués']];
-const INVITE_LABEL = { active: ['Actif', 'ok'], used: ['Utilisé'], expired: ['Expiré'], revoked: ['Révoqué', 'warn'] };
-const BULK_LABEL = { quota: 'Quota mis à jour', 'revoke-sessions': 'Sessions révoquées', suspend: 'Comptes suspendus' };
-const BULK_ERROR = { cannot_target_owner: 'propriétaire, non concerné', not_found: 'introuvable' };
+const ACCOUNT_FILTERS = [['all', tx('Tous')], ['online', tx('En ligne')], ['inactive30', tx('Inactifs 30 j')], ['suspended', tx('Suspendus')], ['noInvites', tx('Sans invitation')]];
+const ACCOUNT_FILTER_HINT = { noInvites: tx('Comptes sans lien d’invitation restant') };
+const INVITE_FILTERS = [['', tx('Tous')], ['active', tx('Actifs')], ['used', tx('Utilisés')], ['expired', tx('Expirés')], ['revoked', tx('Révoqués')]];
+const INVITE_LABEL = { active: [tx('Actif'), 'ok'], used: [tx('Utilisé')], expired: [tx('Expiré')], revoked: [tx('Révoqué'), 'warn'] };
+const BULK_LABEL = { quota: tx('Quota mis à jour'), 'revoke-sessions': tx('Sessions révoquées'), suspend: tx('Comptes suspendus') };
+const BULK_ERROR = { cannot_target_owner: tx('propriétaire, non concerné'), not_found: 'introuvable' };
 const ONLINE_MS = 30_000;
 
 /** Un envoi groupé est en cours : les boutons de la barre restent inactifs. */
@@ -34,7 +35,7 @@ const nameOf = (S, id) => {
 // ---------- Comptes : liste ----------
 function filtersHTML(S) {
   const counts = S.acc.status === 'ready' && S.acc.value ? S.acc.value.counts : null;
-  return '<div class="adm-chips" role="group" aria-label="Filtrer les comptes">' + ACCOUNT_FILTERS.map(([v, l]) => {
+  return '<div class="adm-chips" role="group" aria-label="' + tx('Filtrer les comptes') + '">' + ACCOUNT_FILTERS.map(([v, l]) => {
     const n = counts && counts[v] != null ? ' <span class="adm-chip-n">' + fmtInt(counts[v]) + '</span>' : '';
     return '<button type="button" class="adm-chip" aria-pressed="' + (S.accQuery.filter === v ? 'true' : 'false') + '"' +
       (ACCOUNT_FILTER_HINT[v] ? ' title="' + esc(ACCOUNT_FILTER_HINT[v]) + '"' : '') + ' data-adm-filter="' + v + '" data-adm-focus="filter:' + v + '">' + esc(l) + n + '</button>';
@@ -43,58 +44,58 @@ function filtersHTML(S) {
 
 function searchHTML(q) {
   return '<form class="adm-toolbar" data-adm-accsearch role="search" data-nav>' +
-    '<label class="adm-field adm-grow"><span class="sr-only">Rechercher un pseudo</span><input class="set-input" type="search" name="q" value="' + esc(q.q) + '" placeholder="Rechercher un pseudo" autocomplete="off" autocapitalize="none" data-adm-focus="acc:q"></label>' +
-    '<label class="adm-field"><span class="sr-only">Statut</span><select class="set-input" name="status" data-adm-focus="acc:status"><option value="">Tous les statuts</option><option value="active"' + (q.status === 'active' ? ' selected' : '') + '>Actifs</option><option value="suspended"' + (q.status === 'suspended' ? ' selected' : '') + '>Suspendus</option></select></label>' +
-    '<label class="adm-field"><span class="sr-only">Ordre</span><select class="set-input" name="order" data-adm-focus="acc:order"><option value="newest"' + (q.order === 'newest' ? ' selected' : '') + '>Plus récents</option><option value="oldest"' + (q.order === 'oldest' ? ' selected' : '') + '>Plus anciens</option></select></label>' +
-    '<button type="submit" class="btn btn-primary btn-sm">Rechercher</button></form>';
+    '<label class="adm-field adm-grow"><span class="sr-only">' + tx('Rechercher un pseudo') + '</span><input class="set-input" type="search" name="q" value="' + esc(q.q) + '" placeholder="' + tx('Rechercher un pseudo') + '" autocomplete="off" autocapitalize="none" data-adm-focus="acc:q"></label>' +
+    '<label class="adm-field"><span class="sr-only">' + tx('Statut') + '</span><select class="set-input" name="status" data-adm-focus="acc:status"><option value="">' + tx('Tous les statuts') + '</option><option value="active"' + (q.status === 'active' ? ' selected' : '') + '>' + tx('Actifs') + '</option><option value="suspended"' + (q.status === 'suspended' ? ' selected' : '') + '>' + tx('Suspendus') + '</option></select></label>' +
+    '<label class="adm-field"><span class="sr-only">' + tx('Ordre') + '</span><select class="set-input" name="order" data-adm-focus="acc:order"><option value="newest"' + (q.order === 'newest' ? ' selected' : '') + '>' + tx('Plus récents') + '</option><option value="oldest"' + (q.order === 'oldest' ? ' selected' : '') + '>' + tx('Plus anciens') + '</option></select></label>' +
+    '<button type="submit" class="btn btn-primary btn-sm">' + tx('Rechercher') + '</button></form>';
 }
 
 /** Barre d'actions groupées, visible dès qu'un compte est coché. */
 function bulkBarHTML(n) {
   if (!n) return '';
   const dis = bulkBusy ? ' disabled' : '';
-  return '<div class="adm-bulk" role="region" aria-label="Actions groupées">' +
-    '<span class="adm-bulk-n" aria-live="polite">' + plural(n, 'sélectionné') + '</span>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-bulk="quota" data-delta="1"' + dis + '>+1 invitation</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-bulk="quota" data-delta="-1"' + dis + '>−1 invitation</button>' +
-    '<form class="adm-inline adm-bulk-quota" data-adm-bulk-quota><label class="adm-field">Quota<input class="set-input set-input-sm" type="number" name="quota" min="0" max="100" step="1" required data-adm-focus="bulk:quota"' + dis + '></label>' +
-    '<button type="submit" class="btn btn-ghost btn-sm"' + dis + '>Définir</button></form>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-bulk="revoke-sessions"' + dis + '>Révoquer les sessions</button>' +
-    '<button type="button" class="btn btn-danger btn-sm" data-adm-bulk="suspend"' + dis + '>Suspendre</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm adm-bulk-clear" data-adm-bulk-clear' + dis + '>Désélectionner</button></div>';
+  return '<div class="adm-bulk" role="region" aria-label="' + tx('Actions groupées') + '">' +
+    '<span class="adm-bulk-n" aria-live="polite">' + plural(n, tx('sélectionné')) + '</span>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-bulk="quota" data-delta="1"' + dis + '>' + tx('+1 invitation') + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-bulk="quota" data-delta="-1"' + dis + '>' + tx('−1 invitation') + '</button>' +
+    '<form class="adm-inline adm-bulk-quota" data-adm-bulk-quota><label class="adm-field">' + tx('Quota') + '<input class="set-input set-input-sm" type="number" name="quota" min="0" max="100" step="1" required data-adm-focus="bulk:quota"' + dis + '></label>' +
+    '<button type="submit" class="btn btn-ghost btn-sm"' + dis + '>' + tx('Définir') + '</button></form>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-bulk="revoke-sessions"' + dis + '>' + tx('Révoquer les sessions') + '</button>' +
+    '<button type="button" class="btn btn-danger btn-sm" data-adm-bulk="suspend"' + dis + '>' + tx('Suspendre') + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm adm-bulk-clear" data-adm-bulk-clear' + dis + '>' + tx('Désélectionner') + '</button></div>';
 }
 
 function accountsTable(accounts, sel) {
   const allOn = accounts.every((a) => sel.has(a.id));
-  const head = '<tr><th scope="col" class="adm-sel"><input type="checkbox" data-adm-selall data-adm-focus="selall" aria-label="Tout sélectionner"' + (allOn ? ' checked' : '') + '></th>' +
-    '<th scope="col">Compte</th><th scope="col">Statut</th><th scope="col">Dernière activité</th><th scope="col">Parrain</th>' +
-    '<th scope="col" class="is-num">Invitations</th><th scope="col" class="is-num">Sessions</th></tr>';
+  const head = '<tr><th scope="col" class="adm-sel"><input type="checkbox" data-adm-selall data-adm-focus="selall" aria-label="' + tx('Tout sélectionner') + '"' + (allOn ? ' checked' : '') + '></th>' +
+    '<th scope="col">' + tx('Compte') + '</th><th scope="col">' + tx('Statut') + '</th><th scope="col">' + tx('Dernière activité') + '</th><th scope="col">' + tx('Parrain') + '</th>' +
+    '<th scope="col" class="is-num">' + tx('Invitations') + '</th><th scope="col" class="is-num">' + tx('Sessions') + '</th></tr>';
   const rows = accounts.map((a, i) => {
     const on = sel.has(a.id);
     return '<tr data-adm-row="' + esc(a.id) + '"' + (on ? ' class="is-selected"' : '') + '>' +
-      '<td class="adm-sel" data-label="Sélection"><input type="checkbox" data-adm-sel="' + esc(a.id) + '" data-adm-focus="sel:' + esc(a.id) + '" aria-label="Sélectionner ' + esc(a.username) + '"' + (on ? ' checked' : '') + '></td>' +
-      '<td data-label="Compte"><span class="adm-who">' + avatarHTML(a.username, false) + '<span><button type="button" class="adm-link" data-adm-acc="' + esc(a.id) + '">' + esc(a.username) + '</button>' +
-      (a.isOwner ? ' ' + badge('Propriétaire') : '') + ' <span class="adm-dim">· ' + plural(a.profileCount, 'profil') + '</span></span></span></td>' +
-      '<td data-label="Statut">' + statusBadge(a.status) + '</td>' +
-      '<td data-label="Dernière activité">' + (a.online ? '<span class="adm-online"><span class="adm-online-dot" aria-hidden="true"></span>en ligne</span>' : esc(fmtAgo(a.lastActivityAt))) + '</td>' +
-      '<td data-label="Parrain">' + (a.referrer ? esc(a.referrer) : '—') + '</td>' +
-      '<td data-label="Invitations" class="is-num">' + fmtInt(a.invitesUsed) + ' / ' + fmtInt(a.inviteQuota) + '</td>' +
-      '<td data-label="Sessions" class="is-num">' + fmtInt(a.sessionCount) + '</td></tr>';
+      '<td class="adm-sel" data-label="' + tx('Sélection') + '"><input type="checkbox" data-adm-sel="' + esc(a.id) + '" data-adm-focus="sel:' + esc(a.id) + '" aria-label="' + tx('Sélectionner {username}', { username: esc(a.username) }) + '"' + (on ? ' checked' : '') + '></td>' +
+      '<td data-label="' + tx('Compte') + '"><span class="adm-who">' + avatarHTML(a.username, false) + '<span><button type="button" class="adm-link" data-adm-acc="' + esc(a.id) + '">' + esc(a.username) + '</button>' +
+      (a.isOwner ? ' ' + badge(tx('Propriétaire')) : '') + ' <span class="adm-dim">· ' + plural(a.profileCount, 'profil') + '</span></span></span></td>' +
+      '<td data-label="' + tx('Statut') + '">' + statusBadge(a.status) + '</td>' +
+      '<td data-label="' + tx('Dernière activité') + '">' + (a.online ? '<span class="adm-online"><span class="adm-online-dot" aria-hidden="true"></span>' + tx('en ligne') + '</span>' : esc(fmtAgo(a.lastActivityAt))) + '</td>' +
+      '<td data-label="' + tx('Parrain') + '">' + (a.referrer ? esc(a.referrer) : '—') + '</td>' +
+      '<td data-label="' + tx('Invitations') + '" class="is-num">' + fmtInt(a.invitesUsed) + ' / ' + fmtInt(a.inviteQuota) + '</td>' +
+      '<td data-label="' + tx('Sessions') + '" class="is-num">' + fmtInt(a.sessionCount) + '</td></tr>';
   }).join('');
-  return '<div class="adm-table-wrap adm-accounts" role="region" aria-label="Comptes" tabindex="0"><table class="adm-table"><caption class="sr-only">Comptes</caption>' +
+  return '<div class="adm-table-wrap adm-accounts" role="region" aria-label="' + tx('Comptes') + '" tabindex="0"><table class="adm-table"><caption class="sr-only">' + tx('Comptes') + '</caption>' +
     '<thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>';
 }
 
 function accountsHTML(S) {
   const q = S.accQuery;
   const sel = S.accSel;
-  return sectionHead('Comptes', 'Tous les comptes du serveur. Clique une ligne pour ouvrir la fiche ; coche plusieurs comptes pour agir en lot.',
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-export>Exporter CSV</button>') +
+  return sectionHead(tx('Comptes'), tx('Tous les comptes du serveur. Clique une ligne pour ouvrir la fiche ; coche plusieurs comptes pour agir en lot.'),
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-export>' + tx('Exporter CSV') + '</button>') +
     filtersHTML(S) + searchHTML(q) + bulkBarHTML(sel.size) +
     loaded(S.acc, (r) => {
-      if (!r.accounts.length) return empty('Aucun compte ne correspond.');
+      if (!r.accounts.length) return empty(tx('Aucun compte ne correspond.'));
       const p = S.accPager;
-      return '<p class="adm-count" role="status">' + fmtInt(r.total) + ' compte' + (r.total > 1 ? 's' : '') + ' · page ' + p.page + '</p>' +
+      return '<p class="adm-count" role="status">' + tx('{total} compte{v} · page {page}', { total: fmtInt(r.total), v: (r.total > 1 ? 's' : ''), page: p.page }) + '</p>' +
         accountsTable(r.accounts, sel) + pager('acc', p.hasPrev, !!r.nextCursor);
     });
 }
@@ -122,7 +123,7 @@ async function exportCsv(ctx) {
   if (!ok || !r) return;
   const n = r.accounts.length;
   downloadCsv('﻿' + csvOfAccounts(r.accounts), 'laststream-comptes-' + localDay() + '.csv');
-  toast(r.truncated ? 'Export tronqué par le serveur : ' + fmtInt(n) + ' comptes exportés.' : fmtInt(n) + ' compte' + (n > 1 ? 's' : '') + ' exporté' + (n > 1 ? 's' : '') + '.', { ms: 3500 });
+  toast(r.truncated ? tx('Export tronqué par le serveur : {n} comptes exportés.', { n: fmtInt(n) }) : tx('{n} compte{v} exporté{v}.', { n: fmtInt(n), v: (n > 1 ? 's' : '') }), { ms: 3500 });
 }
 
 /**
@@ -142,10 +143,10 @@ async function runBulk(ctx, body, confirm) {
   if (ok && res) {
     const failed = Array.isArray(res.failed) ? res.failed : [];
     const skipped = Array.isArray(res.skipped) ? res.skipped : [];
-    const head = (BULK_LABEL[body.action] || 'Action') + ' : ' + fmtInt(res.done ?? 0) + ' sur ' + fmtInt(ids.length);
+    const head = (BULK_LABEL[body.action] || tx('Action')) + ' ' + tx(': {fmtInt} sur {length}', { fmtInt: fmtInt(res.done ?? 0), length: fmtInt(ids.length) });
     const detail = failed.map((f) => nameOf(S, f.id) + ' (' + (BULK_ERROR[f.error] || 'erreur') + ')').join(', ');
-    const skippedNote = skipped.length ? ' · ' + (skipped.length === 1 ? 'propriétaire ignoré' : fmtInt(skipped.length) + ' propriétaires ignorés') : '';
-    const end = failed.length ? ' · ' + plural(failed.length, 'échec') + ' : ' + detail : '.';
+    const skippedNote = skipped.length ? ' · ' + (skipped.length === 1 ? tx('propriétaire ignoré') : tx('{length} propriétaires ignorés', { length: fmtInt(skipped.length) })) : '';
+    const end = failed.length ? ' · ' + plural(failed.length, tx('échec')) + ' : ' + detail : '.';
     toast(head + skippedNote + end, { ms: failed.length || skipped.length ? 7000 : 3000 });
     S.accSel.clear();
     failed.forEach((f) => S.accSel.add(f.id));
@@ -180,11 +181,11 @@ function bindBulk(root, ctx) {
     const action = b.dataset.admBulk;
     if (action === 'quota') { runBulk(ctx, { action: 'quota', delta: Number(b.dataset.delta) }); return; }
     if (action === 'revoke-sessions') {
-      runBulk(ctx, { action }, (n) => ({ title: 'Révoquer les sessions', message: 'Les sessions de ' + plural(n, 'compte') + ' seront fermées : chacun devra se reconnecter sur chaque appareil.', confirmLabel: 'Révoquer', danger: true }));
+      runBulk(ctx, { action }, (n) => ({ title: tx('Révoquer les sessions'), message: tx('Les sessions de {n} seront fermées : chacun devra se reconnecter sur chaque appareil.', { n: plural(n, 'compte') }), confirmLabel: tx('Révoquer'), danger: true }));
       return;
     }
     if (action === 'suspend') {
-      runBulk(ctx, { action }, (n) => ({ title: 'Suspendre ' + plural(n, 'compte'), message: 'Les comptes sélectionnés ne pourront plus se connecter et leurs sessions seront révoquées immédiatement. Le propriétaire ne peut pas être suspendu.', confirmLabel: 'Suspendre', danger: true }));
+      runBulk(ctx, { action }, (n) => ({ title: tx('Suspendre {n}', { n: plural(n, 'compte') }), message: tx('Les comptes sélectionnés ne pourront plus se connecter et leurs sessions seront révoquées immédiatement. Le propriétaire ne peut pas être suspendu.'), confirmLabel: tx('Suspendre'), danger: true }));
     }
   }));
   const form = root.querySelector('[data-adm-bulk-quota]');
@@ -192,7 +193,7 @@ function bindBulk(root, ctx) {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const v = Number(form.elements.quota.value);
-      if (!Number.isInteger(v) || v < 0 || v > 100) { toast('Le quota va de 0 à 100.'); return; }
+      if (!Number.isInteger(v) || v < 0 || v > 100) { toast(tx('Le quota va de 0 à 100.')); return; }
       runBulk(ctx, { action: 'quota', quota: v });
     });
   }
@@ -247,17 +248,17 @@ function nodeHTML(n) {
   const kids = n.children || [];
   const n2 = countDescendants(n);
   const head = '<span class="adm-node"><button type="button" class="adm-link" data-adm-acc="' + esc(n.id) + '" data-nav>' + esc(n.username) + '</button>' +
-    (n.status === 'suspended' ? ' ' + badge('Suspendu', 'warn') : '') + ' <span class="adm-dim">' + esc(fmtDay(n.createdAt)) + (n2 ? ' · ' + n2 + ' filleul' + (n2 > 1 ? 's' : '') : '') + '</span></span>';
+    (n.status === 'suspended' ? ' ' + badge(tx('Suspendu'), 'warn') : '') + ' <span class="adm-dim">' + esc(fmtDay(n.createdAt)) + (n2 ? ' ' + tx('· {n2} filleul', { n2 }) + (n2 > 1 ? 's' : '') : '') + '</span></span>';
   if (!kids.length) return '<li class="adm-leaf">' + head + '</li>';
   return '<li><details open><summary>' + head + '</summary><ul class="adm-tree">' + kids.map(nodeHTML).join('') + '</ul></details></li>';
 }
 
 function invitesCardHTML(S) {
   const current = S.invStatus || '';
-  const filters = '<div class="adm-chips" role="group" aria-label="Statut des liens">' + INVITE_FILTERS.map(([v, l]) =>
+  const filters = '<div class="adm-chips" role="group" aria-label="' + tx('Statut des liens') + '">' + INVITE_FILTERS.map(([v, l]) =>
     '<button type="button" class="adm-chip" aria-pressed="' + (current === v ? 'true' : 'false') + '" data-adm-invstatus="' + v + '" data-adm-focus="inv:' + (v || 'all') + '">' + esc(l) + '</button>').join('') + '</div>';
-  return admCard('Liens d’invitation', filters + loaded(S.inv, (r) => {
-    if (!r.invites.length) return empty('Aucun lien dans ce filtre.');
+  return admCard(tx('Liens d’invitation'), filters + loaded(S.inv, (r) => {
+    if (!r.invites.length) return empty(tx('Aucun lien dans ce filtre.'));
     const rows = r.invites.map((i) => {
       const [label, kind] = INVITE_LABEL[i.status] || [i.status, ''];
       return {
@@ -268,27 +269,27 @@ function invitesCardHTML(S) {
           i.expiresAt ? esc(fmtDay(i.expiresAt)) : 'jamais',
           i.usedBy ? esc(i.usedBy) + (i.usedAt ? ' · ' + esc(fmtDay(i.usedAt)) : '') : '—',
           i.status === 'active'
-            ? '<button type="button" class="btn btn-danger btn-sm" data-adm-revoke="' + esc(i.id) + '" data-owner="' + esc(i.ownerUsername) + '" data-adm-focus="rev:' + esc(i.id) + '">Révoquer</button>'
+            ? '<button type="button" class="btn btn-danger btn-sm" data-adm-revoke="' + esc(i.id) + '" data-owner="' + esc(i.ownerUsername) + '" data-adm-focus="rev:' + esc(i.id) + '">' + tx('Révoquer') + '</button>'
             : '—',
         ],
       };
     });
     return '<p class="adm-count" role="status">' + plural(r.invites.length, 'lien') + '</p>' +
-      table('Liens d’invitation', ['Émis par', 'Statut', 'Créé le', 'Expire le', 'Utilisé par', 'Action'], rows);
-  }), { desc: 'Révoque un lien actif pour qu’il ne serve plus. Les comptes déjà inscrits ne sont pas touchés.' });
+      table(tx('Liens d’invitation'), [tx('Émis par'), tx('Statut'), tx('Créé le'), tx('Expire le'), tx('Utilisé par'), tx('Action')], rows);
+  }), { desc: tx('Révoque un lien actif pour qu’il ne serve plus. Les comptes déjà inscrits ne sont pas touchés.') });
 }
 
 function invitesHTML(S) {
-  return sectionHead('Invitations et parrainages', 'Qui a invité qui, et les liens d’invitation émis par chaque compte.') +
-    loaded(S.ref, (r) => (!r.roots.length ? empty('Aucun compte.') : admCard('Arbre de parrainage',
-      '<p class="adm-count" role="status">' + fmtInt(r.total) + ' compte' + (r.total > 1 ? 's' : '') + ' · profondeur ' + treeDepth(r.roots) + (r.truncated ? ' · arbre tronqué par le serveur' : '') + '</p>' +
-      '<ul class="adm-tree is-root" aria-label="Arbre de parrainage">' + r.roots.map(nodeHTML).join('') + '</ul>'))) +
+  return sectionHead(tx('Invitations et parrainages'), tx('Qui a invité qui, et les liens d’invitation émis par chaque compte.')) +
+    loaded(S.ref, (r) => (!r.roots.length ? empty(tx('Aucun compte.')) : admCard(tx('Arbre de parrainage'),
+      '<p class="adm-count" role="status">' + tx('{total} compte{v} · profondeur {roots}', { total: fmtInt(r.total), v: (r.total > 1 ? 's' : ''), roots: treeDepth(r.roots) }) + (r.truncated ? ' ' + tx('· arbre tronqué par le serveur') : '') + '</p>' +
+      '<ul class="adm-tree is-root" aria-label="' + tx('Arbre de parrainage') + '">' + r.roots.map(nodeHTML).join('') + '</ul>'))) +
     invitesCardHTML(S);
 }
 
 async function revokeInvite(ctx, id, owner) {
-  if (!(await confirmDialog({ title: 'Révoquer le lien', message: 'Ce lien d’invitation de <strong>' + esc(owner || 'ce compte') + '</strong> ne pourra plus créer de compte. Les comptes déjà inscrits ne sont pas touchés.', confirmLabel: 'Révoquer', danger: true }))) return;
-  if (await attempt(() => api.revokeInvite(id), toast)) toast('Lien révoqué.');
+  if (!(await confirmDialog({ title: tx('Révoquer le lien'), message: tx('Ce lien d’invitation de <strong>{v}</strong> ne pourra plus créer de compte. Les comptes déjà inscrits ne sont pas touchés.', { v: esc(owner || tx('ce compte')) }), confirmLabel: tx('Révoquer'), danger: true }))) return;
+  if (await attempt(() => api.revokeInvite(id), toast)) toast(tx('Lien révoqué.'));
   ctx.refresh(true);
 }
 
@@ -304,19 +305,19 @@ function bindInvites(root, ctx) {
 
 // ---------- En ligne ----------
 function onlineHTML(S) {
-  return sectionHead('En ligne', 'Comptes présents en ce moment. Actualisé toutes les 30 secondes quand l’onglet est visible.',
-    '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') +
+  return sectionHead(tx('En ligne'), tx('Comptes présents en ce moment. Actualisé toutes les 30 secondes quand l’onglet est visible.'),
+    '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>' + tx('Actualiser') + '</button>') +
     loaded(S.online, (r) => {
-      if (!r.accounts.length) return empty('Personne n’est connecté en ce moment.');
+      if (!r.accounts.length) return empty(tx('Personne n’est connecté en ce moment.'));
       const rows = r.accounts.map((a) => ({
         cells: [
           '<button type="button" class="adm-link" data-adm-acc="' + esc(a.id) + '">' + esc(a.username) + '</button>',
           esc(fmtAgo(a.lastSeenAt)),
-          a.watching ? esc(a.watching.title) + (a.watching.mediaType ? ' <span class="adm-dim">' + esc(a.watching.mediaType) + '</span>' : '') : '<span class="adm-dim">Rien pour le moment</span>',
+          a.watching ? esc(a.watching.title) + (a.watching.mediaType ? ' <span class="adm-dim">' + esc(a.watching.mediaType) + '</span>' : '') : '<span class="adm-dim">' + tx('Rien pour le moment') + '</span>',
         ],
       }));
-      return '<p class="adm-count" role="status">' + plural(r.accounts.length, 'compte') + ' en ligne</p>' +
-        table('Comptes en ligne', ['Pseudo', 'Dernière présence', 'En lecture'], rows);
+      return '<p class="adm-count" role="status">' + tx('{length} en ligne', { length: plural(r.accounts.length, 'compte') }) + '</p>' +
+        table(tx('Comptes en ligne'), [tx('Pseudo'), tx('Dernière présence'), tx('En lecture')], rows);
     });
 }
 
@@ -337,18 +338,18 @@ function bindOnline(root, ctx) {
 
 export const usersSections = [
   {
-    id: 'accounts', group: 'users', label: 'Comptes', icon: 'users', render: accountsHTML, bind: bindAccounts,
+    id: 'accounts', group: 'users', label: tx('Comptes'), icon: 'users', render: accountsHTML, bind: bindAccounts,
     load: (ctx, quiet) => ctx.fetch('acc', () => api.listAccounts({ ...ctx.S.accQuery, limit: ACCOUNT_PAGE, cursor: ctx.S.accPager.cursor }), quiet),
   },
   {
-    id: 'invites', group: 'users', label: 'Invitations', icon: 'tree', render: invitesHTML, bind: bindInvites,
+    id: 'invites', group: 'users', label: tx('Invitations'), icon: 'tree', render: invitesHTML, bind: bindInvites,
     load: (ctx, quiet) => Promise.all([
       ctx.fetch('ref', () => api.getReferrals(), quiet),
       ctx.fetch('inv', () => api.listInvites({ status: ctx.S.invStatus || undefined }), quiet),
     ]),
   },
   {
-    id: 'online', group: 'users', label: 'En ligne', icon: 'online', render: onlineHTML, bind: bindOnline,
+    id: 'online', group: 'users', label: tx('En ligne'), icon: 'online', render: onlineHTML, bind: bindOnline,
     load: (ctx, quiet) => ctx.fetch('online', () => api.listOnline(), quiet),
   },
 ];

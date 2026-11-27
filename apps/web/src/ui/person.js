@@ -14,14 +14,15 @@ import { row, section, svcError, topBar } from './fragments.js';
 import { applyRestore } from './router.js';
 import { state } from './state.js';
 import { observeTiles, tileCard } from './tiles.js';
-import { esc, fmtDate, fmtNum, plural } from './util.js';
+import { esc, fmtDate, fmtNum } from './util.js';
+import { t, tn } from '../i18n';
 
 const personCache = new Map();
 const NOISE_GENRES = [10767, 10763];
 const isSelf = (c) => /\b(self|himself|herself|lui-même|elle-même|soi-même|archive|archives|footage|uncredited|non crédité)\b/i.test(c || '');
 const DEPT_FR = {
-  Acting: ['Acteur', 'Actrice'], Directing: ['Réalisateur', 'Réalisatrice'], Writing: ['Scénariste', 'Scénariste'], Production: ['Producteur', 'Productrice'],
-  Sound: ['Compositeur', 'Compositrice'], Camera: ['Chef opérateur', 'Cheffe opératrice'], Editing: ['Monteur', 'Monteuse'], Creator: ['Créateur', 'Créatrice'],
+  Acting: [t('Acteur'), t('Actrice')], Directing: [t('Réalisateur'), t('Réalisatrice')], Writing: [t('Scénariste'), t('Scénariste')], Production: [t('Producteur'), t('Productrice')],
+  Sound: [t('Compositeur'), t('Compositrice')], Camera: [t('Chef opérateur'), t('Cheffe opératrice')], Editing: [t('Monteur'), t('Monteuse')], Creator: [t('Créateur'), t('Créatrice')],
 };
 
 function fetchPerson(id) {
@@ -105,9 +106,9 @@ function ppRow(id, title, list, optsFn) {
 
 function ppLinks(x) {
   const out = [];
-  if (x.imdb_id) out.push('<a class="pp-link" href="https://www.imdb.com/name/' + esc(x.imdb_id) + '" target="_blank" rel="noopener noreferrer" aria-label="IMDb (nouvel onglet)"><span class="rb rb-imdb" aria-hidden="true">IMDb</span></a>');
-  if (x.instagram_id) out.push('<a class="pp-link" href="https://www.instagram.com/' + esc(x.instagram_id) + '" target="_blank" rel="noopener noreferrer" aria-label="Instagram (nouvel onglet)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor"/></svg></a>');
-  if (x.twitter_id) out.push('<a class="pp-link" href="https://x.com/' + esc(x.twitter_id) + '" target="_blank" rel="noopener noreferrer" aria-label="X (nouvel onglet)"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.8 3h3l-6.6 7.6L22 21h-6.1l-4.8-6.3L5.6 21h-3l7-8.1L2 3h6.2l4.3 5.7zm-1.1 16.2h1.7L7.4 4.7H5.6z"/></svg></a>');
+  if (x.imdb_id) out.push('<a class="pp-link" href="https://www.imdb.com/name/' + esc(x.imdb_id) + '" target="_blank" rel="noopener noreferrer" aria-label="' + t('IMDb (nouvel onglet)') + '"><span class="rb rb-imdb" aria-hidden="true">IMDb</span></a>');
+  if (x.instagram_id) out.push('<a class="pp-link" href="https://www.instagram.com/' + esc(x.instagram_id) + '" target="_blank" rel="noopener noreferrer" aria-label="' + t('Instagram (nouvel onglet)') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor"/></svg></a>');
+  if (x.twitter_id) out.push('<a class="pp-link" href="https://x.com/' + esc(x.twitter_id) + '" target="_blank" rel="noopener noreferrer" aria-label="' + t('X (nouvel onglet)') + '"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.8 3h3l-6.6 7.6L22 21h-6.1l-4.8-6.3L5.6 21h-3l7-8.1L2 3h6.2l4.3 5.7zm-1.1 16.2h1.7L7.4 4.7H5.6z"/></svg></a>');
   return out.join('');
 }
 
@@ -133,14 +134,14 @@ export function renderFilmography() {
       return '<li><button type="button" class="pp-li" data-open="' + esc(e.it.key) + '" aria-label="' + esc(e.it.name + (e.it.year ? ', ' + e.it.year : '') + (role ? ', ' + role : '')) + '">' +
         '<span class="pp-y">' + esc(e.date ? e.date.slice(0, 4) : '—') + '</span>' +
         '<span class="pp-th">' + (e.it.poster ? '<img src="' + esc(e.it.poster) + '" alt="" loading="lazy" decoding="async">' : '') + '</span>' +
-        '<span class="pp-t"><strong>' + esc(e.it.name) + '</strong><em>' + esc(e.it.type === 'tv' ? 'Série' : 'Film') + '</em></span>' +
+        '<span class="pp-t"><strong>' + esc(e.it.name) + '</strong><em>' + esc(e.it.type === 'tv' ? t('Série') : t('Film')) + '</em></span>' +
         '<span class="pp-r">' + esc(role) + '</span>' +
         '<span class="pp-n">' + (e.rating > 0 ? '★ ' + esc(fmtNum(e.rating, 1)) : '') + '</span></button></li>';
   };
   box.innerHTML = '';
   detailEl.querySelectorAll('[data-ppf]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.ppf === pp.filter)));
   detailEl.querySelectorAll('[data-pps]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pps === pp.sort)));
-  if (!l.length) { box.innerHTML = '<li class="row-msg">Aucun crédit dans ce filtre.</li>'; return; }
+  if (!l.length) { box.innerHTML = '<li class="row-msg">' + t('Aucun crédit dans ce filtre.') + '</li>'; return; }
   const PAGE = 80;
   infiniteList({
     host: box,
@@ -154,11 +155,11 @@ export async function showPerson(id) {
   teardownFiche();
   const token = state.token;
   state.kind = 'person';
-  document.title = 'Personnalité · Laststream';
+  document.title = t('Personnalité · Laststream');
   detailEl.innerHTML = topBar(false) + '<article class="svc-page is-loading" aria-busy="true" tabindex="-1"><header class="svc-head"><span class="sk sk-title"></span></header></article>';
   let raw;
   try { raw = await fetchPerson(id); } catch (_) {
-    if (token === state.token) detailEl.innerHTML = svcError('Cette fiche personne n’a pas pu être chargée.');
+    if (token === state.token) detailEl.innerHTML = svcError(t('Cette fiche personne n’a pas pu être chargée.'));
     return;
   }
   if (token !== state.token) return;
@@ -184,18 +185,18 @@ export async function showPerson(id) {
   if (raw.birthday) {
     const a = ageOf(raw.birthday, raw.deathday);
     life = raw.deathday
-      ? 'Né le ' + fmtDate(raw.birthday) + ' · mort le ' + fmtDate(raw.deathday) + ' (' + a + ' ans)'
-      : 'Né' + (raw.gender === 1 ? 'e' : '') + ' le ' + fmtDate(raw.birthday) + ' (' + a + ' ans)';
+      ? t('Né le {birthday} · mort le {deathday} ({a} ans)', { birthday: fmtDate(raw.birthday), deathday: fmtDate(raw.deathday), a })
+      : t('Né{v} le {birthday} ({a} ans)', { v: (raw.gender === 1 ? 'e' : ''), birthday: fmtDate(raw.birthday), a });
   }
   state.pp = { entries, filter: 'all', sort: 'recent', limit: 80 };
-  const chips = [['all', 'Tout'], ['movie', 'Films'], ['tv', 'Séries']];
-  [['Acteur', 'Acteur'], ['Réalisateur', 'Réalisateur'], ['Scénario', 'Scénario'], ['Production', 'Production']].forEach(([k, l]) => {
+  const chips = [['all', t('Tout')], ['movie', t('Films')], ['tv', t('Séries')]];
+  [[t('Acteur'), t('Acteur')], [t('Réalisateur'), t('Réalisateur')], [t('Scénario'), t('Scénario')], [t('Production'), t('Production')]].forEach(([k, l]) => {
     if (entries.some((e) => e.kinds.has(k))) chips.push([k, l]);
   });
   const stat = (v, l) => '<li><strong>' + esc(v) + '</strong><span>' + esc(l) + '</span></li>';
-  const stats = [stat(String(nFilms), nFilms > 1 ? 'films' : 'film'), stat(String(nSeries), nSeries > 1 ? 'séries' : 'série')];
-  if (years.length) stats.push(stat(Math.min.apply(null, years) + ' – ' + Math.max.apply(null, years), 'années d’activité'));
-  if (avg) stats.push(stat('★ ' + fmtNum(avg, 1), 'note moyenne des plus connus'));
+  const stats = [stat(String(nFilms), nFilms > 1 ? 'films' : 'film'), stat(String(nSeries), nSeries > 1 ? t('séries') : t('série'))];
+  if (years.length) stats.push(stat(Math.min.apply(null, years) + ' – ' + Math.max.apply(null, years), t('années d’activité')));
+  if (avg) stats.push(stat('★ ' + fmtNum(avg, 1), t('note moyenne des plus connus')));
   const bgSrc = backdropC ? IMG('w1280', backdropC.backdrop) : '';
 
   detailEl.innerHTML = topBar(false) +
@@ -208,25 +209,25 @@ export async function showPerson(id) {
     '<div class="pp-follow" data-nav>' + followBtn('person:' + raw.id, 'btn btn-ghost', ' data-fname="' + esc(raw.name) + '" data-fphoto="' + esc(raw.profile_path || '') + '"') + '</div>' +
     (ppLinks(ext) ? '<div class="pp-links" data-nav>' + ppLinks(ext) + '</div>' : '') +
     (bio ? '<div class="pp-bio-wrap"><p class="pp-bio' + (bio.length > 380 ? ' is-clamped' : '') + '" id="pp-bio">' + esc(bio) + '</p>' +
-      (bio.length > 380 ? '<button type="button" class="link-btn" data-bio aria-expanded="false" aria-controls="pp-bio">Lire la suite</button>' : '') + '</div>' : '') +
-    '<div class="f-why glass pp-why" id="pp-why" hidden><p class="f-why-head">En deux mots <span class="ia-tag">IA</span></p><p class="f-why-text" id="pp-why-text"></p></div>' +
+      (bio.length > 380 ? '<button type="button" class="link-btn" data-bio aria-expanded="false" aria-controls="pp-bio">' + t('Lire la suite') + '</button>' : '') + '</div>' : '') +
+    '<div class="f-why glass pp-why" id="pp-why" hidden><p class="f-why-head">' + t('En deux mots') + ' <span class="ia-tag">IA</span></p><p class="f-why-text" id="pp-why-text"></p></div>' +
     '</div></div></header>' +
-    '<ul class="pp-stats" aria-label="Statistiques">' + stats.join('') + '</ul>' +
+    '<ul class="pp-stats" aria-label="' + t('Statistiques') + '">' + stats.join('') + '</ul>' +
     '<div class="pp-rows">' +
-    ppRow('pp-known', 'Les plus connus', known, () => ({})) +
-    ppRow('pp-films', 'Films', films, (e) => ({ soon: e.date > today, caption: e.char || String(e.it.year || '') })) +
-    ppRow('pp-series', 'Séries', series, (e) => ({ soon: e.date > today, caption: [e.char, e.episodes ? plural(e.episodes, 'épisode', 'épisodes') : ''].filter(Boolean).join(' · ') })) +
-    ppRow('pp-dir', 'Réalisation', crewRow('Réalisateur'), (e) => ({ soon: e.date > today, caption: String(e.it.year || '') })) +
-    ppRow('pp-wri', 'Scénario', crewRow('Scénario'), (e) => ({ soon: e.date > today, caption: Array.from(e.jobs).slice(0, 2).join(', ') })) +
-    ppRow('pp-prod', 'Production', crewRow('Production'), (e) => ({ soon: e.date > today, caption: Array.from(e.jobs).slice(0, 2).join(', ') })) +
-    (photos.length ? '<section class="row-section" id="pp-photos" aria-labelledby="h-pp-photos"><h2 class="row-title" id="h-pp-photos">Photos</h2><div class="row f-posters" data-nav>' +
-      photos.map((ph, i) => '<button type="button" class="pp-photo" data-photo="' + esc(ph.file_path) + '" aria-label="Agrandir la photo ' + (i + 1) + ' de ' + esc(raw.name) + '"><img src="' + esc(IMG('w342', ph.file_path)) + '" alt="" loading="lazy" decoding="async"></button>').join('') + '</div></section>' : '') +
+    ppRow('pp-known', t('Les plus connus'), known, () => ({})) +
+    ppRow('pp-films', t('Films'), films, (e) => ({ soon: e.date > today, caption: e.char || String(e.it.year || '') })) +
+    ppRow('pp-series', t('Séries'), series, (e) => ({ soon: e.date > today, caption: [e.char, e.episodes ? tn(e.episodes, '{n} épisode', '{n} épisodes') : ''].filter(Boolean).join(' · ') })) +
+    ppRow('pp-dir', t('Réalisation'), crewRow(t('Réalisateur')), (e) => ({ soon: e.date > today, caption: String(e.it.year || '') })) +
+    ppRow('pp-wri', t('Scénario'), crewRow(t('Scénario')), (e) => ({ soon: e.date > today, caption: Array.from(e.jobs).slice(0, 2).join(', ') })) +
+    ppRow('pp-prod', t('Production'), crewRow(t('Production')), (e) => ({ soon: e.date > today, caption: Array.from(e.jobs).slice(0, 2).join(', ') })) +
+    (photos.length ? '<section class="row-section" id="pp-photos" aria-labelledby="h-pp-photos"><h2 class="row-title" id="h-pp-photos">' + t('Photos') + '</h2><div class="row f-posters" data-nav>' +
+      photos.map((ph, i) => '<button type="button" class="pp-photo" data-photo="' + esc(ph.file_path) + '" aria-label="' + t('Agrandir la photo {v} de {name}', { v: (i + 1), name: esc(raw.name) }) + '"><img src="' + esc(IMG('w342', ph.file_path)) + '" alt="" loading="lazy" decoding="async"></button>').join('') + '</div></section>' : '') +
     '</div>' +
-    '<section class="pp-film" id="pp-film" aria-labelledby="h-pp-film"><h2 class="row-title" id="h-pp-film">Filmographie complète</h2>' +
-    '<div class="pp-controls"><div class="pills" data-nav role="group" aria-label="Filtrer">' + chips.map(([k, l]) => '<button type="button" class="pill" data-ppf="' + esc(k) + '" aria-pressed="' + (k === 'all') + '">' + esc(l) + '</button>').join('') + '</div>' +
-    '<div class="pills" data-nav role="group" aria-label="Trier"><button type="button" class="pill" data-pps="recent" aria-pressed="true">Récent</button><button type="button" class="pill" data-pps="pop" aria-pressed="false">Populaire</button><button type="button" class="pill" data-pps="rating" aria-pressed="false">Note</button></div></div>' +
+    '<section class="pp-film" id="pp-film" aria-labelledby="h-pp-film"><h2 class="row-title" id="h-pp-film">' + t('Filmographie complète') + '</h2>' +
+    '<div class="pp-controls"><div class="pills" data-nav role="group" aria-label="' + t('Filtrer') + '">' + chips.map(([k, l]) => '<button type="button" class="pill" data-ppf="' + esc(k) + '" aria-pressed="' + (k === 'all') + '">' + esc(l) + '</button>').join('') + '</div>' +
+    '<div class="pills" data-nav role="group" aria-label="' + t('Trier') + '"><button type="button" class="pill" data-pps="recent" aria-pressed="true">' + t('Récent') + '</button><button type="button" class="pill" data-pps="pop" aria-pressed="false">' + t('Populaire') + '</button><button type="button" class="pill" data-pps="rating" aria-pressed="false">' + t('Note') + '</button></div></div>' +
     '<ul class="pp-list" id="pp-list" data-nav></ul></section></article>';
-  document.title = raw.name + ' · Laststream';
+  document.title = t('{name} · Laststream', { name: raw.name });
   const h1 = detailEl.querySelector('#pp-title');
   if (h1) h1.focus({ preventScroll: true });
   renderFilmography();

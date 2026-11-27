@@ -20,29 +20,30 @@ import {
 } from './socialProfileModel.js';
 import { registerSocialHook } from './socialHooks.js';
 import { state as uiState } from './state.js';
+import { t as tr, intlLocale } from '../i18n';
 
 const POSTER_BGS = ['#3a2a1c', '#1f3b5c', '#5c1f2e', '#1f4a3a', '#3b2a5c', '#5c4a1f'];
-const TAG_COOLDOWN_NOTE = 'Changer de tag : une fois par mois, tes amis restent tes amis.';
+const TAG_COOLDOWN_NOTE = tr('Changer de tag : une fois par mois, tes amis restent tes amis.');
 const MOBILE_Q = '(max-width: 767px)';
 
 /** Réglages à choix : desktop = segments, Android = ligne qui ouvre une feuille. */
 const CHOICES = [
-  { key: 'activityVisibility', label: 'Qui voit ce que je regarde', mLabel: 'Ce que je regarde', mSub: 'Visible par' },
-  { key: 'watchWith', label: '« Regarder avec moi »', mSub: 'Quand un ami me rejoint' },
-  { key: 'libraryVisibility', label: 'Ma bibliothèque', mSub: 'Visible par' },
-  { key: 'messagesFrom', label: 'Qui peut m’écrire', mLabel: 'Qui peut m’écrire' },
+  { key: 'activityVisibility', label: tr('Qui voit ce que je regarde'), mLabel: tr('Ce que je regarde'), mSub: tr('Visible par') },
+  { key: 'watchWith', label: tr('« Regarder avec moi »'), mSub: tr('Quand un ami me rejoint') },
+  { key: 'libraryVisibility', label: tr('Ma bibliothèque'), mSub: tr('Visible par') },
+  { key: 'messagesFrom', label: tr('Qui peut m’écrire'), mLabel: tr('Qui peut m’écrire') },
 ];
-const PLAYBACK = { key: 'playbackSocial', label: 'Social pendant la lecture', mSub: 'Bulles, notes, emojis, présence', hint: 'Mode cinéma : ni bulles, ni notes, ni emojis, ni présence. Tout attend la fin du film.' };
+const PLAYBACK = { key: 'playbackSocial', label: tr('Social pendant la lecture'), mSub: tr('Bulles, notes, emojis, présence'), hint: tr('Mode cinéma : ni bulles, ni notes, ni emojis, ni présence. Tout attend la fin du film.') };
 /** Interrupteurs : chemin dans les préférences. */
 const TOG = {
-  history: { path: ['historyVisible'], label: 'Historique récent visible', sub: 'Les 20 derniers titres terminés' },
-  spoiler: { path: ['antiSpoiler'], label: 'Anti-spoiler', sub: 'Masquer les notes des amis au-delà de ma position', mSub: 'Masquer les notes au-delà de ma position' },
-  sound: { path: ['notify', 'sound'], label: 'Sons de notification', sub: 'Désactivés en « Ne pas déranger »' },
-  vibrate: { path: ['notify', 'vibrate'], label: 'Vibrer à chaque message', sub: 'Jamais en mode cinéma' },
-  messages: { path: ['notify', 'messages'], label: 'Messages', aria: 'Notifications de messages' },
-  requests: { path: ['notify', 'requests'], label: 'Demandes d’amis', aria: 'Notifications de demandes' },
-  parties: { path: ['notify', 'parties'], label: 'Invitations en watch party', aria: 'Notifications de watch party' },
-  friendStarts: { path: ['notify', 'friendStarts'], label: 'Un ami commence un film', sub: 'Seulement les favoris', aria: 'Notifications d’activité' },
+  history: { path: ['historyVisible'], label: tr('Historique récent visible'), sub: tr('Les 20 derniers titres terminés') },
+  spoiler: { path: ['antiSpoiler'], label: tr('Anti-spoiler'), sub: tr('Masquer les notes des amis au-delà de ma position'), mSub: tr('Masquer les notes au-delà de ma position') },
+  sound: { path: ['notify', 'sound'], label: tr('Sons de notification'), sub: tr('Désactivés en « Ne pas déranger »') },
+  vibrate: { path: ['notify', 'vibrate'], label: tr('Vibrer à chaque message'), sub: tr('Jamais en mode cinéma') },
+  messages: { path: ['notify', 'messages'], label: tr('Messages'), aria: tr('Notifications de messages') },
+  requests: { path: ['notify', 'requests'], label: tr('Demandes d’amis'), aria: tr('Notifications de demandes') },
+  parties: { path: ['notify', 'parties'], label: tr('Invitations en watch party'), aria: tr('Notifications de watch party') },
+  friendStarts: { path: ['notify', 'friendStarts'], label: tr('Un ami commence un film'), sub: tr('Seulement les favoris'), aria: tr('Notifications d’activité') },
 };
 
 const isMobile = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(MOBILE_Q).matches;
@@ -74,12 +75,12 @@ const plain = (obj) => (obj ? JSON.parse(JSON.stringify(obj)) : obj);
 
 function errorText(e) {
   if (e instanceof UserApiError) {
-    if (e.status === 429) return 'Trop de demandes, réessaie dans un instant.';
-    if (e.status === 401 || e.status === 403) return 'Action refusée pour ce profil.';
-    if (e.code === 'name_taken' || e.code === 'handle_taken') return 'Ce pseudo est déjà pris avec ce tag.';
-    if (e.code === 'invalid_name') return 'Ce pseudo n’est pas valide.';
+    if (e.status === 429) return tr('Trop de demandes, réessaie dans un instant.');
+    if (e.status === 401 || e.status === 403) return tr('Action refusée pour ce profil.');
+    if (e.code === 'name_taken' || e.code === 'handle_taken') return tr('Ce pseudo est déjà pris avec ce tag.');
+    if (e.code === 'invalid_name') return tr('Ce pseudo n’est pas valide.');
   }
-  return 'Le serveur ne répond pas. Réessaie dans un instant.';
+  return tr('Le serveur ne répond pas. Réessaie dans un instant.');
 }
 
 /** Initiale d'un nom pour l'avatar sans illustration. */
@@ -173,7 +174,7 @@ export function mountProfileEditor(root, deps) {
       color ? h('i', { class: 'spf-dot', style: 'background:' + color }) : null, h('span', { text }), v === current ? icon('check') : null));
     const sheet = h('div', { class: 'spf-sheet', on: { click: (e) => { if (e.target === sheet) close(); } } },
       h('div', { class: 'spf-sheet-box', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-        h('div', { class: 'spf-sheet-t', text: title }), h('div', { role: 'radiogroup', 'aria-label': title }, ...opts), btn('spf-btn spf-sec', 'Fermer', close)));
+        h('div', { class: 'spf-sheet-t', text: title }), h('div', { role: 'radiogroup', 'aria-label': title }, ...opts), btn('spf-btn spf-sec', tr('Fermer'), close)));
     document.addEventListener('keydown', onKey, true);
     page.append(sheet);
     (opts.find((o) => o.classList.contains('on')) || opts[0]).focus();
@@ -207,7 +208,7 @@ export function mountProfileEditor(root, deps) {
     const prev = document.activeElement;
     let token = 0;
     let timer = 0;
-    const input = h('input', { type: 'search', class: 'spf-fi', placeholder: 'Rechercher un film ou une série', 'aria-label': 'Rechercher un titre', autocomplete: 'off', maxlength: '60' });
+    const input = h('input', { type: 'search', class: 'spf-fi', placeholder: tr('Rechercher un film ou une série'), 'aria-label': tr('Rechercher un titre'), autocomplete: 'off', maxlength: '60' });
     const list = h('div', { class: 'spf-res', 'aria-live': 'polite' });
     const close = () => { clearTimeout(timer); token += 1; modalEl.remove(); document.removeEventListener('keydown', onKey, true); if (prev && prev.isConnected) prev.focus(); };
     const onKey = (e) => {
@@ -223,30 +224,30 @@ export function mountProfileEditor(root, deps) {
     const run = async () => {
       const q = input.value.trim();
       const mine = ++token;
-      if (q.length < 2) { msg('Tape au moins deux lettres.'); return; }
-      msg('Recherche…');
+      if (q.length < 2) { msg(tr('Tape au moins deux lettres.')); return; }
+      msg(tr('Recherche…'));
       let json;
-      try { json = await tmdb('search/multi', { query: q, include_adult: 'false' }); } catch { if (mine === token) msg('La recherche ne répond pas. Réessaie.'); return; }
+      try { json = await tmdb('search/multi', { query: q, include_adult: 'false' }); } catch { if (mine === token) msg(tr('La recherche ne répond pas. Réessaie.')); return; }
       if (mine !== token) return;
       const found = ((json && json.results) || []).map(mediaOf).filter((m) => m && (!needBackdrop || m.backdrop)).slice(0, 12);
-      if (!found.length) { msg('Aucun titre trouvé.'); return; }
+      if (!found.length) { msg(tr('Aucun titre trouvé.')); return; }
       list.replaceChildren(...found.map((m) => {
         const year = '';
         const thumb = h('span', { class: 'spf-th' });
         const img = m.poster ? IMG('w92', m.poster) : '';
         if (img) thumb.style.backgroundImage = cssUrl(img);
         return h('button', { type: 'button', class: 'spf-r', on: { click: () => { onPick(m); close(); } } }, thumb,
-          h('span', { class: 'spf-rt' }, h('b', { text: m.title }), h('small', { text: (m.type === 'series' ? 'Série' : 'Film') + year })));
+          h('span', { class: 'spf-rt' }, h('b', { text: m.title }), h('small', { text: (m.type === 'series' ? tr('Série') : tr('Film')) + year })));
       }));
     };
     input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 300); });
     const modalEl = h('div', { class: 'spf-modal', on: { click: (e) => { if (e.target === modalEl) close(); } } },
       h('div', { class: 'spf-modal-box', role: 'dialog', 'aria-modal': 'true', 'aria-label': titleText },
-        h('div', { class: 'spf-modal-h' }, h('h2', { class: 'spf-h2', text: titleText }), btn('spf-x', '', close, { 'aria-label': 'Fermer' })), input, list));
+        h('div', { class: 'spf-modal-h' }, h('h2', { class: 'spf-h2', text: titleText }), btn('spf-x', '', close, { 'aria-label': tr('Fermer') })), input, list));
     modalEl.querySelector('.spf-x').append(icon('close'));
     document.addEventListener('keydown', onKey, true);
     page.append(modalEl);
-    msg('Tape au moins deux lettres.');
+    msg(tr('Tape au moins deux lettres.'));
     input.focus();
   }
 
@@ -263,37 +264,37 @@ export function mountProfileEditor(root, deps) {
   bioInput.addEventListener('input', () => { draft.bio = bioInput.value; paintBio(); touched(); });
   paintBio();
 
-  const swatches = zone('swatches', h('div', { class: 'spf-sws', role: 'group', 'aria-label': 'Couleur de l’avatar' }), () =>
+  const swatches = zone('swatches', h('div', { class: 'spf-sws', role: 'group', 'aria-label': tr('Couleur de l’avatar') }), () =>
     COLORS.map(([c, name]) => h('button', { type: 'button', class: 'spf-sw', 'aria-label': name, 'aria-pressed': String(draft.avatarColor.toLowerCase() === c), style: 'background:' + c,
       on: { click: () => { draft.avatarColor = c; paint('swatches', 'avatar'); touched(); } } })));
 
   const avatarBox = zone('avatar', h('span', { class: 'spf-avbox' }), () => avatarEl('spf-av spf-av--lg', draft.name, draft.avatar, draft.avatarColor));
   const avatarBtns = h('div', { class: 'spf-row' },
-    btn('spf-btn spf-sec spf-sm', 'Visage d’un personnage', pickAvatar),
-    zone('avclear', h('span', {}), () => (draft.avatar ? btn('spf-btn spf-sec spf-sm', 'Initiale', () => { draft.avatar = null; paint('avatar', 'avclear'); touched(); }) : [])));
+    btn('spf-btn spf-sec spf-sm', tr('Visage d’un personnage'), pickAvatar),
+    zone('avclear', h('span', {}), () => (draft.avatar ? btn('spf-btn spf-sec spf-sm', tr('Initiale'), () => { draft.avatar = null; paint('avatar', 'avclear'); touched(); }) : [])));
 
   const tagRow = zone('tag', h('div', { class: 'spf-tagwrap' }), () => {
     const cd = tagCooldown(profile);
-    const rr = h('button', { type: 'button', class: 'spf-rr', 'aria-label': 'Tirer un nouveau tag', disabled: cd.locked || busy,
-      title: cd.locked ? cd.label : 'Tirer un nouveau tag', on: { click: () => { rerollAsk = true; paint('tag'); const y = page.querySelector('[data-reroll-yes]'); if (y) y.focus(); } } }, icon('reroll'));
-    const field = h('div', { class: 'spf-fi spf-tagf', id: 'spf-tg', role: 'group', 'aria-label': 'Tag' }, h('span', { text: '#' + profile.handle.tag }), rr);
+    const rr = h('button', { type: 'button', class: 'spf-rr', 'aria-label': tr('Tirer un nouveau tag'), disabled: cd.locked || busy,
+      title: cd.locked ? cd.label : tr('Tirer un nouveau tag'), on: { click: () => { rerollAsk = true; paint('tag'); const y = page.querySelector('[data-reroll-yes]'); if (y) y.focus(); } } }, icon('reroll'));
+    const field = h('div', { class: 'spf-fi spf-tagf', id: 'spf-tg', role: 'group', 'aria-label': tr('Tag') }, h('span', { text: '#' + profile.handle.tag }), rr);
     const out = [field];
     if (rerollAsk) {
-      out.push(h('div', { class: 'spf-ask', role: 'alertdialog', 'aria-label': 'Confirmer un nouveau tag' },
-        h('span', { text: 'Tirer un nouveau tag ? Le suivant ne sera possible que dans 30 jours.' }),
-        h('span', { class: 'spf-row' }, btn('spf-btn spf-pri spf-sm', 'Tirer', reroll, { 'data-reroll-yes': '' }), btn('spf-btn spf-sec spf-sm', 'Garder', () => { rerollAsk = false; paint('tag'); }))));
+      out.push(h('div', { class: 'spf-ask', role: 'alertdialog', 'aria-label': tr('Confirmer un nouveau tag') },
+        h('span', { text: tr('Tirer un nouveau tag ? Le suivant ne sera possible que dans 30 jours.') }),
+        h('span', { class: 'spf-row' }, btn('spf-btn spf-pri spf-sm', tr('Tirer'), reroll, { 'data-reroll-yes': '' }), btn('spf-btn spf-sec spf-sm', tr('Garder'), () => { rerollAsk = false; paint('tag'); }))));
     }
     return out;
   });
   const tagNote = zone('tagnote', h('div', { class: 'spf-note' }), () => {
     const cd = tagCooldown(profile);
     return [
-      'Tes amis te trouvent avec ', h('b', { text: profile.handle.full }), '. ',
-      cd.locked ? cd.label + '. Tes amis restent tes amis.' : TAG_COOLDOWN_NOTE,
+      tr('Tes amis te trouvent avec') + ' ', h('b', { text: profile.handle.full }), '. ',
+      cd.locked ? cd.label + tr('. Tes amis restent tes amis.') : TAG_COOLDOWN_NOTE,
     ];
   });
   const copyBtn = zone('copy', h('span', { class: 'spf-copywrap' }), () => [
-    h('button', { type: 'button', class: 'spf-btn spf-dash', 'aria-label': 'Copier ' + profile.handle.full, on: { click: () => { void copyHandle(); } } }, icon('copy'), 'Copier ' + profile.handle.full),
+    h('button', { type: 'button', class: 'spf-btn spf-dash', 'aria-label': tr('Copier {full}', { full: profile.handle.full }), on: { click: () => { void copyHandle(); } } }, icon('copy'), tr('Copier {full}', { full: profile.handle.full })),
   ]);
 
   async function copyHandle() {
@@ -301,14 +302,14 @@ export function mountProfileEditor(root, deps) {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
       else throw new Error('no-clipboard');
-      toast('Copié : ' + text);
+      toast(tr('Copié : {text}', { text }));
     } catch {
       const ta = h('textarea', { 'aria-hidden': 'true', style: 'position:fixed;left:-9999px' });
       ta.value = text; document.body.append(ta); ta.select();
       let ok = false;
       try { ok = document.execCommand('copy'); } catch { ok = false; }
       ta.remove();
-      toast(ok ? 'Copié : ' + text : 'Copie impossible, sélectionne le tag à la main.');
+      toast(ok ? tr('Copié : {text}', { text }) : tr('Copie impossible, sélectionne le tag à la main.'));
     }
   }
 
@@ -318,10 +319,10 @@ export function mountProfileEditor(root, deps) {
     try {
       const r = await store.rerollTag();
       profile = { ...profile, handle: r.handle, tagChangeableAt: r.tagChangeableAt || Date.now() + 30 * 86_400_000 };
-      toast('Nouveau tag : ' + r.handle.full);
+      toast(tr('Nouveau tag : {full}', { full: r.handle.full }));
     } catch (e) {
       if (e instanceof UserApiError && e.code === 'tag_cooldown') {
-        toast('Tu as déjà changé de tag ce mois-ci.');
+        toast(tr('Tu as déjà changé de tag ce mois-ci.'));
         try { profile = await store.loadProfile(); } catch { /* on garde l'ancien état */ }
       } else toast(errorText(e));
     }
@@ -331,29 +332,29 @@ export function mountProfileEditor(root, deps) {
 
   // ---------- Statut ----------
   let emojiOpen = false;
-  const stInput = h('input', { id: 'spf-st', class: 'spf-fi', maxlength: '80', autocomplete: 'off', placeholder: 'Un mot sur ce que tu fais', 'aria-label': 'Message de statut' });
+  const stInput = h('input', { id: 'spf-st', class: 'spf-fi', maxlength: '80', autocomplete: 'off', placeholder: tr('Un mot sur ce que tu fais'), 'aria-label': tr('Message de statut') });
   stInput.value = draft.statusText;
   stInput.addEventListener('input', () => { draft.statusText = stInput.value; touched(); });
   const emojiBtn = zone('emoji', h('span', { class: 'spf-emojiwrap' }), () => {
-    const out = [h('button', { type: 'button', class: 'spf-fi spf-emoji', 'aria-label': 'Choisir un emoji', 'aria-haspopup': 'true', text: draft.emoji || '🙂', on: { click: () => { emojiOpen = !emojiOpen; paint('emoji'); } } })];
+    const out = [h('button', { type: 'button', class: 'spf-fi spf-emoji', 'aria-label': tr('Choisir un emoji'), 'aria-haspopup': 'true', text: draft.emoji || '🙂', on: { click: () => { emojiOpen = !emojiOpen; paint('emoji'); } } })];
     if (emojiOpen) {
-      out.push(h('div', { class: 'spf-pop', role: 'group', 'aria-label': 'Emojis' },
+      out.push(h('div', { class: 'spf-pop', role: 'group', 'aria-label': tr('Emojis') },
         ...EMOJIS.map((e) => h('button', { type: 'button', class: 'spf-e', text: e, on: { click: () => { draft.emoji = e; emojiOpen = false; paint('emoji'); touched(); } } })),
-        btn('spf-e spf-e--none', 'Aucun', () => { draft.emoji = ''; emojiOpen = false; paint('emoji'); touched(); })));
+        btn('spf-e spf-e--none', tr('Aucun'), () => { draft.emoji = ''; emojiOpen = false; paint('emoji'); touched(); })));
     }
     return out;
   });
   const expiry = zone('expiry', h('div', { class: 'spf-exp' }), () => [
-    h('span', { text: 'Effacer' }),
+    h('span', { text: tr('Effacer') }),
     ...EXPIRIES.map(([v, text]) => h('button', { type: 'button', class: 'spf-chip' + (draft.expiry === v ? ' on' : ''), 'aria-pressed': String(draft.expiry === v), text,
       on: { click: () => { draft.expiry = v; paint('expiry'); touched(); } } })),
-    draft.expiry === 'keep' && draft.expiresAt ? h('span', { class: 'spf-hint', text: 'Efface le ' + new Date(draft.expiresAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }) : null,
+    draft.expiry === 'keep' && draft.expiresAt ? h('span', { class: 'spf-hint', text: tr('Efface le {v}', { v: new Date(draft.expiresAt).toLocaleString(intlLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }) }) : null,
   ]);
   const presence = zone('presence', h('div', {}), () => {
     const acc = { get: () => draft.presence, set: (v) => { draft.presence = v; } };
-    if (!mobile) return [h('span', { class: 'spf-lb', text: 'Présence' }), seg(acc, PRESENCE.map(([v, l]) => [v, l]), 'Présence')];
+    if (!mobile) return [h('span', { class: 'spf-lb', text: tr('Présence') }), seg(acc, PRESENCE.map(([v, l]) => [v, l]), tr('Présence'))];
     const cur = PRESENCE.find((p) => p[0] === draft.presence) || PRESENCE[0];
-    return [h('div', { class: 'spf-card' }, h('button', { type: 'button', class: 'spf-li', on: { click: () => openSheet('Présence', PRESENCE, draft.presence, (v) => { draft.presence = v; paint('presence'); touched(); }) } },
+    return [h('div', { class: 'spf-card' }, h('button', { type: 'button', class: 'spf-li', on: { click: () => openSheet(tr('Présence'), PRESENCE, draft.presence, (v) => { draft.presence = v; paint('presence'); touched(); }) } },
       h('i', { class: 'spf-dot', style: 'background:' + cur[2] }), h('div', { class: 'spf-t' }, h('div', { text: cur[1] })), h('span', { class: 'spf-vl', text: '›' })))];
   });
   const statusErr = h('div', { class: 'spf-err', role: 'alert', hidden: true });
@@ -369,20 +370,20 @@ export function mountProfileEditor(root, deps) {
     posRow.hidden = !(b && b.backdrop);
     posRow.replaceChildren(...(posRow.hidden ? [] : posControls()));
     return [
-      h('span', { class: 'spf-bn-t', text: b ? b.title : 'Aucune bannière' }),
+      h('span', { class: 'spf-bn-t', text: b ? b.title : tr('Aucune bannière') }),
       h('span', { class: 'spf-row' },
-        btn('spf-btn spf-sec spf-sm', b ? 'Changer' : 'Choisir', pickBanner),
-        b ? btn('spf-btn spf-sec spf-sm', 'Retirer', () => { draft.banner = null; touched(); }, { 'aria-label': 'Retirer la bannière' }) : null),
+        btn('spf-btn spf-sec spf-sm', b ? tr('Changer') : tr('Choisir'), pickBanner),
+        b ? btn('spf-btn spf-sec spf-sm', tr('Retirer'), () => { draft.banner = null; touched(); }, { 'aria-label': tr('Retirer la bannière') }) : null),
     ];
   });
   enablePan(bannerEl0);
 
   /** Cadrage de la bannière : curseur vertical + « Recentrer » (le glissé sur l'image passe par enablePan). */
   function posControls() {
-    const rng = h('input', { type: 'range', class: 'spf-range', min: 0, max: 100, step: 1, value: bannerPosY(draft.banner), 'aria-label': 'Position verticale de la bannière' });
+    const rng = h('input', { type: 'range', class: 'spf-range', min: 0, max: 100, step: 1, value: bannerPosY(draft.banner), 'aria-label': tr('Position verticale de la bannière') });
     rng.addEventListener('input', () => setPosY(Number(rng.value)));
-    return [h('span', { class: 'spf-pos-l', text: 'Cadrage' }), rng, h('span', { class: 'spf-pos-v', text: bannerPosY(draft.banner) + ' %' }),
-      btn('spf-chip', 'Recentrer', () => setPosY(50), { 'aria-label': 'Recentrer la bannière' })];
+    return [h('span', { class: 'spf-pos-l', text: tr('Cadrage') }), rng, h('span', { class: 'spf-pos-v', text: bannerPosY(draft.banner) + ' %' }),
+      btn('spf-chip', tr('Recentrer'), () => setPosY(50), { 'aria-label': tr('Recentrer la bannière') })];
   }
   /**
    * Règle le cadrage sans repeindre la zone (sinon le curseur ou le glissé en cours seraient coupés) : le brouillon, les
@@ -424,16 +425,16 @@ export function mountProfileEditor(root, deps) {
     });
   }
   function pickBanner() {
-    openTitlePicker('Choisir une bannière', (m) => { draft.banner = { tmdbId: m.tmdbId, type: m.type, backdrop: m.backdrop, title: m.title }; touched(); }, true);
+    openTitlePicker(tr('Choisir une bannière'), (m) => { draft.banner = { tmdbId: m.tmdbId, type: m.type, backdrop: m.backdrop, title: m.title }; touched(); }, true);
   }
 
-  const favsBox = zone('favs', h('div', { class: 'spf-favs', role: 'list', 'aria-label': 'Mes favoris' }), () => {
+  const favsBox = zone('favs', h('div', { class: 'spf-favs', role: 'list', 'aria-label': tr('Mes favoris') }), () => {
     const tiles = draft.favorites.map((f, i) => favTile(f, i));
-    for (let k = draft.favorites.length; k < FAVORITES_MAX; k++) tiles.push(h('button', { type: 'button', class: 'spf-fav spf-fav--add', 'aria-label': 'Ajouter un favori', on: { click: addFav } }, icon('plus', 'spf-ic spf-ic--lg')));
+    for (let k = draft.favorites.length; k < FAVORITES_MAX; k++) tiles.push(h('button', { type: 'button', class: 'spf-fav spf-fav--add', 'aria-label': tr('Ajouter un favori'), on: { click: addFav } }, icon('plus', 'spf-ic spf-ic--lg')));
     return tiles;
   });
   function addFav() {
-    openTitlePicker('Ajouter un favori', (m) => {
+    openTitlePicker(tr('Ajouter un favori'), (m) => {
       draft.favorites = addFavorite(draft.favorites, { tmdbId: m.tmdbId, type: m.type, title: m.title, ...(m.poster ? { poster: m.poster } : {}) });
       touched();
     }, false);
@@ -448,14 +449,14 @@ export function mountProfileEditor(root, deps) {
   function favTile(f, i) {
     const reorder = reorderIdx === i;
     const t = h('div', { class: 'spf-fav' + (reorder ? ' is-reorder' : ''), role: 'listitem', tabindex: '0', draggable: 'true', 'data-i': i,
-      'aria-label': f.title + ', favori ' + (i + 1) + ' sur ' + draft.favorites.length + '. Alt et flèches pour réordonner.' });
+      'aria-label': tr('{title}, favori {v} sur {length}. Alt et flèches pour réordonner.', { title: f.title, v: (i + 1), length: draft.favorites.length }) });
     t.style.backgroundColor = posterBg(f);
     if (bgOf('w185', f.poster)) { t.style.backgroundImage = bgOf('w185', f.poster); t.classList.add('has-img'); } else t.append(h('span', { class: 'spf-fav-t', text: f.title }));
     const act = (cls, label, ic, fn) => h('button', { type: 'button', class: 'spf-fa ' + cls, 'aria-label': label, on: { click: (e) => { e.stopPropagation(); fn(); } } }, icon(ic));
     t.append(...[
-      act('spf-fa-rm', 'Retirer ' + f.title, 'close', () => { draft.favorites = draft.favorites.filter((_, k) => k !== i); reorderIdx = -1; touched(); }),
-      i > 0 ? act('spf-fa-l', 'Déplacer ' + f.title + ' vers la gauche', 'back', () => moveFav(i, i - 1)) : null,
-      i < draft.favorites.length - 1 ? act('spf-fa-r', 'Déplacer ' + f.title + ' vers la droite', 'chev', () => moveFav(i, i + 1)) : null].filter(Boolean));
+      act('spf-fa-rm', tr('Retirer {title}', { title: f.title }), 'close', () => { draft.favorites = draft.favorites.filter((_, k) => k !== i); reorderIdx = -1; touched(); }),
+      i > 0 ? act('spf-fa-l', tr('Déplacer {title} vers la gauche', { title: f.title }), 'back', () => moveFav(i, i - 1)) : null,
+      i < draft.favorites.length - 1 ? act('spf-fa-r', tr('Déplacer {title} vers la droite', { title: f.title }), 'chev', () => moveFav(i, i + 1)) : null].filter(Boolean));
     t.addEventListener('keydown', (e) => {
       if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); moveFav(i, i - 1); } else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); moveFav(i, i + 1); } else if (e.key === 'Delete') { e.preventDefault(); draft.favorites = draft.favorites.filter((_, k) => k !== i); touched(); } else if (e.key === 'Escape' && reorderIdx !== -1) { reorderIdx = -1; paint('favs'); }
     });
@@ -471,7 +472,7 @@ export function mountProfileEditor(root, deps) {
   const favsErr = h('div', { class: 'spf-err', role: 'alert', hidden: true });
 
   // ---------- Aperçu (bureau) ----------
-  const previewBox = zone('preview', h('aside', { class: 'spf-prev', 'aria-label': 'Aperçu de ton profil' }), () => {
+  const previewBox = zone('preview', h('aside', { class: 'spf-prev', 'aria-label': tr('Aperçu de ton profil') }), () => {
     const pres = PRESENCE.find((p) => p[0] === draft.presence) || PRESENCE[0];
     const name = draft.name.trim() || profile.handle.name;
     const stText = draft.statusText.trim();
@@ -481,7 +482,7 @@ export function mountProfileEditor(root, deps) {
     if (draft.presence !== 'invisible') av.append(h('i', { class: 'spf-pdot', style: 'background:' + pres[2] }));
     const stats = profile.stats;
     return [
-      h('div', { class: 'spf-prev-h', text: 'Ce que voient tes amis' }),
+      h('div', { class: 'spf-prev-h', text: tr('Ce que voient tes amis') }),
       h('div', { class: 'spf-prev-card' }, bannerEl,
         h('div', { class: 'spf-prev-b' }, av,
           h('div', { class: 'spf-prev-n' }, name, h('span', { text: '#' + profile.handle.tag })),
@@ -494,13 +495,13 @@ export function mountProfileEditor(root, deps) {
             return c;
           })),
           stats ? h('div', { class: 'spf-prev-st' }, h('span', {}, h('b', { text: String(stats.hoursWatched) }), ' h vues'), h('span', {}, h('b', { text: String(stats.notes) }), ' notes'), h('span', {}, h('b', { text: String(stats.friends) }), ' amis')) : null)),
-      h('div', { class: 'spf-hint', text: 'Les profils enfants n’ont pas de profil social. Chaque profil adulte du compte a son propre pseudo et son propre tag.' }),
+      h('div', { class: 'spf-hint', text: tr('Les profils enfants n’ont pas de profil social. Chaque profil adulte du compte a son propre pseudo et son propre tag.') }),
     ];
   });
 
   // ---------- En-tête ----------
   const goBack = () => {
-    if (dirty() && !window.confirm('Quitter sans enregistrer tes modifications ?')) return;
+    if (dirty() && !window.confirm(tr('Quitter sans enregistrer tes modifications ?'))) return;
     deps.onBack();
   };
   const cancel = () => {
@@ -516,23 +517,23 @@ export function mountProfileEditor(root, deps) {
     paintBio();
     paint('swatches', 'avatar', 'avclear', 'emoji', 'expiry', 'presence', 'banner', 'favs', 'prefs', 'preview', 'head');
   }
-  const saveBtn = btn('spf-btn spf-pri', 'Enregistrer', () => { void save(); });
-  const cancelBtn = btn('spf-btn spf-sec', 'Annuler', cancel);
-  const dirtyNote = h('span', { class: 'spf-dirty', role: 'status', text: 'Modifications non enregistrées' });
+  const saveBtn = btn('spf-btn spf-pri', tr('Enregistrer'), () => { void save(); });
+  const cancelBtn = btn('spf-btn spf-sec', tr('Annuler'), cancel);
+  const dirtyNote = h('span', { class: 'spf-dirty', role: 'status', text: tr('Modifications non enregistrées') });
   const errLine = h('div', { class: 'spf-err spf-err--top', role: 'alert' });
   const head = zone('head', h('header', { class: 'spf-head' }), () => {
     const d = dirty();
     dirtyNote.hidden = !d;
     saveBtn.disabled = busy || !d;
-    saveBtn.textContent = busy ? 'Enregistrement…' : 'Enregistrer';
+    saveBtn.textContent = busy ? tr('Enregistrement…') : tr('Enregistrer');
     cancelBtn.disabled = busy;
     cancelBtn.hidden = mobile;
     errLine.hidden = !formError;
     errLine.textContent = formError;
-    const back = h('button', { type: 'button', class: 'spf-back', 'aria-label': 'Retour', on: { click: goBack } }, icon('back'));
+    const back = h('button', { type: 'button', class: 'spf-back', 'aria-label': tr('Retour'), on: { click: goBack } }, icon('back'));
     return mobile
-      ? [back, h('h1', { class: 'spf-h1', text: 'Éditer mon profil' }), dirtyNote, saveBtn]
-      : [back, h('h1', { class: 'spf-h1', text: 'Mon profil social' }), dirtyNote, cancelBtn, saveBtn];
+      ? [back, h('h1', { class: 'spf-h1', text: tr('Éditer mon profil') }), dirtyNote, saveBtn]
+      : [back, h('h1', { class: 'spf-h1', text: tr('Mon profil social') }), dirtyNote, cancelBtn, saveBtn];
   });
 
   // ---------- Enregistrement ----------
@@ -575,11 +576,11 @@ export function mountProfileEditor(root, deps) {
     busy = false;
     nameInput.value = draft.name; bioInput.value = draft.bio; stInput.value = draft.statusText; paintBio();
     if (failed.length) {
-      formError = 'Tout n’a pas été enregistré : ' + errorText(failed[0].error);
+      formError = tr('Tout n’a pas été enregistré : {error}', { error: errorText(failed[0].error) });
       if (failed.some((f) => f.key === 'profile' && f.error instanceof UserApiError && (f.error.code === 'name_taken' || f.error.code === 'invalid_name'))) {
         nameErr.hidden = false; nameErr.textContent = errorText(failed.find((f) => f.key === 'profile').error);
       }
-    } else toast('Profil enregistré');
+    } else toast(tr('Profil enregistré'));
     paint('swatches', 'avatar', 'avclear', 'emoji', 'expiry', 'presence', 'banner', 'favs', 'prefs', 'preview', 'tag', 'tagnote', 'copy', 'head');
   }
 
@@ -587,31 +588,31 @@ export function mountProfileEditor(root, deps) {
   const prefsZone = zone('prefs', h('div', { class: 'spf-prefs' }), () => (mobile ? mobilePrefs() : desktopPrefs()));
   function desktopPrefs() {
     return [
-      h('section', { class: 'spf-card spf-span' }, h('h2', { class: 'spf-h2', text: 'Confidentialité' }),
+      h('section', { class: 'spf-card spf-span' }, h('h2', { class: 'spf-h2', text: tr('Confidentialité') }),
         h('div', { class: 'spf-grid2' },
           choice(CHOICES[0]), choice(CHOICES[1]), choice(CHOICES[2]), choice(CHOICES[3]),
           toggleRow(TOG.history), toggleRow(TOG.spoiler), choice(PLAYBACK))),
-      h('section', { class: 'spf-card spf-span' }, h('h2', { class: 'spf-h2', text: 'Notifications' }),
+      h('section', { class: 'spf-card spf-span' }, h('h2', { class: 'spf-h2', text: tr('Notifications') }),
         h('div', { class: 'spf-grid2' }, toggleRow(TOG.messages), toggleRow(TOG.requests), toggleRow(TOG.parties), toggleRow(TOG.friendStarts), toggleRow(TOG.sound))),
     ];
   }
   function mobilePrefs() {
     const sec = (label, ...rows) => h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: label }), h('div', { class: 'spf-card' }, ...rows));
     return [
-      sec('Confidentialité', choice(CHOICES[0]), choice(CHOICES[1]), choice(CHOICES[2]), choice(CHOICES[3]), toggleRow(TOG.history)),
-      sec('Pendant la lecture', choice(PLAYBACK), toggleRow(TOG.spoiler), toggleRow(TOG.vibrate)),
-      sec('Notifications Android', toggleRow(TOG.messages), toggleRow(TOG.requests), toggleRow(TOG.parties), toggleRow(TOG.friendStarts)),
+      sec(tr('Confidentialité'), choice(CHOICES[0]), choice(CHOICES[1]), choice(CHOICES[2]), choice(CHOICES[3]), toggleRow(TOG.history)),
+      sec(tr('Pendant la lecture'), choice(PLAYBACK), toggleRow(TOG.spoiler), toggleRow(TOG.vibrate)),
+      sec(tr('Notifications Android'), toggleRow(TOG.messages), toggleRow(TOG.requests), toggleRow(TOG.parties), toggleRow(TOG.friendStarts)),
     ];
   }
 
-  const nameField = h('div', {}, h('label', { class: 'spf-lb', for: 'spf-nm', text: 'Pseudo' }), nameInput, nameErr);
-  const tagField = h('div', {}, h('label', { class: 'spf-lb', for: 'spf-tg', text: 'Tag' }), tagRow);
-  const bioField = h('div', {}, h('label', { class: 'spf-lb', for: 'spf-bio' }, 'Bio ', bioCount), bioInput);
+  const nameField = h('div', {}, h('label', { class: 'spf-lb', for: 'spf-nm', text: tr('Pseudo') }), nameInput, nameErr);
+  const tagField = h('div', {}, h('label', { class: 'spf-lb', for: 'spf-tg', text: tr('Tag') }), tagRow);
+  const bioField = h('div', {}, h('label', { class: 'spf-lb', for: 'spf-bio' }, tr('Bio') + ' ', bioCount), bioInput);
   const identityRows = [h('div', { class: 'spf-nt' }, nameField, tagField), tagNote, copyBtn, bioField];
-  const statusRows = [presence, h('div', {}, h('label', { class: 'spf-lb', for: 'spf-st', text: 'Statut personnalisé' }), h('div', { class: 'spf-row spf-nowrap' }, emojiBtn, stInput), statusErr, expiry)];
+  const statusRows = [presence, h('div', {}, h('label', { class: 'spf-lb', for: 'spf-st', text: tr('Statut personnalisé') }), h('div', { class: 'spf-row spf-nowrap' }, emojiBtn, stInput), statusErr, expiry)];
   // « Mes notes » (ODY-221) : la même liste que la fiche d'un ami, pour mon propre pid, avec Modifier / Supprimer.
   let notesCount = profile.stats ? profile.stats.notes : null;
-  const notesLabel = () => 'Mes notes' + (notesCount === null ? '' : ' · ' + notesCount);
+  const notesLabel = () => tr('Mes notes') + (notesCount === null ? '' : ' · ' + notesCount);
   const notesHost = h('div', { class: 'spf-notes', id: 'spf-notes', hidden: true });
   const myNotes = createFriendNotes({
     toast,
@@ -625,24 +626,24 @@ export function mountProfileEditor(root, deps) {
   }, { 'aria-expanded': 'false', 'aria-controls': 'spf-notes' });
   cleanups.push(() => myNotes.reset());
   const notesBlock = h('div', {}, notesBtn, notesHost);
-  const favBlock = h('div', {}, h('div', { class: 'spf-lbline' }, h('span', { class: mobile ? 'spf-lbu' : 'spf-lb', text: 'Mes 4 favoris' }), mobile ? h('span', { class: 'spf-hint', text: 'Appui long pour réordonner' }) : null), favsBox, favsErr);
+  const favBlock = h('div', {}, h('div', { class: 'spf-lbline' }, h('span', { class: mobile ? 'spf-lbu' : 'spf-lb', text: tr('Mes 4 favoris') }), mobile ? h('span', { class: 'spf-hint', text: tr('Appui long pour réordonner') }) : null), favsBox, favsErr);
 
   if (!mobile) {
     page.append(head, h('div', { class: 'spf-body' },
       h('div', { class: 'spf-form' },
-        h('section', { class: 'spf-card' }, h('h2', { class: 'spf-h2', text: 'Identité' }),
+        h('section', { class: 'spf-card' }, h('h2', { class: 'spf-h2', text: tr('Identité') }),
           h('div', { class: 'spf-idrow' }, avatarBox, h('div', { class: 'spf-col' }, swatches, avatarBtns)), ...identityRows),
-        h('section', { class: 'spf-card' }, h('h2', { class: 'spf-h2', text: 'Statut et vitrine' }), ...statusRows,
-          h('div', {}, h('span', { class: 'spf-lb', text: 'Bannière (une image de film)' }), bannerBox, posRow), favBlock),
+        h('section', { class: 'spf-card' }, h('h2', { class: 'spf-h2', text: tr('Statut et vitrine') }), ...statusRows,
+          h('div', {}, h('span', { class: 'spf-lb', text: tr('Bannière (une image de film)') }), bannerBox, posRow), favBlock),
         h('section', { class: 'spf-card' }, notesBlock),
         prefsZone),
       previewBox));
   } else {
-    const heroBn = h('div', { class: 'spf-hero-bn' }, btn('spf-chip spf-chip--float', 'Bannière', pickBanner, {}));
+    const heroBn = h('div', { class: 'spf-hero-bn' }, btn('spf-chip spf-chip--float', tr('Bannière'), pickBanner, {}));
     enablePan(heroBn);
     const bannerHero = h('div', { class: 'spf-hero' },
       heroBn,
-      h('button', { type: 'button', class: 'spf-hero-av', 'aria-label': 'Changer l’avatar', on: { click: pickAvatar } }, avatarBox, h('span', { class: 'spf-pen' }, icon('pencil'))),
+      h('button', { type: 'button', class: 'spf-hero-av', 'aria-label': tr('Changer l’avatar'), on: { click: pickAvatar } }, avatarBox, h('span', { class: 'spf-pen' }, icon('pencil'))),
       zone('herocap', h('div', { class: 'spf-hero-cap' }), () => {
         const b = draft.banner;
         const bn = page.querySelector('.spf-hero-bn');
@@ -651,15 +652,15 @@ export function mountProfileEditor(root, deps) {
           bn.style.backgroundPosition = bannerPosCss(b);
           bn.classList.toggle('spf-pan', Boolean(b && b.backdrop));
         }
-        return b ? ['Bannière : ' + b.title, ' ', btn('spf-chip spf-chip--sm', 'Retirer', () => { draft.banner = null; touched(); })] : 'Aucune bannière';
+        return b ? [tr('Bannière : {title}', { title: b.title }), ' ', btn('spf-chip spf-chip--sm', tr('Retirer'), () => { draft.banner = null; touched(); })] : tr('Aucune bannière');
       }));
     // La bannière du héros se repeint avec la zone 'banner' (même source).
     const baseBanner = dyn.banner;
     dyn.banner = () => { baseBanner(); paint('herocap'); };
     page.append(head, bannerHero, posRow,
-      h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: 'Avatar' }), swatches, avatarBtns),
-      h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: 'Identité' }), ...identityRows),
-      h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: 'Statut' }), ...statusRows),
+      h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: tr('Avatar') }), swatches, avatarBtns),
+      h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: tr('Identité') }), ...identityRows),
+      h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: tr('Statut') }), ...statusRows),
       h('section', { class: 'spf-sec' }, favBlock),
       h('section', { class: 'spf-sec' }, notesBlock),
       prefsZone);
@@ -667,7 +668,7 @@ export function mountProfileEditor(root, deps) {
     paint('herocap');
   }
   page.prepend(errLine);
-  page.append(h('div', { class: 'spf-foot' }, 'Les profils enfants n’ont pas de profil social.'));
+  page.append(h('div', { class: 'spf-foot' }, tr('Les profils enfants n’ont pas de profil social.')));
   // Le bouton « Désactiver mon profil social » est masqué : le contrat S1/S2 n'a pas de route de désactivation (voir rapport F2).
   head.after(errLine);
   paint('head');
@@ -699,17 +700,17 @@ let current = null;
 export async function showSocialProfile() {
   if (current) { current.destroy(); current = null; }
   uiState.kind = 'socialprofile';
-  document.title = 'Mon profil social · Laststream';
+  document.title = tr('Mon profil social · Laststream');
   const back = () => { if (uiState.depth > 0) history.back(); else location.hash = '#/'; };
   detailEl.innerHTML = '';
   const root = h('div', { class: 'spf-root' });
   detailEl.append(root);
   if (isKidProfile() || !isServerMode()) {
-    root.append(h('p', { class: 'spf-msg', text: isKidProfile() ? 'Les profils enfants n’ont pas de profil social.' : 'Le profil social demande un compte sur un serveur Laststream.' }), btn('spf-btn spf-sec', 'Retour', back));
+    root.append(h('p', { class: 'spf-msg', text: isKidProfile() ? tr('Les profils enfants n’ont pas de profil social.') : tr('Le profil social demande un compte sur un serveur Laststream.') }), btn('spf-btn spf-sec', tr('Retour'), back));
     return;
   }
   const load = async () => {
-    root.replaceChildren(h('p', { class: 'spf-msg', role: 'status', text: 'Chargement de ton profil social…' }));
+    root.replaceChildren(h('p', { class: 'spf-msg', role: 'status', text: tr('Chargement de ton profil social…') }));
     try {
       const [profile, prefs] = await Promise.all([store.loadProfile(), store.loadPrefs()]);
       if (!root.isConnected) return;
@@ -718,7 +719,7 @@ export async function showSocialProfile() {
       if (t) { t.tabIndex = -1; t.focus({ preventScroll: true }); }
     } catch (e) {
       if (!root.isConnected) return;
-      root.replaceChildren(h('p', { class: 'spf-msg', role: 'alert', text: errorText(e) }), h('div', { class: 'spf-row' }, btn('spf-btn spf-pri', 'Réessayer', () => { void load(); }), btn('spf-btn spf-sec', 'Retour', back)));
+      root.replaceChildren(h('p', { class: 'spf-msg', role: 'alert', text: errorText(e) }), h('div', { class: 'spf-row' }, btn('spf-btn spf-pri', tr('Réessayer'), () => { void load(); }), btn('spf-btn spf-sec', tr('Retour'), back)));
     }
   };
   await load();

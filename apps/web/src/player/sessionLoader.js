@@ -2,6 +2,7 @@
  * est chargé par `import()` au premier appel, pas au démarrage de l'application (LAST-129). */
 import { toast } from '../ui/dom.js';
 import { partyBridge } from '../party/bridge';
+import { t } from '../i18n';
 
 let mod = null;
 let pending = null;
@@ -17,7 +18,7 @@ function loadSession() {
       return m;
     }).catch((e) => {
       pending = null;
-      toast('Lecteur indisponible, vérifiez la connexion.');
+      toast(t('Lecteur indisponible, vérifiez la connexion.'));
       throw e;
     });
   }

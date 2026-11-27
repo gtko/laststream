@@ -30,13 +30,13 @@
 .pfe-icon-btn:hover { background: rgba(255, 255, 255, 0.16); }
 .pfe-icon-btn svg { width: 22px; height: 22px; }
 .pfe-btn { min-height: 44px; border-radius: 999px; }
-.pfe-dirty { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--muted); margin-right: 6px; }
+.pfe-dirty { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--muted); margin-inline-end: 6px; }
 .pfe-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
 
 /* ---------- Mise en page ---------- */
 .pfe-layout { flex: 1 0 auto; width: 100%; max-width: 1160px; margin: 0 auto; padding: 32px 32px 72px; display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 40px; align-items: start; align-content: start; }
 .pfe-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-.pfe-msg { min-height: 0; margin: 0; text-align: left; }
+.pfe-msg { min-height: 0; margin: 0; text-align: start; }
 .pfe-msg:empty { display: none; }
 
 /* ---------- Aperçu ---------- */

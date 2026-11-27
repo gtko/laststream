@@ -4,6 +4,7 @@
  * `done` est terminal. Une transition interdite lève `InvalidTransitionError` ; l'objet d'origine n'est jamais modifié.
  */
 import type { DownloadItem, DownloadState } from './types';
+import { t } from '../i18n';
 
 /** Transitions autorisées depuis chaque état. */
 export const TRANSITIONS: Record<DownloadState, readonly DownloadState[]> = {
@@ -16,7 +17,7 @@ export const TRANSITIONS: Record<DownloadState, readonly DownloadState[]> = {
 
 export class InvalidTransitionError extends Error {
   constructor(readonly from: DownloadState, readonly to: DownloadState) {
-    super(`transition interdite : ${from} → ${to}`);
+    super(`${t('transition interdite : {from} →', { from })} ${to}`);
     this.name = 'InvalidTransitionError';
   }
 }

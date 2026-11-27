@@ -2,6 +2,7 @@ import { parseLanguages } from '@laststream/protocol/language';
 import { is1440Text, type DeviceTarget } from '../data/sources';
 import type { Resolution, Stream } from '../data/stream';
 import { browserFetchHttp, capacitorHttp, capacitorNative, nativeKind, NATIVE_ADDON_COMMAND, shellHttp, type HttpFn } from './debrid/http';
+import { t as tr } from '../i18n';
 
 /* Repli « via l'appareil » : quand un addon refuse l'IP de lastAddon (Cloudflare), le serveur renvoie son URL /stream
  * (`deviceFetch`). L'appareil l'interroge lui-même (fetch navigateur, sinon pont natif), normalise les flux comme le serveur
@@ -16,7 +17,7 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 // ---------- Nom des addons ----------
 
 /** Noms par défaut (« Addon amont » d'un ajout sans manifest lu, champ vide) : ce ne sont pas des noms d'addon. */
-const GENERIC_ADDON_NAMES = ['addon amont', 'torznab', 'source', ''];
+const GENERIC_ADDON_NAMES = [tr('addon amont'), 'torznab', 'source', ''];
 /** Nom du manifest des addons déjà lus dans cette session (clé : `addonKey`). */
 const knownAddonNames = new Map<string, string>();
 

@@ -19,6 +19,7 @@ import { state } from './state.js';
 import { fillMissingPosters } from './posters.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { loadVisibility, sharingAvailable, shareControlsHTML, visButtonHTML } from './libshare.js';
+import { t as tr, intlLocale } from '../i18n';
 
 // Bibliothèque : toutes les lectures/écritures passent par userStore (adaptateur local aujourd'hui, API lastAddon ensuite).
 export const inLib = (key) => userStore.inLibrary(key);
@@ -45,8 +46,8 @@ export function renderLibrary() {
   if (!slot) return;
   const items = libItems().sort((a, b) => b.added - a.added);
   if (!items.length) { slot.innerHTML = ''; libHtml.delete(slot); return; }
-  const html = '<section class="row-section" id="bibliotheque" aria-labelledby="h-bibliotheque"><h2 class="row-title" id="h-bibliotheque">' + (isKidProfile() ? 'Mes favoris' : 'Ma bibliothèque') + ' ' +
-    '<a class="row-link" href="#/library" data-libnav>Tout voir</a></h2>' + row(items.slice(0, 30).map((it) => posterCard(it)).join('')) + '</section>';
+  const html = '<section class="row-section" id="bibliotheque" aria-labelledby="h-bibliotheque"><h2 class="row-title" id="h-bibliotheque">' + (isKidProfile() ? tr('Mes favoris') : tr('Ma bibliothèque')) + ' ' +
+    '<a class="row-link" href="#/library" data-libnav>' + tr('Tout voir') + '</a></h2>' + row(items.slice(0, 30).map((it) => posterCard(it)).join('')) + '</section>';
   if (libHtml.get(slot) === html) return;
   libHtml.set(slot, html);
   keepRowState(slot, () => { slot.innerHTML = html; }, 'data-tile');
@@ -80,16 +81,16 @@ const hasAnime = () => animeKeys().size > 0;
 function controlsHTML() {
   const seen = state.libMode === 'watched';
   if (state.libView.type === 'anime' && !hasAnime()) state.libView.type = 'all';
-  const modes = '<div class="pills" data-nav role="group" aria-label="Affichage">' +
-    '<button type="button" class="pill" data-libm="library">Ma bibliothèque</button><button type="button" class="pill" data-libm="watched">Vus</button></div>';
-  const types = '<div class="pills" data-nav role="group" aria-label="Filtrer">' +
-    '<button type="button" class="pill" data-libf="all">Tout</button><button type="button" class="pill" data-libf="movie">Films</button><button type="button" class="pill" data-libf="tv">Séries</button>' +
-    (hasAnime() ? '<button type="button" class="pill" data-libf="anime">Anime</button>' : '') + '</div>';
+  const modes = '<div class="pills" data-nav role="group" aria-label="' + tr('Affichage') + '">' +
+    '<button type="button" class="pill" data-libm="library">' + tr('Ma bibliothèque') + '</button><button type="button" class="pill" data-libm="watched">' + tr('Vus') + '</button></div>';
+  const types = '<div class="pills" data-nav role="group" aria-label="' + tr('Filtrer') + '">' +
+    '<button type="button" class="pill" data-libf="all">' + tr('Tout') + '</button><button type="button" class="pill" data-libf="movie">' + tr('Films') + '</button><button type="button" class="pill" data-libf="tv">' + tr('Séries') + '</button>' +
+    (hasAnime() ? '<button type="button" class="pill" data-libf="anime">' + tr('Anime') + '</button>' : '') + '</div>';
   const sorts = seen
-    ? '<div class="pills" data-nav role="group" aria-label="Trier">' +
-      '<button type="button" class="pill" data-libs="recent">Récemment vus</button><button type="button" class="pill" data-libs="title">Titre A→Z</button><button type="button" class="pill" data-libs="year">Année</button></div>'
-    : '<div class="pills" data-nav role="group" aria-label="Trier">' +
-      '<button type="button" class="pill" data-libs="date">Derniers ajouts</button><button type="button" class="pill" data-libs="title">Titre A→Z</button></div>';
+    ? '<div class="pills" data-nav role="group" aria-label="' + tr('Trier') + '">' +
+      '<button type="button" class="pill" data-libs="recent">' + tr('Récemment vus') + '</button><button type="button" class="pill" data-libs="title">' + tr('Titre A→Z') + '</button><button type="button" class="pill" data-libs="year">' + tr('Année') + '</button></div>'
+    : '<div class="pills" data-nav role="group" aria-label="' + tr('Trier') + '">' +
+      '<button type="button" class="pill" data-libs="date">' + tr('Derniers ajouts') + '</button><button type="button" class="pill" data-libs="title">' + tr('Titre A→Z') + '</button></div>';
   return modes + types + sorts + (seen ? '' : shareControlsHTML());
 }
 
@@ -100,11 +101,11 @@ export function renderLibraryPage(restore) {
   const v = state.libView;
   let items = libItems();
   items = items.filter(byType(v.type, animeKeys()));
-  items.sort(v.sort === 'title' ? (a, b) => a.name.localeCompare(b.name, 'fr') : (a, b) => b.added - a.added);
+  items.sort(v.sort === 'title' ? (a, b) => a.name.localeCompare(b.name, intlLocale()) : (a, b) => b.added - a.added);
   syncPills();
   box.innerHTML = '';
   if (!items.length) {
-    box.innerHTML = '<p class="row-msg">' + (userStore.getLibrary().length ? 'Aucun titre dans ce filtre.' : 'Ta bibliothèque est vide. Ajoute des films et séries depuis leur fiche (bouton marque-page) ou avec un clic droit / appui long sur une affiche.') + '</p>';
+    box.innerHTML = '<p class="row-msg">' + (userStore.getLibrary().length ? tr('Aucun titre dans ce filtre.') : tr('Ta bibliothèque est vide. Ajoute des films et séries depuis leur fiche (bouton marque-page) ou avec un clic droit / appui long sur une affiche.')) + '</p>';
     return Promise.resolve();
   }
   const PAGE = 60;
@@ -143,7 +144,7 @@ async function seenViews(entries) {
   const details = await Promise.all(entries.map(detailOf));
   return entries.map((t, i) => {
     const raw = details[i];
-    const it = register(toItem(raw ? { ...raw, id: t.id } : { id: t.id, title: 'Titre indisponible' }, t.type));
+    const it = register(toItem(raw ? { ...raw, id: t.id } : { id: t.id, title: tr('Titre indisponible') }, t.type));
     return { t, it, total: t.type === 'tv' && raw ? Number(raw.number_of_episodes) || 0 : 0 };
   });
 }
@@ -158,9 +159,9 @@ function seenCell({ t, it, total }) {
 }
 
 function seenCountLabel(n, type) {
-  if (type === 'movie') return n === 0 ? 'Aucun film vu' : n === 1 ? '1 film vu' : n + ' films vus';
-  if (type === 'tv') return n === 0 ? 'Aucune série vue' : n === 1 ? '1 série vue' : n + ' séries vues';
-  return n === 0 ? 'Aucun titre vu' : n === 1 ? '1 titre vu' : n + ' titres vus';
+  if (type === 'movie') return n === 0 ? tr('Aucun film vu') : n === 1 ? tr('1 film vu') : tr('{n} films vus', { n });
+  if (type === 'tv') return n === 0 ? tr('Aucune série vue') : n === 1 ? tr('1 série vue') : tr('{n} séries vues', { n });
+  return n === 0 ? tr('Aucun titre vu') : n === 1 ? tr('1 titre vu') : tr('{n} titres vus', { n });
 }
 
 let seenRun = 0;
@@ -181,10 +182,10 @@ export async function renderSeenPage(restore) {
   box.dataset.sig = sig;
   const run = ++seenRun;
   if (!entries.length) {
-    box.innerHTML = '<p class="row-msg">' + (all.length ? 'Aucun titre vu dans ce filtre.' : 'Rien de vu pour l’instant. Les films et séries que tu marques comme vus, ou que tu termines, apparaissent ici, même hors de « Ma bibliothèque ».') + '</p>';
+    box.innerHTML = '<p class="row-msg">' + (all.length ? tr('Aucun titre vu dans ce filtre.') : tr('Rien de vu pour l’instant. Les films et séries que tu marques comme vus, ou que tu termines, apparaissent ici, même hors de « Ma bibliothèque ».')) + '</p>';
     return;
   }
-  if (!box.querySelector('[data-tile]')) box.innerHTML = '<p class="row-msg">Chargement des titres…</p>';
+  if (!box.querySelector('[data-tile]')) box.innerHTML = '<p class="row-msg">' + tr('Chargement des titres…') + '</p>';
   const views = await seenViews(entries);
   if (run !== seenRun || box.dataset.sig !== sig) return; // une demande plus récente a pris la main
   const cmp = compareWatched(v.sort);
@@ -214,11 +215,11 @@ export async function renderSeenPage(restore) {
 export function showLibrary() {
   teardownFiche();
   state.kind = 'library';
-  document.title = 'Bibliothèque · Laststream';
+  document.title = tr('Bibliothèque · Laststream');
   const seen = state.libMode === 'watched';
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
-    '<h1 class="svc-title" id="svc-title" tabindex="-1">Bibliothèque</h1><p class="svc-eyebrow">' + (seen ? '' : 'Tes films et séries Laststream') + '</p>' +
+    '<h1 class="svc-title" id="svc-title" tabindex="-1">' + tr('Bibliothèque') + '</h1><p class="svc-eyebrow">' + (seen ? '' : tr('Tes films et séries Laststream')) + '</p>' +
     '<div class="lib-controls">' + controlsHTML() + '</div></div></header>' +
     (socialAvailable() ? '' : libraryDownloadsCardHTML()) + // sans compte social : accès aux téléchargements (la barre mobile est pleine)
     '<div class="lib-grid" id="lib-grid" data-nav></div></article>';

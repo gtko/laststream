@@ -2,6 +2,7 @@
  * construction selon la norme ISO 18004 (même démarche que le générateur de référence de Project Nayuki, domaine public).
  * `qrMatrix(texte)` renvoie une matrice de booléens (true = module sombre) ; `qrSvg(texte)` un élément SVG prêt à poser. */
 
+import { t } from '../i18n';
 const ECC_PER_BLOCK_M = [0, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];
 const BLOCKS_M = [0, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5];
 
@@ -149,7 +150,7 @@ export function qrMatrix(text) {
   const bytes = utf8(text);
   let ver = 1;
   while (ver <= 10 && dataCapacity(ver) < bytes.length + (ver >= 10 ? 3 : 2)) ver++;
-  if (ver > 10) throw new Error('Texte trop long pour le QR code');
+  if (ver > 10) throw new Error(t('Texte trop long pour le QR code'));
   const size = ver * 4 + 17;
   const mod = Array.from({ length: size }, () => new Array(size).fill(false));
   const fn = Array.from({ length: size }, () => new Array(size).fill(false));
@@ -246,7 +247,7 @@ export function qrSvg(text, label) {
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${n + 8} ${n + 8}`);
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', label || 'QR code du lien');
+  svg.setAttribute('aria-label', label || t('QR code du lien'));
   svg.setAttribute('shape-rendering', 'crispEdges');
   const bg = document.createElementNS(NS, 'rect');
   bg.setAttribute('width', String(n + 8));

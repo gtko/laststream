@@ -15,6 +15,7 @@ import { kidGenreOk } from '../kid';
 import { tmdb } from '../lt';
 import type { Params } from '../lt';
 import { getRegion } from '../prefs';
+import { t as tr } from '../../i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type Media = 'movie' | 'tv';
@@ -390,5 +391,5 @@ export function buildDiscoverFolder(sel: DiscoverSel): Folder {
   if (sel.country) filters.withOriginCountry = sel.country;
   if (sel.minRating) filters.voteAverageGte = sel.minRating;
   if (sel.providers) filters.withWatchProviders = sel.providers;
-  return { id: 'discover', title: 'Découvrir', sources: [{ kind: 'DISCOVER', media: sel.media, sort: 'popularity.desc', filters }] };
+  return { id: 'discover', title: tr('Découvrir'), sources: [{ kind: 'DISCOVER', media: sel.media, sort: 'popularity.desc', filters }] };
 }

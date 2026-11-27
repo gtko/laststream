@@ -2,23 +2,24 @@
  * « Chaîne indisponible » + raison courte. La logique est pure (événements -> état -> libellé) ; player.js fournit les
  * échantillons de lecture (position, présence d'image, pause) et les événements de début et d'échec. */
 
+import { t } from '../i18n';
 /** Délai au-delà duquel un son qui avance sans image devient « Son seul — pas d'image ». */
 export const AUDIO_ONLY_MS = 5000;
 
 /** Raisons courtes d'un échec de chaîne. */
 const REASONS = {
-  network: 'Problème réseau',
-  refused: 'Flux refusé (accès ou CORS)',
-  format: 'Format non pris en charge',
-  read: 'Erreur de lecture',
-  box: 'Chaîne de ta box : disponible sur le réseau de la box',
+  network: t('Problème réseau'),
+  refused: t('Flux refusé (accès ou CORS)'),
+  format: t('Format non pris en charge'),
+  read: t('Erreur de lecture'),
+  box: t('Chaîne de ta box : disponible sur le réseau de la box'),
 };
 
 export const LABELS = {
-  connecting: 'Connexion à la chaîne…',
-  live: 'En direct',
-  audio: "Son seul — pas d'image",
-  failed: 'Chaîne indisponible',
+  connecting: t('Connexion à la chaîne…'),
+  live: t('En direct'),
+  audio: t('Son seul — pas d\'image'),
+  failed: t('Chaîne indisponible'),
 };
 
 export function initialStatus() {

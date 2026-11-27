@@ -15,6 +15,7 @@ import { state } from './state.js';
 import { esc } from './util.js';
 import { intentTimer } from './intent.js';
 import { heroEveningHTML, heroSocialHTML } from './heroSocial.js';
+import { t as tr } from '../i18n';
 
 export const HERO_MS = 10000;
 export const HERO_MAX = 8;
@@ -22,7 +23,7 @@ export const HERO_MAX = 8;
 const playBtn = (it) => {
   const resume = userStore.continueWatching().find((p) => p.key === it.key);
   const code = resume && resume.type === 'tv' && resume.season != null ? ' S' + resume.season + ' · É' + resume.episode : '';
-  return '<button type="button" class="btn btn-primary" data-heroplay="' + esc(it.key) + '">' + ICON.play + '<span>' + (resume ? 'Reprendre' + code : 'Lecture') + '</span></button>';
+  return '<button type="button" class="btn btn-primary" data-heroplay="' + esc(it.key) + '">' + ICON.play + '<span>' + (resume ? tr('Reprendre') + code : tr('Lecture')) + '</span></button>';
 };
 
 /** Note TMDB de repli (en pourcentage) quand MDBList ne fournit pas la note. */
@@ -32,20 +33,20 @@ const tmdbFallback = (it) => (it.vote ? Number(it.vote.replace(',', '.')) * 10 :
 export function heroContentHTML(it, eyebrow) {
   const d = detailOf(it);
   const overview = d.overview || it.overview || '';
-  return '<span class="eyebrow">' + esc(eyebrow || 'Tendance cette semaine') + '</span>' +
+  return '<span class="eyebrow">' + esc(eyebrow || tr('Tendance cette semaine')) + '</span>' +
     titleEl(it, d, 'hero-title') +
     '<ul class="meta">' + metaHTML(it, d) + '</ul>' +
     (d.note ? '<p class="hero-note">' + esc(d.note) + '</p>' : '') +
-    '<ul class="rates rates-hero" aria-label="Notes">' + ratingList(d.ratings, tmdbFallback(it)) + '</ul>' +
+    '<ul class="rates rates-hero" aria-label="' + tr('Notes') + '">' + ratingList(d.ratings, tmdbFallback(it)) + '</ul>' +
     (d.providers && d.providers.length
-      ? '<div class="prov-mini" aria-label="Disponible en streaming ' + getRegion().where + '">' + d.providers.map((l) =>
+      ? '<div class="prov-mini" aria-label="' + tr('Disponible en streaming {where}', { where: getRegion().where }) + '">' + d.providers.map((l) =>
         '<img src="' + esc(l.logo) + '" alt="' + esc(l.name) + '" title="' + esc(l.name) + '" width="32" height="32">').join('') + '</div>' : '') +
     '<p class="clamp-3 hero-desc">' + esc(overview) + '</p>' +
     heroSocialHTML(it) +
     '<div class="hero-actions">' + playBtn(it) + heroEveningHTML(it) + trailerBtn(it, d).replace('btn btn-primary', 'btn btn-ghost') + infoBtn(it) + '</div>';
 }
 
-const rankLabel = (it) => (it.heroRank ? 'Tendance n°' + it.heroRank + (it.heroKind ? ' · ' + it.heroKind : ' cette semaine') : 'Tendance cette semaine');
+const rankLabel = (it) => (it.heroRank ? tr('Tendance n°') + it.heroRank + (it.heroKind ? ' · ' + it.heroKind : ' ' + tr('cette semaine')) : tr('Tendance cette semaine'));
 
 function slideHTML(it, eyebrow, current, first) {
   return '<div class="hero-slide' + (current ? ' is-current' : '') + '" data-slide-key="' + esc(it.key) + '"' + (current ? '' : ' inert') + '>' +
@@ -58,7 +59,7 @@ function slideHTML(it, eyebrow, current, first) {
 /** Mise en avant d'un seul titre (profil enfant). */
 export function heroA(it, eyebrow) {
   if (!it) return heroEmpty();
-  return '<section class="hero" aria-label="À la une">' + slideHTML(it, eyebrow, true, true) + '</section>';
+  return '<section class="hero" aria-label="' + tr('À la une') + '">' + slideHTML(it, eyebrow, true, true) + '</section>';
 }
 
 /** Carrousel des tendances ; un seul titre se comporte comme une mise en avant simple. */
@@ -66,12 +67,12 @@ export function heroCarousel(items) {
   if (!items || !items.length) return heroEmpty();
   if (items.length === 1) return heroA(items[0], rankLabel(items[0]));
   const n = items.length;
-  return '<section class="hero hero-carousel" aria-roledescription="carrousel" aria-label="À la une" tabindex="0" data-hero>' +
+  return '<section class="hero hero-carousel" aria-roledescription="carrousel" aria-label="' + tr('À la une') + '" tabindex="0" data-hero>' +
     items.map((it, i) => slideHTML(it, rankLabel(it), i === 0, i === 0)).join('') +
-    '<button type="button" class="hero-arrow prev" data-hero-step="-1" tabindex="-1" aria-label="Titre précédent">' + ICON.back + '</button>' +
-    '<button type="button" class="hero-arrow next" data-hero-step="1" tabindex="-1" aria-label="Titre suivant">' + ICON.chev + '</button>' +
-    '<div class="hero-dots" role="group" aria-label="Choisir un titre">' +
-    items.map((it, i) => '<button type="button" class="hero-dot' + (i === 0 ? ' is-current' : '') + '" data-hero-go="' + i + '" aria-label="' + esc(it.name + ', ' + (i + 1) + ' sur ' + n) + '"' + (i === 0 ? ' aria-current="true"' : '') + '>' + (i + 1) + '</button>').join('') +
+    '<button type="button" class="hero-arrow prev" data-hero-step="-1" tabindex="-1" aria-label="' + tr('Titre précédent') + '">' + ICON.back + '</button>' +
+    '<button type="button" class="hero-arrow next" data-hero-step="1" tabindex="-1" aria-label="' + tr('Titre suivant') + '">' + ICON.chev + '</button>' +
+    '<div class="hero-dots" role="group" aria-label="' + tr('Choisir un titre') + '">' +
+    items.map((it, i) => '<button type="button" class="hero-dot' + (i === 0 ? ' is-current' : '') + '" data-hero-go="' + i + '" aria-label="' + esc(tr('{name}, {v} sur {n}', { name: it.name, v: (i + 1), n })) + '"' + (i === 0 ? ' aria-current="true"' : '') + '>' + (i + 1) + '</button>').join('') +
     '</div></section>';
 }
 

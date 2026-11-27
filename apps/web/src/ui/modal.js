@@ -9,6 +9,7 @@ import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
 import { state } from './state.js';
 import { esc } from './util.js';
 import { pushLayer } from './backStack.js';
+import { t as tr } from '../i18n';
 
 let stopGuard = null;
 /** Entrée d'historique de la fenêtre ouverte : le retour du téléphone la ferme (LAST-499). */
@@ -16,8 +17,8 @@ let releaseBack = null;
 
 export async function openTrailer(it, opener) {
   const d = await getDetail(it);
-  if (!d || !d.trailer) { toast('Bande-annonce indisponible'); return; }
-  openVideo(d.trailer, 'Bande-annonce : ' + it.name, opener, d.trailerVO, d, it.key);
+  if (!d || !d.trailer) { toast(tr('Bande-annonce indisponible')); return; }
+  openVideo(d.trailer, tr('Bande-annonce : {name}', { name: it.name }), opener, d.trailerVO, d, it.key);
 }
 
 /**
@@ -62,7 +63,7 @@ export function openVideo(key, title, opener, vo = false, d = /** @type {any} */
       if (titleKey) document.querySelectorAll('[data-trailer="' + String(titleKey).replace(/["\\]/g, '\\$&') + '"]').forEach((b) => b.remove());
       closeModal();
       if (!document.activeElement || document.activeElement === document.body) document.body.focus({ preventScroll: true });
-      toast('Bande-annonce indisponible');
+      toast(tr('Bande-annonce indisponible'));
     },
   });
 }

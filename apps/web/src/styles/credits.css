@@ -17,7 +17,7 @@
 .cr-body .av-credits a { color: var(--text); }
 @media (max-width: 760px) {
   .set-layout { padding-bottom: 24px; }
-  .set-foot { padding-left: 16px; padding-right: 16px; }
+  .set-foot { padding-inline-start: 16px; padding-inline-end: 16px; }
 }
 @media (max-width: 720px) {
   .cr-layer { align-items: flex-end; padding: 0; }

@@ -5,6 +5,7 @@
  * langue est mémorisé dans ce seul navigateur. Aucune URL ici. */
 import { LI } from '../player/icons.js';
 import { activeCue, cueHtml, parseCues, readSubStyle } from '../player/subs';
+import { t as tr } from '../i18n';
 
 /** Clé locale du dernier choix de langue (chaîne vide = sous-titres désactivés). */
 export const SUBS_KEY = 'laststream.party.subs';
@@ -21,7 +22,7 @@ export function cleanTracks(list) {
     if (out.length >= MAX_TRACKS) break;
     if (!t || typeof t.id !== 'string' || !t.id || typeof t.vtt !== 'string') continue;
     const lang = typeof t.lang === 'string' ? t.lang : '';
-    const label = typeof t.label === 'string' && t.label.trim() ? t.label.trim() : lang || 'Sous-titres';
+    const label = typeof t.label === 'string' && t.label.trim() ? t.label.trim() : lang || tr('Sous-titres');
     out.push({ id: t.id, lang, label, vtt: t.vtt });
   }
   return out;
@@ -60,11 +61,11 @@ export function createGuestSubs(controls, { onOpen } = {}) {
   const pop = doc.createElement('div');
   pop.className = 'gs-pop';
   pop.hidden = true;
-  pop.innerHTML = '<h3>Sous-titres</h3><div class="gs-list" role="menu"></div>';
+  pop.innerHTML = '<h3>' + tr('Sous-titres') + '</h3><div class="gs-list" role="menu"></div>';
   controls.sideSlot.appendChild(pop);
   const list = pop.querySelector('.gs-list');
 
-  const btn = controls.addMenuButton({ id: 'subs', icon: CC_ICON, label: 'Sous-titres', onClick: toggle });
+  const btn = controls.addMenuButton({ id: 'subs', icon: CC_ICON, label: tr('Sous-titres'), onClick: toggle });
   btn.hidden = true;
   btn.setAttribute('aria-haspopup', 'menu');
   btn.setAttribute('aria-expanded', 'false');
@@ -121,7 +122,7 @@ export function createGuestSubs(controls, { onOpen } = {}) {
 
   function renderList() {
     list.textContent = '';
-    list.appendChild(item(null, 'Désactivés'));
+    list.appendChild(item(null, tr('Désactivés')));
     for (const t of tracks) list.appendChild(item(t.id, t.label));
   }
 

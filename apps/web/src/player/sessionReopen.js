@@ -4,6 +4,7 @@
 import { isOfflineView } from './offlinePlay';
 import { playView } from './sessionPlay.js';
 import { S } from './sessionState.js';
+import { t as tr } from '../i18n';
 
 /** Sans verdict lent (réouverture ou verdict ignoré) pendant ce délai, le compteur repart à zéro. */
 const REOPEN_WINDOW_MS = 600_000;
@@ -104,7 +105,7 @@ export async function reopenLink(p, now = Date.now()) {
   if (palier === 0) return 0;
   const t = p.engine.state().time;
   Object.assign(p, { reopening: true, reopenAt: now, reopenStale: t, reopenFrom: palier === 1 ? Math.max(0, t - 2) : t, reopenRestarted: false });
-  S.ui.toast('Connexion lente, reconnexion…', 3000);
+  S.ui.toast(tr('Connexion lente, reconnexion…'), 3000);
   try {
     if (palier === 1) {
       await reloadSameLink(p, now);

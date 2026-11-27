@@ -3,6 +3,7 @@ import type { Message, SocialMe, Status } from '../data/socialV2Api';
 import { requestWake } from './idle';
 import { FALLBACK_COLOR, safeColor } from './notesTimeline';
 import { advanceBubble, emptyQueue, initialOf, isTouchLayout, pushBubble, type BubbleQueue } from './playbackSocial';
+import { t as tr } from '../i18n';
 
 /* Bulle de message entrant, haut gauche du lecteur (Social v3) : transparente, texte à forte ombre, ombre de coin,
  * arrivée animée (ombre qui s'ouvre, avatar avec rebond, texte qui glisse du flou au net). Champ de réponse et emojis
@@ -15,10 +16,10 @@ export const BUBBLE_MS = 6_000;
 export const BUBBLE_TEXT_MAX = 120;
 /** Un message plus ancien que ça, par rapport à l'ouverture du lecteur, n'est pas « nouveau » (horloges désalignées comprises). */
 export const RECENT_MS = 30_000;
-export const SEND_FAILED = 'Message non envoyé, réessaie plus tard';
-export const SEND_LIMIT = 'Trop de messages : réessaie dans une minute';
+export const SEND_FAILED = tr('Message non envoyé, réessaie plus tard');
+export const SEND_LIMIT = tr('Trop de messages : réessaie dans une minute');
 /** Réponses par emoji de la maquette. */
-export const REPLY_EMOJIS: ReadonlyArray<{ e: string; label: string }> = [{ e: '😂', label: 'rire' }, { e: '❤️', label: 'cœur' }];
+export const REPLY_EMOJIS: ReadonlyArray<{ e: string; label: string }> = [{ e: '😂', label: 'rire' }, { e: '❤️', label: tr('cœur') }];
 
 export interface BubbleDeps {
   getState(): SocialState;
@@ -72,7 +73,7 @@ export function senderOf(s: SocialState, pid: string): { who: string; color: str
   if (f) return { who: f.handle.name, color: safeColor(f.avatarColor), avatar: avatarOf(f.avatar) };
   const c = s.conversations.find((x) => x.pid === pid);
   if (c) return { who: c.handle.name, color: safeColor(c.avatarColor), avatar: avatarOf((c as { avatar?: unknown }).avatar) };
-  return { who: 'Un ami', color: FALLBACK_COLOR };
+  return { who: tr('Un ami'), color: FALLBACK_COLOR };
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] => {
@@ -124,7 +125,7 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
   const col = el('span', 'lp-bubble-col');
   const head = el('span', 'lp-bubble-head');
   const who = el('b', 'lp-bubble-who');
-  const when = el('span', 'lp-bubble-when', 'à l’instant');
+  const when = el('span', 'lp-bubble-when', tr('à l’instant'));
   head.append(who, when);
   const text = el('span', 'lp-bubble-txt');
   col.append(head, text);
@@ -136,29 +137,29 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
   input.type = 'text';
   input.maxLength = MESSAGE_MAX;
   input.autocomplete = 'off';
-  input.placeholder = 'Répondre…';
-  input.setAttribute('aria-label', 'Réponse, ' + MESSAGE_MAX + ' caractères au plus');
+  input.placeholder = tr('Répondre…');
+  input.setAttribute('aria-label', tr('Réponse, {MESSAGE_MAX} caractères au plus', { MESSAGE_MAX }));
   const send = el('button', 'lp-bubble-send');
   send.type = 'submit';
   send.disabled = true;
-  send.setAttribute('aria-label', 'Envoyer');
+  send.setAttribute('aria-label', tr('Envoyer'));
   send.innerHTML = SEND_ICON;
   const emojiBtns = REPLY_EMOJIS.map(({ e, label }) => {
     const b = el('button', 'lp-bubble-emo', e);
     b.type = 'button';
-    b.setAttribute('aria-label', 'Répondre par un emoji : ' + label);
+    b.setAttribute('aria-label', tr('Répondre par un emoji : {label}', { label }));
     return b;
   });
   const dismiss = el('button', 'lp-bubble-x');
   dismiss.type = 'button';
-  dismiss.setAttribute('aria-label', 'Masquer');
+  dismiss.setAttribute('aria-label', tr('Masquer'));
   dismiss.innerHTML = CLOSE_ICON;
-  const open = el('button', 'lp-bubble-open', 'Ouvrir la discussion');
+  const open = el('button', 'lp-bubble-open', tr('Ouvrir la discussion'));
   open.type = 'button';
   const err = el('p', 'lp-bubble-err');
   err.setAttribute('role', 'alert');
   err.hidden = true;
-  const hint = el('p', 'lp-bubble-hint', 'La bulle reste tant que la souris est dessus · R pour répondre au clavier');
+  const hint = el('p', 'lp-bubble-hint', tr('La bulle reste tant que la souris est dessus · R pour répondre au clavier'));
   form.append(input, send, ...emojiBtns, dismiss, err, hint, open);
   card.append(main, form);
 
@@ -250,9 +251,9 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
   function render(m: Message): void {
     const name = paintAvatar(av, m.from);
     who.textContent = name;
-    when.textContent = touch() ? 'toucher pour répondre' : 'à l’instant';
+    when.textContent = touch() ? tr('toucher pour répondre') : tr('à l’instant');
     text.textContent = truncateText(m.body);
-    input.placeholder = 'Répondre à ' + name + '…';
+    input.placeholder = tr('Répondre à {name}…', { name });
     lastFrom = m.from;
     vig.hidden = false;
     root.hidden = false;

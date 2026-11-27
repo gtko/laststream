@@ -1,6 +1,7 @@
 /* Social v3 (lot F4) : modèle pur de la fenêtre « Partager », des listes partagées et de la page publique d'un lien.
  * Aucun accès au réseau ni au DOM ; tout texte venant du serveur reste à afficher avec textContent. */
 import { fold, posLabel } from './socialConvModel.js';
+import { t as tr, intlLocale } from '../i18n';
 
 export { posLabel };
 
@@ -154,12 +155,12 @@ export function friendPids(targets, keys, mePid) {
 /** Libellé du bouton d'envoi : « Envoyer à Léa et Hugo », « Envoyer à Léa, Hugo et 2 autres ». */
 export function sendLabel(targets, keys, clip = false) {
   const names = targets.filter((t) => keys.includes(t.key)).map((t) => t.name);
-  const send = clip ? 'Envoyer l’extrait' : 'Envoyer';
+  const send = clip ? tr('Envoyer l’extrait') : tr('Envoyer');
   if (!names.length) return send;
   if (names.length === 1) return send + ' à ' + names[0];
-  if (names.length === 2) return send + ' à ' + names[0] + ' et ' + names[1];
+  if (names.length === 2) return tr('{send} à {v} et {v2}', { send, v: names[0], v2: names[1] });
   const rest = names.length - 2;
-  return send + ' à ' + names[0] + ', ' + names[1] + ' et ' + rest + ' autre' + (rest > 1 ? 's' : '');
+  return tr('{send} à {v}, {v2} et {rest} autre', { send, v: names[0], v2: names[1], rest }) + (rest > 1 ? 's' : '');
 }
 
 /** Référence « titre » d'un message (TitleRef). */
@@ -216,14 +217,14 @@ export const linkKey = (o) => [o.type, o.tmdbId, o.pos === undefined ? '' : o.po
 /** Invitations libres du compte, depuis la réponse de /invites. */
 export const freeInvites = (d) => (d && Array.isArray(d.invites) ? d.invites.filter((i) => i.state === 'free').length : 0);
 
-export const invitesText = (n) => (n > 0 ? 'Il en reste ' + n + '.' : 'Il ne t’en reste plus.');
+export const invitesText = (n) => (n > 0 ? tr('Il en reste {n}.', { n }) : tr('Il ne t’en reste plus.'));
 
 /** Texte qui accompagne le lien dans un message, un e-mail ou le partage système. */
 export function shareText(media, pos, mode, end) {
-  if (mode === 'clip' && clipOk(media, pos, end)) return media.title + ' de ' + posLabel(pos) + ' à ' + posLabel(end) + ' sur Laststream';
+  if (mode === 'clip' && clipOk(media, pos, end)) return tr('{title} de {pos} à {end} sur Laststream', { title: media.title, pos: posLabel(pos), end: posLabel(end) });
   return mode === 'moment' && canShareMoment(media, pos)
-    ? media.title + ' à ' + posLabel(pos) + ' sur Laststream'
-    : media.title + ' sur Laststream';
+    ? tr('{title} à {pos} sur Laststream', { title: media.title, pos: posLabel(pos) })
+    : tr('{title} sur Laststream', { title: media.title });
 }
 
 /** Code d'un lien public : `#/t/<code>` ou chemin `/t/<code>` (page servie par le Worker). Chaîne vide sinon. */
@@ -251,20 +252,20 @@ export function signupUrl(origin, code) {
 /** Texte « Recommandé de X à Y » (extrait) ou « À partir de 1:12:34 » du moment recommandé, ou '' pour un titre entier. */
 export function momentNote(view) {
   if (!view || typeof view.pos !== 'number') return '';
-  if (typeof view.end === 'number' && view.end > view.pos) return 'Recommandé de ' + posLabel(view.pos) + ' à ' + posLabel(view.end);
-  return view.pos > 0 ? 'Recommandé à partir de ' + posLabel(view.pos) : '';
+  if (typeof view.end === 'number' && view.end > view.pos) return tr('Recommandé de {pos} à {end}', { pos: posLabel(view.pos), end: posLabel(view.end) });
+  return view.pos > 0 ? tr('Recommandé à partir de {pos}', { pos: posLabel(view.pos) }) : '';
 }
 
 /** Nom de celui qui a ajouté un élément : « toi », le pseudo d'un membre, ou « un ancien membre ». */
 export function adderName(pid, list, mePid) {
   if (pid === mePid) return 'toi';
   const m = (list.members || []).find((x) => x.pid === pid);
-  return m ? m.nickname || m.handle.name : 'un ancien membre';
+  return m ? m.nickname || m.handle.name : tr('un ancien membre');
 }
 
 // ---- Mes liens publics (section « Mes liens » de la fenêtre Partager) ----
 
-const dayMonth = (ms) => new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+const dayMonth = (ms) => new Date(ms).toLocaleDateString(intlLocale(), { day: 'numeric', month: 'short' });
 
 /**
  * Textes d'une ligne de « Mes liens » : titre (avec le moment s'il y en a un) et ligne d'état.
@@ -273,23 +274,23 @@ const dayMonth = (ms) => new Date(ms).toLocaleDateString('fr-FR', { day: 'numeri
 export function linkRow(l, now = Date.now()) {
   const expired = !!l.expired || (Number.isFinite(l.expiresAt) && l.expiresAt <= now);
   const at = typeof l.pos === 'number' && typeof l.end === 'number' && l.end > l.pos
-    ? ' · de ' + posLabel(l.pos) + ' à ' + posLabel(l.end)
+    ? ' ' + tr('· de {pos} à {end}', { pos: posLabel(l.pos), end: posLabel(l.end) })
     : typeof l.pos === 'number' && l.pos > 0 ? ' · à ' + posLabel(l.pos) : '';
-  const made = Number.isFinite(l.createdAt) ? 'Créé le ' + dayMonth(l.createdAt) : '';
+  const made = Number.isFinite(l.createdAt) ? tr('Créé le {createdAt}', { createdAt: dayMonth(l.createdAt) }) : '';
   const left = !expired && Number.isFinite(l.expiresAt)
-    ? 'expire le ' + dayMonth(l.expiresAt)
+    ? tr('expire le {expiresAt}', { expiresAt: dayMonth(l.expiresAt) })
     : '';
   return {
-    title: (l.title || 'Lien') + at,
-    sub: expired ? [made, 'expiré'].filter(Boolean).join(' · ') : [made, left].filter(Boolean).join(' · '),
+    title: (l.title || tr('Lien')) + at,
+    sub: expired ? [made, tr('expiré')].filter(Boolean).join(' · ') : [made, left].filter(Boolean).join(' · '),
     expired,
   };
 }
 
 /** Message d'une erreur sur « Mes liens » (lecture ou révocation). */
 export function linksErrorText(e, action) {
-  if (e && e.status === 404 && action === 'revoke') return 'Ce lien n’existe déjà plus.';
-  if (e && e.status === 429) return 'Trop de demandes d’un coup : réessaie dans une minute.';
-  if (e && (e.status === 0 || e.code === 'network')) return 'Serveur injoignable pour le moment.';
-  return action === 'revoke' ? 'Impossible de révoquer le lien pour le moment.' : 'Tes liens ne peuvent pas s’afficher pour le moment.';
+  if (e && e.status === 404 && action === 'revoke') return tr('Ce lien n’existe déjà plus.');
+  if (e && e.status === 429) return tr('Trop de demandes d’un coup : réessaie dans une minute.');
+  if (e && (e.status === 0 || e.code === 'network')) return tr('Serveur injoignable pour le moment.');
+  return action === 'revoke' ? tr('Impossible de révoquer le lien pour le moment.') : tr('Tes liens ne peuvent pas s’afficher pour le moment.');
 }

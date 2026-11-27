@@ -9,6 +9,7 @@ import { getBase, isAndroidApp, isOfficialBase } from '../data/config';
 import { demoState } from '../demoBoot';
 import { connectShell, isShellEnvironment, openExternal } from '../player/shell';
 import { esc } from './util.js';
+import { t } from '../i18n';
 import famille from '../assets/cloud-promo/famille.webp';
 import sansServeur from '../assets/cloud-promo/sans-serveur.webp';
 import pcEteint from '../assets/cloud-promo/pc-eteint.webp';
@@ -24,18 +25,18 @@ export const SNOOZE = 30 * DAY;
 export const VARIANTS = [
   {
     id: 'famille', img: famille,
-    title: 'Toute la famille, sans rien installer.',
-    text: 'Chacun son profil, sa liste et sa progression, sur la télé, le téléphone ou la tablette. Un seul abonnement couvre tout le foyer.',
+    title: t('Toute la famille, sans rien installer.'),
+    text: t('Chacun son profil, sa liste et sa progression, sur la télé, le téléphone ou la tablette. Un seul abonnement couvre tout le foyer.'),
   },
   {
     id: 'sans-serveur', img: sansServeur,
-    title: 'Zéro tracas : ni serveur, ni NAS.',
-    text: 'Plus de mises à jour à surveiller, de sauvegardes à faire ou de ports à ouvrir. On s’occupe des serveurs, tu profites de tes séries.',
+    title: t('Zéro tracas : ni serveur, ni NAS.'),
+    text: t('Plus de mises à jour à surveiller, de sauvegardes à faire ou de ports à ouvrir. On s’occupe des serveurs, tu profites de tes séries.'),
   },
   {
     id: 'pc-eteint', img: pcEteint,
-    title: 'Ton PC peut enfin dormir.',
-    text: 'Plus besoin de laisser un ordinateur allumé jour et nuit pour regarder depuis le canapé. Laststream en ligne tourne pour toi.',
+    title: t('Ton PC peut enfin dormir.'),
+    text: t('Plus besoin de laisser un ordinateur allumé jour et nuit pour regarder depuis le canapé. Laststream en ligne tourne pour toi.'),
   },
 ];
 
@@ -89,17 +90,17 @@ function promoHTML(v) {
   return '<aside class="cpromo" aria-labelledby="cpromo-t" data-cpromo="' + esc(v.id) + '">' +
     '<div class="cpromo-art"><img src="' + esc(v.img) + '" alt="" width="960" height="536" loading="lazy" decoding="async"></div>' +
     '<div class="cpromo-body">' +
-      '<p class="cpromo-k">Laststream en ligne <span class="cpromo-tag">suggestion</span></p>' +
+      '<p class="cpromo-k">' + esc(t('Laststream en ligne')) + ' <span class="cpromo-tag">' + esc(t('suggestion')) + '</span></p>' +
       '<h2 class="cpromo-title" id="cpromo-t">' + esc(v.title) + '</h2>' +
       '<p class="cpromo-text">' + esc(v.text) + '</p>' +
-      '<ul class="cpromo-pts"><li>24 € par an, soit 2 € par mois</li><li>Tout le foyer</li><li>Résiliable quand tu veux</li></ul>' +
+      '<ul class="cpromo-pts"><li>' + esc(t('24 € par an, soit 2 € par mois')) + '</li><li>' + esc(t('Tout le foyer')) + '</li><li>' + esc(t('Résiliable quand tu veux')) + '</li></ul>' +
       '<div class="cpromo-actions">' +
-        '<a class="btn btn-primary cpromo-go" href="' + OFFER_URL + '" target="_blank" rel="noopener" data-cpromo-go>Découvrir l’offre</a>' +
-        '<button type="button" class="cpromo-never" data-cpromo-never>Ne plus afficher</button>' +
+        '<a class="btn btn-primary cpromo-go" href="' + OFFER_URL + '" target="_blank" rel="noopener" data-cpromo-go>' + esc(t('Découvrir l’offre')) + '</a>' +
+        '<button type="button" class="cpromo-never" data-cpromo-never>' + esc(t('Ne plus afficher')) + '</button>' +
       '</div>' +
-      '<p class="cpromo-note">Ton serveur continue de fonctionner comme aujourd’hui.</p>' +
+      '<p class="cpromo-note">' + esc(t('Ton serveur continue de fonctionner comme aujourd’hui.')) + '</p>' +
     '</div>' +
-    '<button type="button" class="cpromo-close" aria-label="Fermer la suggestion" data-cpromo-close>' +
+    '<button type="button" class="cpromo-close" aria-label="' + esc(t('Fermer la suggestion')) + '" data-cpromo-close>' +
       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>' +
     '</button></aside>';
 }
@@ -127,7 +128,7 @@ export function renderCloudPromo(deps = {}) {
   const { st, variant } = decide(read(storage), now);
   write(storage, st);
   if (!variant) { slot.innerHTML = ''; return; }
-  // eslint-disable-next-line no-restricted-syntax -- gabarit local, textes constants échappés par esc
+  // eslint-disable-next-line laststream/no-html-sink -- gabarit local, textes traduits échappés par esc
   slot.innerHTML = promoHTML(variant);
   const close = (next) => { write(storage, next); slot.innerHTML = ''; };
   slot.querySelector('[data-cpromo-close]').addEventListener('click', () => close(snooze(st, deps.now ? deps.now() : Date.now())));

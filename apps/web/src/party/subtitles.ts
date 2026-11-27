@@ -5,6 +5,7 @@
 import type { Cue } from '../player/subs';
 import { langName, normalizeLang } from '../player/tracks';
 import { MAX_SUBS_WIRE_BYTES } from '../relay/protocol';
+import { t as tr } from '../i18n';
 
 export interface PartySubtitleTrack {
   id: string;
@@ -146,7 +147,7 @@ export function buildPartySubtitles(loaded: LoadedSubtitle | null): PartySubtitl
   const vtt = cuesToVtt(loaded.cues, MAX_VTT_BYTES);
   if (vtt === HEADER) return [];
   const lang = safeLang(loaded.lang);
-  return boundTracks([{ id: 's1', lang, label: lang ? langName(lang) : 'Sous-titres', vtt }]);
+  return boundTracks([{ id: 's1', lang, label: lang ? langName(lang) : tr('Sous-titres'), vtt }]);
 }
 
 /** Charge JSON du message SUBS : les pistes, sans autre champ que celui de PartySubtitleTrack. */

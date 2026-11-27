@@ -12,6 +12,7 @@ import {
   hasRef, isObject, num, posInt, refOfMediaId, str, timeOf, typeOf,
   type EpisodeRef, type MigrationAddon, type MigrationBundle, type MigrationItem, type TitleRef,
 } from './types';
+import { t as tr } from '../../i18n';
 
 /** Au-delà de ce taux, Nuvio compte l'épisode ou le film comme vu (WatchProgressCompletionPercentThreshold). */
 const COMPLETED_RATIO = 0.9;
@@ -32,7 +33,7 @@ function libraryItem(o: Record<string, unknown>): MigrationItem[] {
   const title = str(o.name) || id;
   const at = timeOf(o.savedAtEpochMs);
   const anime = isAnimeCategory(o);
-  if (!type || !hasRef(ref)) return [{ uid: 'nuvio:' + id + ':library', action: 'library', type: type ?? 'movie', ref, title, at, skipReason: !type ? 'Type « ' + str(o.type) + ' » non pris en charge' : 'Titre propre à un addon, sans équivalent TMDB' }];
+  if (!type || !hasRef(ref)) return [{ uid: 'nuvio:' + id + ':library', action: 'library', type: type ?? 'movie', ref, title, at, skipReason: !type ? tr('Type « {type} » non pris en charge', { type: str(o.type) }) : tr('Titre propre à un addon, sans équivalent TMDB') }];
   const out: MigrationItem[] = [{ uid: 'nuvio:' + id + ':library', action: 'library', type, ref, title, at, ...(anime ? { anime } : {}) }];
   const lists = Array.isArray(o.listKeys) ? o.listKeys.map((k) => str(k).toLowerCase()) : [];
   if (lists.some((k) => k.includes('watchlist') || k.includes('plan'))) out.push({ uid: 'nuvio:' + id + ':watchlist', action: 'list', list: 'watchlist', type, ref, title, at });
@@ -133,6 +134,6 @@ export function parseNuvioBackup(json: unknown): MigrationBundle {
     const prev = byUid.get(it.uid);
     if (!prev || (it.at ?? 0) > (prev.at ?? 0)) byUid.set(it.uid, it);
   }
-  const notes = byUid.size || addons.length ? [] : ['Aucune bibliothèque, progression ni addon Nuvio reconnu dans ce fichier.'];
+  const notes = byUid.size || addons.length ? [] : [tr('Aucune bibliothèque, progression ni addon Nuvio reconnu dans ce fichier.')];
   return { source: 'nuvio', items: [...byUid.values()], addons, notes };
 }

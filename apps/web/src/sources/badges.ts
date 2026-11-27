@@ -4,6 +4,7 @@
  * neutre (mêmes classes qu'avant). Fonctions pures, testées. */
 
 import { escapeHtml } from '../data/format';
+import { t as tr } from '../i18n';
 
 /** Données d'une source : libellés (picker) ou valeurs brutes lastAddon (h264, x265, DDP, DTS:X…). */
 export interface BadgeInfo {
@@ -33,52 +34,52 @@ interface Rule {
 }
 
 const SOURCE_RULES: Rule[] = [
-  { re: /remux/i, id: 'remux', label: 'REMUX', name: 'REMUX · copie intégrale du Blu-ray, qualité maximale' },
-  { re: /blu-?ray|bdrip|brrip/i, id: 'bluray', label: 'BluRay', name: 'BluRay · source Blu-ray réencodée' },
-  { re: /web-?dl/i, id: 'webdl', label: 'WEB-DL', name: 'WEB-DL · flux web sans réencodage' },
-  { re: /web-?rip/i, id: 'webrip', label: 'WEBRip', name: 'WEBRip · capture web recompressée' },
-  { re: /hdtv|pdtv/i, id: 'hdtv', label: 'HDTV', name: 'HDTV · capture de diffusion télévisée' },
-  { re: /dvd/i, id: 'dvd', label: 'DVD', name: 'DVD · source DVD' },
-  { re: /\bweb\b/i, id: 'web', label: 'WEB', name: 'WEB · source web' },
-  { re: /cam|telesync|\bts\b/i, id: 'cam', label: 'CAM', name: 'CAM · enregistrement en salle, qualité faible' },
+  { re: /remux/i, id: 'remux', label: 'REMUX', name: tr('REMUX · copie intégrale du Blu-ray, qualité maximale') },
+  { re: /blu-?ray|bdrip|brrip/i, id: 'bluray', label: 'BluRay', name: tr('BluRay · source Blu-ray réencodée') },
+  { re: /web-?dl/i, id: 'webdl', label: 'WEB-DL', name: tr('WEB-DL · flux web sans réencodage') },
+  { re: /web-?rip/i, id: 'webrip', label: 'WEBRip', name: tr('WEBRip · capture web recompressée') },
+  { re: /hdtv|pdtv/i, id: 'hdtv', label: 'HDTV', name: tr('HDTV · capture de diffusion télévisée') },
+  { re: /dvd/i, id: 'dvd', label: 'DVD', name: tr('DVD · source DVD') },
+  { re: /\bweb\b/i, id: 'web', label: 'WEB', name: tr('WEB · source web') },
+  { re: /cam|telesync|\bts\b/i, id: 'cam', label: 'CAM', name: tr('CAM · enregistrement en salle, qualité faible') },
 ];
 
 const CODEC_RULES: Rule[] = [
-  { re: /\bav1\b|av01/i, id: 'av1', label: 'AV1', name: 'AV1 · codec vidéo libre et efficace (AOMedia)' },
-  { re: /\bvp9\b/i, id: 'vp9', label: 'VP9', name: 'VP9 · codec vidéo libre' },
-  { re: /hevc|h\.?265|x\.?265/i, id: 'hevc', label: 'HEVC · H.265', name: 'HEVC (H.265) · codec vidéo haute efficacité' },
-  { re: /avc|h\.?264|x\.?264/i, id: 'avc', label: 'AVC · H.264', name: 'AVC (H.264) · codec vidéo très répandu' },
+  { re: /\bav1\b|av01/i, id: 'av1', label: 'AV1', name: tr('AV1 · codec vidéo libre et efficace (AOMedia)') },
+  { re: /\bvp9\b/i, id: 'vp9', label: 'VP9', name: tr('VP9 · codec vidéo libre') },
+  { re: /hevc|h\.?265|x\.?265/i, id: 'hevc', label: 'HEVC · H.265', name: tr('HEVC (H.265) · codec vidéo haute efficacité') },
+  { re: /avc|h\.?264|x\.?264/i, id: 'avc', label: tr('AVC · H.264'), name: tr('AVC (H.264) · codec vidéo très répandu') },
 ];
 
 /** Ordre d'importance : DV, HDR10+, HDR10, HLG, puis le HDR générique. */
 const HDR_RULES: Rule[] = [
-  { re: /dolby|^dv$|\bdv\b|dovi/i, id: 'dv', label: 'Dolby Vision', name: 'Dolby Vision · vidéo HDR dynamique' },
-  { re: /hdr10\+|hdr10plus/i, id: 'hdr10p', label: 'HDR10+', name: 'HDR10+ · HDR dynamique ouverte' },
-  { re: /hdr10/i, id: 'hdr10', label: 'HDR10', name: 'HDR10 · HDR statique' },
-  { re: /\bhlg\b/i, id: 'hlg', label: 'HLG', name: 'HLG · HDR de diffusion' },
-  { re: /hdr/i, id: 'hdr', label: 'HDR', name: 'HDR · plage dynamique étendue' },
+  { re: /dolby|^dv$|\bdv\b|dovi/i, id: 'dv', label: tr('Dolby Vision'), name: tr('Dolby Vision · vidéo HDR dynamique') },
+  { re: /hdr10\+|hdr10plus/i, id: 'hdr10p', label: 'HDR10+', name: tr('HDR10+ · HDR dynamique ouverte') },
+  { re: /hdr10/i, id: 'hdr10', label: 'HDR10', name: tr('HDR10 · HDR statique') },
+  { re: /\bhlg\b/i, id: 'hlg', label: 'HLG', name: tr('HLG · HDR de diffusion') },
+  { re: /hdr/i, id: 'hdr', label: 'HDR', name: tr('HDR · plage dynamique étendue') },
 ];
 
 const AUDIO_RULES: Rule[] = [
-  { re: /truehd/i, id: 'truehd', label: 'TrueHD', name: 'TrueHD · audio sans perte' },
-  { re: /dts-?hd[ .-]?ma|dts-?hd/i, id: 'dtshdma', label: 'DTS-HD MA', name: 'DTS-HD Master Audio · audio sans perte' },
-  { re: /dts[-:. ]?x\b/i, id: 'dtsx', label: 'DTS:X', name: 'DTS:X · audio à objets' },
-  { re: /\bdts\b/i, id: 'dts', label: 'DTS', name: 'DTS · audio multicanal' },
-  { re: /ddp|dd\+|e-?ac-?3|eac3/i, id: 'ddp', label: 'DD+', name: 'Dolby Digital Plus (E-AC-3) · audio compressé' },
-  { re: /\bdd\b|\bac-?3\b/i, id: 'dd', label: 'DD', name: 'Dolby Digital (AC-3) · audio compressé' },
-  { re: /flac/i, id: 'flac', label: 'FLAC', name: 'FLAC · audio sans perte' },
-  { re: /opus/i, id: 'opus', label: 'Opus', name: 'Opus · audio compressé efficace' },
-  { re: /aac/i, id: 'aac', label: 'AAC', name: 'AAC · audio compressé' },
-  { re: /mp3/i, id: 'mp3', label: 'MP3', name: 'MP3 · audio compressé' },
+  { re: /truehd/i, id: 'truehd', label: 'TrueHD', name: tr('TrueHD · audio sans perte') },
+  { re: /dts-?hd[ .-]?ma|dts-?hd/i, id: 'dtshdma', label: tr('DTS-HD MA'), name: tr('DTS-HD Master Audio · audio sans perte') },
+  { re: /dts[-:. ]?x\b/i, id: 'dtsx', label: 'DTS:X', name: tr('DTS:X · audio à objets') },
+  { re: /\bdts\b/i, id: 'dts', label: 'DTS', name: tr('DTS · audio multicanal') },
+  { re: /ddp|dd\+|e-?ac-?3|eac3/i, id: 'ddp', label: 'DD+', name: tr('Dolby Digital Plus (E-AC-3) · audio compressé') },
+  { re: /\bdd\b|\bac-?3\b/i, id: 'dd', label: 'DD', name: tr('Dolby Digital (AC-3) · audio compressé') },
+  { re: /flac/i, id: 'flac', label: 'FLAC', name: tr('FLAC · audio sans perte') },
+  { re: /opus/i, id: 'opus', label: 'Opus', name: tr('Opus · audio compressé efficace') },
+  { re: /aac/i, id: 'aac', label: 'AAC', name: tr('AAC · audio compressé') },
+  { re: /mp3/i, id: 'mp3', label: 'MP3', name: tr('MP3 · audio compressé') },
 ];
 
-const ATMOS: Rule = { re: /atmos/i, id: 'atmos', label: 'Atmos', name: 'Dolby Atmos · audio spatial à objets' };
-const BIT10 = { id: 'bit10', label: '10-bit', name: '10-bit · profondeur de couleur de 10 bits' };
+const ATMOS: Rule = { re: /atmos/i, id: 'atmos', label: 'Atmos', name: tr('Dolby Atmos · audio spatial à objets') };
+const BIT10 = { id: 'bit10', label: '10-bit', name: tr('10-bit · profondeur de couleur de 10 bits') };
 
 const CHANNEL_RULES: Rule[] = [
-  { re: /^2\.0$/, id: 'ch20', label: '2.0', name: '2.0 · stéréo' },
-  { re: /^5\.1$/, id: 'ch51', label: '5.1', name: '5.1 · surround (6 canaux)' },
-  { re: /^7\.1$/, id: 'ch71', label: '7.1', name: '7.1 · surround (8 canaux)' },
+  { re: /^2\.0$/, id: 'ch20', label: '2.0', name: tr('2.0 · stéréo') },
+  { re: /^5\.1$/, id: 'ch51', label: '5.1', name: tr('5.1 · surround (6 canaux)') },
+  { re: /^7\.1$/, id: 'ch71', label: '7.1', name: tr('7.1 · surround (8 canaux)') },
 ];
 
 // Pictogrammes originaux (barres HDR, orbite objet, haut-parleur) : dessinés pour ces badges, pas des logos.
@@ -203,9 +204,9 @@ const toMbps = (kbps: number | null | undefined): number | null => (typeof kbps 
 const mbpsLabel = (mbps: number): string => mbps.toFixed(1).replace('.', ',') + ' Mb/s';
 
 const FIT_TEXT: Record<Exclude<FitLevel, 'unknown'>, { label: string; word: string; glyph: string }> = {
-  fluid: { label: 'Fluide', word: 'fluide', glyph: '✓' },
-  tight: { label: 'Juste', word: 'juste', glyph: '~' },
-  risky: { label: 'Risque de coupures', word: 'risque de coupures', glyph: '!' },
+  fluid: { label: tr('Fluide'), word: 'fluide', glyph: '✓' },
+  tight: { label: tr('Juste'), word: 'juste', glyph: '~' },
+  risky: { label: tr('Risque de coupures'), word: tr('risque de coupures'), glyph: '!' },
 };
 
 /**
@@ -217,11 +218,11 @@ export function fitBadge(sourceKbps: number | null | undefined, connKbps: number
   const c = toMbps(connKbps);
   const level = fitLevel(s, c);
   if (level === 'unknown') {
-    const why = c === null || c === 0 ? 'Débit de ta connexion inconnu : mesure-le pour savoir si la source passe' : 'Débit de la source inconnu';
-    return '<span class="s-fit fit-unknown" role="img" aria-label="' + escapeHtml(why) + '" title="' + escapeHtml(why) + '">Débit inconnu</span>';
+    const why = c === null || c === 0 ? tr('Débit de ta connexion inconnu : mesure-le pour savoir si la source passe') : tr('Débit de la source inconnu');
+    return '<span class="s-fit fit-unknown" role="img" aria-label="' + escapeHtml(why) + '" title="' + escapeHtml(why) + '">' + tr('Débit inconnu') + '</span>';
   }
   const t = FIT_TEXT[level];
-  const aria = mbpsLabel(s as number) + ' sur une connexion de ' + mbpsLabel(c as number) + ' : ' + t.word;
+  const aria = tr('{mbpsLabel} sur une connexion de {mbpsLabel2} : {word}', { mbpsLabel: mbpsLabel(s as number), mbpsLabel2: mbpsLabel(c as number), word: t.word });
   return '<span class="s-fit fit-' + level + '" role="img" aria-label="' + escapeHtml(aria) + '" title="' + escapeHtml(aria) + '">' +
     '<span class="s-fit-g" aria-hidden="true">' + t.glyph + '</span>' + escapeHtml(t.label) + '</span>';
 }

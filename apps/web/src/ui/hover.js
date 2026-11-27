@@ -12,8 +12,9 @@ import { compactRates } from './ratings.js';
 import { trailersAllowed } from '../player/playerState';
 import { state } from './state.js';
 import { playerEl } from './tv.js';
-import { esc, plural } from './util.js';
+import { esc } from './util.js';
 import { intentTimer } from './intent.js';
+import { t as tr, tn } from '../i18n';
 
 export const HOVER_OPEN_MS = 900;
 export const HOVER_FOCUS_MS = 1200;
@@ -26,7 +27,7 @@ export function hoverMeta(it, d) {
   const parts = [];
   if (it.year) parts.push(it.year);
   if (d.cert) parts.push('<span class="cert-badge">' + esc(certLabel(d.cert)) + '</span>');
-  if (it.type === 'tv' && d.seasons) parts.push(plural(d.seasons, 'saison', 'saisons'));
+  if (it.type === 'tv' && d.seasons) parts.push(tn(d.seasons, '{n} saison', '{n} saisons'));
   else if (d.runtime) parts.push(d.runtime);
   if (d.genres && d.genres.length) parts.push(esc(d.genres.slice(0, 3).join(' · ')));
   return parts.join(' <span class="hc-dot">·</span> ');
@@ -86,19 +87,19 @@ export function openHover(tile) {
   el.className = 'hc';
   el.style.width = w + 'px';
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Aperçu : ' + it.name);
+  el.setAttribute('aria-label', tr('Aperçu : {name}', { name: it.name }));
   const src = it.backdrop || it.poster;
   const on = inLib(key);
   el.innerHTML =
     '<div class="hc-media">' + (src ? '<img src="' + esc(src) + '" alt="" decoding="async">' : '') + '<div class="hc-video"></div></div>' +
     '<div class="hc-body"><div class="hc-title"><span class="hc-name">' + esc(it.name) + '</span></div>' +
-    '<ul class="rates hc-rates"></ul>' + (it.reason ? '<p class="hc-reason">' + esc(it.reason) + '</p>' : '') + '<p class="hc-meta">' + esc([it.year, it.type === 'tv' ? 'Série' : 'Film'].filter(Boolean).join(' · ')) + '</p>' +
+    '<ul class="rates hc-rates"></ul>' + (it.reason ? '<p class="hc-reason">' + esc(it.reason) + '</p>' : '') + '<p class="hc-meta">' + esc([it.year, it.type === 'tv' ? tr('Série') : tr('Film')].filter(Boolean).join(' · ')) + '</p>' +
     '<div class="hc-actions">' +
-    '<button type="button" class="hc-btn hc-play" data-play data-tip="Lecture" aria-label="Lecture">' + ICON.play + '</button>' +
-    '<button type="button" class="hc-btn' + (on ? ' is-on' : '') + '" data-hclib="' + esc(key) + '" aria-pressed="' + on + '" data-tip="' + (on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream') + '" aria-label="' + (on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream') + '">' + (on ? ICON.check : ICON.list) + '</button>' +
+    '<button type="button" class="hc-btn hc-play" data-play data-tip="' + tr('Lecture') + '" aria-label="' + tr('Lecture') + '">' + ICON.play + '</button>' +
+    '<button type="button" class="hc-btn' + (on ? ' is-on' : '') + '" data-hclib="' + esc(key) + '" aria-pressed="' + on + '" data-tip="' + (on ? tr('Dans ta bibliothèque') : tr('Ajouter à ma bibliothèque Laststream')) + '" aria-label="' + (on ? tr('Dans ta bibliothèque (retirer)') : tr('Ajouter à ma bibliothèque Laststream')) + '">' + (on ? ICON.check : ICON.list) + '</button>' +
     followBtn(key, 'hc-btn') +
-    '<button type="button" class="hc-btn hc-sound" data-hcvid hidden data-tip="Bande-annonce avec son" aria-label="Bande-annonce avec son">' + ICON.sound + '</button>' +
-    '<button type="button" class="hc-btn hc-more" data-open="' + esc(key) + '" data-tip="Plus d’infos" aria-label="Plus d’infos">' + ICON.chev + '</button></div></div>';
+    '<button type="button" class="hc-btn hc-sound" data-hcvid hidden data-tip="' + tr('Bande-annonce avec son') + '" aria-label="' + tr('Bande-annonce avec son') + '">' + ICON.sound + '</button>' +
+    '<button type="button" class="hc-btn hc-more" data-open="' + esc(key) + '" data-tip="' + tr('Plus d’infos') + '" aria-label="' + tr('Plus d’infos') + '">' + ICON.chev + '</button></div></div>';
   document.body.appendChild(el);
   hv.el = el;
   placeHover(el, anchor);
@@ -120,12 +121,12 @@ export function openHover(tile) {
       if (sb) {
         sb.hidden = false;
         sb.dataset.vid = d.trailer;
-        sb.dataset.vtitle = 'Bande-annonce : ' + it.name;
+        sb.dataset.vtitle = tr('Bande-annonce : {name}', { name: it.name });
         if (d.trailerVO) sb.dataset.vo = '1'; else delete sb.dataset.vo;
       }
       if (!REDUCE && !STILL) {
         const vbox = hv.el.querySelector('.hc-video');
-        vbox.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer)) + '"></iframe>';
+        vbox.innerHTML = '<iframe title="' + tr('Aperçu vidéo sans son') + '" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer)) + '"></iframe>';
         const fr = vbox.querySelector('iframe');
         fr.addEventListener('load', () => {
           if (token !== hv.token) return;

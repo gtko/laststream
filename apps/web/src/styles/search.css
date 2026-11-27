@@ -40,7 +40,7 @@
 .srch-top { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .srch-filters .pill { min-height: 36px; padding: 0 14px; font-size: 14px; }
 .srch-n {
-  display: inline-block; min-width: 1.6em; margin-left: 2px; padding: 0 6px; border-radius: 999px;
+  display: inline-block; min-width: 1.6em; margin-inline-start: 2px; padding: 0 6px; border-radius: 999px;
   background: rgba(255, 255, 255, 0.12); font-size: 12px; line-height: 1.6; text-align: center;
 }
 .pill[aria-pressed="true"] .srch-n { background: rgba(12, 11, 17, 0.15); }
@@ -78,7 +78,7 @@
 .search-root .srch-grid .row-msg { grid-column: 1 / -1; }
 .srch-people { margin: 0; }
 .srch-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.srch-sec-head .link-btn { margin-left: 0; font-size: 14px; }
+.srch-sec-head .link-btn { margin-inline-start: 0; font-size: 14px; }
 .srch-recent .pills { padding-bottom: 4px; }
 .srch-trend .row { padding-bottom: 14px; }
 

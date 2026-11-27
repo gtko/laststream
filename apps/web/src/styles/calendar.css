@@ -71,8 +71,8 @@
 .cal-dow i { font-style: normal; }
 .cal-ds { display: none; }
 .cal-cells { margin-bottom: -1px; }
-.cal-day { min-height: 142px; min-width: 0; padding: 10px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; text-align: left; background: transparent; }
-.cal-day:nth-child(7n) { border-right: 0; }
+.cal-day { min-height: 142px; min-width: 0; padding: 10px; border-inline-end: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; text-align: start; background: transparent; }
+.cal-day:nth-child(7n) { border-inline-end: 0; }
 button.cal-day:hover { background: rgba(255, 255, 255, 0.05); }
 button.cal-day:focus-visible { outline: var(--focus-ring-key); outline-offset: -3px; }
 .cal-day.is-out { background: var(--bg); }
@@ -137,7 +137,7 @@ button.cal-day:focus-visible { outline: var(--focus-ring-key); outline-offset: -
 .cal-ag-list .cal-ev .cal-th { width: 64px; height: 96px; font-size: 15px; }
 .cal-ag-list .cal-evx { gap: 4px; }
 .cal-row2 { display: flex; align-items: center; gap: 8px; margin-top: auto; }
-.cal-row2 .cal-bell { margin-left: auto; position: relative; z-index: 2; }
+.cal-row2 .cal-bell { margin-inline-start: auto; position: relative; z-index: 2; }
 .cal-hit { position: absolute; inset: 0; z-index: 1; border-radius: 14px; }
 .cal-hit:focus-visible { outline: var(--focus-ring-key); outline-offset: -3px; }
 
@@ -174,7 +174,7 @@ button.cal-day:focus-visible { outline: var(--focus-ring-key); outline-offset: -
   .cal-dow span { padding: 8px 0; text-align: center; letter-spacing: 0.06em; }
   .cal-dl { display: none; }
   .cal-ds { display: inline; }
-  .cal-day { min-height: 56px; padding: 6px 0; align-items: center; gap: 5px; border-right: 0; border-bottom: 0; border-top: 1px solid var(--line); }
+  .cal-day { min-height: 56px; padding: 6px 0; align-items: center; gap: 5px; border-inline-end: 0; border-bottom: 0; border-top: 1px solid var(--line); }
   .cal-cells { margin-bottom: 0; }
   .cal-hd { justify-content: center; min-height: 28px; }
   .cal-num { min-width: 28px; height: 28px; color: var(--soft); }

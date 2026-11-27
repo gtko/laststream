@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.84 – 2026-11-27
+
+- LAST-1658 Interface et site dans les langues de Stremio, Plex et Jellyfin (#66) — @gtko
+
 ## v1.0.83 – 2026-11-27
 
 - LAST-1656 Classiques libres : films libres de droits partout, sans source (#63) — @gtko

@@ -48,7 +48,7 @@
 .bdg-ch20, .bdg-ch51, .bdg-ch71 { background: #272335; color: #ece8f7; border-color: #6b6485; }
 
 /* Pastille de débit : luminosité décroissante (clair, moyen, sombre) + symbole */
-.s-fit { margin-left: 0; font-size: 12px; }
+.s-fit { margin-inline-start: 0; font-size: 12px; }
 .s-fit-g { font-size: 12px; font-weight: 900; }
 .fit-fluid { background: #d1fae5; color: #064e3b; border-color: #6ee7b7; }
 .fit-tight { background: #fbbf24; color: #1c1917; border-color: #fcd34d; }

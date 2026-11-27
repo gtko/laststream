@@ -32,6 +32,23 @@ Au premier lancement, ouvre **Réglages** (clic sur l'avatar, ou `#/settings`) :
 
 La configuration chiffrée est stockée dans `localStorage['laststream.lastaddon'] = {base, config}`, la même clé que l'application précédente (même origine) : une configuration existante est reprise telle quelle. Autres clés conservées : `laststream.autoplay`, `laststream.bandwidth.setting`, `laststream.bandwidth.measured`, `laststream.skip.*`, `laststream.theme` (`{id, accent}`), `laststream.library`.
 
+## Langues de l'interface
+
+L'interface est traduite dans les langues d'interface de Stremio, Plex et Jellyfin (liste dans `src/i18n/locales.ts`).
+Le français est la langue source : les textes du code restent en français et servent de clés.
+
+- `t('Texte {param}', { param })`, `tc(contexte, texte)` pour lever une ambiguïté, `tn(n, 'un', 'plusieurs')` pour un
+  pluriel (formes CLDR de chaque langue), `N_('Texte')` pour un identifiant français traduit seulement à l'affichage.
+- Catalogues : `src/i18n/locales/<code>.json` (texte français → traduction). Une variante régionale (`base` dans
+  `locales.ts`, par exemple fr-CA ou en-GB) reprend le catalogue de sa langue de base.
+- Choix de la langue : `?lang=de`, sinon le réglage Interface (localStorage `laststream.uilang`), sinon la langue du
+  navigateur, sinon l'anglais. L'arabe, le persan, l'hébreu et l'ourdou passent en `dir="rtl"` ; les styles utilisent
+  les propriétés logiques (`margin-inline-start`…).
+- Après un changement de texte : `npm run i18n:extract` (met à jour `src/i18n/messages.json`), puis traduire les clés
+  manquantes et lancer `npm run i18n:check`. La CI vérifie que `messages.json` est à jour, que l'anglais est complet et
+  qu'aucune traduction n'invente de paramètre, de balise ou de caractère HTML. Une clé absente d'un catalogue s'affiche
+  dans la langue de base de la variante, sinon en français.
+
 ## Architecture
 
 ```

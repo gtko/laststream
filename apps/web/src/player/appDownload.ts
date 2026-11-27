@@ -1,5 +1,6 @@
 /* Où proposer l'app quand le navigateur ne suffit pas : détection d'OS et message de téléchargement adapté. Fonctions pures, testées. */
 
+import { t } from '../i18n';
 export type Os = 'windows' | 'android' | 'ios' | 'macos' | 'linux' | 'other';
 
 export interface OsInput { userAgent?: string; platform?: string; maxTouchPoints?: number }
@@ -40,8 +41,8 @@ export interface AppOffer { text: string; link: { label: string; href: string } 
 /** Message selon l'OS : lien de téléchargement sur Windows et Android, simple conseil ailleurs (pas d'app pour ces systèmes). */
 export function appOffer(os: Os): AppOffer {
   switch (os) {
-    case 'windows': return { text: 'Installe l’app Windows : elle lit tous les formats.', link: { label: 'Télécharger l’app Windows', href: APP_DOWNLOAD_URL } };
-    case 'android': return { text: 'Installe l’app Android : elle lit tous les formats.', link: { label: 'Télécharger l’app Android', href: APP_DOWNLOAD_URL } };
-    default: return { text: 'Il n’y a pas encore d’app pour ton système : ouvre Laststream dans Microsoft Edge sur Windows ou dans l’app Android.', link: null };
+    case 'windows': return { text: t('Installe l’app Windows : elle lit tous les formats.'), link: { label: t('Télécharger l’app Windows'), href: APP_DOWNLOAD_URL } };
+    case 'android': return { text: t('Installe l’app Android : elle lit tous les formats.'), link: { label: t('Télécharger l’app Android'), href: APP_DOWNLOAD_URL } };
+    default: return { text: t('Il n’y a pas encore d’app pour ton système : ouvre Laststream dans Microsoft Edge sur Windows ou dans l’app Android.'), link: null };
   }
 }

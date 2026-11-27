@@ -2,6 +2,7 @@ import type { OfflineSource } from '../downloads/offline';
 import { formatSize } from '../data/sources';
 import type { SourceView } from '../sources/info';
 import { appOffer, type Os } from './appDownload';
+import { t } from '../i18n';
 
 /* Lecture d'un titre téléchargé (ODY-203) : « source » synthétique pour la session du lecteur et messages d'échec. Fonctions pures, testées. */
 
@@ -41,8 +42,8 @@ export function offlineView(src: OfflineSource): OfflineView {
     filename: src.filename,
     releaseGroup: '',
     status: 'direct',
-    statusLabel: 'Téléchargé · hors ligne',
-    provider: 'Téléchargement',
+    statusLabel: t('Téléchargé · hors ligne'),
+    provider: t('Téléchargement'),
     playable: true,
     client: false,
     viaDevice: false,
@@ -72,20 +73,20 @@ export function offlineFailureView(i: { kind: OfflineFailure; reason?: string; p
   const actions: OfflineFailureView['actions'] = [];
   let text: string;
   if (i.kind === 'stalled') {
-    actions.push({ act: 'retry', label: 'Réessayer' });
-    text = 'La lecture du fichier téléchargé est bloquée. Réessaie ; si cela se répète, supprime-le puis retélécharge-le depuis Téléchargements.';
+    actions.push({ act: 'retry', label: t('Réessayer') });
+    text = t('La lecture du fichier téléchargé est bloquée. Réessaie ; si cela se répète, supprime-le puis retélécharge-le depuis Téléchargements.');
   } else if (i.kind === 'error') {
-    text = 'Le fichier téléchargé ne se lit pas' + (i.reason ? ' (' + i.reason + ')' : '') + '. Supprime-le puis retélécharge-le depuis Téléchargements.';
+    text = t('Le fichier téléchargé ne se lit pas{v}. Supprime-le puis retélécharge-le depuis Téléchargements.', { v: (i.reason ? ' (' + i.reason + ')' : '') });
   } else if (i.platform === 'web') {
-    const what = i.kind === 'container' ? (i.reason ?? 'Ce format n’est pas lu par le navigateur.') : i.kind === 'video' ? 'La vidéo de ce fichier (HEVC, AV1…) n’est pas lue par ce navigateur.' : 'Le son de ce fichier n’est pas lu par ce navigateur.';
+    const what = i.kind === 'container' ? (i.reason ?? t('Ce format n’est pas lu par le navigateur.')) : i.kind === 'video' ? t('La vidéo de ce fichier (HEVC, AV1…) n’est pas lue par ce navigateur.') : t('Le son de ce fichier n’est pas lu par ce navigateur.');
     const offer = appOffer(i.os);
     text = what + ' ' + offer.text;
     if (offer.link) actions.push({ act: 'app-download', label: offer.link.label });
   } else {
-    text = 'Le lecteur n’a pas pu ouvrir le fichier téléchargé' + (i.reason ? ' (' + i.reason + ')' : '') + '.';
+    text = t('Le lecteur n’a pas pu ouvrir le fichier téléchargé{v}.', { v: (i.reason ? ' (' + i.reason + ')' : '') });
   }
-  if (i.online) actions.push({ act: 'stream', label: 'Lire en streaming' });
-  else text += ' Aucune connexion : le streaming n’est pas disponible.';
-  actions.push({ act: 'close', label: 'Fermer' });
-  return { title: 'Lecture hors ligne impossible', text, actions };
+  if (i.online) actions.push({ act: 'stream', label: t('Lire en streaming') });
+  else text += ' ' + t('Aucune connexion : le streaming n’est pas disponible.');
+  actions.push({ act: 'close', label: t('Fermer') });
+  return { title: t('Lecture hors ligne impossible'), text, actions };
 }

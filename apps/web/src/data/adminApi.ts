@@ -1,5 +1,6 @@
 import { getSession } from './session';
 import { call, UserApiError } from './userApi';
+import { t as tr } from '../i18n';
 
 /* Client de l'API d'administration de lastAddon : {base}/admin/… (propriétaire seulement).
  * - Chaque appel envoie X-Profile-Id (profil actif : un profil enfant est refusé par le serveur).
@@ -56,7 +57,7 @@ export function obtainElevation(): Promise<void> {
         elevation = { token: r.token, expiresAt: Number.isFinite(at) ? at : Date.now() + 600_000 };
         return;
       } catch (err) {
-        if (err instanceof UserApiError && err.code === 'invalid_password') { error = 'Mot de passe incorrect.'; continue; }
+        if (err instanceof UserApiError && err.code === 'invalid_password') { error = tr('Mot de passe incorrect.'); continue; }
         throw err;
       }
     }

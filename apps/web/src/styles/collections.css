@@ -103,11 +103,11 @@
 .dc-form + .cf-count, .ct-sec > .cf-count { padding: 0 var(--gutter); }
 .cf-svc { margin-top: 4px; }
 .cf-tools { display: flex; flex-wrap: wrap; gap: 12px 28px; padding: 18px var(--gutter) 0; }
-.cf-tools .pills { margin-left: 0; }
+.cf-tools .pills { margin-inline-start: 0; }
 
 /* ---------- Découvrir ---------- */
 .dc-form { display: flex; flex-direction: column; gap: 14px; padding: 6px var(--gutter) 12px; }
-.dc-form .pills { margin-left: 0; }
+.dc-form .pills { margin-inline-start: 0; }
 .dc-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
 .dc-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
 .dc-field select {

@@ -15,6 +15,7 @@ import {
 } from './tvControls.js';
 import { esc, store } from './util.js';
 import { pushLayer } from './backStack.js';
+import { t as tr } from '../i18n';
 
 // ---------- Lecteur plein écran ----------
 export function loadHls() {
@@ -158,8 +159,8 @@ export function updateBanner() {
   const nn = nowNext(c, now);
   const pct = nn.cur ? Math.max(0, Math.min(100, Math.round(((now - nn.cur.start) / (nn.cur.stop - nn.cur.start)) * 100))) : 0;
   setHtml(bannerEl, logoHTML(c, 'pb-logo') + '<span class="pb-text">' +
-    (nn.cur ? '<span class="pb-now"><strong>En cours</strong> ' + esc(nn.cur.title) + ' · ' + fmtHM(nn.cur.start) + ' – ' + fmtHM(nn.cur.stop) + '</span><span class="progress pb-prog" aria-hidden="true"><span style="width:' + pct + '%"></span></span>' : '<span class="pb-now">Programme non communiqué</span>') +
-    (nn.next ? '<span class="pb-next">Ensuite : ' + esc(nn.next.title) + ' · ' + fmtHM(nn.next.start) + '</span>' : '') + '</span>');
+    (nn.cur ? '<span class="pb-now">' + tr('<strong>En cours</strong> {title} · {start} – {stop}', { title: esc(nn.cur.title), start: fmtHM(nn.cur.start), stop: fmtHM(nn.cur.stop) }) + '</span><span class="progress pb-prog" aria-hidden="true"><span style="width:' + pct + '%"></span></span>' : '<span class="pb-now">' + tr('Programme non communiqué') + '</span>') +
+    (nn.next ? '<span class="pb-next">' + tr('Ensuite : {title} · {start}', { title: esc(nn.next.title), start: fmtHM(nn.next.start) }) + '</span>' : '') + '</span>');
 }
 
 /** Met à jour le signal d'état du lecteur (pastille en haut, badge DIRECT dans la barre) à partir d'un événement de tvStatus.js. */
@@ -372,19 +373,19 @@ function renderInfo() {
   const m = infoModel(c, tv.epg.get(epgKey(c)) || [], Math.floor(Date.now() / 1000), ctl().tech());
   const logo = logoHTML(c, 'pi-logo');
   const now = m.now
-    ? '<div class="pi-now"><p class="pi-k">En cours · ' + fmtHM(m.now.start) + ' – ' + fmtHM(m.now.stop) + ' · ' + m.now.left + ' min restantes</p>' +
+    ? '<div class="pi-now"><p class="pi-k">' + tr('En cours · {start} – {stop} · {left} min restantes', { start: fmtHM(m.now.start), stop: fmtHM(m.now.stop), left: m.now.left }) + '</p>' +
       '<h3 class="pi-title">' + esc(m.now.title) + '</h3>' +
       '<span class="progress" aria-hidden="true"><span style="width:' + m.now.pct + '%"></span></span>' +
       (m.now.desc ? '<p class="pi-desc">' + esc(m.now.desc) + '</p>' : '') + '</div>'
-    : '<div class="pi-now"><p class="pi-k">Programme</p><p class="pi-title">Programme non communiqué</p></div>';
+    : '<div class="pi-now"><p class="pi-k">' + tr('Programme') + '</p><p class="pi-title">' + tr('Programme non communiqué') + '</p></div>';
   const next = m.next.length
-    ? '<div class="pi-next"><p class="pi-k">Ensuite</p><ol>' + m.next.map((p) => '<li><span class="pi-h">' + fmtHM(p.start) + '</span><span>' + esc(p.title) + '</span></li>').join('') + '</ol></div>'
+    ? '<div class="pi-next"><p class="pi-k">' + tr('Ensuite') + '</p><ol>' + m.next.map((p) => '<li><span class="pi-h">' + fmtHM(p.start) + '</span><span>' + esc(p.title) + '</span></li>').join('') + '</ol></div>'
     : '';
   const tech = m.tech.length
     ? '<dl class="pi-tech">' + m.tech.map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>').join('') + '</dl>'
     : '';
-  setHtml(infoEl, '<div class="pi-head">' + logo + '<div><p class="pi-num">' + (m.number ? 'Chaîne ' + esc(m.number) : 'Chaîne') + '</p>' +
-    '<h2 class="pi-name">' + esc(m.name) + '</h2></div><button type="button" class="lp-btn" data-pinfo-close aria-label="Fermer les infos">' + LI.close + '</button></div>' +
+  setHtml(infoEl, '<div class="pi-head">' + logo + '<div><p class="pi-num">' + (m.number ? tr('Chaîne {number}', { number: esc(m.number) }) : tr('Chaîne')) + '</p>' +
+    '<h2 class="pi-name">' + esc(m.name) + '</h2></div><button type="button" class="lp-btn" data-pinfo-close aria-label="' + tr('Fermer les infos') + '">' + LI.close + '</button></div>' +
     now + next + tech);
 }
 
@@ -406,7 +407,7 @@ function renderPanel() {
   if (panel !== 'tracks') return;
   const c = ctl();
   panelEl.className = 'player-panel pn-tracks';
-  panelEl.setAttribute('aria-label', 'Audio et sous-titres');
+  panelEl.setAttribute('aria-label', tr('Audio et sous-titres'));
   renderTracksPanel(panelEl, { audio: c.audio(), subs: c.subs(), levels: c.levels(), channelName: (curChannel() || {}).name || '' });
 }
 
@@ -441,7 +442,7 @@ function openPanel(name) {
     focusTracks(panelEl, col);
   } else {
     panelEl.className = 'player-panel pn-chan';
-    panelEl.setAttribute('aria-label', 'Chaînes');
+    panelEl.setAttribute('aria-label', tr('Chaînes'));
     chanPanel = mountChannelsPanel(panelEl, {
       channels: chanSource,
       currentId: () => (curChannel() || {}).id,
@@ -503,12 +504,12 @@ function refreshBar() {
   const c = ctl();
   const paused = c.paused();
   setIcon('[data-pplay]', paused ? ICON.play : ICON.pause);
-  setAttr('[data-pplay]', 'aria-label', paused ? 'Lecture' : 'Pause');
+  setAttr('[data-pplay]', 'aria-label', paused ? tr('Lecture') : tr('Pause'));
 
   const muted = c.muted() || c.volume() === 0;
   setHidden('.lp-vol', !c.canVolume);
   setIcon('[data-pmute]', muted ? ICON.mute : ICON.vol);
-  setAttr('[data-pmute]', 'aria-label', muted ? 'Activer le son' : 'Couper le son');
+  setAttr('[data-pmute]', 'aria-label', muted ? tr('Activer le son') : tr('Couper le son'));
   const slider = $('[data-pvol]');
   if (slider && document.activeElement !== slider) slider.value = String(Math.round(c.volume() * 100));
 
@@ -520,7 +521,7 @@ function refreshBar() {
   setHidden('[data-pfull]', !c.canFullscreen);
   const fs = c.fullscreen();
   setIcon('[data-pfull]', fs ? ICON.fullExit : ICON.full);
-  setAttr('[data-pfull]', 'aria-label', fs ? 'Quitter le plein écran' : 'Plein écran');
+  setAttr('[data-pfull]', 'aria-label', fs ? tr('Quitter le plein écran') : tr('Plein écran'));
 
   const ch = curChannel();
   chnameEl.textContent = ch ? ch.name : '';

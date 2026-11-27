@@ -1,6 +1,7 @@
 import { copySignature, type SourceView } from '../sources/info';
 import { providerOf, sameRelease } from '../sources/release';
 import { sourceLabel } from '../party/sourceChoice';
+import { t } from '../i18n';
 
 /* Reprise automatique : ordre des sources à essayer et détection des blocages. Fonctions pures, testées. */
 
@@ -46,10 +47,10 @@ function sourceWho(v: SourceView): string {
  * c'est la même release chez un autre fournisseur. `attempt` / `max` : rang de l'essai.
  */
 export function failoverStatusText(failed: SourceView | null, reason: string, next: SourceView, attempt: number, max: number, extra = ''): string {
-  const why = String(reason || 'échec').replace(/\.+$/, '');
-  const head = failed ? 'Échec de ' + sourceWho(failed) + ' : ' + why + '. ' : why + '. ';
-  const twin = failed && sameRelease(failed, next) ? ' · même fichier' : '';
-  return head + 'Essai de ' + sourceWho(next) + twin + (extra ? ' · ' + extra : '') + ' (' + attempt + '/' + max + ')';
+  const why = String(reason || t('échec')).replace(/\.+$/, '');
+  const head = failed ? t('Échec de {failed} : {why}.', { failed: sourceWho(failed), why }) + ' ' : why + '. ';
+  const twin = failed && sameRelease(failed, next) ? ' ' + t('· même fichier') : '';
+  return head + t('Essai de {next}{twin}{v} ({attempt}/{max})', { next: sourceWho(next), twin, v: (extra ? ' · ' + extra : ''), attempt, max });
 }
 
 export type StallVerdict = 'ok' | 'stalled' | 'startup-timeout';

@@ -1,4 +1,5 @@
 import { copySignature, originSummary, sourceKeyOf, type SourceView } from './info';
+import { t } from '../i18n';
 
 /* Identité d'une release, indépendante du fournisseur qui la propose : plusieurs addons (ou débrideurs) servent souvent le même
  * fichier. Sert à regrouper les doublons dans la liste des sources et à essayer, au repli, la même release chez un autre
@@ -54,7 +55,7 @@ export function providerOf(v: SourceView): string {
   if (origin) parts.push(origin);
   const debrid = (v.provider ?? '').trim();
   if (debrid && !parts.some((p) => p.toLowerCase().includes(debrid.toLowerCase()))) parts.push(debrid);
-  if (!parts.length && v.viaDevice) parts.push('via ton appareil');
+  if (!parts.length && v.viaDevice) parts.push(t('via ton appareil'));
   return parts.join(' · ');
 }
 

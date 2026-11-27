@@ -10,6 +10,7 @@ import { renderConversationList } from './socialConvList.js';
 import { createThread } from './socialConvThread.js';
 import { avatarEl, h, iconBtn, SVG } from './socialConvDom.js';
 import { MAX_TABS, MOBILE_MAX, convInfo, loadWinState, normalizeConv, saveWinState, setActiveConv } from './socialConvModel.js';
+import { t } from '../i18n';
 
 let deps = { launch: () => undefined, toast: () => undefined };
 /** Conversation ouverte, onglets réduits (du plus récent au plus ancien). */
@@ -98,9 +99,9 @@ function paintTabs(s = store.getState()) {
   tabsEl.textContent = '';
   for (const conv of min) {
     const inf = convInfo(conv, s);
-    const name = inf ? inf.name : 'Discussion';
+    const name = inf ? inf.name : t('Discussion');
     const tab = h('div', 'cvw-tab');
-    const main = h('button', 'cvw-tab-main', null, { type: 'button', 'aria-label': 'Ouvrir la discussion avec ' + name + (inf && inf.unread ? ', ' + inf.unread + ' non lu' + (inf.unread > 1 ? 's' : '') : '') });
+    const main = h('button', 'cvw-tab-main', null, { type: 'button', 'aria-label': t('Ouvrir la discussion avec {name}', { name }) + (inf && inf.unread ? t(', {unread} non lu', { unread: inf.unread }) + (inf.unread > 1 ? 's' : '') : '') });
     main.append(
       inf && inf.kind === 'group' ? avatarEl({ name, avatarColor: inf.members[0] && inf.members[0].avatarColor }, 26)
         : avatarEl({ name, avatarColor: inf && inf.avatarColor, avatar: inf && inf.avatar }, 26),
@@ -108,7 +109,7 @@ function paintTabs(s = store.getState()) {
     );
     if (inf && inf.unread > 0) main.append(h('span', 'cvw-badge', inf.unread > 99 ? '99+' : String(inf.unread), { 'aria-hidden': 'true' }));
     main.addEventListener('click', () => open(conv));
-    const x = iconBtn('cvw-tab-x', 'Fermer la discussion avec ' + name, SVG.close.replace(/width="18" height="18"/, 'width="14" height="14"'), () => closeConv(conv));
+    const x = iconBtn('cvw-tab-x', t('Fermer la discussion avec {name}', { name }), SVG.close.replace(/width="18" height="18"/, 'width="14" height="14"'), () => closeConv(conv));
     tab.append(main, x);
     tabsEl.append(tab);
   }

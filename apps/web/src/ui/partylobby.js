@@ -32,6 +32,7 @@ import { registerSocialHook } from './socialHooks.js';
 import { togglePartyPanel } from './partypanel.js';
 import { pushLayer } from './backStack.js';
 import { copyToClipboard, esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const MAX_PARTICIPANTS_FALLBACK = 20;
 const GUEST_SLOTS = 4;
@@ -95,11 +96,11 @@ const avatar = (p, size) => '<span class="pl-av' + (size ? ' is-' + size : '') +
 function participantCard(p) {
   const me = p.username === myName();
   const v = prepView(p.guest ? { ...p, ready: true, status: p.status === 'buffering' ? 'buffering' : 'ready' } : p);
-  const tags = (p.host ? '<span class="pl-tag is-host">· hôte</span>' : '') + (p.guest ? '<span class="pl-tag">· invité</span>' : '');
+  const tags = (p.host ? '<span class="pl-tag is-host">' + tr('· hôte') + '</span>' : '') + (p.guest ? '<span class="pl-tag">' + tr('· invité') + '</span>' : '');
   const stateIcon = v.state === 'ready' ? ICON.check : '<span class="pl-spin" aria-hidden="true"></span>';
   const tools = isHost() && !me && !p.host
-    ? '<span class="pl-card-tools"><button type="button" class="pl-mini" data-pl-host="' + esc(p.username) + '">Céder l’hôte</button>' +
-      '<button type="button" class="pl-mini is-danger" data-pl-kick="' + esc(p.username) + '">Exclure</button></span>'
+    ? '<span class="pl-card-tools"><button type="button" class="pl-mini" data-pl-host="' + esc(p.username) + '">' + tr('Céder l’hôte') + '</button>' +
+      '<button type="button" class="pl-mini is-danger" data-pl-kick="' + esc(p.username) + '">' + tr('Exclure') + '</button></span>'
     : '';
   return '<li class="pl-card' + (p.host ? ' is-host' : '') + '">' + avatar(p, 'lg') +
     '<span class="pl-card-name">' + esc(p.username) + (me ? ' <span class="pl-tag">(toi)</span>' : '') + tags + '</span>' +
@@ -115,21 +116,21 @@ function seg(name, label, options, current, host) {
 }
 
 function linkBoxHTML() {
-  if (!isHost()) return '<div class="pl-link is-empty"><span class="pl-link-note">Les réglages et le départ sont à l’hôte.</span></div>';
+  if (!isHost()) return '<div class="pl-link is-empty"><span class="pl-link-note">' + tr('Les réglages et le départ sont à l’hôte.') + '</span></div>';
   const guests = client.participants.filter((p) => p.guest).length;
   const slots = Math.max(0, GUEST_SLOTS - guests);
-  let shown = 'lien d’invitation';
+  let shown = tr('lien d’invitation');
   try { shown = new URL(shareBase()).host + '/…'; } catch { /* base relative : libellé générique */ }
   return '<div class="pl-link">' + ICON.link + '<span class="pl-link-t">' + esc(shown) + '</span>' +
-    '<span class="pl-link-note">sans compte : ' + slots + ' place' + (slots > 1 ? 's' : '') + ', 12 h</span>' +
-    '<button type="button" class="pl-btn is-sec is-sm" data-pl-copy>' + (linkCopied ? 'Copié' : 'Copier') + '</button></div>' +
-    (manualLink ? '<input type="text" class="pl-link-manual" data-pl-manual readonly value="' + esc(manualLink) + '" aria-label="Lien d’invitation à copier">' : '');
+    '<span class="pl-link-note">' + tr('sans compte : {slots} place{v}, 12 h', { slots, v: (slots > 1 ? 's' : '') }) + '</span>' +
+    '<button type="button" class="pl-btn is-sec is-sm" data-pl-copy>' + (linkCopied ? tr('Copié') : tr('Copier')) + '</button></div>' +
+    (manualLink ? '<input type="text" class="pl-link-manual" data-pl-manual readonly value="' + esc(manualLink) + '" aria-label="' + tr('Lien d’invitation à copier') + '">' : '');
 }
 
 function footerHTML(sum) {
   const left = countdownLeft(client.countdownAt, sNow());
   if (!isHost()) {
-    return linkBoxHTML() + (left !== null ? '' : '<p class="pl-wait" role="status">En attente du départ par ' + esc(client.room ? client.room.host : 'l’hôte') + '…</p>');
+    return linkBoxHTML() + (left !== null ? '' : '<p class="pl-wait" role="status">' + tr('En attente du départ par {v}…', { v: esc(client.room ? client.room.host : tr('l’hôte')) }) + '</p>');
   }
   const waiting = sum.waiting;
   const counting = left !== null;
@@ -137,7 +138,7 @@ function footerHTML(sum) {
     ? '<button type="button" class="pl-btn is-sec is-lg" data-pl-start-now>' + esc(startWithoutText(waiting)) + '</button>' : '';
   return linkBoxHTML() + without +
     '<button type="button" class="pl-btn is-pri is-lg is-xl" data-pl-start' + (waiting.length > 0 || counting ? ' disabled' : '') +
-    (waiting.length > 0 ? ' title="En attente de ' + esc(waiting.join(', ')) + '"' : '') + '>' + ICON.play + esc(counting ? 'Départ dans ' + left + ' s' : launchText(COUNTDOWN_DEFAULT_SEC)) + '</button>';
+    (waiting.length > 0 ? ' title="' + tr('En attente de {v}', { v: esc(waiting.join(', ')) }) + '"' : '') + '>' + ICON.play + esc(counting ? tr('Départ dans {left} s', { left }) : launchText(COUNTDOWN_DEFAULT_SEC)) + '</button>';
 }
 
 function mainHTML() {
@@ -149,23 +150,23 @@ function mainHTML() {
   const poster = room && room.poster ? cssUrl(safeTmdbImage(room.poster, 'w780')) : '';
   const media = room ? room.media : null;
   const ep = media && media.type === 'series' && media.season != null ? ' · S' + media.season + ' É' + media.episode : '';
-  const status = client.status === 'open' ? '' : '<p class="pl-conn" role="status">' + (client.status === 'closed' ? 'Déconnecté du salon.' : 'Connexion au salon… reprise automatique.') + '</p>';
+  const status = client.status === 'open' ? '' : '<p class="pl-conn" role="status">' + (client.status === 'closed' ? tr('Déconnecté du salon.') : tr('Connexion au salon… reprise automatique.')) + '</p>';
   const cards = list.map(participantCard).join('');
-  const invite = '<li class="pl-card-wrap"><button type="button" class="pl-card is-invite" data-pl-invite-tile aria-label="Inviter des amis"><span class="pl-invite-plus">' + ICON.plus + '</span><span class="pl-card-name">Inviter</span></button></li>';
+  const invite = '<li class="pl-card-wrap"><button type="button" class="pl-card is-invite" data-pl-invite-tile aria-label="' + tr('Inviter des amis') + '"><span class="pl-invite-plus">' + ICON.plus + '</span><span class="pl-card-name">' + tr('Inviter') + '</span></button></li>';
   const s = client.settings;
   return '<header class="pl-hero"' + (poster ? ' style="--pl-poster:' + poster.replace(/"/g, '&quot;') + '"' : '') + '>' +
-    '<div class="pl-hero-top"><button type="button" class="pl-ico" data-pl-leave aria-label="Quitter le salon">' + ICON.back + '</button>' +
-    '<span class="pl-pill"><span class="pl-dot" aria-hidden="true"></span>Salon de ' + esc(room ? room.host : '…') + ' · ' + (room && room.visibility === 'public' ? 'public' : 'privé') + '</span>' +
-    '<span class="pl-grow"></span>' + (host ? '<button type="button" class="pl-btn is-sec is-glass" data-pl-change>Changer de titre</button>' : '') + '</div>' +
-    '<div class="pl-hero-bot"><div class="pl-lb is-soft">Watch party · salon d’attente</div>' +
-    '<h1 class="pl-title" id="pl-title" tabindex="-1">' + esc(room ? room.title : 'Salon') + esc(ep) + '</h1>' +
-    '<p class="pl-sub">Chacun lit avec sa propre source' + (room && room.language ? ' · ' + esc(String(room.language).toUpperCase()) + ' conseillé par l’hôte' : '') + '</p></div></header>' +
+    '<div class="pl-hero-top"><button type="button" class="pl-ico" data-pl-leave aria-label="' + tr('Quitter le salon') + '">' + ICON.back + '</button>' +
+    '<span class="pl-pill"><span class="pl-dot" aria-hidden="true"></span>' + tr('Salon de {v} ·', { v: esc(room ? room.host : '…') }) + ' ' + (room && room.visibility === 'public' ? 'public' : tr('privé')) + '</span>' +
+    '<span class="pl-grow"></span>' + (host ? '<button type="button" class="pl-btn is-sec is-glass" data-pl-change>' + tr('Changer de titre') + '</button>' : '') + '</div>' +
+    '<div class="pl-hero-bot"><div class="pl-lb is-soft">' + tr('Watch party · salon d’attente') + '</div>' +
+    '<h1 class="pl-title" id="pl-title" tabindex="-1">' + esc(room ? room.title : tr('Salon')) + esc(ep) + '</h1>' +
+    '<p class="pl-sub">' + tr('Chacun lit avec sa propre source') + (room && room.language ? ' ' + tr('· {language} conseillé par l’hôte', { language: esc(String(room.language).toUpperCase()) }) : '') + '</p></div></header>' +
     '<section class="pl-body">' + status +
-    '<div class="pl-row"><div class="pl-lb pl-grow">Participants · ' + list.length + ' / ' + max + '</div><span class="pl-ready" aria-live="polite">' + esc(readyText(sum)) + '</span></div>' +
-    '<ul class="pl-grid" aria-label="Participants">' + cards + invite + '</ul>' + prepNoteHTML() + sourcesHTML() +
-    '<div class="pl-sets">' + seg('control', 'Qui contrôle la lecture', CONTROL_OPTIONS, s.control, host) +
-    seg('waitLate', 'Attendre les retardataires', WAIT_LATE_OPTIONS, s.waitLate, host) +
-    seg('reactions', 'Réactions à l’écran', REACTION_OPTIONS, s.reactions, host) + '</div>' +
+    '<div class="pl-row"><div class="pl-lb pl-grow">' + tr('Participants · {length} / {max}', { length: list.length, max }) + '</div><span class="pl-ready" aria-live="polite">' + esc(readyText(sum)) + '</span></div>' +
+    '<ul class="pl-grid" aria-label="' + tr('Participants') + '">' + cards + invite + '</ul>' + prepNoteHTML() + sourcesHTML() +
+    '<div class="pl-sets">' + seg('control', tr('Qui contrôle la lecture'), CONTROL_OPTIONS, s.control, host) +
+    seg('waitLate', tr('Attendre les retardataires'), WAIT_LATE_OPTIONS, s.waitLate, host) +
+    seg('reactions', tr('Réactions à l’écran'), REACTION_OPTIONS, s.reactions, host) + '</div>' +
     '<div class="pl-foot">' + footerHTML(sum) + '</div></section>' + countdownHTML();
 }
 
@@ -189,8 +190,8 @@ function rowIdOf(key) {
 /** Fournisseur d'une ligne (« Lumpi ») et doublons regroupés (« +2 fournisseurs », essayés en premier si la source échoue). */
 function sourceProviderHTML(r) {
   if (!r.provider && !r.others) return '';
-  const more = r.others > 0 ? ' <span class="pl-src-more" title="Même fichier chez ' + r.others + ' autre' + (r.others > 1 ? 's' : '') + ' fournisseur' + (r.others > 1 ? 's' : '') + ' : essayé' + (r.others > 1 ? 's' : '') + ' en premier si celui-ci échoue">+' + r.others + '</span>' : '';
-  return '<span class="pl-src-prov">' + esc(r.provider || 'Fournisseur inconnu') + more + '</span>';
+  const more = r.others > 0 ? ' <span class="pl-src-more" title="' + tr('Même fichier chez {others} autre{v} fournisseur{v} : essayé{v} en premier si celui-ci échoue', { others: r.others, v: (r.others > 1 ? 's' : '') }) + '">+' + r.others + '</span>' : '';
+  return '<span class="pl-src-prov">' + esc(r.provider || tr('Fournisseur inconnu')) + more + '</span>';
 }
 
 /** « Ma source » : les sources trouvées (langue, qualité), celle qui sera lancée au départ, et ce qui la rapproche de l'hôte. */
@@ -209,7 +210,7 @@ function sourcesHTML() {
   const roomName = client.room && client.room.language ? String(client.room.language).toUpperCase() : '';
   const warn = sourceLanguageWarning(src.selected, lang, roomName);
   const banner = !src.searching && noSourceInRoomLanguage(src.views, lang)
-    ? '<p class="pl-src-banner" role="status"><span>Aucune source en ' + esc(roomName || 'cette langue') + ' pour l’instant.</span> <button type="button" class="pl-link-btn" data-pl-retry>Réessayer la recherche</button></p>'
+    ? '<p class="pl-src-banner" role="status"><span>' + tr('Aucune source en {v} pour l’instant.', { v: esc(roomName || tr('cette langue')) }) + '</span> <button type="button" class="pl-link-btn" data-pl-retry>' + tr('Réessayer la recherche') + '</button></p>'
     : '';
   const focusable = rows.some((r) => r.selected) ? '' : rows[0] && rowIdOf(rows[0].key);
   const list = rows.map((r) => '<button type="button" role="radio" class="pl-src-row' + (r.selected ? ' on' : '') + '" aria-checked="' + (r.selected ? 'true' : 'false') + '"' +
@@ -219,7 +220,7 @@ function sourcesHTML() {
     (r.release ? '<span class="pl-src-file" title="' + esc(r.release) + '">' + esc(r.release) + '</span>' : '') +
     (r.warn ? '<span class="pl-src-compat">' + esc(r.warn) + '</span>' : '') + '</span>' +
     (r.badge ? '<span class="pl-src-badge is-' + r.badge + '">' + esc(SOURCE_BADGE_TEXT[r.badge]) + '</span>' : '') + '</button>').join('');
-  return '<section class="pl-src" aria-labelledby="pl-src-t"><div class="pl-row"><div class="pl-lb pl-grow" id="pl-src-t">Ma source</div>' +
+  return '<section class="pl-src" aria-labelledby="pl-src-t"><div class="pl-row"><div class="pl-lb pl-grow" id="pl-src-t">' + tr('Ma source') + '</div>' +
     '<span class="pl-src-status" role="status">' + esc(sourceSearchText(found, src.searching)) + '</span></div>' +
     (hostLine ? '<p class="pl-src-host">' + esc(hostLine) + '</p>' : '') + banner +
     '<div class="pl-src-list" role="radiogroup" aria-labelledby="pl-src-t">' + list + '</div>' +
@@ -228,7 +229,7 @@ function sourcesHTML() {
 
 function prepNoteHTML() {
   if (prep.phase === 'none') {
-    return '<p class="pl-note" role="status">Aucune source trouvée pour ce titre sur cet appareil. <button type="button" class="pl-link-btn" data-pl-retry>Réessayer</button></p>';
+    return '<p class="pl-note" role="status">' + tr('Aucune source trouvée pour ce titre sur cet appareil.') + ' <button type="button" class="pl-link-btn" data-pl-retry>' + tr('Réessayer') + '</button></p>';
   }
   return '';
 }
@@ -236,7 +237,7 @@ function prepNoteHTML() {
 function countdownHTML() {
   const left = countdownLeft(client.countdownAt, sNow());
   if (left === null) return '';
-  return '<div class="pl-count" role="status" aria-live="assertive"><div class="pl-count-n">' + left + '</div><div class="pl-count-t">La lecture démarre…</div></div>';
+  return '<div class="pl-count" role="status" aria-live="assertive"><div class="pl-count-n">' + left + '</div><div class="pl-count-t">' + tr('La lecture démarre…') + '</div></div>';
 }
 
 // ---------- Discussion ----------
@@ -244,24 +245,24 @@ function chatItem(line) {
   const author = client.participants.find((p) => p.username === line.from) || { username: line.from };
   const mine = line.from === myName();
   return '<div class="pl-msg' + (mine ? ' is-mine' : '') + '" data-pl-line="' + esc(line.id) + '">' + avatar(author) +
-    '<div><b>' + esc(mine ? 'Moi' : line.from) + '</b>' + (author.guest ? ' <span class="pl-tag">invité</span>' : '') + '<div class="pl-msg-t">' + esc(line.text) + '</div></div></div>';
+    '<div><b>' + esc(mine ? tr('Moi') : line.from) + '</b>' + (author.guest ? ' <span class="pl-tag">' + tr('invité') + '</span>' : '') + '<div class="pl-msg-t">' + esc(line.text) + '</div></div></div>';
 }
 
 function voteHTML() {
   const options = client.vote;
   if (!options) return '';
   const host = isHost();
-  return '<div class="pl-vote" role="group" aria-label="Vote du titre"><div class="pl-vote-h">' + esc((client.room ? client.room.host : 'L’hôte') + ' propose de voter le film') + '</div>' +
+  return '<div class="pl-vote" role="group" aria-label="' + tr('Vote du titre') + '"><div class="pl-vote-h">' + esc((client.room ? client.room.host : tr('L’hôte')) + ' ' + tr('propose de voter le film')) + '</div>' +
     options.map((o) => {
       const share = voteShare(o, options);
       return '<button type="button" class="pl-vote-o' + (o.id === myVote ? ' is-mine' : '') + '" data-pl-vote="' + esc(o.id) + '" aria-pressed="' + (o.id === myVote ? 'true' : 'false') + '">' +
         '<span class="pl-vote-bar" style="width:' + share + '%"></span><span class="pl-vote-t">' + esc(o.title) + '</span><b>' + o.votes + '</b></button>';
-    }).join('') + (host ? '<button type="button" class="pl-btn is-sec is-sm" data-pl-vote-close>Clore le vote</button>' : '') + '</div>';
+    }).join('') + (host ? '<button type="button" class="pl-btn is-sec is-sm" data-pl-vote-close>' + tr('Clore le vote') + '</button>' : '') + '</div>';
 }
 
 function feedHTML() {
   const items = feed.map((it) => (it.kind === 'sys' ? '<div class="pl-sys">' + esc(it.text) + '</div>' : chatItem(it.line))).join('');
-  return (items || '<p class="pl-empty">Aucun message pour l’instant.</p>') + voteHTML();
+  return (items || '<p class="pl-empty">' + tr('Aucun message pour l’instant.') + '</p>') + voteHTML();
 }
 
 function sideBodyHTML() {
@@ -459,7 +460,7 @@ function launch(hold) {
   closeLobby(true);
   togglePartyPanel(true);
   partyBridge.launchRoom(choice, { hold: !!hold }).catch((err) => {
-    toast(err && err.code === 'media_unsupported' ? 'Ce salon ne peut pas être lu depuis cette application.' : 'Lancement de la lecture impossible.');
+    toast(err && err.code === 'media_unsupported' ? tr('Ce salon ne peut pas être lu depuis cette application.') : tr('Lancement de la lecture impossible.'));
   });
 }
 
@@ -487,7 +488,7 @@ function bind(c) {
       countdownSeen = false;
     }
     syncCountdownTimer();
-    if (at !== null) pushSys('Départ dans quelques secondes…');
+    if (at !== null) pushSys(tr('Départ dans quelques secondes…'));
     renderSoon();
   });
   on('state', (st) => { if (st && st.playing && c.countdownAt === null && c.status === 'open') launch(countdownSeen); });
@@ -496,7 +497,7 @@ function bind(c) {
   on('event', (ev) => {
     if (ev.kind === 'join') {
       const who = c.participants.find((p) => p.username === ev.by);
-      pushSys(ev.by + (who && who.guest ? ' a rejoint par le lien' : ' a rejoint le salon'));
+      pushSys(ev.by + (who && who.guest ? ' ' + tr('a rejoint par le lien') : ' ' + tr('a rejoint le salon')));
     } else if (ev.kind === 'leave') pushSys(eventText(ev));
     renderSoon();
   });
@@ -509,7 +510,7 @@ function bind(c) {
     // Vote clos : le salon change de titre. Le titre vient des options du vote ; la recherche de source repart.
     const won = lastVoteOptions.find((o) => o.tmdbId === media.tmdbId && (o.type === media.type));
     if (c.room && won) c.room = { ...c.room, title: won.title, poster: null };
-    pushSys('Le titre est maintenant « ' + (won ? won.title : c.room ? c.room.title : '…') + ' »');
+    pushSys(tr('Le titre est maintenant « {v} »', { v: (won ? won.title : c.room ? c.room.title : '…') }));
     src = freshSources(); // nouveau titre ou épisode : le choix de source ne vaut plus
     void prepare();
     renderSoon();
@@ -535,16 +536,16 @@ function unbind() {
 // ---------- Ouverture et fermeture ----------
 const shellHTML = () =>
   '<div class="pl-main" data-pl-main></div>' +
-  '<aside class="pl-side" aria-label="Discussion du salon">' +
-  '<div role="tablist" class="pl-tabs" aria-label="Discussion et invitations">' +
-  '<button type="button" role="tab" id="pl-tab-chat" data-pl-tab="chat" aria-selected="true" aria-controls="pl-panel">Discussion</button>' +
-  '<button type="button" role="tab" id="pl-tab-friends" data-pl-tab="friends" aria-selected="false" aria-controls="pl-panel" tabindex="-1">Inviter des amis</button></div>' +
+  '<aside class="pl-side" aria-label="' + tr('Discussion du salon') + '">' +
+  '<div role="tablist" class="pl-tabs" aria-label="' + tr('Discussion et invitations') + '">' +
+  '<button type="button" role="tab" id="pl-tab-chat" data-pl-tab="chat" aria-selected="true" aria-controls="pl-panel">' + tr('Discussion') + '</button>' +
+  '<button type="button" role="tab" id="pl-tab-friends" data-pl-tab="friends" aria-selected="false" aria-controls="pl-panel" tabindex="-1">' + tr('Inviter des amis') + '</button></div>' +
   '<div class="pl-feed" id="pl-panel" role="tabpanel" data-pl-feed tabindex="0" aria-live="polite"></div>' +
-  '<div class="pl-emojis" data-pl-chatonly role="group" aria-label="Réactions rapides">' +
-  LOBBY_EMOJIS.map((e) => '<button type="button" data-pl-emoji="' + e + '" aria-label="Envoyer ' + e + '">' + e + '</button>').join('') + '</div>' +
-  '<form class="pl-send" data-pl-chatonly data-pl-send autocomplete="off"><label for="pl-input" class="sr-only">Message au salon</label>' +
-  '<input id="pl-input" name="text" maxlength="' + CHAT_MAX_CHARS + '" placeholder="Écrire au salon…" autocomplete="off">' +
-  '<button type="submit" class="pl-send-b" aria-label="Envoyer">' + ICON.send + '</button></form></aside>' +
+  '<div class="pl-emojis" data-pl-chatonly role="group" aria-label="' + tr('Réactions rapides') + '">' +
+  LOBBY_EMOJIS.map((e) => '<button type="button" data-pl-emoji="' + e + '" aria-label="' + tr('Envoyer {e}', { e }) + '">' + e + '</button>').join('') + '</div>' +
+  '<form class="pl-send" data-pl-chatonly data-pl-send autocomplete="off"><label for="pl-input" class="sr-only">' + tr('Message au salon') + '</label>' +
+  '<input id="pl-input" name="text" maxlength="' + CHAT_MAX_CHARS + '" placeholder="' + tr('Écrire au salon…') + '" autocomplete="off">' +
+  '<button type="submit" class="pl-send-b" aria-label="' + tr('Envoyer') + '">' + ICON.send + '</button></form></aside>' +
   '<div class="pl-live sr-only" role="status" aria-live="polite" data-pl-live></div>';
 
 function mount() {
@@ -569,10 +570,10 @@ function mount() {
 function onBack() {
   releaseBack = null;
   if (!root) return;
-  if (isHost() && !window.confirm('Fermer le salon d’attente pour tout le monde ?')) { releaseBack = pushLayer(onBack); return; }
+  if (isHost() && !window.confirm(tr('Fermer le salon d’attente pour tout le monde ?'))) { releaseBack = pushLayer(onBack); return; }
   const host = isHost();
   closeLobby(false);
-  toast(host ? 'Salon fermé' : 'Tu as quitté le salon');
+  toast(host ? tr('Salon fermé') : tr('Tu as quitté le salon'));
 }
 
 function closeLobby(keepClient) {
@@ -628,7 +629,7 @@ export async function openLobby(partyId, from) {
     } catch (err) {
       if (seq !== openSeq) return;
       partyBridge.lobby = false;
-      toast(err instanceof UserApiError && err.code === 'room_full' ? 'Le salon est complet.' : 'Impossible de rejoindre le salon.');
+      toast(err instanceof UserApiError && err.code === 'room_full' ? tr('Le salon est complet.') : tr('Impossible de rejoindre le salon.'));
       return;
     }
   }
@@ -672,7 +673,7 @@ export async function inviteMany(roomId, pids) {
   if (!pids || !pids.length) return;
   const done = await Promise.all(pids.map((pid) => inviteInto(roomId, pid)));
   const n = done.filter(Boolean).length;
-  if (n) toast(n === 1 ? 'Invitation envoyée' : n + ' invitations envoyées');
+  if (n) toast(n === 1 ? tr('Invitation envoyée') : tr('{n} invitations envoyées', { n }));
 }
 
 // ---------- Invitation d'un ami ----------
@@ -687,7 +688,7 @@ export async function inviteToParty(pid) {
   if (!(c && c.room && partyBridge.isActive())) {
     const a = partyBridge.adapter ? partyBridge.adapter() : null;
     if (!partyBridge.available()) {
-      toast('Connecte-toi à ton compte Laststream pour lancer une watch party.');
+      toast(tr('Connecte-toi à ton compte Laststream pour lancer une watch party.'));
       return;
     }
     if (!a || !a.ready) {
@@ -708,11 +709,11 @@ export async function inviteToParty(pid) {
     } finally {
       if (creating === run) creating = null;
     }
-    if (!ready) { toast('Salon créé, mais la connexion a échoué.'); return; }
+    if (!ready) { toast(tr('Salon créé, mais la connexion a échoué.')); return; }
     c = partyBridge.client;
   }
   if (!c || !c.room) return;
-  if (await inviteInto(c.room.id, pid)) toast('Invitation envoyée');
+  if (await inviteInto(c.room.id, pid)) toast(tr('Invitation envoyée'));
 }
 
 // ---------- Vote du titre (sélecteur de l'hôte) ----------
@@ -726,14 +727,14 @@ function openPicker() {
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-labelledby', 'pl-pick-t');
-  el.innerHTML = '<div class="pl-pick-box"><h2 id="pl-pick-t">Changer de titre</h2>' +
-    '<p class="pl-note">Choisis 2 à ' + VOTE_MAX_OPTIONS + ' titres : le salon vote, le plus voté est lu.</p>' +
-    '<form data-pl-pick-form role="search"><label for="pl-pick-q" class="sr-only">Chercher un film ou une série</label>' +
-    '<input id="pl-pick-q" type="search" placeholder="Chercher un film ou une série…" autocomplete="off"><button type="submit" class="pl-btn is-sec">Chercher</button></form>' +
-    '<ul class="pl-pick-res" data-pl-pick-res aria-label="Résultats"></ul>' +
-    '<div class="pl-lb">Options du vote</div><ul class="pl-pick-sel" data-pl-pick-sel></ul>' +
-    '<div class="pl-pick-act"><button type="button" class="pl-btn is-sec" data-pl-pick-cancel>Annuler</button>' +
-    '<button type="button" class="pl-btn is-pri" data-pl-pick-go>Lancer le vote</button></div></div>';
+  el.innerHTML = '<div class="pl-pick-box"><h2 id="pl-pick-t">' + tr('Changer de titre') + '</h2>' +
+    '<p class="pl-note">' + tr('Choisis 2 à {VOTE_MAX_OPTIONS} titres : le salon vote, le plus voté est lu.', { VOTE_MAX_OPTIONS }) + '</p>' +
+    '<form data-pl-pick-form role="search"><label for="pl-pick-q" class="sr-only">' + tr('Chercher un film ou une série') + '</label>' +
+    '<input id="pl-pick-q" type="search" placeholder="' + tr('Chercher un film ou une série…') + '" autocomplete="off"><button type="submit" class="pl-btn is-sec">' + tr('Chercher') + '</button></form>' +
+    '<ul class="pl-pick-res" data-pl-pick-res aria-label="' + tr('Résultats') + '"></ul>' +
+    '<div class="pl-lb">' + tr('Options du vote') + '</div><ul class="pl-pick-sel" data-pl-pick-sel></ul>' +
+    '<div class="pl-pick-act"><button type="button" class="pl-btn is-sec" data-pl-pick-cancel>' + tr('Annuler') + '</button>' +
+    '<button type="button" class="pl-btn is-pri" data-pl-pick-go>' + tr('Lancer le vote') + '</button></div></div>';
   root.appendChild(el);
   picker.el = el;
   paintPicker();
@@ -753,10 +754,10 @@ function paintPicker() {
   const res = picker.el.querySelector('[data-pl-pick-res]');
   res.innerHTML = picker.results.length
     ? picker.results.map((r, i) => '<li><button type="button" class="pl-pick-r" data-pl-pick-add="' + i + '"' + (picker.options.length >= VOTE_MAX_OPTIONS ? ' disabled' : '') + '>' +
-      '<span>' + esc(r.title) + '</span><span class="pl-tag">' + (r.type === 'series' ? 'Série' : 'Film') + (r.year ? ' · ' + esc(r.year) : '') + '</span></button></li>').join('')
-    : '<li class="pl-empty">' + (picker.busy ? 'Recherche…' : picker.query ? 'Aucun résultat.' : '') + '</li>';
+      '<span>' + esc(r.title) + '</span><span class="pl-tag">' + (r.type === 'series' ? tr('Série') : tr('Film')) + (r.year ? ' · ' + esc(r.year) : '') + '</span></button></li>').join('')
+    : '<li class="pl-empty">' + (picker.busy ? tr('Recherche…') : picker.query ? tr('Aucun résultat.') : '') + '</li>';
   picker.el.querySelector('[data-pl-pick-sel]').innerHTML = picker.options.map((o, i) =>
-    '<li><span>' + esc(o.title) + '</span><button type="button" class="pl-mini" data-pl-pick-del="' + i + '" aria-label="Retirer ' + esc(o.title) + '">Retirer</button></li>').join('');
+    '<li><span>' + esc(o.title) + '</span><button type="button" class="pl-mini" data-pl-pick-del="' + i + '" aria-label="' + tr('Retirer {title}', { title: esc(o.title) }) + '">' + tr('Retirer') + '</button></li>').join('');
   picker.el.querySelector('[data-pl-pick-go]').disabled = picker.options.length < 2;
 }
 
@@ -793,14 +794,14 @@ async function copyInvite() {
       linkCopied = true;
       clearTimeout(copiedTimer);
       copiedTimer = setTimeout(() => { linkCopied = false; renderSoon(); }, 2000);
-      toast('Lien d’invitation copié');
+      toast(tr('Lien d’invitation copié'));
     } else {
       // Le lien reste affiché dans un champ sélectionnable : un toast ne se copie pas.
       manualLink = url;
-      toast('Copie automatique impossible : le lien est affiché, copie-le à la main.', { ms: 6000 });
+      toast(tr('Copie automatique impossible : le lien est affiché, copie-le à la main.'), { ms: 6000 });
     }
   } catch {
-    toast('Invitation impossible pour le moment.');
+    toast(tr('Invitation impossible pour le moment.'));
   }
   linkBusy = false;
   renderSoon();
@@ -810,10 +811,10 @@ function onClick(e) {
   const t = e.target instanceof Element ? e.target : null;
   if (!t || !client) return;
   if (t.closest('[data-pl-leave]')) {
-    if (isHost() ? window.confirm('Fermer le salon d’attente pour tout le monde ?') : true) {
+    if (isHost() ? window.confirm(tr('Fermer le salon d’attente pour tout le monde ?')) : true) {
       const host = isHost();
       closeLobby(false);
-      if (host) toast('Salon fermé'); else toast('Tu as quitté le salon');
+      if (host) toast(tr('Salon fermé')); else toast(tr('Tu as quitté le salon'));
     }
     return;
   }
@@ -842,9 +843,9 @@ function onClick(e) {
     return;
   }
   const kick = t.closest('[data-pl-kick]');
-  if (kick) { if (window.confirm('Exclure ' + kick.dataset.plKick + ' du salon ?')) client.kick(kick.dataset.plKick); return; }
+  if (kick) { if (window.confirm(tr('Exclure {plKick} du salon ?', { plKick: kick.dataset.plKick }))) client.kick(kick.dataset.plKick); return; }
   const host = t.closest('[data-pl-host]');
-  if (host) { if (window.confirm('Céder le rôle d’hôte à ' + host.dataset.plHost + ' ?')) client.transfer(host.dataset.plHost); return; }
+  if (host) { if (window.confirm(tr('Céder le rôle d’hôte à {plHost} ?', { plHost: host.dataset.plHost }))) client.transfer(host.dataset.plHost); return; }
   // Sélecteur de titre
   if (t.closest('[data-pl-pick-cancel]')) { closePicker(); return; }
   const add = t.closest('[data-pl-pick-add]');
@@ -901,7 +902,7 @@ function listenInvites() {
   if (inviteOff) return;
   inviteOff = onPartyInvite((ev) => {
     if (isKidProfile()) return;
-    toast(ev.from.handle.full + ' t’invite à rejoindre « ' + ev.title + ' »', { ms: 9000, action: { label: 'Rejoindre', run: () => { void openLobby(ev.partyId); } } });
+    toast(tr('{full} t’invite à rejoindre « {title} »', { full: ev.from.handle.full, title: ev.title }), { ms: 9000, action: { label: tr('Rejoindre'), run: () => { void openLobby(ev.partyId); } } });
   });
 }
 

@@ -1,21 +1,22 @@
 /* Onglet « Activité » de la barre latérale : fil des amis (socialStore.activity, GET /activity), le plus récent d'abord. */
 import { ago, avatarHTML, episodeCode, nameHTML, posterBox } from './socialFmt.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 const VERB = {
-  started: 'a commencé',
-  finished: 'a terminé',
-  rated: 'a noté',
-  noted: 'a posé une note sur',
-  favorited: 'a mis en favori',
-  listed: 'a ajouté à une liste',
+  started: t('a commencé'),
+  finished: t('a terminé'),
+  rated: t('a noté'),
+  noted: t('a posé une note sur'),
+  favorited: t('a mis en favori'),
+  listed: t('a ajouté à une liste'),
 };
 
 /** Phrase d'un événement : « a commencé Severance · S02E03 ». */
 export function activityText(it) {
   const m = it.media || {};
   const ep = episodeCode({ type: m.type === 'tv' || m.type === 'series' ? 'series' : 'movie', season: m.season, episode: m.episode });
-  return (VERB[it.kind] || 'a une activité sur') + ' ' + (m.title || 'un titre') + (ep ? ' · ' + ep : '') +
+  return (VERB[it.kind] || t('a une activité sur')) + ' ' + (m.title || t('un titre')) + (ep ? ' · ' + ep : '') +
     (it.kind === 'rated' && it.rating != null ? ' · ★ ' + String(it.rating).replace('.', ',') : '');
 }
 
@@ -31,10 +32,10 @@ function rowHTML(it) {
 
 /** Contenu du fil. `status` : 'loading' | 'error' | 'ok'. */
 export function activityHTML(items, status) {
-  if (status === 'error') return '<p class="ss-empty" role="alert">Activité indisponible. <button type="button" class="ss-link" data-ss-act="act-retry">Réessayer</button></p>';
+  if (status === 'error') return '<p class="ss-empty" role="alert">' + t('Activité indisponible.') + ' <button type="button" class="ss-link" data-ss-act="act-retry">' + t('Réessayer') + '</button></p>';
   if (!items.length) {
-    return status === 'loading' ? '<p class="ss-empty" role="status">Chargement…</p>'
-      : '<p class="ss-empty">Rien pour l’instant. Ce que regardent et notent tes amis apparaîtra ici.</p>';
+    return status === 'loading' ? '<p class="ss-empty" role="status">' + t('Chargement…') + '</p>'
+      : '<p class="ss-empty">' + t('Rien pour l’instant. Ce que regardent et notent tes amis apparaîtra ici.') + '</p>';
   }
   return '<ul class="ss-list">' + items.map(rowHTML).join('') + '</ul>';
 }

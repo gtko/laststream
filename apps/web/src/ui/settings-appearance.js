@@ -7,6 +7,7 @@ import { onNavKey } from './events.js';
 import { card } from './settings-ui.js';
 import { detailEl } from './dom.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 const DEFAULT_ID = PRESETS[0].id;
 const DEFAULT_ACCENT = PRESETS[0].accent.toLowerCase();
@@ -21,8 +22,8 @@ let lastCustom = '';
 /** Couleur du panneau en HSL. La saturation n'a pas de curseur : elle suit le code saisi. */
 const hsl = { h: 0, s: 1, l: 0.5 };
 
-const ratioText = (r) => 'Texte bien lisible, contraste ' + formatRatio(r) + ' sur 1, AA atteint';
-const WARN_TEXT = 'Le texte sera difficile à lire';
+const ratioText = (r) => tr('Texte bien lisible, contraste {r} sur 1, AA atteint', { r: formatRatio(r) });
+const WARN_TEXT = tr('Le texte sera difficile à lire');
 const pct = (v) => Math.round(v * 100);
 /** Couleur et texte posé dessus (le même que l'application : onAccent), en variables CSS en ligne. */
 const accentVars = (hex) => '--a:' + esc(hex) + ';--a-on:' + onAccent(hex);
@@ -42,7 +43,7 @@ function themeCard(id, label, accent, on) {
   return '<button type="button" class="set-ap-th' + (rainbow ? ' is-rainbow' : '') + '" role="radio" aria-checked="' + on + '" tabindex="' + (on ? '0' : '-1') + '" data-set-theme="' + id + '"' +
     (rainbow ? '' : ' style="' + accentVars(accent) + '"') + '>' +
     '<span class="set-ap-mini" aria-hidden="true"><span class="set-ap-mini-card"><span class="set-ap-mini-l"></span><span class="set-ap-mini-dot"></span></span>' +
-    '<span class="set-ap-mini-row"><span class="set-ap-mini-btn">Lire</span><span class="set-ap-mini-ring"></span></span></span>' +
+    '<span class="set-ap-mini-row"><span class="set-ap-mini-btn">' + tr('Lire') + '</span><span class="set-ap-mini-ring"></span></span></span>' +
     '<span class="set-ap-th-f"><span class="set-ap-sw" aria-hidden="true"></span><span class="set-ap-th-n">' + esc(label) + '</span><span class="set-ap-ck" aria-hidden="true">' + CHECK + '</span></span></button>';
 }
 
@@ -54,24 +55,24 @@ function customPanel(hex, open) {
   return '<div class="set-ap-custom" data-set-ap-custom style="' + accentVars(hex) + '"' + (open ? '' : ' hidden') + '>' +
     '<div class="set-ap-c-top" data-nav>' +
       '<span class="set-ap-big" aria-hidden="true"></span>' +
-      '<div class="set-ap-hexf"><label class="set-ap-lbl" for="set-ap-hex">Code couleur</label>' +
+      '<div class="set-ap-hexf"><label class="set-ap-lbl" for="set-ap-hex">' + tr('Code couleur') + '</label>' +
         '<input class="set-input set-ap-hex" id="set-ap-hex" data-set-ap-hex tabindex="0" value="' + esc(hex.toUpperCase()) + '" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="characters" aria-describedby="set-ap-hex-err" aria-invalid="false">' +
-        '<p class="set-ap-err" id="set-ap-hex-err" hidden>Écris # puis 6 chiffres ou lettres de A à F, par exemple #FF5A36.</p></div>' +
-      '<button type="button" class="btn btn-ghost set-ap-reset" data-set-ap-reset>Réinitialiser</button>' +
+        '<p class="set-ap-err" id="set-ap-hex-err" hidden>' + tr('Écris # puis 6 chiffres ou lettres de A à F, par exemple #FF5A36.') + '</p></div>' +
+      '<button type="button" class="btn btn-ghost set-ap-reset" data-set-ap-reset>' + tr('Réinitialiser') + '</button>' +
     '</div>' +
     '<div class="set-ap-sliders">' +
-      '<div class="set-ap-sl" data-nav><label class="set-ap-lbl" for="set-ap-hue">Teinte</label><input type="range" class="set-ap-range" id="set-ap-hue" data-set-ap-hue tabindex="0" min="0" max="360" step="1" value="' + Math.round(hsl.h) + '" aria-valuetext="' + Math.round(hsl.h) + ' degrés" style="--ap-track:' + t.hue + '"><output class="set-ap-val" for="set-ap-hue" aria-hidden="true">' + Math.round(hsl.h) + '°</output></div>' +
-      '<div class="set-ap-sl" data-nav><label class="set-ap-lbl" for="set-ap-light">Luminosité</label><input type="range" class="set-ap-range" id="set-ap-light" data-set-ap-light tabindex="0" min="0" max="100" step="1" value="' + pct(hsl.l) + '" aria-valuetext="' + pct(hsl.l) + ' %" style="--ap-track:' + t.light + '"><output class="set-ap-val" for="set-ap-light" aria-hidden="true">' + pct(hsl.l) + ' %</output></div>' +
+      '<div class="set-ap-sl" data-nav><label class="set-ap-lbl" for="set-ap-hue">' + tr('Teinte') + '</label><input type="range" class="set-ap-range" id="set-ap-hue" data-set-ap-hue tabindex="0" min="0" max="360" step="1" value="' + Math.round(hsl.h) + '" aria-valuetext="' + tr('{h} degrés', { h: Math.round(hsl.h) }) + '" style="--ap-track:' + t.hue + '"><output class="set-ap-val" for="set-ap-hue" aria-hidden="true">' + Math.round(hsl.h) + '°</output></div>' +
+      '<div class="set-ap-sl" data-nav><label class="set-ap-lbl" for="set-ap-light">' + tr('Luminosité') + '</label><input type="range" class="set-ap-range" id="set-ap-light" data-set-ap-light tabindex="0" min="0" max="100" step="1" value="' + pct(hsl.l) + '" aria-valuetext="' + pct(hsl.l) + ' %" style="--ap-track:' + t.light + '"><output class="set-ap-val" for="set-ap-light" aria-hidden="true">' + pct(hsl.l) + ' %</output></div>' +
     '</div>' +
     '<div class="set-ap-contrast ' + (ok ? 'is-ok' : 'is-warn') + '" data-set-ap-contrast data-nav>' +
       '<span class="set-ap-ci">' + ICON_OK + ICON_WARN + '</span>' +
       '<p class="set-ap-cmsg" role="status" data-set-ap-ok>' + (ok ? ratioText(r) : '') + '</p>' +
       '<p class="set-ap-cmsg" role="alert" data-set-ap-warn>' + (ok ? '' : WARN_TEXT) + '</p>' +
-      '<button type="button" class="btn btn-ghost btn-sm set-ap-fix" data-set-ap-fix="' + fix + '"' + (ok ? ' hidden' : '') + '>Éclaircir (' + fix.toUpperCase() + ')</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm set-ap-fix" data-set-ap-fix="' + fix + '"' + (ok ? ' hidden' : '') + '>' + tr('Éclaircir ({fix})', { fix: fix.toUpperCase() }) + '</button>' +
     '</div>' +
-    '<div class="set-ap-prev"><span class="set-ap-lbl">Aperçu</span>' +
-      '<div class="set-ap-prev-b" aria-hidden="true"><span class="set-ap-pv-btn">Regarder</span><span class="set-ap-pv-ring">Ma liste</span>' +
-      '<span class="set-ap-pv-link">Voir la fiche</span><span class="set-ap-pv-chip">Nouveau</span></div></div>' +
+    '<div class="set-ap-prev"><span class="set-ap-lbl">' + tr('Aperçu') + '</span>' +
+      '<div class="set-ap-prev-b" aria-hidden="true"><span class="set-ap-pv-btn">' + tr('Regarder') + '</span><span class="set-ap-pv-ring">' + tr('Ma liste') + '</span>' +
+      '<span class="set-ap-pv-link">' + tr('Voir la fiche') + '</span><span class="set-ap-pv-chip">' + tr('Nouveau') + '</span></div></div>' +
   '</div>';
 }
 
@@ -83,10 +84,10 @@ export function appearancePanel() {
   const hex = custom ? th.accent : (lastCustom || th.accent.toLowerCase());
   Object.assign(hsl, hexToHsl(hex));
   const cards = PRESETS.map((p) => themeCard(p.id, p.label, p.accent, th.id === p.id)).join('') +
-    themeCard(CUSTOM_THEME_ID, 'Personnalisé', custom ? th.accent : '', custom);
-  return card('Thème', '<div class="set-ap">' +
-    '<div class="set-ap-head"><span class="set-row-l" id="set-ap-l">Couleurs de l’application</span>' +
-    '<span class="set-row-d">Choisis une palette ou compose ta couleur. ' + (isServerMode() ? 'Ton choix est gardé sur ton compte.' : 'Ton choix est gardé sur cet appareil.') + '</span></div>' +
+    themeCard(CUSTOM_THEME_ID, tr('Personnalisé'), custom ? th.accent : '', custom);
+  return card(tr('Thème'), '<div class="set-ap">' +
+    '<div class="set-ap-head"><span class="set-row-l" id="set-ap-l">' + tr('Couleurs de l’application') + '</span>' +
+    '<span class="set-row-d">' + tr('Choisis une palette ou compose ta couleur.') + ' ' + (isServerMode() ? tr('Ton choix est gardé sur ton compte.') : tr('Ton choix est gardé sur cet appareil.')) + '</span></div>' +
     '<div class="set-ap-grid" role="radiogroup" aria-labelledby="set-ap-l" data-nav>' + cards + '</div>' +
     customPanel(hex, custom) + '</div>');
 }
@@ -127,7 +128,7 @@ function syncContrast(hex) {
   if (!ok) {
     const fix = brightenForText(hex);
     fixEl.dataset.setApFix = fix;
-    fixEl.textContent = 'Éclaircir (' + fix.toUpperCase() + ')';
+    fixEl.textContent = tr('Éclaircir ({fix})', { fix: fix.toUpperCase() });
   }
 }
 
@@ -148,7 +149,7 @@ function syncPanel(hex, from) {
   if (from !== 'slider') { hue.value = String(h); light.value = String(l); }
   hue.style.setProperty('--ap-track', t.hue);
   light.style.setProperty('--ap-track', t.light);
-  hue.setAttribute('aria-valuetext', h + ' degrés');
+  hue.setAttribute('aria-valuetext', tr('{h} degrés', { h }));
   light.setAttribute('aria-valuetext', l + ' %');
   panel.querySelector('output[for="set-ap-hue"]').textContent = h + '°';
   panel.querySelector('output[for="set-ap-light"]').textContent = l + ' %';

@@ -1,4 +1,5 @@
 import type { SourceView } from './info';
+import { t } from '../i18n';
 
 /* Compatibilité d'une source avec la lecture dans le navigateur, sans serveur de streaming. Fonctions pures (contexte injecté), testées.
  *  - `ok`      : la vidéo et le son passent (lecture directe, conversion par un serveur, ou rien à savoir) ;
@@ -31,14 +32,14 @@ export function webCompatOf(v: SourceView, ctx: WebCompatContext): WebCompat {
 
 /** Compatibilité avec le seul lecteur du navigateur. */
 function browserCompat(v: SourceView, ctx: WebCompatContext): WebCompat {
-  if (v.badContainer && !ctx.serverUp) return { level: 'blocked', reason: 'Format ' + v.badContainer.toUpperCase() + ' non pris en charge par ce navigateur' };
+  if (v.badContainer && !ctx.serverUp) return { level: 'blocked', reason: t('Format {badContainer} non pris en charge par ce navigateur', { badContainer: v.badContainer.toUpperCase() }) };
   if (v.convert === 'video' && !ctx.serverUp) {
-    return { level: 'blocked', reason: 'Vidéo ' + (v.codec || 'inconnue') + ' non prise en charge par ce navigateur' };
+    return { level: 'blocked', reason: t('Vidéo {v} non prise en charge par ce navigateur', { v: (v.codec || 'inconnue') }) };
   }
-  if (v.appAudio === 'unsupported') return { level: 'blocked', reason: 'Son DTS / TrueHD non pris en charge par ce navigateur' };
+  if (v.appAudio === 'unsupported') return { level: 'blocked', reason: t('Son DTS / TrueHD non pris en charge par ce navigateur') };
   if (v.appAudio === 'app') {
-    if (ctx.rangeDenied(v.stream?.url)) return { level: 'blocked', reason: 'L’hébergeur de ce fichier empêche le navigateur de lire son son' };
-    return { level: 'check', reason: 'Son Dolby décodé par l’app : peut rester muet selon l’hébergeur' };
+    if (ctx.rangeDenied(v.stream?.url)) return { level: 'blocked', reason: t('L’hébergeur de ce fichier empêche le navigateur de lire son son') };
+    return { level: 'check', reason: t('Son Dolby décodé par l’app : peut rester muet selon l’hébergeur') };
   }
   return OK;
 }

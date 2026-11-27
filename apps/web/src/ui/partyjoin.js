@@ -16,6 +16,7 @@ import { createGuestChat } from './guestchat.js';
 import { createGuestControls } from './guestplayer.js';
 import { createGuestSubs } from './guestsubs.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Phases où la session ne fait plus rien : on rend la main au formulaire. « unsupported » ne l'est pas : l'hôte peut changer de fichier. */
 const TERMINAL = new Set(['refused', 'ended', 'left']);
@@ -25,13 +26,13 @@ const STAGE = new Set(['joining', 'waiting-host', 'connecting-host', 'loading', 
 const WARN = new Set(['unsupported', 'host-lost', 'refused', 'ended']);
 /** Bandeau central pendant l'attente (la phase « prête » n'en a pas). */
 const WAIT_TEXT = {
-  joining: 'Connexion au salon…',
-  'waiting-host': 'En attente de l’hôte…',
-  'connecting-host': 'Connexion à l’hôte…',
-  loading: 'Ouverture de la lecture…',
-  'host-lost': 'Liaison avec l’hôte interrompue',
+  joining: tr('Connexion au salon…'),
+  'waiting-host': tr('En attente de l’hôte…'),
+  'connecting-host': tr('Connexion à l’hôte…'),
+  loading: tr('Ouverture de la lecture…'),
+  'host-lost': tr('Liaison avec l’hôte interrompue'),
 };
-const READY_TEXT = 'Lecture partagée prête : pause, reprise et sauts valent pour tout le salon.';
+const READY_TEXT = tr('Lecture partagée prête : pause, reprise et sauts valent pour tout le salon.');
 /** Durée d'affichage d'un message d'état en salon (toast), en ms. Une alerte (WARN) reste affichée. */
 const TOAST_MS = 4000;
 
@@ -132,7 +133,7 @@ function exposeStats(s) {
 function setWho(root, name) {
   const who = root.querySelector('[data-pj-who]');
   if (!who) return;
-  who.textContent = name ? 'Pseudo : ' + name : '';
+  who.textContent = name ? tr('Pseudo : {name}', { name }) : '';
   who.hidden = !name;
 }
 
@@ -180,7 +181,7 @@ function refresh(root) {
     if (document.fullscreenElement && root.contains(document.fullscreenElement)) document.exitFullscreen?.().catch(() => {});
     player.hidden = true;
     form.hidden = false;
-    submit.textContent = v.phase === 'left' ? 'Rejoindre à nouveau' : 'Rejoindre';
+    submit.textContent = v.phase === 'left' ? tr('Rejoindre à nouveau') : tr('Rejoindre');
     leave.hidden = true;
     return;
   }
@@ -208,7 +209,7 @@ function refresh(root) {
 
 /** Bandeau d'attente du salon : les retardataires, par pseudo ; null quand personne n'attend. */
 function roomWaitText(wait) {
-  return wait && wait.who.length > 0 ? 'En attente de ' + wait.who.join(', ') + '…' : null;
+  return wait && wait.who.length > 0 ? tr('En attente de {v}…', { v: wait.who.join(', ') }) : null;
 }
 
 /** Lecteur de la lecture en cours, créé à chaque chargement (join, reconnexion, nouveau fichier) : son rapport de tampon repart
@@ -218,9 +219,9 @@ const GRID_COLOR = '#64748b';
 
 /** Grille de choix d'avatar (boutons radio) ; l'illustration est posée par avatar-art.js sur [data-avatar]. */
 export function guestAvatarGridHTML(selected) {
-  return '<fieldset class="pj-avs" data-pj-avatars><legend>Ton avatar</legend><div class="pj-avgrid" role="radiogroup" aria-label="Avatar">' +
+  return '<fieldset class="pj-avs" data-pj-avatars><legend>' + tr('Ton avatar') + '</legend><div class="pj-avgrid" role="radiogroup" aria-label="' + tr('Avatar') + '">' +
     GUEST_AVATARS.map((value) => '<button type="button" role="radio" class="pj-av" data-pj-av="' + esc(value) + '" aria-checked="' + (value === selected ? 'true' : 'false') + '"' +
-      ' aria-label="Avatar ' + (GUEST_AVATARS.indexOf(value) + 1) + '"><span class="pj-avi"' + avatarAttrs(value, GRID_COLOR) + '></span></button>').join('') +
+      ' aria-label="' + tr('Avatar') + ' ' + (GUEST_AVATARS.indexOf(value) + 1) + '"><span class="pj-avi"' + avatarAttrs(value, GRID_COLOR) + '></span></button>').join('') +
     '</div></fieldset>';
 }
 
@@ -266,14 +267,14 @@ async function join(root, roomId, token) {
   const name = cleanPseudo(root.querySelector('[name="name"]').value);
   const status = root.querySelector('[data-pj-status]');
   if (!name) {
-    status.textContent = 'Choisis un pseudo (32 caractères au plus).';
+    status.textContent = tr('Choisis un pseudo (32 caractères au plus).');
     return;
   }
   let base;
   try {
     base = requireBase();
   } catch {
-    status.textContent = 'Serveur Laststream non configuré sur cet appareil.';
+    status.textContent = tr('Serveur Laststream non configuré sur cet appareil.');
     return;
   }
   unlockAudio();
@@ -281,7 +282,7 @@ async function join(root, roomId, token) {
   // Lien partagé : le jeton du lien s'échange (une fois) contre un jeton de séance individuel, réutilisé aux reconnexions.
   let entry = loadGuestSession(roomId);
   if (!entry) {
-    status.textContent = 'Entrée dans le salon…';
+    status.textContent = tr('Entrée dans le salon…');
     try {
       const chosen = guestAvatarToSend(root.querySelector('[data-pj-av][aria-checked="true"]')?.getAttribute('data-pj-av'));
       const res = await enterPartyAsGuest(roomId, token, name, chosen);
@@ -295,13 +296,13 @@ async function join(root, roomId, token) {
       return;
     }
   }
-  status.textContent = 'Chargement du lecteur…';
+  status.textContent = tr('Chargement du lecteur…');
   let GuestPlayer;
   try {
     ({ GuestPlayer } = await import('../relay/player/player'));
   } catch {
     joining = false;
-    status.textContent = 'Lecteur indisponible : recharge la page.';
+    status.textContent = tr('Lecteur indisponible : recharge la page.');
     return;
   }
   joining = false;
@@ -342,17 +343,17 @@ export function showPartyJoin(roomId, token) {
   stopSession();
   destroyControls();
   detailEl.innerHTML = '<section class="pj" aria-labelledby="pj-title">' +
-    '<header class="pj-head"><h1 class="pj-title" id="pj-title" tabindex="-1">Watch party</h1><p class="pj-who" data-pj-who hidden></p>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-pj-retry hidden aria-label="Réessayer la liaison avec l’hôte">Réessayer</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-pj-leave hidden>Quitter</button></header>' +
-    '<p class="pj-note">Tu as reçu une invitation. Pas besoin de compte : choisis un pseudo et rejoins le salon.</p>' +
+    '<header class="pj-head"><h1 class="pj-title" id="pj-title" tabindex="-1">' + tr('Watch party') + '</h1><p class="pj-who" data-pj-who hidden></p>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-pj-retry hidden aria-label="' + tr('Réessayer la liaison avec l’hôte') + '">' + tr('Réessayer') + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-pj-leave hidden>' + tr('Quitter') + '</button></header>' +
+    '<p class="pj-note">' + tr('Tu as reçu une invitation. Pas besoin de compte : choisis un pseudo et rejoins le salon.') + '</p>' +
     '<form class="pj-form" data-pj-form autocomplete="off">' +
-    '<label class="pj-field">Pseudo<input name="name" type="text" maxlength="32" autocomplete="nickname" value="' + esc(loadGuestSession(roomId)?.name || '') + '" required></label>' +
+    '<label class="pj-field">' + tr('Pseudo') + '<input name="name" type="text" maxlength="32" autocomplete="nickname" value="' + esc(loadGuestSession(roomId)?.name || '') + '" required></label>' +
     (loadGuestSession(roomId) ? '' : guestAvatarGridHTML(initialGuestAvatar())) +
-    '<button type="submit" class="btn btn-primary" data-pj-join>Rejoindre</button></form>' +
+    '<button type="submit" class="btn btn-primary" data-pj-join>' + tr('Rejoindre') + '</button></form>' +
     '<p class="pj-msg" role="status" data-pj-status></p>' +
     '<div class="pj-player" data-pj-player hidden>' +
-    '<div class="pj-stage" data-pj-stage><canvas class="pj-canvas" data-pj-canvas aria-label="Vidéo du salon"></canvas></div></div>' +
+    '<div class="pj-stage" data-pj-stage><canvas class="pj-canvas" data-pj-canvas aria-label="' + tr('Vidéo du salon') + '"></canvas></div></div>' +
     '</section>';
   const root = detailEl.querySelector('.pj');
   const stage = root.querySelector('[data-pj-stage]');

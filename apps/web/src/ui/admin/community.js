@@ -5,20 +5,21 @@ import { confirmDialog } from '../admin-dialog.js';
 import { toast } from '../dom.js';
 import { esc } from '../util.js';
 import { attempt, badge, empty, loaded, sectionHead, table } from './common.js';
+import { t } from '../../i18n';
 
 // ---------- Watch parties ----------
 function partiesHTML(S) {
-  return sectionHead('Watch parties', 'Salons ouverts en ce moment, privés compris.', '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') +
-    loaded(S.rooms, (r) => (!r.rooms.length ? empty('Aucun salon actif.') :
-      table('Salons actifs', ['Titre', 'Hôte', { label: 'Participants', num: true }, 'Visibilité', 'Ouvert', 'Action'],
+  return sectionHead(t('Watch parties'), t('Salons ouverts en ce moment, privés compris.'), '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>' + t('Actualiser') + '</button>') +
+    loaded(S.rooms, (r) => (!r.rooms.length ? empty(t('Aucun salon actif.')) :
+      table(t('Salons actifs'), [t('Titre'), t('Hôte'), { label: t('Participants'), num: true }, t('Visibilité'), t('Ouvert'), t('Action')],
         r.rooms.map((x) => ({ cells: [esc(x.title || x.id), esc(x.host), fmtInt(x.participants) + (x.maxParticipants ? ' / ' + fmtInt(x.maxParticipants) : ''),
-          x.visibility === 'public' ? badge('Public', 'ok') : badge('Privé'), esc(fmtAgo(x.createdAt)),
-          '<button type="button" class="btn btn-danger btn-sm" data-adm-closeroom="' + esc(x.id) + '" data-title="' + esc(x.title || x.id) + '">Fermer</button>'] })))));
+          x.visibility === 'public' ? badge(t('Public'), 'ok') : badge(t('Privé')), esc(fmtAgo(x.createdAt)),
+          '<button type="button" class="btn btn-danger btn-sm" data-adm-closeroom="' + esc(x.id) + '" data-title="' + esc(x.title || x.id) + '">' + t('Fermer') + '</button>'] })))));
 }
 
 async function closeRoom(ctx, id, title) {
-  if (!(await confirmDialog({ title: 'Fermer le salon', message: 'Le salon <strong>' + esc(title) + '</strong> sera fermé de force : tous les participants seront déconnectés.', confirmLabel: 'Fermer le salon', danger: true }))) return;
-  if (await attempt(() => api.closeRoom(id), toast)) { toast('Salon fermé'); ctx.refresh(true); }
+  if (!(await confirmDialog({ title: t('Fermer le salon'), message: t('Le salon <strong>{title}</strong> sera fermé de force : tous les participants seront déconnectés.', { title: esc(title) }), confirmLabel: t('Fermer le salon'), danger: true }))) return;
+  if (await attempt(() => api.closeRoom(id), toast)) { toast(t('Salon fermé')); ctx.refresh(true); }
 }
 
 function bindParties(root, ctx) {
@@ -26,27 +27,27 @@ function bindParties(root, ctx) {
 }
 
 // ---------- Modération ----------
-const REPORT_TABS = [['open', 'À traiter'], ['deleted', 'Supprimés'], ['suspended', 'Auteur suspendu'], ['ignored', 'Ignorés']];
+const REPORT_TABS = [['open', t('À traiter')], ['deleted', t('Supprimés')], ['suspended', t('Auteur suspendu')], ['ignored', t('Ignorés')]];
 
 function moderationHTML(S) {
-  const tabs = '<div class="pills" role="group" aria-label="Statut des signalements" data-nav>' + REPORT_TABS.map(([v, l]) =>
+  const tabs = '<div class="pills" role="group" aria-label="' + t('Statut des signalements') + '" data-nav>' + REPORT_TABS.map(([v, l]) =>
     '<button type="button" class="pill" data-adm-repstatus="' + v + '" data-adm-focus="rep:' + v + '" aria-pressed="' + (S.repStatus === v) + '">' + l + '</button>').join('') + '</div>';
-  return sectionHead('Modération', 'Messages de salon signalés par les participants.', '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') + tabs +
-    loaded(S.reports, (r) => (!r.reports.length ? empty('Aucun signalement dans cette liste.') :
-      '<ul class="adm-reports">' + r.reports.map((x) => '<li class="adm-report" data-nav><div class="adm-report-h"><strong>' + esc(x.against || 'auteur inconnu') + '</strong> ' +
-        '<span class="adm-dim">signalé par ' + esc(x.by || '?') + ' · ' + esc(fmtAgo(x.at)) + (x.reason ? ' · motif : ' + esc(x.reason) : '') + '</span></div>' +
-        '<blockquote class="adm-quote">' + (x.text ? esc(x.text) : '<em>Message indisponible</em>') + '</blockquote>' +
-        '<p class="adm-dim">Salon <code>' + esc(x.roomId) + '</code> · message <code>' + esc(x.messageId) + '</code></p>' +
-        (x.status === 'open' ? '<div class="adm-actions"><button type="button" class="btn btn-ghost btn-sm" data-adm-rep="' + esc(x.id) + ':delete">Supprimer le message</button>' +
-          '<button type="button" class="btn btn-danger btn-sm" data-adm-rep="' + esc(x.id) + ':suspend" data-who="' + esc(x.against) + '">Suspendre l’auteur</button>' +
-          '<button type="button" class="btn btn-ghost btn-sm" data-adm-rep="' + esc(x.id) + ':ignore">Ignorer</button></div>' : '<p>' + badge(x.status) + '</p>') + '</li>').join('') + '</ul>'));
+  return sectionHead(t('Modération'), t('Messages de salon signalés par les participants.'), '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>' + t('Actualiser') + '</button>') + tabs +
+    loaded(S.reports, (r) => (!r.reports.length ? empty(t('Aucun signalement dans cette liste.')) :
+      '<ul class="adm-reports">' + r.reports.map((x) => '<li class="adm-report" data-nav><div class="adm-report-h"><strong>' + esc(x.against || t('auteur inconnu')) + '</strong> ' +
+        '<span class="adm-dim">' + t('signalé par {v} ·', { v: esc(x.by || '?') }) + ' ' + esc(fmtAgo(x.at)) + (x.reason ? ' ' + t('· motif : {reason}', { reason: esc(x.reason) }) : '') + '</span></div>' +
+        '<blockquote class="adm-quote">' + (x.text ? esc(x.text) : t('<em>Message indisponible</em>')) + '</blockquote>' +
+        '<p class="adm-dim">' + t('Salon <code>{roomId}</code> · message <code>{messageId}</code>', { roomId: esc(x.roomId), messageId: esc(x.messageId) }) + '</p>' +
+        (x.status === 'open' ? '<div class="adm-actions"><button type="button" class="btn btn-ghost btn-sm" data-adm-rep="' + esc(x.id) + ':delete">' + t('Supprimer le message') + '</button>' +
+          '<button type="button" class="btn btn-danger btn-sm" data-adm-rep="' + esc(x.id) + ':suspend" data-who="' + esc(x.against) + '">' + t('Suspendre l’auteur') + '</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-adm-rep="' + esc(x.id) + ':ignore">' + t('Ignorer') + '</button></div>' : '<p>' + badge(x.status) + '</p>') + '</li>').join('') + '</ul>'));
 }
 
 async function reportAction(ctx, id, action, who) {
-  if (action === 'delete' && !(await confirmDialog({ title: 'Supprimer le message', message: 'Le message signalé sera retiré du salon pour tous les participants.', confirmLabel: 'Supprimer', danger: true }))) return;
-  if (action === 'suspend' && !(await confirmDialog({ title: 'Suspendre l’auteur', message: 'Le compte <strong>' + esc(who || 'de l’auteur') + '</strong> sera suspendu : connexion refusée et sessions révoquées.', confirmLabel: 'Suspendre', danger: true }))) return;
+  if (action === 'delete' && !(await confirmDialog({ title: t('Supprimer le message'), message: t('Le message signalé sera retiré du salon pour tous les participants.'), confirmLabel: t('Supprimer'), danger: true }))) return;
+  if (action === 'suspend' && !(await confirmDialog({ title: t('Suspendre l’auteur'), message: t('Le compte <strong>{v}</strong> sera suspendu : connexion refusée et sessions révoquées.', { v: esc(who || t('de l’auteur')) }), confirmLabel: t('Suspendre'), danger: true }))) return;
   const ok = await attempt(() => api.reportAction(id, action), toast);
-  if (ok) toast(action === 'delete' ? 'Message supprimé' : action === 'suspend' ? 'Auteur suspendu' : 'Signalement ignoré');
+  if (ok) toast(action === 'delete' ? t('Message supprimé') : action === 'suspend' ? t('Auteur suspendu') : t('Signalement ignoré'));
   if (ok || ctx.S.reports.status === 'ready') ctx.refresh(true);
 }
 
@@ -63,11 +64,11 @@ function bindModeration(root, ctx) {
 
 export const communitySections = [
   {
-    id: 'parties', group: 'community', label: 'Watch parties', icon: 'party', render: partiesHTML, bind: bindParties,
+    id: 'parties', group: 'community', label: t('Watch parties'), icon: 'party', render: partiesHTML, bind: bindParties,
     load: (ctx, quiet) => ctx.fetch('rooms', () => api.listRooms(), quiet),
   },
   {
-    id: 'moderation', group: 'community', label: 'Modération', icon: 'flag', render: moderationHTML, bind: bindModeration,
+    id: 'moderation', group: 'community', label: t('Modération'), icon: 'flag', render: moderationHTML, bind: bindModeration,
     load: (ctx, quiet) => ctx.fetch('reports', () => api.listReports(ctx.S.repStatus), quiet),
   },
 ];

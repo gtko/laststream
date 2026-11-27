@@ -6,15 +6,16 @@ import { languageChanged, sourceLabel } from './sourceChoice';
 import {
   COUNTDOWN_DEFAULT_SEC, type ControlMode, type EventKind, type ReactionMode, type VoteView, type WaitLateMode,
 } from './protocol';
+import { t as tr } from '../i18n';
 
 /* Modèle du salon d'attente et de l'affichage en lecture (Social v3) : fonctions pures, sans DOM ni réseau, testées. */
 
 export type PrepView = { state: 'ready' | 'searching' | 'buffering'; label: string };
 
 /** Libellés des réglages de l'hôte, dans l'ordre de la maquette. */
-export const CONTROL_OPTIONS: ReadonlyArray<readonly [ControlMode, string]> = [['all', 'Tout le monde'], ['host', 'L’hôte']];
-export const WAIT_LATE_OPTIONS: ReadonlyArray<readonly [WaitLateMode, string]> = [['off', 'Non'], ['10s', '10 s max'], ['always', 'Toujours']];
-export const REACTION_OPTIONS: ReadonlyArray<readonly [ReactionMode, string]> = [['float', 'Flottantes'], ['discreet', 'Discrètes'], ['off', 'Off']];
+export const CONTROL_OPTIONS: ReadonlyArray<readonly [ControlMode, string]> = [['all', tr('Tout le monde')], ['host', tr('L’hôte')]];
+export const WAIT_LATE_OPTIONS: ReadonlyArray<readonly [WaitLateMode, string]> = [['off', tr('Non')], ['10s', tr('10 s max')], ['always', tr('Toujours')]];
+export const REACTION_OPTIONS: ReadonlyArray<readonly [ReactionMode, string]> = [['float', tr('Flottantes')], ['discreet', tr('Discrètes')], ['off', tr('Off')]];
 
 
 /** Initiales d'un avatar sans illustration : une lettre pour un compte, deux pour un invité (comme la maquette). */
@@ -38,11 +39,11 @@ export type PrepSource = Partial<Pick<PartyParticipant, 'ready' | 'quality' | 's
 
 export function prepView(p: PrepSource): PrepView {
   const quality = knownQuality(p.quality);
-  if (p.status === 'buffering') return { state: 'buffering', label: 'Tampon en cours…' };
-  if (p.status === 'searching') return { state: 'searching', label: 'Cherche une source…' };
-  if (p.ready === false) return { state: 'searching', label: 'Pas encore prêt' };
-  if (quality) return { state: 'ready', label: 'Prêt · ' + quality };
-  return { state: 'ready', label: p.guest ? 'Prêt · via le lien' : 'Prêt' };
+  if (p.status === 'buffering') return { state: 'buffering', label: tr('Tampon en cours…') };
+  if (p.status === 'searching') return { state: 'searching', label: tr('Cherche une source…') };
+  if (p.ready === false) return { state: 'searching', label: tr('Pas encore prêt') };
+  if (quality) return { state: 'ready', label: tr('Prêt · {quality}', { quality }) };
+  return { state: 'ready', label: p.guest ? tr('Prêt · via le lien') : tr('Prêt') };
 }
 
 /** Qualité annoncée au salon pour la source choisie : « 4K HDR », « 1080p » (40 caractères au plus, comme le serveur). */
@@ -67,18 +68,18 @@ export function readySummary(list: readonly (PrepSource & Pick<PartyParticipant,
 
 /** « 3 prêts sur 4 » (ou « Tout le monde est prêt »). */
 export function readyText(sum: ReadySummary): string {
-  if (sum.total > 0 && sum.ready === sum.total) return sum.total === 1 ? 'Tu es prêt' : 'Tout le monde est prêt';
-  return sum.ready + (sum.ready > 1 ? ' prêts' : ' prêt') + ' sur ' + sum.total;
+  if (sum.total > 0 && sum.ready === sum.total) return sum.total === 1 ? tr('Tu es prêt') : tr('Tout le monde est prêt');
+  return sum.ready + (sum.ready > 1 ? ' ' + tr('prêts') : ' ' + tr('prêt')) + ' ' + tr('sur {total}', { total: sum.total });
 }
 
 /** Libellé du bouton « Démarrer sans … » (un pseudo, ou le nombre de retardataires). */
 export function startWithoutText(waiting: readonly string[]): string {
   if (waiting.length === 0) return '';
-  return waiting.length === 1 ? 'Démarrer sans ' + waiting[0] : 'Démarrer sans ' + waiting.length + ' personnes';
+  return waiting.length === 1 ? tr('Démarrer sans {v}', { v: waiting[0] }) : tr('Démarrer sans {length} personnes', { length: waiting.length });
 }
 
 /** Libellé du bouton de départ avec compte à rebours (« Lancer dans 5 s »). */
-export const launchText = (sec: number = COUNTDOWN_DEFAULT_SEC): string => 'Lancer dans ' + sec + ' s';
+export const launchText = (sec: number = COUNTDOWN_DEFAULT_SEC): string => tr('Lancer dans {sec} s', { sec });
 
 /** Secondes restantes avant le départ (arrondi supérieur, jamais négatif) ; null hors compte à rebours. */
 export function countdownLeft(at: number | null, serverNow: number): number | null {
@@ -102,22 +103,22 @@ export function formatDelta(sec: number): string {
   if (s < 60) return s + ' s';
   const m = Math.floor(s / 60);
   const r = s % 60;
-  return m + ' min' + (r ? ' ' + r + ' s' : '');
+  return tr('{m} min', { m }) + (r ? ' ' + r + ' s' : '');
 }
 
 /** Phrase d'un événement du salon : « Hugo a reculé de 10 s ». */
 export function eventText(ev: { kind: EventKind; by: string; pos: number; delta?: number }): string {
   switch (ev.kind) {
-    case 'pause': return ev.by + ' a mis en pause · ' + formatTimecode(ev.pos);
-    case 'play': return ev.by + ' a relancé la lecture';
+    case 'pause': return tr('{by} a mis en pause · {pos}', { by: ev.by, pos: formatTimecode(ev.pos) });
+    case 'play': return tr('{by} a relancé la lecture', { by: ev.by });
     case 'seek': {
       const d = typeof ev.delta === 'number' && Number.isFinite(ev.delta) ? ev.delta : 0;
-      if (d < 0) return ev.by + ' a reculé de ' + formatDelta(d);
-      if (d > 0) return ev.by + ' a avancé de ' + formatDelta(d);
-      return ev.by + ' a changé de position · ' + formatTimecode(ev.pos);
+      if (d < 0) return tr('{by} a reculé de {d}', { by: ev.by, d: formatDelta(d) });
+      if (d > 0) return tr('{by} a avancé de {d}', { by: ev.by, d: formatDelta(d) });
+      return tr('{by} a changé de position · {pos}', { by: ev.by, pos: formatTimecode(ev.pos) });
     }
-    case 'join': return ev.by + ' a rejoint le salon';
-    case 'leave': return ev.by + ' a quitté le salon';
+    case 'join': return tr('{by} a rejoint le salon', { by: ev.by });
+    case 'leave': return tr('{by} a quitté le salon', { by: ev.by });
     default: return '';
   }
 }
@@ -127,11 +128,11 @@ export const isPlaybackEvent = (kind: EventKind): boolean => kind === 'pause' ||
 
 /** Écart de synchronisation : « Synchronisés · écart 0,2 s » (ou « Synchronisés » sans mesure). */
 export function syncText(drift: number | null): { ok: boolean; text: string } {
-  if (drift === null || !Number.isFinite(drift)) return { ok: true, text: 'Synchronisés' };
+  if (drift === null || !Number.isFinite(drift)) return { ok: true, text: tr('Synchronisés') };
   const abs = Math.abs(drift);
   const shown = (Math.round(abs * 10) / 10).toFixed(1).replace('.', ',');
-  if (abs >= 1.5) return { ok: false, text: 'Resynchronisation… écart ' + shown + ' s' };
-  return { ok: true, text: 'Synchronisés · écart ' + shown + ' s' };
+  if (abs >= 1.5) return { ok: false, text: tr('Resynchronisation… écart {shown} s', { shown }) };
+  return { ok: true, text: tr('Synchronisés · écart {shown} s', { shown }) };
 }
 
 /** Part d'une option dans les voix (0 à 100) ; 0 sans aucune voix. */
@@ -170,9 +171,9 @@ export interface SourceRow {
 }
 
 const SOURCE_ROWS_MAX = 8;
-export const SOURCE_BADGE_TEXT = { host: 'Même version que l’hôte', other: 'Autre langue que le salon' } as const;
+export const SOURCE_BADGE_TEXT = { host: tr('Même version que l’hôte'), other: tr('Autre langue que le salon') } as const;
 
-const STATUS_TEXT: Record<string, string> = { cached: 'En cache', uncached: 'À la demande', direct: 'Direct' };
+const STATUS_TEXT: Record<string, string> = { cached: tr('En cache'), uncached: tr('À la demande'), direct: tr('Direct') };
 
 /**
  * Lignes jouables, au plus SOURCE_ROWS_MAX. Une ligne ne change jamais de place sous le doigt ni sous le focus : `opts.order`
@@ -220,17 +221,17 @@ export function buildSourceRows(
 }
 
 /** « Hôte : VF · 1080p » ; null sans libellé (l'hôte n'est pas prêt) ou pour l'hôte lui-même. */
-export const hostSourceLine = (hostLabel: string | null | undefined): string | null => (hostLabel ? 'Hôte : ' + hostLabel : null);
+export const hostSourceLine = (hostLabel: string | null | undefined): string | null => (hostLabel ? tr('Hôte : {hostLabel}', { hostLabel }) : null);
 
 /** Statut de la recherche de sources du participant. */
 export function sourceSearchText(count: number, searching: boolean): string {
-  if (searching) return count > 0 ? 'Recherche en cours… ' + count + (count > 1 ? ' sources' : ' source') : 'Recherche en cours…';
-  return count > 0 ? count + (count > 1 ? ' sources trouvées' : ' source trouvée') : 'Aucune source trouvée';
+  if (searching) return count > 0 ? tr('Recherche en cours… {count}', { count }) + (count > 1 ? ' sources' : ' source') : tr('Recherche en cours…');
+  return count > 0 ? count + (count > 1 ? ' ' + tr('sources trouvées') : ' ' + tr('source trouvée')) : tr('Aucune source trouvée');
 }
 
 /** Avertissement quand la source choisie n'est pas dans la langue du salon ; null sinon. */
 export function sourceLanguageWarning(view: SourceView | null, roomLanguage: Lang | null, roomName: string): string | null {
-  return view && languageChanged(view, roomLanguage) ? 'Cette source n’est pas dans la langue du salon (' + roomName + ') : tu la liras dans une autre langue.' : null;
+  return view && languageChanged(view, roomLanguage) ? tr('Cette source n’est pas dans la langue du salon ({roomName}) : tu la liras dans une autre langue.', { roomName }) : null;
 }
 
 /** Vrai si des sources existent mais aucune dans la langue du salon (bandeau « Réessayer la recherche »). */

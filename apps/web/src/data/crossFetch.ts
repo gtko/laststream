@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { t } from '../i18n';
 
 /**
  * `fetch` des appels à lastAddon. L'application Android charge son interface depuis le serveur Laststream (https) : vers
@@ -19,7 +20,7 @@ export function needsNativeHttp(url: string): boolean {
 const NATIVE_TIMEOUT_MS = 15_000;
 
 function abortError(): Error {
-  return Object.assign(new Error('Requête annulée'), { name: 'AbortError' });
+  return Object.assign(new Error(t('Requête annulée')), { name: 'AbortError' });
 }
 
 export async function appFetch(url: string, init: RequestInit = {}): Promise<Response> {

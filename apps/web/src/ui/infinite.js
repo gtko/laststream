@@ -3,6 +3,7 @@
  * squelettes s'affichent pendant le chargement ; « Fin de la liste » clôt la liste. Au clavier, la sentinelle est un
  * lien « Charger plus » visible seulement au focus. Le contenu déjà chargé est mémorisé pour le retour en arrière. */
 
+import { t } from '../i18n';
 const memory = new Map(); // clé de page -> { html, page, done }
 const MEMORY_MAX = 12;
 let current = null;
@@ -38,7 +39,7 @@ export function infiniteList(o) {
 
   const bar = document.createElement('div');
   bar.className = 'inf';
-  bar.innerHTML = '<a href="#" class="inf-more" role="button">Charger plus</a><p class="inf-end" hidden>Fin de la liste</p>';
+  bar.innerHTML = '<a href="#" class="inf-more" role="button">' + t('Charger plus') + '</a><p class="inf-end" hidden>' + t('Fin de la liste') + '</p>';
   (o.anchor || host).insertAdjacentElement('afterend', bar);
   const link = bar.querySelector('.inf-more');
   const end = bar.querySelector('.inf-end');
@@ -81,7 +82,7 @@ export function infiniteList(o) {
       if (alive) {
         strip();
         link.hidden = false;
-        link.textContent = 'Réessayer';
+        link.textContent = t('Réessayer');
       }
     } finally {
       busy = false;

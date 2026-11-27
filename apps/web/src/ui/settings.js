@@ -39,6 +39,7 @@ import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { applyDownloadToggle, downloadsStorageCard } from './settings-downloads.js';
 import { state } from './state.js';
+import { t as tr, availableLocales, getLocaleSetting, setLocaleSetting } from '../i18n';
 
 
 /**
@@ -55,70 +56,79 @@ const actions = (inner) => '<div class="set-actions">' + inner + '</div>';
 /** Propriétaire sur un profil adulte : accès à la console #/admin. */
 /** Profil principal, un profil enfant existe mais aucun code parental : invitation à en définir un. */
 const parentalCard = () => (isServerMode() && isMainProfile() && !isKidProfile() && parentalCodeMissing()
-  ? card('Définis un code parental',
-    '<form id="set-parental" class="set-form" autocomplete="off"><p class="set-hint">Un profil enfant existe, mais rien n’empêche de le quitter. Choisis un code à 4 chiffres : il sera demandé pour sortir d’un profil enfant, changer de profil ou ouvrir les réglages.</p>' +
-    stackInput('Code parental (4 chiffres)', '', 'type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" required autocomplete="off"') +
-    msgP('set-parental-msg') + actions('<button type="submit" class="btn btn-primary">Définir le code</button>') + '</form>')
+  ? card(tr('Définis un code parental'),
+    '<form id="set-parental" class="set-form" autocomplete="off"><p class="set-hint">' + tr('Un profil enfant existe, mais rien n’empêche de le quitter. Choisis un code à 4 chiffres : il sera demandé pour sortir d’un profil enfant, changer de profil ou ouvrir les réglages.') + '</p>' +
+    stackInput(tr('Code parental (4 chiffres)'), '', 'type="password" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" required autocomplete="off"') +
+    msgP('set-parental-msg') + actions('<button type="submit" class="btn btn-primary">' + tr('Définir le code') + '</button>') + '</form>')
   : '');
-const adminCard = () => (canAdmin() ? card('Administration', rowHTML('Console d’administration', 'Comptes, performance, caches, modération et réglages du serveur.', () => '<a class="btn btn-ghost btn-sm" href="#/admin" data-go>Administration</a>')) : '');
+const adminCard = () => (canAdmin() ? card(tr('Administration'), rowHTML(tr('Console d’administration'), tr('Comptes, performance, caches, modération et réglages du serveur.'), () => '<a class="btn btn-ghost btn-sm" href="#/admin" data-go>' + tr('Administration') + '</a>')) : '');
 
 function accountPanel() {
   const p = userStore.currentProfile();
   const lib = userStore.getLibrary().length;
-  const data = card('Données de ce navigateur', rowHTML('Bibliothèque', 'Titres gardés pour le profil « ' + p.name + ' » dans ce navigateur.', () => '<span class="set-val">' + lib + ' titre(s)</span>') +
-    rowHTML('Vider le cache', 'Supprime les réponses mémorisées du catalogue ; rien d’autre n’est effacé.', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-clear>Vider le cache</button>'));
+  const data = card(tr('Données de ce navigateur'), rowHTML(tr('Bibliothèque'), tr('Titres gardés pour le profil « {name} » dans ce navigateur.', { name: p.name }), () => '<span class="set-val">' + tr('{lib} titre(s)', { lib }) + '</span>') +
+    rowHTML(tr('Vider le cache'), tr('Supprime les réponses mémorisées du catalogue ; rien d’autre n’est effacé.'), () => '<button type="button" class="btn btn-ghost btn-sm" data-set-clear>' + tr('Vider le cache') + '</button>'));
   if (!isServerMode()) {
-    return card('Compte', '<p class="set-hint">' + (auth.status === 'offline'
-      ? 'lastAddon est injoignable : la bibliothèque et la progression restent dans ce navigateur.'
-      : 'La bibliothèque et la progression restent dans ce navigateur. Un compte lastAddon les garde sur ton serveur, avec des profils.') + '</p>' +
-      actions('<button type="button" class="btn btn-primary" data-set-login>Se connecter ou créer un compte</button>')) + data + migrationCard();
+    return card(tr('Compte'), '<p class="set-hint">' + (auth.status === 'offline'
+      ? tr('lastAddon est injoignable : la bibliothèque et la progression restent dans ce navigateur.')
+      : tr('La bibliothèque et la progression restent dans ce navigateur. Un compte lastAddon les garde sur ton serveur, avec des profils.')) + '</p>' +
+      actions('<button type="button" class="btn btn-primary" data-set-login>' + tr('Se connecter ou créer un compte') + '</button>')) + data + migrationCard();
   }
   const pr = auth.profile;
   // Billets, invitations du foyer, import et changement de profil : réservés au profil principal (ni profil du foyer, ni session verrouillée).
   const owner = isMainProfile() && !isProfileLocked();
-  return card('Compte et profils',
-    rowHTML('Connecté en tant que', '', () => '<span class="set-val">' + esc(auth.username) + '</span>') +
-    rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span>' +
-      (owner ? '<button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>' : '')) +
-    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + billingCardSlot() + parentalCard() + adminCard() +
+  return card(tr('Compte et profils'),
+    rowHTML(tr('Connecté en tant que'), '', () => '<span class="set-val">' + esc(auth.username) + '</span>') +
+    rowHTML(tr('Profil actif'), pr.isKid ? tr('Profil enfant') : '', () => '<span class="set-val">' + esc(pr.name) + '</span>' +
+      (owner ? '<button type="button" class="btn btn-ghost btn-sm" data-set-switch>' + tr('Changer de profil') + '</button>' : '')) +
+    rowHTML(tr('Session'), '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>' + tr('Se déconnecter') + '</button>')) + billingCardSlot() + parentalCard() + adminCard() +
     (owner ? invitesCard() + householdInvitesCard() : '') + data +
     (owner ? migrationCard() : '');
+}
+
+/** Langue de l'interface : « Automatique » (langue du navigateur) ou une des langues disponibles, nommée dans sa propre langue. */
+function uiLangCard() {
+  const cur = getLocaleSetting();
+  const opts = availableLocales().map((l) => [l.code, l.name]).sort((a, b) => a[1].localeCompare(b[1]));
+  return card(tr('Interface'), fieldRow(tr('Langue de l’interface'), tr('Langue des menus et des textes de Laststream. En automatique, celle de ton navigateur.'), (id) =>
+    '<select class="set-input" id="' + id + '" data-set-pref="uilang"><option value="auto"' + (!cur ? ' selected' : '') + '>' + esc(tr('Automatique')) + '</option>' +
+    opts.map(([c, n]) => '<option value="' + esc(c) + '" lang="' + esc(c) + '"' + (cur === c ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>'));
 }
 
 function regionPanel() {
   const r = getRegion();
   const vl = getVideoLangSetting();
-  return card('Région', fieldRow('Pays', 'Disponibilités en streaming, classification par âge et sorties selon le pays.', (id) =>
+  return uiLangCard() + card(tr('Région'), fieldRow(tr('Pays'), tr('Disponibilités en streaming, classification par âge et sorties selon le pays.'), (id) =>
     '<select class="set-input" id="' + id + '" data-set-pref="region">' + REGIONS.map((x) => '<option value="' + x.code + '"' + (x.code === r.code ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>')) +
-    card('Bandes-annonces et synopsis', fieldRow('Langue', 'Les vidéos dans cette langue passent en premier, puis l’anglais.', (id) =>
-      '<select class="set-input" id="' + id + '" data-set-pref="videolang"><option value="auto"' + (vl === 'auto' ? ' selected' : '') + '>Automatique (selon la région)</option>' +
+    card(tr('Bandes-annonces et synopsis'), fieldRow(tr('Langue'), tr('Les vidéos dans cette langue passent en premier, puis l’anglais.'), (id) =>
+      '<select class="set-input" id="' + id + '" data-set-pref="videolang"><option value="auto"' + (vl === 'auto' ? ' selected' : '') + '>' + tr('Automatique (selon la région)') + '</option>' +
       VIDEO_LANGS.map(([c, l]) => '<option value="' + c + '"' + (vl === c ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'));
 }
 
 /** Libellés du plafond de résolution (ODY-236). */
-const CAP_LABELS = { auto: 'Automatique (selon l’écran)', '720p': '720p', '1080p': '1080p · Full HD', '1440p': '1440p · 2K', '2160p': '2160p · 4K' };
+const CAP_LABELS = { auto: tr('Automatique (selon l’écran)'), '720p': '720p', '1080p': tr('1080p · Full HD'), '1440p': '1440p · 2K', '2160p': '2160p · 4K' };
 /** Ligne d'état sous le réglage : plafond en vigueur (écran détecté en automatique). */
 function capStatus(cap) {
   const h = capHeightOf(cap, screenShortSide());
-  if (cap !== 'auto') return 'Plafond : ' + capLabel(h) + '.';
-  return h === null ? 'Écran non détecté : aucun plafond.' : 'Écran détecté : ' + screenShortSide() + ' px de hauteur → plafond ' + capLabel(h) + '.';
+  if (cap !== 'auto') return tr('Plafond : {h}.', { h: capLabel(h) });
+  return h === null ? tr('Écran non détecté : aucun plafond.') : tr('Écran détecté : {screenShortSide} px de hauteur → plafond {h}.', { screenShortSide: screenShortSide(), h: capLabel(h) });
 }
 
 /** Mises à jour de l'interface (Windows et web) : réglages locaux à l'appareil. Absents sur Android, qui a sa propre bannière. */
 function uiUpdateCard() {
   if (updateSupported()) return '';
-  return card('Mises à jour de l’interface',
-    switchRow('Prévenir des mises à jour de l’interface', 'Affiche une bannière en bas quand une nouvelle version est disponible.', getUiUpdateNotify(), 'data-set-pref="uiupdate-notify"') +
-    switchRow('Mettre à jour automatiquement quand l’app est inactive', 'Recharge l’interface après 5 minutes sans interaction, hors lecture et plein écran.', getUiUpdateAuto(), 'data-set-pref="uiupdate-auto"'));
+  return card(tr('Mises à jour de l’interface'),
+    switchRow(tr('Prévenir des mises à jour de l’interface'), tr('Affiche une bannière en bas quand une nouvelle version est disponible.'), getUiUpdateNotify(), 'data-set-pref="uiupdate-notify"') +
+    switchRow(tr('Mettre à jour automatiquement quand l’app est inactive'), tr('Recharge l’interface après 5 minutes sans interaction, hors lecture et plein écran.'), getUiUpdateAuto(), 'data-set-pref="uiupdate-auto"'));
 }
 
 // ---- Lecteur par appareil (hors synchronisation du compte) ----
-const WEB_PLAYER_DESC = 'Le lecteur intégré lit la plupart des formats ; la playlist .m3u s’ouvre dans ton lecteur habituel.';
+const WEB_PLAYER_DESC = tr('Le lecteur intégré lit la plupart des formats ; la playlist .m3u s’ouvre dans ton lecteur habituel.');
 /** Description de la ligne « Lecteur » selon la plateforme où tourne l'app. */
 const PLAYER_DESC = {
-  ios: 'Les liens débridés en MKV ne se lisent pas dans Safari : ouvre-les dans une app comme VLC ou Infuse.',
-  shell: 'Le lecteur intégré lit tout ; VLC ou ton lecteur par défaut s’ouvrent à côté de Laststream.',
-  'android-app': 'Le lecteur intégré (libVLC) lit tout.',
+  ios: tr('Les liens débridés en MKV ne se lisent pas dans Safari : ouvre-les dans une app comme VLC ou Infuse.'),
+  shell: tr('Le lecteur intégré lit tout ; VLC ou ton lecteur par défaut s’ouvrent à côté de Laststream.'),
+  'android-app': tr('Le lecteur intégré (libVLC) lit tout.'),
   web: WEB_PLAYER_DESC,
   'web-android': WEB_PLAYER_DESC,
 };
@@ -128,18 +138,18 @@ function playerCardHTML(platform) {
   const cur = currentPlayer(platform);
   const opts = playerOptions(platform).map((o) => '<option value="' + o.id + '"' + (o.disabled ? ' disabled' : '') + (o.id === cur ? ' selected' : '') + '>' +
     esc(o.disabled && o.hint ? o.label + ' (' + o.hint + ')' : o.label) + '</option>').join('');
-  return card('Lecteur sur cet appareil', fieldRow('Lecteur', PLAYER_DESC[platform], (id) =>
+  return card(tr('Lecteur sur cet appareil'), fieldRow(tr('Lecteur'), PLAYER_DESC[platform], (id) =>
     '<select class="set-input" id="' + id + '" data-set-pref="external-player">' + opts + '</select>'), { attrs: 'data-player-card' });
 }
 
 /** Moteurs de lecture de la coque Windows : libellés des choix (réglage « laststream.desktopEngine »). */
-const ENGINE_CHOICES = [['auto', 'Automatique'], ['mpv', 'mpv'], ['libvlc', 'VLC intégré']];
+const ENGINE_CHOICES = [['auto', tr('Automatique')], ['mpv', 'mpv'], ['libvlc', tr('VLC intégré')]];
 
 /** Carte « Moteur de lecture » : seulement dans la coque Windows, et seulement si elle annonce libVLC (ancienne coque : mpv seul). */
 function engineCardHTML(platform) {
   if (platform !== 'shell' || !shellHasLibvlc()) return '';
   const cur = getDesktopEngine();
-  return card('Moteur de lecture', fieldRow('Moteur', 'Automatique : mpv, puis VLC si la vidéo ne démarre pas. Appliqué à la prochaine lecture.', (id) =>
+  return card(tr('Moteur de lecture'), fieldRow(tr('Moteur'), tr('Automatique : mpv, puis VLC si la vidéo ne démarre pas. Appliqué à la prochaine lecture.'), (id) =>
     '<select class="set-input" id="' + id + '" data-set-pref="desktop-engine">' +
     ENGINE_CHOICES.map(([c, l]) => '<option value="' + c + '"' + (c === cur ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>'), { attrs: 'data-engine-card' });
 }
@@ -149,7 +159,7 @@ function preferredCardHTML() {
   const pref = getPreferredExternal();
   const opts = playerOptions('ios').filter((o) => isExternalChoice(o.id))
     .map((o) => '<option value="' + o.id + '"' + (o.id === pref ? ' selected' : '') + '>' + esc(o.label) + '</option>').join('');
-  return card('Lecteur externe', fieldRow('Lecteur externe préféré', 'Utilisé quand une source ne peut pas être lue dans Safari.', (id) =>
+  return card(tr('Lecteur externe'), fieldRow(tr('Lecteur externe préféré'), tr('Utilisé quand une source ne peut pas être lue dans Safari.'), (id) =>
     '<select class="set-input" id="' + id + '" data-set-pref="external-preferred">' + opts + '</select>'), { attrs: 'data-player-pref' });
 }
 
@@ -162,7 +172,7 @@ function syncPreferredPlayer() {
   if (!anchor) return;
   if (!showPreferredPlayer(detectPlatform())) { if (pref) pref.remove(); return; }
   if (pref) return;
-  // eslint-disable-next-line no-restricted-syntax -- HTML fixe : libellés constants, aucune donnée saisie
+  // eslint-disable-next-line laststream/no-html-sink -- HTML fixe : libellés constants, aucune donnée saisie
   anchor.insertAdjacentHTML('afterend', preferredCardHTML());
 }
 
@@ -171,28 +181,28 @@ function playbackPanel() {
   const bw = getBandwidthSetting();
   const stored = readStoredBandwidth();
   const mbps = stored && stored.expiresAt > Date.now() ? (stored.kbps / 1000).toFixed(1).replace('.', ',') + ' Mb/s' : '';
-  return card('Lancement', switchRow('Lancer la meilleure source', 'Démarre la lecture sans passer par la liste des sources.', getAutoplay(), 'data-set-pref="autoplay"') +
-    switchRow('Lancer automatiquement après la bande-annonce', 'Sur la fiche d’un titre, la bande-annonce se lance puis enchaîne sur la lecture.',
+  return card(tr('Lancement'), switchRow(tr('Lancer la meilleure source'), tr('Démarre la lecture sans passer par la liste des sources.'), getAutoplay(), 'data-set-pref="autoplay"') +
+    switchRow(tr('Lancer automatiquement après la bande-annonce'), tr('Sur la fiche d’un titre, la bande-annonce se lance puis enchaîne sur la lecture.'),
       getTrailerAutoplay(isKidProfile()), 'data-set-pref="trailer-autoplay"')) +
     playerCardHTML(platform) + (showPreferredPlayer(platform) ? preferredCardHTML() : '') + engineCardHTML(platform) +
-    card('Résolution',
-      fieldRow('Résolution maximale', 'La source choisie d’office, en lecture comme en téléchargement, ne dépasse pas ce plafond tant qu’une source plus légère existe (moins de données). Tu peux toujours choisir une autre source à la main.', (id) =>
+    card(tr('Résolution'),
+      fieldRow(tr('Résolution maximale'), tr('La source choisie d’office, en lecture comme en téléchargement, ne dépasse pas ce plafond tant qu’une source plus légère existe (moins de données). Tu peux toujours choisir une autre source à la main.'), (id) =>
         '<select class="set-input" id="' + id + '" data-set-pref="max-resolution">' + RESOLUTION_CAPS.map((c) => '<option value="' + c + '"' + (c === getResolutionCap() ? ' selected' : '') + '>' + esc(CAP_LABELS[c]) + '</option>').join('') + '</select>') +
       msgP('set-cap-msg', capStatus(getResolutionCap()))) +
-    card('Connexion',
-      fieldRow('Débit de ma connexion', 'Sert à choisir une source que ta connexion peut lire.', (id) =>
-        '<select class="set-input" id="' + id + '" data-set-pref="bandwidth"><option value="auto"' + (bw === 'auto' ? ' selected' : '') + '>Automatique (mesure)</option>' +
+    card(tr('Connexion'),
+      fieldRow(tr('Débit de ma connexion'), tr('Sert à choisir une source que ta connexion peut lire.'), (id) =>
+        '<select class="set-input" id="' + id + '" data-set-pref="bandwidth"><option value="auto"' + (bw === 'auto' ? ' selected' : '') + '>' + tr('Automatique (mesure)') + '</option>' +
         BANDWIDTH_PRESETS_MBPS.map((n) => '<option value="' + n + '"' + (bw === n ? ' selected' : '') + '>' + n + ' Mb/s</option>').join('') + '</select>') +
-      rowHTML('Mesurer maintenant', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-bw>Tester ma connexion</button>') +
-      msgP('set-bw-msg', mbps ? 'Dernière mesure : ' + mbps : '')) +
-    card('Mémoire tampon',
-      fieldRow('Taille de la mémoire tampon', 'Sur cet appareil. Un tampon plus grand évite les saccades de chargement sur une source lente, mais utilise plus de mémoire et, sur Android, retarde le démarrage et les sauts de quelques secondes (jusqu’à 30 s en Maximum). Appliqué à la prochaine lecture.', (id) =>
+      rowHTML(tr('Mesurer maintenant'), '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-bw>' + tr('Tester ma connexion') + '</button>') +
+      msgP('set-bw-msg', mbps ? tr('Dernière mesure : {mbps}', { mbps }) : '')) +
+    card(tr('Mémoire tampon'),
+      fieldRow(tr('Taille de la mémoire tampon'), tr('Sur cet appareil. Un tampon plus grand évite les saccades de chargement sur une source lente, mais utilise plus de mémoire et, sur Android, retarde le démarrage et les sauts de quelques secondes (jusqu’à 30 s en Maximum). Appliqué à la prochaine lecture.'), (id) =>
         '<select class="set-input" id="' + id + '" data-set-pref="buffer-level">' + BUFFER_CHOICES.map(([c, l]) => '<option value="' + c + '"' + (c === getBufferLevel() ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>')) +
-    card('Séries et épisodes',
-      switchRow('Passer l’intro', 'Saute le générique d’ouverture quand il est repéré.', getSkipPref('intro'), 'data-set-pref="skip-intro"') +
-      switchRow('Passer le récapitulatif', 'Saute le « précédemment » quand il est repéré.', getSkipPref('recap'), 'data-set-pref="skip-recap"') +
-      switchRow('Enchaîner l’épisode suivant', 'Lance l’épisode suivant à la fin du générique.', getSkipPref('nextEpisode'), 'data-set-pref="skip-next"') +
-      switchRow('Passer les épisodes filler (anime)', 'L’enchaînement et « prochain non vu » sautent les épisodes filler et récap repérés. Ils restent lançables à la main.', getSkipPref('filler'), 'data-set-pref="skip-filler"')) +
+    card(tr('Séries et épisodes'),
+      switchRow(tr('Passer l’intro'), tr('Saute le générique d’ouverture quand il est repéré.'), getSkipPref('intro'), 'data-set-pref="skip-intro"') +
+      switchRow(tr('Passer le récapitulatif'), tr('Saute le « précédemment » quand il est repéré.'), getSkipPref('recap'), 'data-set-pref="skip-recap"') +
+      switchRow(tr('Enchaîner l’épisode suivant'), tr('Lance l’épisode suivant à la fin du générique.'), getSkipPref('nextEpisode'), 'data-set-pref="skip-next"') +
+      switchRow(tr('Passer les épisodes filler (anime)'), tr('L’enchaînement et « prochain non vu » sautent les épisodes filler et récap repérés. Ils restent lançables à la main.'), getSkipPref('filler'), 'data-set-pref="skip-filler"')) +
     downloadsStorageCard();
 }
 
@@ -203,22 +213,22 @@ const animeSelect = (pref, value, choices, disabled) => (id) => '<select class="
 const langSelect = (pref, value, extra, disabled) => (id) => '<select class="set-input" id="' + id + '" data-set-pref="' + pref + '"' + (disabled ? ' disabled' : '') + '>' + langOptions(value, extra) + '</select>';
 
 /** Niveaux de la mémoire tampon : valeurs du contrat partagé (voir player/bufferLevel.ts). */
-const BUFFER_CHOICES = [['standard', 'Standard'], ['large', 'Grand'], ['max', 'Maximum']];
+const BUFFER_CHOICES = [['standard', tr('Standard')], ['large', tr('Grand')], ['max', tr('Maximum')]];
 
 /** Langues audio et sous-titres du profil : appliquées au démarrage de chaque lecture (voir player/langPolicy.ts). */
 function audioPanel() {
   const lp = getLangPrefs();
-  return card('Langue audio',
-    fieldRow('Langue audio principale', 'La piste utilisée en priorité. Dans cette langue, seuls les sous-titres forcés restent affichés.', langSelect('lang-audio', lp.audio, [])) +
-    fieldRow('Langue audio secondaire', 'Utilisée quand la principale manque dans la source. « Version originale » prend la langue d’origine du titre.', langSelect('lang-audio2', lp.audio2, [[LANG_VO, 'Version originale'], [LANG_NONE, 'Aucune']]))) +
-    card('Sous-titres',
-      switchRow('Sous-titres hors langue principale', 'Les active quand l’audio n’est pas dans la langue principale.', lp.subsOn, 'data-set-pref="lang-subs"') +
-      fieldRow('Langue des sous-titres', 'Pistes du fichier d’abord, puis sous-titres externes.', langSelect('lang-subtitles', lp.subs, [[LANG_MAIN, 'Identique à la langue principale']], !lp.subsOn)), { attrs: 'data-lang-subs-card' }) +
-    card('Anime',
-      switchRow('Réglages spécifiques aux animes', 'Les films et séries qui ne sont pas des animes gardent les réglages ci-dessus. Un anime est un titre classé Animation et d’origine japonaise.', lp.anime.on, 'data-set-pref="anime-on"') +
-      fieldRow('Langue audio', 'Si la piste manque, les réglages généraux s’appliquent.', animeSelect('anime-audio', lp.anime.audio, ANIME_AUDIO_CHOICES, !lp.anime.on)) +
-      fieldRow('Sous-titres', '', animeSelect('anime-subs', lp.anime.subs, ANIME_SUBS_CHOICES, !lp.anime.on)) +
-      switchRow('Seulement si l’audio n’est pas dans ma langue', 'Désactivé, les sous-titres restent affichés même quand l’audio est dans ta langue.', lp.anime.ifForeign, 'data-set-pref="anime-iflang"' + (animeIfForeignOff(lp) ? ' disabled' : '')));
+  return card(tr('Langue audio'),
+    fieldRow(tr('Langue audio principale'), tr('La piste utilisée en priorité. Dans cette langue, seuls les sous-titres forcés restent affichés.'), langSelect('lang-audio', lp.audio, [])) +
+    fieldRow(tr('Langue audio secondaire'), tr('Utilisée quand la principale manque dans la source. « Version originale » prend la langue d’origine du titre.'), langSelect('lang-audio2', lp.audio2, [[LANG_VO, tr('Version originale')], [LANG_NONE, tr('Aucune')]]))) +
+    card(tr('Sous-titres'),
+      switchRow(tr('Sous-titres hors langue principale'), tr('Les active quand l’audio n’est pas dans la langue principale.'), lp.subsOn, 'data-set-pref="lang-subs"') +
+      fieldRow(tr('Langue des sous-titres'), tr('Pistes du fichier d’abord, puis sous-titres externes.'), langSelect('lang-subtitles', lp.subs, [[LANG_MAIN, tr('Identique à la langue principale')]], !lp.subsOn)), { attrs: 'data-lang-subs-card' }) +
+    card(tr('Anime'),
+      switchRow(tr('Réglages spécifiques aux animes'), tr('Les films et séries qui ne sont pas des animes gardent les réglages ci-dessus. Un anime est un titre classé Animation et d’origine japonaise.'), lp.anime.on, 'data-set-pref="anime-on"') +
+      fieldRow(tr('Langue audio'), tr('Si la piste manque, les réglages généraux s’appliquent.'), animeSelect('anime-audio', lp.anime.audio, ANIME_AUDIO_CHOICES, !lp.anime.on)) +
+      fieldRow(tr('Sous-titres'), '', animeSelect('anime-subs', lp.anime.subs, ANIME_SUBS_CHOICES, !lp.anime.on)) +
+      switchRow(tr('Seulement si l’audio n’est pas dans ma langue'), tr('Désactivé, les sous-titres restent affichés même quand l’audio est dans ta langue.'), lp.anime.ifForeign, 'data-set-pref="anime-iflang"' + (animeIfForeignOff(lp) ? ' disabled' : '')));
 }
 
 /** Choix du serveur (Android et pages servies par lastAddon) : Laststream par défaut, ou un serveur perso. */
@@ -226,56 +236,56 @@ function serverChoiceHTML() {
   const mode = ed.srvMode || getMode() || 'public';
   const laststream = laststreamBase();
   const btn = (id, label) => '<button type="button" class="btn ' + (mode === id ? 'btn-primary' : 'btn-ghost') + ' btn-sm" data-set-srvmode="' + id + '" aria-pressed="' + (mode === id) + '">' + label + '</button>';
-  return actions(btn('public', 'Serveur Laststream (par défaut)') + btn('custom', 'Mon propre serveur')) +
+  return actions(btn('public', tr('Serveur Laststream (par défaut)')) + btn('custom', tr('Mon propre serveur'))) +
     (mode === 'public'
-      ? '<p class="set-hint">Adresse : <b>' + esc(laststream) + '</b>. Le catalogue, les notes et les sources passent par ce serveur.</p>' +
+      ? '<p class="set-hint">' + tr('Adresse : <b>{laststream}</b>. Le catalogue, les notes et les sources passent par ce serveur.', { laststream: esc(laststream) }) + '</p>' +
         '<input type="hidden" name="base" value="' + esc(laststream) + '">'
-      : stackInput('Adresse de mon serveur', 'Ton propre lastAddon : par exemple http://192.168.1.20:7000 sur le réseau local, ou une adresse https.',
+      : stackInput(tr('Adresse de mon serveur'), tr('Ton propre lastAddon : par exemple http://192.168.1.20:7000 sur le réseau local, ou une adresse https.'),
         'type="url" name="base" value="' + esc(getCustom() || getBase()) + '" placeholder="http://192.168.1.20:7000"') +
-        actions('<button type="button" class="btn btn-ghost btn-sm" data-set-ping>Tester</button>'));
+        actions('<button type="button" class="btn btn-ghost btn-sm" data-set-ping>' + tr('Tester') + '</button>'));
 }
 
 function serverPanelInner() {
   const android = isAndroidApp();
   const choice = serverChoiceVisible();
   const base = getBase() || (android ? '' : DEFAULT_BASE);
-  return card('Adresse', choice ? serverChoiceHTML() : stackInput('Adresse du serveur', 'Le serveur qui fournit le catalogue, les notes, la TV et les sources.',
+  return card(tr('Adresse'), choice ? serverChoiceHTML() : stackInput(tr('Adresse du serveur'), tr('Le serveur qui fournit le catalogue, les notes, la TV et les sources.'),
     'type="url" name="base" value="' + esc(base) + '" placeholder="http://localhost:7000"') +
-    actions('<button type="button" class="btn btn-ghost btn-sm" data-set-ping>Tester l’adresse</button>'));
+    actions('<button type="button" class="btn btn-ghost btn-sm" data-set-ping>' + tr('Tester l’adresse') + '</button>'));
 }
 
 function sourcesPanelInner() {
   const c = ed.cfg || {};
   const res = c.resolutions || {};
-  const maxChoices = [['', 'Aucune limite'], ['2160p', '4K'], ['1080p', '1080p'], ['720p', '720p']];
-  return card('Addons Stremio', sourcesHTML() +
-    actions('<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="upstream">Ajouter un addon Stremio</button>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-set-test="sources">Tester les sources</button>') +
-    '<div class="set-tests" id="set-tests-sources" aria-live="polite"></div>', { desc: 'Les addons interrogés pour trouver des sources. Ils débrident eux-mêmes : la clé de ton débrideur se règle dans l’addon.' }) +
-    card('Préférences de lecture',
-      fieldRow('Qualité maximale', 'Les sources au-dessus de cette qualité sont masquées.', (id) => '<select class="set-input" id="' + id + '" name="resMax">' +
+  const maxChoices = [['', tr('Aucune limite')], ['2160p', '4K'], ['1080p', '1080p'], ['720p', '720p']];
+  return card(tr('Addons Stremio'), sourcesHTML() +
+    actions('<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="upstream">' + tr('Ajouter un addon Stremio') + '</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-set-test="sources">' + tr('Tester les sources') + '</button>') +
+    '<div class="set-tests" id="set-tests-sources" aria-live="polite"></div>', { desc: tr('Les addons interrogés pour trouver des sources. Ils débrident eux-mêmes : la clé de ton débrideur se règle dans l’addon.') }) +
+    card(tr('Préférences de lecture'),
+      fieldRow(tr('Qualité maximale'), tr('Les sources au-dessus de cette qualité sont masquées.'), (id) => '<select class="set-input" id="' + id + '" name="resMax">' +
         maxChoices.map(([v, l]) => '<option value="' + v + '"' + ((res.max || '') === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'));
 }
 
 function serverFormHTML(cats) {
-  const status = ed.loading ? 'Chargement de la configuration…' : ed.error ? ed.error : ed.loaded ? 'Configuration chargée.' : isConfigured() ? '' : 'Aucune configuration enregistrée : renseigne l’adresse puis enregistre.';
+  const status = ed.loading ? tr('Chargement de la configuration…') : ed.error ? ed.error : ed.loaded ? tr('Configuration chargée.') : isConfigured() ? '' : tr('Aucune configuration enregistrée : renseigne l’adresse puis enregistre.');
   const cat = (id) => cats.find((c) => c.id === id);
   return '<form id="set-la" class="set-form" autocomplete="off">' +
-    panelHTML(cat('server'), 'Adresse du serveur. Les clés des services se règlent dans l’administration.', serverPanelInner()) +
-    panelHTML(cat('sources'), 'Tes extensions Stremio, dans l’ordre où elles sont interrogées.', sourcesPanelInner()) +
+    panelHTML(cat('server'), tr('Adresse du serveur. Les clés des services se règlent dans l’administration.'), serverPanelInner()) +
+    panelHTML(cat('sources'), tr('Tes extensions Stremio, dans l’ordre où elles sont interrogées.'), sourcesPanelInner()) +
     '<div class="set-savebar"><div class="set-savebar-t">' + msgP('set-la-msg', status) +
-    '<p class="set-note">Les clés sont chiffrées par le serveur ; ce navigateur ne garde que la configuration chiffrée.</p></div>' +
-    '<button type="submit" class="btn btn-primary">Enregistrer</button></div></form>';
+    '<p class="set-note">' + tr('Les clés sont chiffrées par le serveur ; ce navigateur ne garde que la configuration chiffrée.') + '</p></div>' +
+    '<button type="submit" class="btn btn-primary">' + tr('Enregistrer') + '</button></div></form>';
 }
 
 const PANEL_DESC = {
-  account: 'Ton compte, ton profil actif et les données gardées dans ce navigateur.',
-  appearance: 'Thème et couleur d’accent de l’application.',
-  region: 'Pays, disponibilités et langue des bandes-annonces.',
-  playback: 'Lancement des sources, connexion et enchaînement des épisodes.',
-  audio: 'Langues de l’audio et des sous-titres, appliquées au début de chaque lecture sur ce profil.',
-  home: 'Ce qui est proposé, ou non, sur l’accueil de ce profil.',
-  tv: 'Chaînes de ta box et playlists M3U, lues par cet appareil.',
+  account: tr('Ton compte, ton profil actif et les données gardées dans ce navigateur.'),
+  appearance: tr('Thème et couleur d’accent de l’application.'),
+  region: tr('Pays, disponibilités et langue des bandes-annonces.'),
+  playback: tr('Lancement des sources, connexion et enchaînement des épisodes.'),
+  audio: tr('Langues de l’audio et des sous-titres, appliquées au début de chaque lecture sur ce profil.'),
+  home: tr('Ce qui est proposé, ou non, sur l’accueil de ce profil.'),
+  tv: tr('Chaînes de ta box et playlists M3U, lues par cet appareil.'),
 };
 
 let activeCat = 'account';
@@ -289,7 +299,7 @@ function categories() {
 
 /** Pastilles du menu : uniquement des états réels (serveur injoignable ou non configuré). */
 function navBadges() {
-  return ed.error || !isConfigured() ? { server: ed.error ? 'serveur injoignable' : 'configuration manquante' } : {};
+  return ed.error || !isConfigured() ? { server: ed.error ? tr('serveur injoignable') : tr('configuration manquante') } : {};
 }
 
 function pageHTML() {
@@ -308,7 +318,7 @@ function pageHTML() {
   ].join('');
   return topBar(false) +
     '<article class="svc-page set-page" aria-labelledby="svc-title"><header class="set-head">' +
-    '<p class="set-eyebrow">Laststream</p><h1 class="set-title" id="svc-title" tabindex="-1">Réglages</h1></header>' +
+    '<p class="set-eyebrow">Laststream</p><h1 class="set-title" id="svc-title" tabindex="-1">' + tr('Réglages') + '</h1></header>' +
     '<div class="set-layout">' + navHTML(cats, activeCat, navBadges()) + '<div class="set-main">' + panels + '</div></div><p class="set-foot">' + creditsLinkHTML() + '</p></article>';
 }
 
@@ -381,9 +391,9 @@ async function loadConfig() {
     if (decoded && decoded.debrid) await dropServerDebridKey(decoded, enc, base);
     initSources(ed.cfg.sources);
     ed.loaded = !!decoded;
-    if (enc && !decoded) ed.error = 'Impossible de lire la configuration enregistrée (serveur injoignable ou clé de chiffrement différente).';
+    if (enc && !decoded) ed.error = tr('Impossible de lire la configuration enregistrée (serveur injoignable ou clé de chiffrement différente).');
   } catch (_) {
-    ed.error = 'lastAddon est injoignable à cette adresse.';
+    ed.error = tr('lastAddon est injoignable à cette adresse.');
   }
   if (token !== ed.token) return;
   ed.loading = false;
@@ -394,7 +404,7 @@ export async function showSettings() {
   teardownFiche();
   state.kind = 'settings';
   activeCat = 'account';
-  document.title = 'Réglages · Laststream';
+  document.title = tr('Réglages · Laststream');
   ed.loaded = false;
   ed.cfg = null;
   initSources([]);
@@ -449,15 +459,15 @@ function showTests(kind, results) {
   if (!box) return;
   box.innerHTML = results.length
     ? results.map((r) => '<p class="set-test ' + (r.ok ? 'is-ok' : 'is-ko') + '"><strong>' + (r.ok ? '✓' : '✕') + '</strong> ' + esc(r.name) +
-      (r.ok ? (r.note ? ' <em>' + esc(r.note) + '</em>' : '') : ' : ' + esc(r.error || 'échec')) + '</p>').join('')
-    : '<p class="set-hint">Rien à tester.</p>';
+      (r.ok ? (r.note ? ' <em>' + esc(r.note) + '</em>' : '') : ' : ' + esc(r.error || tr('échec'))) + '</p>').join('')
+    : '<p class="set-hint">' + tr('Rien à tester.') + '</p>';
 }
 
 async function runTest(kind, btn) {
   const form = detailEl.querySelector('#set-la');
   if (!form) return;
   const box = detailEl.querySelector('#set-tests-' + kind);
-  if (box) box.innerHTML = '<p class="set-hint">Test en cours…</p>';
+  if (box) box.innerHTML = '<p class="set-hint">' + tr('Test en cours…') + '</p>';
   btn.disabled = true;
   try {
     const { base, config } = await encodeFromForm(form);
@@ -466,7 +476,7 @@ async function runTest(kind, btn) {
     showTests('sources', src);
     applyTestResults(src);
   } catch (err) {
-    if (box) box.innerHTML = '<p class="set-test is-ko">' + esc(issuesText(err) || 'Test impossible : vérifie l’adresse et la configuration.') + '</p>';
+    if (box) box.innerHTML = '<p class="set-test is-ko">' + esc(issuesText(err) || tr('Test impossible : vérifie l’adresse et la configuration.')) + '</p>';
   } finally {
     btn.disabled = false;
   }
@@ -483,18 +493,18 @@ function chooseServerMode(mode) {
 async function pingMessage(raw) {
   let base = '';
   try { base = normalizeBase(raw); } catch (err) { return err.message; }
-  if (!base) return 'Saisis l’adresse de ton serveur, par exemple http://192.168.1.20:7000.';
+  if (!base) return tr('Saisis l’adresse de ton serveur, par exemple http://192.168.1.20:7000.');
   return (await probeHealth(base, PUBLIC_PROBE_MS))
-    ? 'OK : lastAddon répond à cette adresse.'
-    : 'Erreur : serveur injoignable, ou ce n’est pas lastAddon. Vérifie l’adresse et que lastAddon tourne.';
+    ? tr('OK : lastAddon répond à cette adresse.')
+    : tr('Erreur : serveur injoignable, ou ce n’est pas lastAddon. Vérifie l’adresse et que lastAddon tourne.');
 }
 
 async function save(form) {
   const msg = detailEl.querySelector('#set-la-msg');
-  if (msg) msg.textContent = 'Enregistrement…';
+  if (msg) msg.textContent = tr('Enregistrement…');
   try {
     const choice = serverChoiceVisible() ? (ed.srvMode || getMode() || 'public') : null;
-    if (choice === 'custom' && !form.elements.base.value.trim()) throw new Error('Saisis l’adresse de ton serveur.');
+    if (choice === 'custom' && !form.elements.base.value.trim()) throw new Error(tr('Saisis l’adresse de ton serveur.'));
     const { base, config } = await encodeFromForm(form);
     if (choice) {
       // Serveur changé : l'application redémarre avec la config chiffrée de ce serveur.
@@ -511,10 +521,10 @@ async function save(form) {
     ed.error = '';
     rerender();
     const m2 = detailEl.querySelector('#set-la-msg');
-    if (m2) m2.textContent = 'Configuration enregistrée.';
-    toast('Configuration enregistrée');
+    if (m2) m2.textContent = tr('Configuration enregistrée.');
+    toast(tr('Configuration enregistrée'));
   } catch (err) {
-    if (msg) msg.textContent = 'Enregistrement refusé : ' + (issuesText(err) || (err && err.message) || 'erreur');
+    if (msg) msg.textContent = tr('Enregistrement refusé :') + ' ' + (issuesText(err) || (err && err.message) || 'erreur');
   }
 }
 
@@ -577,7 +587,7 @@ detailEl.addEventListener('click', async (e) => {
     const form = detailEl.querySelector('#set-la');
     const m = detailEl.querySelector('#set-la-msg');
     if (form && m) {
-      m.textContent = 'Connexion en cours…';
+      m.textContent = tr('Connexion en cours…');
       m.textContent = serverChoiceVisible() ? await pingMessage(form.elements.base.value) : (await testServer(form.elements.base.value)).message;
     }
     return;
@@ -591,10 +601,10 @@ detailEl.addEventListener('click', async (e) => {
     const msg = detailEl.querySelector('#set-bw-msg');
     const btn = t.closest('[data-set-bw]');
     btn.disabled = true;
-    if (msg) msg.textContent = 'Mesure en cours (3 s au plus)…';
+    if (msg) msg.textContent = tr('Mesure en cours (3 s au plus)…');
     const kbps = await testBandwidthKbps();
     btn.disabled = false;
-    if (msg) msg.textContent = kbps ? 'Débit mesuré : ' + (kbps / 1000).toFixed(1).replace('.', ',') + ' Mb/s (gardé 24 h).' : 'Mesure impossible : vérifie ta connexion.';
+    if (msg) msg.textContent = kbps ? tr('Débit mesuré : {v} Mb/s (gardé 24 h).', { v: (kbps / 1000).toFixed(1).replace('.', ',') }) : tr('Mesure impossible : vérifie ta connexion.');
     return;
   }
   if (t.closest('[data-set-login]')) { e.preventDefault(); openLogin(); return; }
@@ -603,7 +613,7 @@ detailEl.addEventListener('click', async (e) => {
   if (t.closest('[data-set-clear]')) {
     e.preventDefault();
     clearCache();
-    toast('Cache vidé');
+    toast(tr('Cache vidé'));
   }
 });
 
@@ -633,16 +643,20 @@ detailEl.addEventListener('change', (e) => {
   } else if (p === 'external-preferred') {
     if (playerOptions('ios').some((o) => o.id === t.value && isExternalChoice(o.id))) setPreferredExternal(t.value);
   }
-  else if (p === 'videolang') {
+  else if (p === 'uilang') {
+    setLocaleSetting(t.value === 'auto' ? '' : t.value);
+    toast(tr('Langue mise à jour : rechargement…'));
+    setTimeout(() => location.reload(), 600);
+  } else if (p === 'videolang') {
     setVideoLang(t.value);
     clearCache();
-    toast('Langue mise à jour : rechargement…');
+    toast(tr('Langue mise à jour : rechargement…'));
     setTimeout(() => location.reload(), 600);
   } else if (p === 'region') {
     setRegion(t.value);
     try { localStorage.removeItem('ls_tv_filters'); } catch (_) { /* ignoré */ }
     clearCache();
-    toast('Région mise à jour : rechargement…');
+    toast(tr('Région mise à jour : rechargement…'));
     setTimeout(() => location.reload(), 600);
   }
 });
@@ -652,10 +666,10 @@ detailEl.addEventListener('submit', async (e) => {
     e.preventDefault();
     const pin = e.target.elements.pin.value.trim();
     const msg = detailEl.querySelector('#set-parental-msg');
-    if (!/^d{4}$/.test(pin)) { msg.textContent = 'Le code compte 4 chiffres.'; return; }
+    if (!/^d{4}$/.test(pin)) { msg.textContent = tr('Le code compte 4 chiffres.'); return; }
     try {
       await saveProfile(auth.profile.id, { pin });
-      toast('Code parental défini');
+      toast(tr('Code parental défini'));
       rerender();
     } catch (err) {
       msg.textContent = errorText(err);

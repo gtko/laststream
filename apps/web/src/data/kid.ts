@@ -1,5 +1,6 @@
 /** Profil enfant : âge minimal déduit des classifications TMDB (release_dates / content_ratings) de la région. */
 
+import { t } from '../i18n';
 const TEXT_AGES: Record<string, number> = {
   // France, Suisse, Luxembourg, Belgique
   U: 0, TP: 0, ALL: 0, AL: 0, AT: 0, 'TOUS PUBLICS': 0, 'TOUT PUBLIC': 0, KT: 0, KIJKWIJZER: 0,
@@ -55,14 +56,14 @@ export function certLteFor(region: string, maxAge: number): string | null {
 
 /** Sections du catalogue enfant que le parent peut activer. `tv` (TV jeunesse) est désactivée par défaut. */
 export const KID_SECTIONS: ReadonlyArray<readonly [string, string]> = [
-  ['dessins', 'Dessins animés'],
-  ['famille', 'Films en famille'],
-  ['series', 'Séries jeunesse'],
-  ['disney', 'Classiques Disney et Pixar'],
-  ['anime', 'Animés pour les jeunes'],
-  ['nouveautes', 'Nouveautés jeunesse'],
-  ['plateformes', 'Plateformes (Disney+, Netflix)'],
-  ['tv', 'TV jeunesse'],
+  ['dessins', t('Dessins animés')],
+  ['famille', t('Films en famille')],
+  ['series', t('Séries jeunesse')],
+  ['disney', t('Classiques Disney et Pixar')],
+  ['anime', t('Animés pour les jeunes')],
+  ['nouveautes', t('Nouveautés jeunesse')],
+  ['plateformes', t('Plateformes (Disney+, Netflix)')],
+  ['tv', t('TV jeunesse')],
 ];
 
 /** Liste vide = tout sauf la TV jeunesse ; sinon seulement les sections cochées. */

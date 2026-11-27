@@ -10,6 +10,7 @@ import { isWebOs } from './device.js';
 import { toast } from './dom.js';
 import { goBack } from './router.js';
 import { state } from './state.js';
+import { t } from '../i18n';
 
 export const WEBOS_BACK = 461;
 /** keyCode des touches média de la télécommande LG → nom standard de KeyboardEvent.key. */
@@ -78,7 +79,7 @@ function onKeyDown(e) {
     else if (a === 'player') leavePlayer();
     else if (a === 'page') goBack();
     else if (a === 'exit') exitWebOsApp();
-    else if (a === 'arm') { armedAt = Date.now(); toast('Appuie encore sur Retour pour quitter Laststream'); }
+    else if (a === 'arm') { armedAt = Date.now(); toast(t('Appuie encore sur Retour pour quitter Laststream')); }
     return;
   }
   const media = webosMediaKey(e.keyCode, e.key);

@@ -40,6 +40,7 @@ import { recentError } from '../data/feedback';
 import { refreshUI, saveProgress } from './sessionTick.js';
 import { allSubtitleTracks, clearSecondary, effectiveSubMode, ensureExternalSubs, finishAutoSync, forceTranscoding, saveSync, selectSecondary, selectSubtitle, startAutoSync, stopAutoSync, trackContext, transcodeAction } from './sessionTracks.js';
 import { canMinimize, expandPlayer, leavePlayer, minimizePlayer, rememberVolume } from './sessionUi.js';
+import { t as tr, intlLocale } from '../i18n';
 
 
 // ---------- Actions ----------
@@ -50,7 +51,7 @@ const CAST_ENDS = new Set(['choose-myself', 'stream', 'next', 'episode', 'retry'
 /** Salon : seul l'hôte change d'épisode ; un invité qui essaie est prévenu. La lecture (pause, reprise, saut) est partagée. */
 function guestBlocked() {
   if (!partyBridge.guestLocked()) return false;
-  S.ui.toast('Seul l’hôte du salon change d’épisode', 1800);
+  S.ui.toast(tr('Seul l’hôte du salon change d’épisode'), 1800);
   return true;
 }
 
@@ -84,14 +85,14 @@ async function toggleFullscreen() {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
     else await S.ui.root.requestFullscreen();
-  } catch (_) { S.ui.toast('Plein écran indisponible'); }
+  } catch (_) { S.ui.toast(tr('Plein écran indisponible')); }
 }
 
 async function togglePip() {
   // Coque Windows : mpv est sous la page, donc c'est la fenêtre entière qui devient une petite fenêtre au premier plan.
   if (S.shell && S.P && S.P.engine.kind === 'mpv') { setShellPip(S.shell, !S.shellPip); return; }
-  if (!S.P || !S.P.view || !S.P.engine.supportsPip()) { S.ui.toast('Image dans l’image indisponible ici'); return; }
-  try { await S.P.engine.togglePip(); } catch (_) { S.ui.toast('Image dans l’image refusée par le navigateur'); }
+  if (!S.P || !S.P.view || !S.P.engine.supportsPip()) { S.ui.toast(tr('Image dans l’image indisponible ici')); return; }
+  try { await S.P.engine.togglePip(); } catch (_) { S.ui.toast(tr('Image dans l’image refusée par le navigateur')); }
 }
 
 /** Sélecteur de sources dans un panneau du lecteur : recherche initiale sans résultat, lecture automatique désactivée, changement de source. */
@@ -99,11 +100,11 @@ export function showSourcesPanel(reasons = []) {
   const p = S.P;
   if (!p) return;
   if (S.nativeEng && p.engine === S.nativeEng) S.nativeEng.closeNow(); // le panneau web passe par-dessus : l'activité native se ferme
-  if (p.addon && !p.views.length) { S.ui.toast('Aucune source trouvée pour ce titre', 3500); closePlayer(); return; } // le sélecteur chercherait via IMDb
+  if (p.addon && !p.views.length) { S.ui.toast(tr('Aucune source trouvée pour ce titre'), 3500); closePlayer(); return; } // le sélecteur chercherait via IMDb
   expandPlayer();
   S.ui.setLoading(null);
   S.ui.root.classList.remove('is-searching');
-  const host = S.ui.mountPanel('sources', 'Sources');
+  const host = S.ui.mountPanel('sources', tr('Sources'));
   openSourcePicker(p.req, null, {
     host, views: p.views, pending: p.pending || [], imdb: p.imdb, currentIndex: p.view ? p.view.index : null, notice: reasons, originalLang: originalLangOf(p), lp: langPrefsOf(p),
     onPick: (view, views) => {
@@ -119,7 +120,7 @@ export function showSourcesPanel(reasons = []) {
       const st = p.engine.state();
       p.attempts = 0;
       p.tried = new Set();
-      S.ui.toast('Changement de source…');
+      S.ui.toast(tr('Changement de source…'));
       playView(view, st.time > 5 ? st.time : 0);
       S.ui.focusFirst();
     },
@@ -169,8 +170,7 @@ export function playEpisode(season, episode) {
 }
 
 /** Message quand un épisode pas encore diffusé n'a aucune source (la recherche décide de la lecture). */
-export const notYetAiredMessage = (iso) => 'Pas encore disponible — diffusion le ' +
-  new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+export const notYetAiredMessage = (iso) => tr('Pas encore disponible — diffusion le {v}', { v: new Date(iso + 'T12:00:00').toLocaleDateString(intlLocale(), { day: 'numeric', month: 'long', year: 'numeric' }) });
 
 /** Le marquage d'un segment demande un épisode identifié (IMDb) et un lastAddon configuré. */
 export const markAllowed = (p) => !!p.imdb && isConfigured();
@@ -195,20 +195,20 @@ export function submitTarget() {
 export async function sendSegment(kind, start, end, negative) {
   const p = S.P;
   const body = buildSubmission(submitTarget(), kind, start, end, p.engine.state().duration, negative);
-  if (!body) { S.ui.toast('Segment invalide : il doit durer au moins 3 s'); return false; }
+  if (!body) { S.ui.toast(tr('Segment invalide : il doit durer au moins 3 s')); return false; }
   try {
     await postLt('skip/submit', body);
     if (negative) {
       p.segments = p.segments.filter((s) => !(s.kind === kind && s.inferred));
       S.ui.setSkip(null);
-      S.ui.toast('Merci, signalé : ce segment ne sera plus proposé');
+      S.ui.toast(tr('Merci, signalé : ce segment ne sera plus proposé'));
     } else {
       p.segments = [...p.segments.filter((s) => s.kind !== kind), { kind, start: body.start, end: body.end }].sort((a, b) => a.start - b.start);
-      S.ui.toast('Merci, segment envoyé et utilisable tout de suite');
+      S.ui.toast(tr('Merci, segment envoyé et utilisable tout de suite'));
     }
     return true;
   } catch (_) {
-    S.ui.toast('Envoi impossible pour le moment');
+    S.ui.toast(tr('Envoi impossible pour le moment'));
     return false;
   }
 }
@@ -251,9 +251,9 @@ export function onAction(act, data) {
     case 'fullscreen': toggleFullscreen(); break;
     case 'pip': togglePip(); break;
     case 'info': S.ui.togglePanel('info'); break;
-    case 'skip': { const seg = activeSkip(S.P.segments, st.time); if (seg) { seekTo(seg.end); S.ui.toast('Passé'); } break; }
+    case 'skip': { const seg = activeSkip(S.P.segments, st.time); if (seg) { seekTo(seg.end); S.ui.toast(tr('Passé')); } break; }
     case 'skip-wrong': { const seg = activeSkip(S.P.segments, st.time); if (seg) sendSegment(seg.kind, seg.start, seg.end, true); break; }
-    case 'next': { const nx = nextRef(); if (nx) playEpisode(nx.season, nx.episode); else { S.ui.toast('Dernier épisode'); resumeNative(S.P); } break; }
+    case 'next': { const nx = nextRef(); if (nx) playEpisode(nx.season, nx.episode); else { S.ui.toast(tr('Dernier épisode')); resumeNative(S.P); } break; }
     case 'next-dismiss': S.P.nextDismissed = true; S.ui.setNextCard(null); break;
     case 'end-dismiss': S.P.endDismissed = true; S.ui.setEndRow(false); break;
     case 'more-info': case 'recs': {
@@ -273,10 +273,10 @@ export function onAction(act, data) {
       const t = S.P.engine.audioTracks().find((x) => x.id === data.id);
       if (t && t.lang) remember(S.P.req.key, { audio: t.lang });
       S.P.applier.markManual();
-      if (!t || S.P.engine.setAudioTrack(data.id) === false) { S.ui.toast('Langue audio non modifiable avec cette source', 6000, transcodeAction()); break; }
+      if (!t || S.P.engine.setAudioTrack(data.id) === false) { S.ui.toast(tr('Langue audio non modifiable avec cette source'), 6000, transcodeAction()); break; }
       S.P.watch.reset(Date.now());
       setTimeout(() => S.ui.refreshPanel(), 200);
-      S.ui.toast('Audio : ' + t.label);
+      S.ui.toast(tr('Audio : {label}', { label: t.label }));
       break;
     }
     case 'force-hls': forceTranscoding(); break;
@@ -298,7 +298,7 @@ export function onAction(act, data) {
     case 'subrate': { const r = rateChoice(data.id); s.rate = r.ratio; s.rateId = r.id; s.rateHint = ''; saveSync(); S.ui.refreshPanel(); break; }
     case 'autosync': startAutoSync(); break;
     case 'autosync-now':
-      if (s.sync.probe && s.sync.probe.seconds() >= AUTOSYNC_MIN) finishAutoSync(); else S.ui.toast('Encore un peu de lecture (' + AUTOSYNC_MIN + ' s minimum)');
+      if (s.sync.probe && s.sync.probe.seconds() >= AUTOSYNC_MIN) finishAutoSync(); else S.ui.toast(tr('Encore un peu de lecture ({AUTOSYNC_MIN} s minimum)', { AUTOSYNC_MIN }));
       break;
     case 'autosync-cancel': stopAutoSync(); S.ui.refreshPanel(); break;
     case 'style-open': s.styleOpen = data.open === '1'; break;
@@ -327,7 +327,7 @@ export function onAction(act, data) {
       const sn = Number(data.season);
       const aired = (S.P.episodes.get(sn) || []).filter((e) => e.aired);
       const all = aired.every((e) => userStore.isWatched(S.P.req.key, sn, e.episode));
-      Promise.resolve(userStore.setWatched(S.P.req.key, aired.map((e) => ({ season: sn, episode: e.episode })), !all)).then(() => { S.ui.refreshPanel(); S.ui.toast(all ? 'Saison marquée non vue' : 'Saison marquée comme vue'); });
+      Promise.resolve(userStore.setWatched(S.P.req.key, aired.map((e) => ({ season: sn, episode: e.episode })), !all)).then(() => { S.ui.refreshPanel(); S.ui.toast(all ? tr('Saison marquée non vue') : tr('Saison marquée comme vue')); });
       break;
     }
     case 'ep-next-unseen': {
@@ -338,7 +338,7 @@ export function onAction(act, data) {
       if (!from) {
         // Réglage filler actif : il peut rester des épisodes non vus, mais seulement des fillers ou des récaps.
         const onlyFillers = skipFillers && !!firstUnseen(S.P.seasons, S.P.episodes, start, seen);
-        S.ui.toast(onlyFillers ? 'Il ne reste que des épisodes filler' : 'Tous les épisodes diffusés sont vus');
+        S.ui.toast(onlyFillers ? tr('Il ne reste que des épisodes filler') : tr('Tous les épisodes diffusés sont vus'));
         break;
       }
       S.P.epQuery = '';
@@ -379,14 +379,14 @@ export function panelData(name) {
     return {
       audio: {
         groups: groupAudioTracks(tracks, audioPreference(), titles),
-        note: hasApi ? 'Une seule piste audio dans ce flux.' : 'Ce navigateur n’expose pas les pistes audio d’un fichier lu directement.',
+        note: hasApi ? tr('Une seule piste audio dans ce flux.') : tr('Ce navigateur n’expose pas les pistes audio d’un fichier lu directement.'),
         canTranscode: !tracks.length && !hasApi && p.choice && p.choice.engine === 'direct',
       },
       subs: {
         sections: sectionSubtitleTracks(subTracks, [wantedSubLang(activeLangPrefs())], titles), selectedId: s.selectedId, offset: s.offset, rate: s.rateId, rateHint: s.rateHint,
         style: { ...s.style, mode: effectiveSubMode() }, styleOpen: s.styleOpen, loading: s.loading,
         sync: {
-          canAuto: !!s.selectedId && cues.length > 0 && sup.ok && p.engine.kind === 'html', reason: !s.selectedId ? 'Choisis d’abord une piste de sous-titres.' : !cues.length ? 'Pas de texte à caler pour cette piste.' : sup.reason || (p.engine.kind !== 'html' ? 'Indisponible avec mpv.' : ''),
+          canAuto: !!s.selectedId && cues.length > 0 && sup.ok && p.engine.kind === 'html', reason: !s.selectedId ? tr('Choisis d’abord une piste de sous-titres.') : !cues.length ? tr('Pas de texte à caler pour cette piste.') : sup.reason || (p.engine.kind !== 'html' ? tr('Indisponible avec mpv.') : ''),
           state: sync.state, message: sync.message, seconds: sync.probe ? sync.probe.seconds() : 0, target: AUTOSYNC_TARGET,
         },
       },
@@ -395,17 +395,17 @@ export function panelData(name) {
   if (name === 'settings') {
     const v = p.view;
     const st = p.engine.state();
-    const web = v.web === 'direct' ? { html: '<b class="lp-tag is-sync">Lecture directe</b>' } : v.web === 'convert' ? { html: '<b class="lp-tag is-warn">Conversion</b>' } : null;
+    const web = v.web === 'direct' ? { html: '<b class="lp-tag is-sync">' + tr('Lecture directe</b>') } : v.web === 'convert' ? { html: '<b class="lp-tag is-warn">' + tr('Conversion</b>') } : null;
     const rows = [
-      ['Résolution', [v.quality, v.sourceType].filter(Boolean).join(' · ') || 'Inconnue'],
-      ['Codec', [v.codec, ...v.hdr].filter(Boolean).join(' · ') || 'Inconnu'],
-      ['Débit', [v.bitrateLabel, v.sizeLabel].filter(Boolean).join(' · ') || 'Inconnu'],
-      ['Langue', v.langs.map((l) => l.label + (l.verified ? ' ✓' : '')).join(', ') || 'Inconnue'],
-      ['Fournisseur', v.provider || v.statusLabel],
+      [tr('Résolution'), [v.quality, v.sourceType].filter(Boolean).join(' · ') || tr('Inconnue')],
+      [tr('Codec'), [v.codec, ...v.hdr].filter(Boolean).join(' · ') || tr('Inconnu')],
+      [tr('Débit'), [v.bitrateLabel, v.sizeLabel].filter(Boolean).join(' · ') || tr('Inconnu')],
+      [tr('Langue'), v.langs.map((l) => l.label + (l.verified ? ' ✓' : '')).join(', ') || tr('Inconnue')],
+      [tr('Fournisseur'), v.provider || v.statusLabel],
     ];
-    if (web) rows.push(['Lecture', web]);
-    if (p.choice) rows.push(['Moteur', p.choice.label]);
-    if (p.audioMode) rows.push(['Son', { html: '<b class="lp-tag ' + (p.audioMode === 'app' ? 'is-sync' : 'is-warn') + '">' + (p.audioMode === 'app' ? 'Décodé par l’app' : 'Sans son') + '</b>' }]);
+    if (web) rows.push([tr('Lecture'), web]);
+    if (p.choice) rows.push([tr('Moteur'), p.choice.label]);
+    if (p.audioMode) rows.push([tr('Son'), { html: '<b class="lp-tag ' + (p.audioMode === 'app' ? 'is-sync' : 'is-warn') + '">' + (p.audioMode === 'app' ? tr('Décodé par l’app') : tr('Sans son')) + '</b>' }]);
     return {
       rate: st.rate, source: rows, aspect: p.aspect, thumbs: storeGet(THUMBS_KEY) !== '0', thumbsAvailable: thumbSourceOf(p).mode !== 'none', autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(), autoPipAvailable: p.engine.kind !== 'mpv' && p.engine.supportsPip(),
       miniAvailable: canMinimize(), miniOnExit: miniOnExitEnabled(storeGet(MINI_ON_EXIT_KEY)),
@@ -429,22 +429,22 @@ export function panelData(name) {
     const ep = eps && eps.find((e) => e.episode === p.cur.episode);
     const [title, sub] = headingFor(p);
     const rows = [
-      ['Moteur', p.choice ? p.choice.label : '…'],
-      ['Conversion', p.choice && p.choice.engine === 'hls' ? CONVERSION_LABEL[p.conversion || 'unknown'] : 'Aucune (lecture directe)'],
-      ...(p.audioMode ? [['Son', AUDIO_MODE_LABEL[p.audioMode] + (p.audioMode === 'app' ? '' : ' · ' + p.audioNote)]] : []),
-      ['Qualité', [v.quality, v.sourceType, v.codec, ...v.hdr].filter(Boolean).join(' · ')],
-      ['Origine', v.origins.map((o) => o.name).join(', ') || 'Inconnue'],
-      ['Audio', v.audio || 'Inconnu'],
-      ['Taille', [v.sizeLabel, v.bitrateLabel, v.durationLabel && '≈ ' + v.durationLabel].filter(Boolean).join(' · ') || 'Inconnue'],
-      ['Statut', v.statusLabel],
-      ['Fichier', v.filename || '—'],
+      [tr('Moteur'), p.choice ? p.choice.label : '…'],
+      [tr('Conversion'), p.choice && p.choice.engine === 'hls' ? CONVERSION_LABEL[p.conversion || 'unknown'] : tr('Aucune (lecture directe)')],
+      ...(p.audioMode ? [[tr('Son'), AUDIO_MODE_LABEL[p.audioMode] + (p.audioMode === 'app' ? '' : ' · ' + p.audioNote)]] : []),
+      [tr('Qualité'), [v.quality, v.sourceType, v.codec, ...v.hdr].filter(Boolean).join(' · ')],
+      [tr('Origine'), v.origins.map((o) => o.name).join(', ') || tr('Inconnue')],
+      [tr('Audio'), v.audio || tr('Inconnu')],
+      [tr('Taille'), [v.sizeLabel, v.bitrateLabel, v.durationLabel && '≈ ' + v.durationLabel].filter(Boolean).join(' · ') || tr('Inconnue')],
+      [tr('Statut'), v.statusLabel],
+      [tr('Fichier'), v.filename || '—'],
     ];
-    if (v.releaseGroup) rows.push(['Release', v.releaseGroup]);
-    if (p.probeTracks.height) rows.push(['Vidéo', p.probeTracks.width + '×' + p.probeTracks.height + ' · ' + (p.probeTracks.videoCodec || '').toUpperCase()]);
-    if (p.choice) rows.push(['Pourquoi ce moteur', p.choice.reason]);
+    if (v.releaseGroup) rows.push([tr('Release'), v.releaseGroup]);
+    if (p.probeTracks.height) rows.push([tr('Vidéo'), p.probeTracks.width + '×' + p.probeTracks.height + ' · ' + (p.probeTracks.videoCodec || '').toUpperCase()]);
+    if (p.choice) rows.push([tr('Pourquoi ce moteur'), p.choice.reason]);
     // Le serveur de streaming ne sert plus qu'à la conversion HLS (web) : sinon, lecture directe du lien débridé.
-    if (p.debridVia) rows.push(['Débridé par', p.debridVia]);
-    rows.push(['Serveur de streaming', p.choice && p.choice.viaServer ? serverBase() : isOfflineView(p.view) ? 'Non utilisé · fichier téléchargé' : 'Non utilisé · lecture directe du lien débridé']);
+    if (p.debridVia) rows.push([tr('Débridé par'), p.debridVia]);
+    rows.push([tr('Serveur de streaming'), p.choice && p.choice.viaServer ? serverBase() : isOfflineView(p.view) ? tr('Non utilisé · fichier téléchargé') : tr('Non utilisé · lecture directe du lien débridé')]);
     const m = p.model;
     return {
       title, episode: sub, synopsis: (ep && ep.overview) || p.meta.overview, rating: m && m.vote ? Number(m.vote).toFixed(1) + ' / 10' : '',
@@ -499,13 +499,13 @@ export function onKey(e) {
     case 'play': if (!st || st.paused) togglePlay(); break;
     case 'pause': if (st && !st.paused) togglePlay(); break;
     case 'seek': seekBy(action.by); break;
-    case 'volume': { S.P.engine.setMuted(false); const v = stepVolume(st.volume, action.by); S.P.engine.setVolume(v); rememberVolume(v); S.ui.toast('Volume ' + Math.round(v * 100) + ' %', 900); break; }
+    case 'volume': { S.P.engine.setMuted(false); const v = stepVolume(st.volume, action.by); S.P.engine.setVolume(v); rememberVolume(v); S.ui.toast(tr('Volume {v} %', { v: Math.round(v * 100) }), 900); break; }
     case 'fullscreen': toggleFullscreen(); break;
     case 'mute': S.P.engine.setMuted(!st.muted); break;
     case 'skip': onAction('skip'); break;
     case 'pip': togglePip(); break;
     case 'panel': S.ui.togglePanel(action.name); break;
-    case 'mini': if (!minimizePlayer()) S.ui.toast('Réduction indisponible ici'); break;
+    case 'mini': if (!minimizePlayer()) S.ui.toast(tr('Réduction indisponible ici')); break;
     case 'next': onAction('next'); break;
     case 'back':
       switch (backStep({ panelOpen: !!S.ui.panel, shellFullscreen: !!S.shell && S.shellFullscreen, docFullscreen: !!document.fullscreenElement, shellPip: !!S.shell && S.shellPip })) {
@@ -543,13 +543,13 @@ export function playerFeedbackContext() {
     const st = p.engine.state();
     out.Position = Math.round(st.time) + ' s / ' + Math.round(st.duration) + ' s';
     out['Tampon'] = Math.max(0, Math.round((st.cacheTime || 0) - st.time)) + ' s';
-    out.Lecture = st.buffering ? 'chargement' : st.paused ? 'pause' : 'en cours';
+    out.Lecture = st.buffering ? 'chargement' : st.paused ? 'pause' : tr('en cours');
     out.Vitesse = st.rate || 1;
   }
   out.Tentatives = p.attempts || 0;
   if (p.view) for (const [k, v] of panelData('info').rows || []) if (v) out[k] = v;
   out.Langues = p.view ? p.view.langs.map((l) => l.label).join('/') : '';
   out['Pistes audio'] = p.probeTracks.audio.map((a) => a.label).join(', ').slice(0, 200);
-  out['Sous-titres'] = p.subs.selectedId ? String(p.subs.selectedId) + (p.subs.offset ? ' (décalage ' + p.subs.offset + ' s)' : '') : 'aucun';
+  out['Sous-titres'] = p.subs.selectedId ? String(p.subs.selectedId) + (p.subs.offset ? ' ' + tr('(décalage {offset} s)', { offset: p.subs.offset }) : '') : 'aucun';
   return out;
 }

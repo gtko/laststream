@@ -6,13 +6,14 @@ import { platformSections } from './platform.js';
 import { servicesSections } from './services.js';
 import { systemSections } from './system.js';
 import { usersSections } from './users.js';
+import { t } from '../../i18n';
 
 export const GROUPS = [
-  { id: 'pilotage', label: 'Pilotage' },
-  { id: 'users', label: 'Utilisateurs' },
-  { id: 'platform', label: 'Plateforme' },
-  { id: 'community', label: 'Communauté' },
-  { id: 'system', label: 'Système' },
+  { id: 'pilotage', label: t('Pilotage') },
+  { id: 'users', label: t('Utilisateurs') },
+  { id: 'platform', label: t('Plateforme') },
+  { id: 'community', label: t('Communauté') },
+  { id: 'system', label: t('Système') },
 ];
 
 /** Toutes les sections, dans l'ordre de la navigation. */

@@ -1,6 +1,6 @@
 # laststream-site
 
-Site vitrine de Laststream (FR et EN), servi par un Worker Cloudflare nommé `laststream-www` (voir `wrangler.jsonc`).
+Site vitrine de Laststream (FR et EN écrits à la main, autres langues générées), servi par un Worker Cloudflare nommé `laststream-www` (voir `wrangler.jsonc`).
 `src/worker.js` répond à `/api/android` et `/api/windows` en relayant le `latest.json` de l'app (binding `APP`) ;
 toutes les autres requêtes sont servies depuis `public/` (binding `ASSETS`).
 
@@ -18,6 +18,11 @@ toutes les autres requêtes sont servies depuis `public/` (binding `ASSETS`).
   - `guides/` : guides illustrés, un dossier par guide (`index.html`, `img/`, `clip.mp4`), styles `style.css` et `guides/guides.css`.
   - `assets/` : logos, icônes, polices, captures (`shots/`), image de partage (`og.png`).
   - `robots.txt` et `sitemap.xml` : indexation.
+- `i18n/` et `scripts/i18n-site.mjs` : autres langues (LAST-1658). Les pages anglaises servent de source ; chaque
+  catalogue `i18n/<code>.json` (texte anglais → traduction) produit `public/<code>/`, avec les liens hreflang, le menu
+  des langues et `sitemap.xml`. Après une modification des pages anglaises : `npm run i18n:extract`, traduire les textes
+  nouveaux de `i18n/messages.json`, puis `npm run i18n:check` et `npm run i18n:build`. Les pages générées ne se
+  modifient pas à la main.
 - `guides-capture/` : outil de captures pour les guides (scripts Node et Playwright headless, données fictives), hors publication. Voir `guides-capture/README.md`.
 
 ## Déploiement

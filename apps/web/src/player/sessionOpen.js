@@ -29,6 +29,7 @@ import { S, hasEpisodesPanel, headingFor, nextRef, notesAllowed } from './sessio
 import { memoryWatch, stopTicks, syncTicks } from './sessionTick.js';
 import { ensureUI, resetMini } from './sessionUi.js';
 import * as playerState from './playerState';
+import { t } from '../i18n';
 
 
 // ---------- Ouverture ----------
@@ -103,7 +104,7 @@ export function loaderExtra(step, over = {}) {
   const found = p.views.length;
   return {
     logo: p.meta.logo, backdrop: p.meta.backdrop ? IMG('w1280', p.meta.backdrop) : '', episode: headingFor(p)[1], cancel: true,
-    steps: [found ? found + ' source' + (found > 1 ? 's' : '') + ' trouvée' + (found > 1 ? 's' : '') : 'Recherche des sources', 'Choix de la meilleure source', 'Préparation du lien'],
+    steps: [found ? t('{found} source{v} trouvée', { found, v: (found > 1 ? 's' : '') }) + (found > 1 ? 's' : '') : t('Recherche des sources'), t('Choix de la meilleure source'), t('Préparation du lien')],
     step, ...over,
   };
 }

@@ -3,11 +3,12 @@ import type { Lang } from '../data/stream';
 import { fileCodecsOf } from '../party/compat';
 import { capLabel, capViews, GROUP_HEIGHT } from './resolutionCap';
 import type { SourceView } from './info';
+import { t } from '../i18n';
 
 /* Filtres, tri, regroupement et recommandation des sources. Fonctions pures, testées. */
 
 export type SortKey = 'recommended' | 'quality' | 'size' | 'bitrate';
-export const SORT_LABELS: Record<SortKey, string> = { recommended: 'Recommandé', quality: 'Qualité', size: 'Taille', bitrate: 'Débit' };
+export const SORT_LABELS: Record<SortKey, string> = { recommended: t('Recommandé'), quality: t('Qualité'), size: t('Taille'), bitrate: t('Débit') };
 export const SORT_KEYS: readonly SortKey[] = ['recommended', 'quality', 'size', 'bitrate'];
 
 type LangFilter = 'fr' | 'vo' | 'multi';
@@ -89,18 +90,18 @@ export interface Recommendation {
   atCap?: boolean;
 }
 
-const LANG_NAME: Record<string, string> = { original: 'VO', multi: 'multi-audio', fr: 'VF', en: 'VO anglaise', es: 'VO espagnole', de: 'VO allemande', it: 'VO italienne' };
+const LANG_NAME: Record<string, string> = { original: 'VO', multi: 'multi-audio', fr: 'VF', en: t('VO anglaise'), es: t('VO espagnole'), de: t('VO allemande'), it: t('VO italienne') };
 const mbps = (kbps: number): string => String(Math.round(kbps / 1000));
 
 /** Phrase « Pourquoi ce choix » pour la source recommandée. */
 export function recommendationReason(v: SourceView, bwKbps: number | null, preferred: Lang, fallback: false | 'no-vf' | 'vf-too-heavy'): string {
   const lang = LANG_NAME[preferred] ?? preferred.toUpperCase();
-  const fit = bwKbps && bwKbps > 0 ? ' qui tient dans ta connexion (' + mbps(bwKbps) + ' Mb/s)' : '';
-  const extras = [v.status === 'cached' ? 'déjà en cache' : ''].filter(Boolean).join(', ');
+  const fit = bwKbps && bwKbps > 0 ? ' ' + t('qui tient dans ta connexion ({bwKbps} Mb/s)', { bwKbps: mbps(bwKbps) }) : '';
+  const extras = [v.status === 'cached' ? t('déjà en cache') : ''].filter(Boolean).join(', ');
   const tail = extras ? ', ' + extras : '';
-  if (fallback === 'no-vf') return 'Pas de ' + lang + ' disponible : meilleure VO' + fit + tail;
-  if (fallback === 'vf-too-heavy') return 'Les ' + lang + ' sont trop lourdes pour ta connexion' + (bwKbps ? ' (' + mbps(bwKbps) + ' Mb/s)' : '') + ' : meilleure VO' + tail;
-  return 'Meilleure ' + lang + (fit || ' disponible') + tail;
+  if (fallback === 'no-vf') return t('Pas de {lang} disponible : meilleure VO', { lang }) + fit + tail;
+  if (fallback === 'vf-too-heavy') return t('Les {lang} sont trop lourdes pour ta connexion{v} : meilleure VO', { lang, v: (bwKbps ? ' (' + mbps(bwKbps) + ' Mb/s)' : '') }) + tail;
+  return t('Meilleure {lang}', { lang }) + (fit || ' disponible') + tail;
 }
 
 export interface RecommendOptions {
@@ -161,10 +162,10 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
   const rec = recommendPool(capped.pool, bwKbps, preferred, opts);
   if (!rec) return null;
   const label = capLabel(maxHeight);
-  if (capped.above) return { ...rec, reason: rec.reason + ' · aucune source en ' + label + ' ou moins, la plus proche est proposée' };
+  if (capped.above) return { ...rec, reason: t('{reason} · aucune source en {label} ou moins, la plus proche est proposée', { reason: rec.reason, label }) };
   // `atCap` : la source atteint le plafond lui-même (aucune source à venir ne peut mieux faire), jamais selon les sources déjà reçues.
   const atCap = GROUP_HEIGHT[rec.view.group] >= maxHeight;
-  return { ...rec, ...(atCap ? { atCap } : {}), ...(capped.hidden === 0 ? {} : { reason: rec.reason + ' · plafond ' + label }) };
+  return { ...rec, ...(atCap ? { atCap } : {}), ...(capped.hidden === 0 ? {} : { reason: t('{reason} · plafond {label}', { reason: rec.reason, label }) }) };
 }
 
 /** Choix parmi des sources lisibles déjà filtrées par le plafond de résolution. */
@@ -186,8 +187,8 @@ function recommendPool(playable: readonly SourceView[], bwKbps: number | null, p
       const aac = opts.preferAac ? aacInstead(pool) : null;
       const view = aac ?? pool[0];
       const fallback = withLang.length ? false : playable.some(langOk) ? 'vf-too-heavy' : 'no-vf';
-      const soundNote = aac ? ' · son AAC plutôt que Dolby' : '';
-      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.appAudio === 'app' ? ' · son décodé par l’app' : view.appAudio === 'unsupported' ? ' · sans son (DTS)' : view.convert === 'video' ? ' · avec réencodage vidéo' : view.web === 'convert' ? ' · avec conversion audio' : '') + soundNote };
+      const soundNote = aac ? ' ' + t('· son AAC plutôt que Dolby') : '';
+      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' ' + t('· lecture directe') : view.appAudio === 'app' ? ' ' + t('· son décodé par l’app') : view.appAudio === 'unsupported' ? ' ' + t('· sans son (DTS)') : view.convert === 'video' ? ' ' + t('· avec réencodage vidéo') : view.web === 'convert' ? ' ' + t('· avec conversion audio') : '') + soundNote };
     }
   } else {
     const streams = playable.map((v) => v.stream);
@@ -199,7 +200,7 @@ function recommendPool(playable: readonly SourceView[], bwKbps: number | null, p
   }
   const lightest = [...playable].sort((a, b) => (a.bitrateKbps ?? Infinity) - (b.bitrateKbps ?? Infinity) || b.score - a.score)[0];
   const usable = budget === Infinity ? 0 : Math.round(budget / 1000);
-  return { view: lightest, languageFallback: !lightest.hasFrench, reason: 'Aucune source ne tient dans ta connexion' + (usable ? ' (' + usable + ' Mb/s utiles)' : '') + ' : la moins lourde est proposée' };
+  return { view: lightest, languageFallback: !lightest.hasFrench, reason: t('Aucune source ne tient dans ta connexion{v} : la moins lourde est proposée', { v: (usable ? ' ' + t('({usable} Mb/s utiles)', { usable }) : '') }) };
 }
 
 /**
@@ -214,18 +215,18 @@ export function isGoodMatch(rec: Recommendation | null): boolean {
 function pendingNames(pending: readonly string[]): string {
   const shown = pending.slice(0, 2).join(', ');
   const more = pending.length - 2;
-  return shown + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '');
+  return shown + (more > 0 ? ' ' + t('et {more} autre', { more }) + (more > 1 ? 's' : '') : '');
 }
 
 /** « Recherche encore sur C411, YGG et 2 autres… » */
 export function describePending(pending: readonly string[]): string {
   if (!pending.length) return '';
-  return 'Recherche encore sur ' + pendingNames(pending) + '…';
+  return t('Recherche encore sur {pending}…', { pending: pendingNames(pending) });
 }
 
 /** « Lancement avec 10 sources (loostream encore en recherche) » : lecture lancée pendant que des addons répondent encore. */
 export function describeLaunch(count: number, pending: readonly string[]): string {
-  return 'Lancement avec ' + count + ' source' + (count > 1 ? 's' : '') + ' (' + pendingNames(pending) + ' encore en recherche)';
+  return t('Lancement avec {count} source{v} ({pending} encore en recherche)', { count, v: (count > 1 ? 's' : ''), pending: pendingNames(pending) });
 }
 
 /** Nombre de sources par origine, de la plus fournie à la moins fournie. */

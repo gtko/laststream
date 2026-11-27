@@ -17,6 +17,7 @@ import { playView, releaseLocal } from './sessionPlay.js';
 import { S, badKey, MAX_ATTEMPTS, originalLangOf } from './sessionState.js';
 import { languageChanged, partyFallbackNotice, roomLangOf } from '../party/sourceChoice';
 import { expandPlayer } from './sessionUi.js';
+import { t } from '../i18n';
 
 
 /** Écarte les sources mémorisées comme lentes ou en échec pour ce titre (24 h), sauf s'il n'en reste aucune. */
@@ -42,7 +43,7 @@ export function nextCandidate(p, tried) {
 
 export function recordRace(p, win) {
   const key = badKey(p);
-  win.lost.forEach((f) => markBad(key, sourceKey(f.candidate.view), 'trop lente à démarrer'));
+  win.lost.forEach((f) => markBad(key, sourceKey(f.candidate.view), t('trop lente à démarrer')));
   win.failures.forEach((f) => markBad(key, sourceKey(f.candidate.view), f.message));
 }
 
@@ -65,14 +66,14 @@ export function localFailure(kind, reason) {
 export function streamInstead(opts = { force: true }) {
   const p = S.P;
   if (!p) return;
-  if (navigator.onLine === false) { S.ui.toast('Aucune connexion : seul le fichier téléchargé est disponible', 4000); return; }
+  if (navigator.onLine === false) { S.ui.toast(t('Aucune connexion : seul le fichier téléchargé est disponible'), 4000); return; }
   const at = p.engine ? p.engine.state().time : 0;
   if (p.engine && p.engine.kind === 'native') p.engine.closeNow(); else if (p.engine) { try { p.engine.destroy(); } catch (_) { /* ignoré */ } }
   releaseLocal(p);
   Object.assign(p, { localFailed: false, failing: false, attempts: 0, tried: new Set(), view: null, views: [], ranked: [], pending: [], seekStart: at > 5 ? at : null, resumeMode: p.resumeMode || 'ask' });
   S.ui.setError(null);
   S.ui.root.classList.add('is-searching');
-  S.ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
+  S.ui.setLoading(p.meta.title || t('Lecture'), t('Recherche de la meilleure source…'), loaderExtra(0));
   searchAndPlay(p, p.req, opts).catch(() => undefined);
 }
 
@@ -122,13 +123,13 @@ export function failover(reason) {
     if (p.engine.kind === 'native') p.engine.closeNow();
     expandPlayer();
     S.ui.setLoading(null);
-    S.ui.setError('Lecture impossible', reason + '. Aucune autre source à essayer automatiquement.', [{ act: 'source', label: 'Essayer une autre source' }, { act: 'retry', label: 'Réessayer' }, { act: 'close', label: 'Fermer' }]);
+    S.ui.setError(t('Lecture impossible'), reason + t('. Aucune autre source à essayer automatiquement.'), [{ act: 'source', label: t('Essayer une autre source') }, { act: 'retry', label: t('Réessayer') }, { act: 'close', label: t('Fermer') }]);
     return;
   }
   const next = options[0];
   // Salon : une source de repli hors de la langue du salon est annoncée, jamais lue en silence.
   const roomLang = roomLangOf(p.launchOpts && p.launchOpts.partyLang, originalLangOf(p));
-  const notice = failoverStatusText(p.view, reason, next, Math.min(p.attempts + 1, MAX_ATTEMPTS), MAX_ATTEMPTS, languageChanged(next, roomLang) ? 'hors langue du salon' : '');
+  const notice = failoverStatusText(p.view, reason, next, Math.min(p.attempts + 1, MAX_ATTEMPTS), MAX_ATTEMPTS, languageChanged(next, roomLang) ? t('hors langue du salon') : '');
   S.ui.toast(notice, 6000);
   partyBridge.sourceFailing();
   playView(next, resumeAt, { notice });
@@ -146,7 +147,7 @@ export function switchToView(view, allow) {
   p.tried = new Set();
   p.fallbackFilter = typeof allow === 'function' ? allow : null;
   p.partySwitch = true;
-  S.ui.toast('Changement de source…');
+  S.ui.toast(t('Changement de source…'));
   playView(view, Math.max(0, st.time || 0));
   return true;
 }

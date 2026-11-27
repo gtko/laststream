@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { appFetch } from './crossFetch';
 import { PUBLIC_BASE } from './config';
+import { t } from '../i18n';
 
 /* Mise à jour en un tap de l'application Android (plugin natif `LaststreamUpdate`). Le serveur Laststream publie
  * /app/android/latest.json ({versionCode, versionName, url, sha256, size, notes}) ; l'interface étant chargée depuis le serveur,
@@ -61,12 +62,12 @@ export interface BannerModel {
 }
 
 export function bannerModel(m: UpdateManifest): BannerModel {
-  return { text: `Mise à jour disponible (v${m.versionName})`, action: 'Installer' };
+  return { text: `${t('Mise à jour disponible (v{versionName})', { versionName: m.versionName })}`, action: t('Installer') };
 }
 
 export function sizeLabel(bytes: number | undefined): string {
   if (!bytes || bytes <= 0) return '';
-  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(0)} Mo` : `${Math.ceil(bytes / 1024)} Ko`;
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(0)} ${t('Mo')}` : `${Math.ceil(bytes / 1024)} ${t('Ko')}`;
 }
 
 // ---------- Plugin natif ----------
@@ -142,9 +143,9 @@ export async function installUpdate(m: UpdateManifest, onProgress: (percent: num
 }
 
 export const INSTALL_MESSAGES: Record<Exclude<InstallResult, 'started'>, string> = {
-  permission: 'Autorise l’installation depuis Laststream dans les réglages qui viennent de s’ouvrir, puis reviens et appuie de nouveau sur Installer.',
-  hash: 'Le fichier téléchargé est corrompu : mise à jour annulée.',
-  signature: 'Cette version est signée avec une autre clé que l’app installée : Android refuse de la mettre à jour. Désinstalle Laststream, puis installe la dernière version depuis laststream.app (une seule fois).',
-  network: 'Téléchargement impossible pour le moment. Réessaie plus tard.',
-  invalid: 'Mise à jour invalide.',
+  permission: t('Autorise l’installation depuis Laststream dans les réglages qui viennent de s’ouvrir, puis reviens et appuie de nouveau sur Installer.'),
+  hash: t('Le fichier téléchargé est corrompu : mise à jour annulée.'),
+  signature: t('Cette version est signée avec une autre clé que l’app installée : Android refuse de la mettre à jour. Désinstalle Laststream, puis installe la dernière version depuis laststream.app (une seule fois).'),
+  network: t('Téléchargement impossible pour le moment. Réessaie plus tard.'),
+  invalid: t('Mise à jour invalide.'),
 };

@@ -1,5 +1,6 @@
 import { getLangPrefs, LANG_NONE, LANG_VO } from './langPrefs';
 import { getVideoLang, type VideoLang } from './prefs';
+import { t as tr } from '../i18n';
 
 /** Vidéo TMDB (champs utiles). */
 export interface TmdbVideo {
@@ -72,7 +73,7 @@ const EXCLUDED = /behind the scenes|featurette|bloopers?|b[eê]tisier|\br[ée]ca
 /** Un nom « clip » exclut une bande-annonce ou un teaser (un clip typé « Clip » reste admis, en dernier). */
 const CLIP_NAME = /\bclips?\b/i;
 const TEASER = /\bteaser\b/i;
-const CANDIDATE_TYPES: readonly string[] = ['Trailer', 'Teaser', 'Clip'];
+const CANDIDATE_TYPES: readonly string[] = [tr('Trailer'), tr('Teaser'), tr('Clip')];
 /** Promo ou événement (avant-première, festival, « au cinéma le », « beach »…) : passe après toute vraie bande-annonce. */
 const PROMO = /deauville|cannes|venise|avant[- ]premi[eè]re|festival|au cin[ée]ma le|en salles? le|\bbeach\b|\binterviews?\b|\bspots? tv\b|\btv spots?\b|r[ée]actions?\b|\bbonus\b/i;
 /** « Bande-annonce officielle » ou « official trailer ». */

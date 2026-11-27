@@ -38,16 +38,17 @@ import { bindEngine } from './sessionUi.js';
 import { castSourceChanged } from './sessionCast.js';
 import { NOTE_NOT_EXTERNAL, externalPlan, openExternal } from './externalScreen.js';
 import { iosNeedsExternal } from './external';
+import { t } from '../i18n';
 
 
 /** Message clair pour une erreur de débridage sur l'appareil. */
 function clientError(e) {
   const code = e && e.code;
-  if (code === 'no_provider') return 'Aucun débrideur configuré : ajoute une clé dans Réglages > Sources > Avancé.';
-  if (code === 'all_unavailable') return 'Tous tes débrideurs sont indisponibles pour le moment (compte suspendu, quota ou clé invalide). Voir Réglages > Sources > Avancé.';
-  if (code === 'host_not_allowed' || code === 'web_unsupported') return 'Ce débrideur ne peut pas être appelé depuis le navigateur : utilise l’application Windows ou Android.';
-  if (code === 'not_ready') return 'Cette source n’est pas encore prête chez le débrideur (pas en cache).';
-  return 'Débridage impossible' + (code ? ' (' + code + ')' : '') + '.';
+  if (code === 'no_provider') return t('Aucun débrideur configuré : ajoute une clé dans Réglages > Sources > Avancé.');
+  if (code === 'all_unavailable') return t('Tous tes débrideurs sont indisponibles pour le moment (compte suspendu, quota ou clé invalide). Voir Réglages > Sources > Avancé.');
+  if (code === 'host_not_allowed' || code === 'web_unsupported') return t('Ce débrideur ne peut pas être appelé depuis le navigateur : utilise l’application Windows ou Android.');
+  if (code === 'not_ready') return t('Cette source n’est pas encore prête chez le débrideur (pas en cache).');
+  return t('Débridage impossible{v}.', { v: (code ? ' (' + code + ')' : '') });
 }
 
 /** `fresh` : redemande le lien au débrideur de l'appareil (mémo et lien partagé ignorés), pour la reconnexion pendant la lecture. */
@@ -68,14 +69,14 @@ export async function resolveMedia(view, signal, local = false, { fresh = false 
       // `local` : le lien partagé a échoué, il est invalidé sur le serveur puis débloqué ici.
       const r = local ? await debrid().recoverShared(copies, { season, episode }, signal) : await debrid().resolve(copies, { season, episode }, signal, fresh ? { skipShared: true } : {});
       // Sans fournisseur, le lien vient d'un autre appareil du compte (partage serveur).
-      if (S.P) S.P.debridVia = (r.provider && PROVIDER_LABEL[r.provider]) || 'Appareil du compte';
+      if (S.P) S.P.debridVia = (r.provider && PROVIDER_LABEL[r.provider]) || t('Appareil du compte');
       return { url: r.url, up, base, provider: r.provider, shared: r.provider === undefined };
     } catch (e) {
       throw new Error(clientError(e));
     }
   }
   // Jamais de lecture torrent (P2P) : une source sans lien HTTP(S) n'est pas lisible, il faut un débrideur.
-  throw new Error('Cette source n’a pas de lien lisible : un débrideur (AllDebrid) est nécessaire, la lecture torrent est désactivée.');
+  throw new Error(t('Cette source n’a pas de lien lisible : un débrideur (AllDebrid) est nécessaire, la lecture torrent est désactivée.'));
 }
 
 /**
@@ -114,7 +115,7 @@ async function prepareView(p, cand, signal, local = false, opts = {}) {
     // Démarrage rapide possible : la vidéo passe telle quelle dans le navigateur, seul l'audio demande le transcodage.
     p.hint = { url: media.url, probe, fastDirect: !p.forceHls && directVideoOk(probe, getCaps()) };
   }
-  if (direct && !native) choice = { engine: 'direct', viaServer: false, label: 'lecture directe (démarrage rapide)', reason: 'La vidéo est lisible telle quelle ; piste audio du fichier par défaut.' };
+  if (direct && !native) choice = { engine: 'direct', viaServer: false, label: t('lecture directe (démarrage rapide)'), reason: t('La vidéo est lisible telle quelle ; piste audio du fichier par défaut.') };
   const conversion = choice.engine === 'hls' ? probeConversion(probe, getCaps(), p.forceHls) : 'none';
   let hlsUrl = null;
   let hlsId = '';
@@ -123,7 +124,7 @@ async function prepareView(p, cand, signal, local = false, opts = {}) {
     hlsUrl = hlsMasterUrl(media.base, hlsId, media.url, getCaps(), p.forceHls);
     // Création de la session HLS côté serveur : c'est ici que le serveur remuxe ou réencode, donc ici que l'attente se joue.
     const res = await fetch(hlsUrl, { signal });
-    if (!res.ok) throw new Error('le serveur de streaming a refusé la session (' + res.status + ')');
+    if (!res.ok) throw new Error(t('le serveur de streaming a refusé la session ({status})', { status: res.status }));
     await res.text();
   }
   console.debug('[player] session', { source: describeView(view), engine: choice.engine, conversion, direct: !!direct, hls: hlsUrl ? hlsId : null });
@@ -189,7 +190,7 @@ export async function playView(view, startAt, opts = {}) {
   syncTicks(); // le moteur est détruit, la phase repasse à « loading » : le démarrage doit être surveillé même si la boucle dormait (pause, onglet caché)
   const line = (v) => sourceLine(v) + (v.status === 'cached' ? ' ⚡' : '');
   if (isOfflineView(view)) { await playLocal(p, view, startAt, stale); return; }
-  S.ui.setLoading(p.meta.title || 'Lecture', opts.notice || 'Préparation du lien…', loaderExtra(2, { source: line(view), ...(p.memStart ? { steps: MEMORY_STEPS } : {}) }));
+  S.ui.setLoading(p.meta.title || t('Lecture'), opts.notice || t('Préparation du lien…'), loaderExtra(2, { source: line(view), ...(p.memStart ? { steps: MEMORY_STEPS } : {}) }));
   // Course : la source choisie démarre seule ; passé 6 s, la suivante part en parallèle, la première prête gagne (12 s au plus
   // par candidat, 25 s ou 3 échecs au total).
   const race = raceCandidates({
@@ -199,8 +200,8 @@ export async function playView(view, startAt, opts = {}) {
     onProgress: ({ attempt, max, slow, candidate }) => {
       if (stale() || !slow) return;
       p.view = listed(p, candidate.view);
-      const msg = 'Ça prend du temps… ' + (candidate.direct ? 'essai en lecture directe' : 'essai d’une autre source') + ' (' + attempt + '/' + max + ')';
-      S.ui.setLoading(p.meta.title || 'Lecture', msg, loaderExtra(2, { source: line(candidate.view), slow: true }));
+      const msg = t('Ça prend du temps… {v} ({attempt}/{max})', { v: (candidate.direct ? t('essai en lecture directe') : t('essai d’une autre source')), attempt, max });
+      S.ui.setLoading(p.meta.title || t('Lecture'), msg, loaderExtra(2, { source: line(candidate.view), slow: true }));
     },
   });
   p.race = race;
@@ -215,7 +216,7 @@ export async function playView(view, startAt, opts = {}) {
     const failures = (err && err.failures) || [];
     failures.forEach((f) => markBad(badKey(p), sourceKey(f.candidate.view), f.message));
     p.view = null;
-    showSourcesPanel(failures.map((f) => describeView(f.candidate.view) + (f.candidate.direct ? ' (lecture directe)' : '') + ' : ' + f.message));
+    showSourcesPanel(failures.map((f) => describeView(f.candidate.view) + (f.candidate.direct ? ' ' + t('(lecture directe)') : '') + ' : ' + f.message));
     return;
   }
   if (stale()) return;
@@ -228,7 +229,7 @@ export async function playView(view, startAt, opts = {}) {
     await startPlan(p, win.value, startAt, stale, win.candidate);
   } catch (err) {
     if (stale()) return;
-    failover(err && err.message ? err.message : 'Impossible de lancer la lecture');
+    failover(err && err.message ? err.message : t('Impossible de lancer la lecture'));
   }
 }
 
@@ -320,7 +321,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
   castSourceChanged(p);
   S.ui.setSeries(hasEpisodesPanel(p), !!nextRef());
   S.ui.setMarkAvailable(markAllowed(p));
-  if (cand && cand.direct) toastBusy(p, 'Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).', 7000);
+  if (cand && cand.direct) toastBusy(p, t('Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).'), 7000);
   if (p.notice) { toastBusy(p, p.notice, 6000); p.notice = ''; }
   refreshUI();
   partyBridge.viewReady(partyAdapter(p));
@@ -328,7 +329,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
 }
 
 /** Libellé du son dans la fiche de lecture quand l'app ne laisse pas le navigateur le jouer. */
-export const AUDIO_MODE_LABEL = { app: 'Son décodé par l’app (le navigateur ne le lit pas)', unsupported: 'Non pris en charge par le navigateur', error: 'Indisponible : la source répond trop lentement', cors: 'Indisponible : la source refuse la lecture du son par le navigateur' };
+export const AUDIO_MODE_LABEL = { app: t('Son décodé par l’app (le navigateur ne le lit pas)'), unsupported: t('Non pris en charge par le navigateur'), error: t('Indisponible : la source répond trop lentement'), cors: t('Indisponible : la source refuse la lecture du son par le navigateur') };
 
 export function stopWebAudio(p) {
   if (p.webAudio) { try { p.webAudio.dispose(); } catch (_) { /* ignoré */ } p.webAudio = null; }

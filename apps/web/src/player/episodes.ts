@@ -1,5 +1,6 @@
 /* Saisons et épisodes pour le panneau du lecteur : réponse canonique de lastAddon (/lt/series/:tmdbId/episodes) ou saison TMDB. */
 import { episodeParts, partLabel, type EpisodePart } from '../data/episodeParts';
+import { t as tr } from '../i18n';
 
 export interface EpisodeInfo {
   episode: number;
@@ -146,8 +147,8 @@ export function nextCardLabels(continues: boolean, next: Pick<EpisodeInfo, 'part
   const part = next?.part;
   if (!part) return { kicker: '', playLabel: '' };
   return continues
-    ? { kicker: `${partLabel(part)} · suite de l’émission`, playLabel: `Lire la partie ${part.index}` }
-    : { kicker: `Épisode suivant · ${partLabel(part)}`, playLabel: '' };
+    ? { kicker: `${partLabel(part)} ${tr('· suite de l’émission')}`, playLabel: `${tr('Lire la partie')} ${part.index}` }
+    : { kicker: `${tr('Épisode suivant ·')} ${partLabel(part)}`, playLabel: '' };
 }
 
 /** Réponse canonique `{ seasons: [{ number, episodeCount }], episodes: [{ season, episode, name… }] }` ; null si inexploitable. */

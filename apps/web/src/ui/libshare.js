@@ -10,6 +10,7 @@ import { detailEl, toast } from './dom.js';
 import { SET_ICON } from './settings-ui.js';
 import { state } from './state.js';
 import { esc } from './util.js';
+import { t as tr } from '../i18n';
 
 /** Clé de titre (`movie:550`) -> 'private' | 'friends'. Absent : privée. */
 const vis = new Map();
@@ -41,17 +42,17 @@ export function visButtonHTML(key) {
   if (!sharingAvailable()) return '';
   const shared = visibilityOf(key) === 'friends';
   return '<button type="button" class="lib-vis' + (shared ? ' is-on' : '') + '" data-libvis="' + esc(key) + '" aria-pressed="' + shared + '" ' +
-    'aria-label="' + (shared ? 'Visible par tes amis (rendre privé)' : 'Privé (partager avec mes amis)') + '" title="' + (shared ? 'Visible par tes amis' : 'Privé') + '">' +
+    'aria-label="' + (shared ? tr('Visible par tes amis (rendre privé)') : tr('Privé (partager avec mes amis)')) + '" title="' + (shared ? tr('Visible par tes amis') : tr('Privé')) + '">' +
     (shared ? SET_ICON.eye : SET_ICON.eyeOff) + '</button>';
 }
 
 /** Commandes de partage global, sous les filtres de la page. */
 export function shareControlsHTML() {
   if (!sharingAvailable()) return '';
-  return '<div class="pills" data-nav role="group" aria-label="Partage avec mes amis">' +
-    '<button type="button" class="pill" data-libshare="friends">Partager avec mes amis</button>' +
-    '<button type="button" class="pill" data-libshare="private">Tout garder privé</button></div>' +
-    '<p class="lib-share-note" data-libshare-note>Par défaut, ta bibliothèque est privée. L’œil sur une affiche la rend visible par tes amis.</p>';
+  return '<div class="pills" data-nav role="group" aria-label="' + tr('Partage avec mes amis') + '">' +
+    '<button type="button" class="pill" data-libshare="friends">' + tr('Partager avec mes amis') + '</button>' +
+    '<button type="button" class="pill" data-libshare="private">' + tr('Tout garder privé') + '</button></div>' +
+    '<p class="lib-share-note" data-libshare-note>' + tr('Par défaut, ta bibliothèque est privée. L’œil sur une affiche la rend visible par tes amis.') + '</p>';
 }
 
 function paint(key) {
@@ -60,8 +61,8 @@ function paint(key) {
     const shared = visibilityOf(key) === 'friends';
     b.classList.toggle('is-on', shared);
     b.setAttribute('aria-pressed', String(shared));
-    b.setAttribute('aria-label', shared ? 'Visible par tes amis (rendre privé)' : 'Privé (partager avec mes amis)');
-    b.title = shared ? 'Visible par tes amis' : 'Privé';
+    b.setAttribute('aria-label', shared ? tr('Visible par tes amis (rendre privé)') : tr('Privé (partager avec mes amis)'));
+    b.title = shared ? tr('Visible par tes amis') : tr('Privé');
     b.innerHTML = shared ? SET_ICON.eye : SET_ICON.eyeOff;
   });
 }
@@ -74,7 +75,7 @@ export async function toggleVisibility(key) {
   paint(key);
   try {
     await setItemVisibility(userStore.currentProfile().id, kindOf(key), idOf(key), next);
-    toast(next === 'friends' ? 'Visible par tes amis' : 'Titre privé');
+    toast(next === 'friends' ? tr('Visible par tes amis') : tr('Titre privé'));
     return true;
   } catch (err) {
     vis.set(key, before);
@@ -87,8 +88,8 @@ export async function toggleVisibility(key) {
 /** Change la visibilité de toute la bibliothèque (ou des films / séries seulement, selon le filtre de la page). */
 export async function setAll(visibility) {
   const type = state.libView.type === 'movie' ? 'movie' : state.libView.type === 'tv' ? 'series' : undefined;
-  const scope = type === 'movie' ? 'des films' : type === 'series' ? 'des séries' : 'de toute la bibliothèque';
-  if (visibility === 'friends' && !window.confirm('Rendre visibles par tes amis les titres ' + scope + ' ?')) return false;
+  const scope = type === 'movie' ? tr('des films') : type === 'series' ? tr('des séries') : tr('de toute la bibliothèque');
+  if (visibility === 'friends' && !window.confirm(tr('Rendre visibles par tes amis les titres {scope} ?', { scope }))) return false;
   try {
     const res = await setAllVisibility(userStore.currentProfile().id, visibility, type);
     userStore.getLibrary().forEach((e) => {
@@ -96,7 +97,7 @@ export async function setAll(visibility) {
       if (!type || kindOf(key) === type) { vis.set(key, visibility); paint(key); }
     });
     const note = detailEl.querySelector('[data-libshare-note]');
-    const text = res.updated + ' titre' + (res.updated > 1 ? 's' : '') + (visibility === 'friends' ? ' visibles par tes amis.' : ' remis en privé.');
+    const text = tr('{updated} titre', { updated: res.updated }) + (res.updated > 1 ? 's' : '') + (visibility === 'friends' ? ' ' + tr('visibles par tes amis.') : ' ' + tr('remis en privé.'));
     if (note) note.textContent = text;
     toast(text);
     return true;

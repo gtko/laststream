@@ -1,6 +1,7 @@
 import { CINEMA_ELEMENTS, DEFAULT_CINEMA_HIDDEN, cinemaOn, type CinemaElement, type CinemaState, type CinemaUntil, type SocialState } from '../data/socialStore';
 import type { Message } from '../data/socialV2Api';
 import type { PlaybackSocial } from '../data/socialV3Api';
+import { t } from '../i18n';
 
 /* Logique pure du social pendant la lecture (Social v3, lot F5) : mode cinéma, file de bulles, carte de chaleur,
  * anti-spoiler, « regarde aussi ». Aucun DOM, aucun réseau : tout est testé en direct. */
@@ -10,12 +11,12 @@ import type { PlaybackSocial } from '../data/socialV3Api';
 export const CINEMA_MENU_DEFAULT: CinemaElement[] = [...DEFAULT_CINEMA_HIDDEN, 'friendsPresence'];
 
 export const CINEMA_LABELS: Record<CinemaElement, string> = {
-  bubbles: 'Bulles de messages',
-  notes: 'Notes et emojis',
-  markers: 'Marqueurs sur la barre',
-  friendsPresence: '« Un ami regarde aussi »',
-  myPresence: 'Ma présence (invisible)',
-  partyRequests: 'Demandes de watch party',
+  bubbles: t('Bulles de messages'),
+  notes: t('Notes et emojis'),
+  markers: t('Marqueurs sur la barre'),
+  friendsPresence: t('« Un ami regarde aussi »'),
+  myPresence: t('Ma présence (invisible)'),
+  partyRequests: t('Demandes de watch party'),
 };
 
 export type CinemaDuration = 'film' | 'hour' | 'always';
@@ -79,14 +80,14 @@ export function remainingLabel(seconds: number): string {
   const m = Math.round(seconds / 60);
   const h = Math.floor(m / 60);
   const mm = m % 60;
-  if (h > 0) return `${h} h ${String(mm).padStart(2, '0')} restantes`;
-  return `${Math.max(1, m)} min restantes`;
+  if (h > 0) return `${h} ${t('h {v} restantes', { v: String(mm).padStart(2, '0') })}`;
+  return `${Math.max(1, m)} ${t('min restantes')}`;
 }
 
 /** Indicateur discret : « Mode cinéma · N messages en attente » (pas de compteur à zéro, singulier à un). */
 export function indicatorText(count: number): string {
-  if (count <= 0) return 'Mode cinéma';
-  return `Mode cinéma · ${count} message${count > 1 ? 's' : ''} en attente`;
+  if (count <= 0) return t('Mode cinéma');
+  return `${t('Mode cinéma · {count} message{v} en attente', { count, v: count > 1 ? 's' : '' })}`;
 }
 
 // ---- File de bulles ----

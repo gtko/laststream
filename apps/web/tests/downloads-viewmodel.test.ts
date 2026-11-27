@@ -36,13 +36,13 @@ describe('formatBytes', () => {
 describe('espace', () => {
   it('niveaux ok, warn (90 %) et full (100 %)', () => {
     const at = (used: number): SpaceInfo => ({ used, limit: 10 * GB, ratio: used / (10 * GB), warn: used / (10 * GB) >= 0.9, full: used >= 10 * GB });
-    expect(gauge(at(5 * GB))).toEqual({ percent: 50, label: '5 Go sur 10 Go', level: 'ok' });
+    expect(gauge(at(5 * GB))).toEqual({ percent: 50, label: '5 Go sur 10 Go', usedLabel: '5 Go utilisés sur 10 Go', level: 'ok' });
     expect(gauge(at(9.5 * GB)).level).toBe('warn');
     expect(gauge(at(10 * GB))).toMatchObject({ percent: 100, level: 'full' });
   });
 
   it('sans limite : pas de pourcentage, libellé « utilisés »', () => {
-    expect(gauge({ used: 1.5 * GB, limit: null, ratio: null, warn: false, full: false })).toEqual({ percent: 0, label: '1,5 Go utilisés', level: 'ok' });
+    expect(gauge({ used: 1.5 * GB, limit: null, ratio: null, warn: false, full: false })).toEqual({ percent: 0, label: '1,5 Go utilisés', usedLabel: '1,5 Go utilisés', level: 'ok' });
   });
 });
 

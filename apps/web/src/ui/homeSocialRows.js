@@ -14,6 +14,7 @@ import { toast } from './dom.js';
 import { socialAvailable } from './socialButton.js';
 import { posterSrc } from './socialFmt.js';
 import { esc } from './util.js';
+import { t } from '../i18n';
 
 const WATCH_MAX = 12;
 const RECO_MAX = 12;
@@ -52,19 +53,19 @@ export function friendRooms(rooms, friends) {
 function roomCard(r) {
   const nb = Number(r.participants) || 0;
   return '<article class="hsr-card hsr-room"><div class="hsr-top">' + posterHTML(r.poster, r.title) + '<div class="hsr-body">' +
-    '<span class="hsr-live"><i aria-hidden="true"></i>En direct · ' + nb + ' spectateur' + (nb > 1 ? 's' : '') + '</span>' +
-    '<h3 class="hsr-t">' + esc(r.title) + '</h3><p class="hsr-sub">Salon de ' + esc(r.host) + '.</p></div></div>' +
+    '<span class="hsr-live"><i aria-hidden="true">' + t('</i>En direct · {nb} spectateur', { nb }) + (nb > 1 ? 's' : '') + '</span>' +
+    '<h3 class="hsr-t">' + esc(r.title) + '</h3><p class="hsr-sub">' + t('Salon de {host}.', { host: esc(r.host) }) + '</p></div></div>' +
     '<div class="hsr-foot"><span class="hsr-who" aria-hidden="true">' + initials(r.host) + '</span>' +
-    '<a class="btn btn-primary hsr-btn" href="#/party/' + encodeURIComponent(r.id) + '" data-go aria-label="Rejoindre le salon de ' + esc(r.host) + ' : ' + esc(r.title) + '">Rejoindre</a></div></article>';
+    '<a class="btn btn-primary hsr-btn" href="#/party/' + encodeURIComponent(r.id) + '" data-go aria-label="' + t('Rejoindre le salon de {host} : {title}', { host: esc(r.host), title: esc(r.title) }) + '">' + t('Rejoindre') + '</a></div></article>';
 }
 
 /** Accueil mobile : « Léa regarde en ce moment » en haut de page, avec Rejoindre (les salons ne sont alors plus répétés plus bas). */
 function liveCard(r) {
   const nb = Number(r.participants) || 0;
-  return '<article class="hsr-mlive"><span class="hsr-live"><i aria-hidden="true"></i>' + esc(r.host) + ' regarde en ce moment</span>' +
+  return '<article class="hsr-mlive"><span class="hsr-live"><i aria-hidden="true">' + t('</i>{host} regarde en ce moment', { host: esc(r.host) }) + '</span>' +
     '<div class="hsr-top">' + posterHTML(r.poster, r.title) + '<div class="hsr-body"><h3 class="hsr-t">' + esc(r.title) + '</h3>' +
-    '<p class="hsr-sub">' + nb + ' spectateur' + (nb > 1 ? 's' : '') + '</p></div></div>' +
-    '<a class="btn btn-primary hsr-btn hsr-mjoin" href="#/party/' + encodeURIComponent(r.id) + '" data-go aria-label="Rejoindre le salon de ' + esc(r.host) + ' : ' + esc(r.title) + '">Rejoindre le salon</a></article>';
+    '<p class="hsr-sub">' + t('{nb} spectateur', { nb }) + (nb > 1 ? 's' : '') + '</p></div></div>' +
+    '<a class="btn btn-primary hsr-btn hsr-mjoin" href="#/party/' + encodeURIComponent(r.id) + '" data-go aria-label="' + t('Rejoindre le salon de {host} : {title}', { host: esc(r.host), title: esc(r.title) }) + '">' + t('Rejoindre le salon') + '</a></article>';
 }
 
 export const mobileLiveHTML = (rooms) => rooms.slice(0, MOBILE_LIVE_MAX).map(liveCard).join('');
@@ -73,20 +74,20 @@ function eveningCard(e, friends) {
   const going = (e.going || []).map((pid) => friends.find((f) => f.pid === pid)).filter(Boolean);
   return '<article class="hsr-card"><div class="hsr-top">' + posterHTML(e.poster, e.title) + '<div class="hsr-body">' +
     '<span class="hsr-eye">' + esc(eveningDay(e.startsAt)) + ' · ' + esc(eveningTime(e.startsAt)) + '</span>' +
-    '<h3 class="hsr-t">' + esc(e.title || 'Soirée proposée') + '</h3>' +
-    '<p class="hsr-sub">' + (e.host ? 'Proposée par ' + esc(e.host) + '. ' : '') + (going.length ? going.length + ' confirmé' + (going.length > 1 ? 's' : '') + '.' : '') + '</p></div></div>' +
+    '<h3 class="hsr-t">' + esc(e.title || t('Soirée proposée')) + '</h3>' +
+    '<p class="hsr-sub">' + (e.host ? t('Proposée par {host}.', { host: esc(e.host) }) + ' ' : '') + (going.length ? t('{length} confirmé{v}.', { length: going.length, v: (going.length > 1 ? 's' : '') }) : '') + '</p></div></div>' +
     '<div class="hsr-foot"><span class="hsr-stack" aria-hidden="true">' + going.slice(0, 3).map(avatar).join('') + '</span>' +
-    (hasEveningJoin() && e.joinable !== false ? '<button type="button" class="btn btn-ghost hsr-btn" data-hsr-evening="' + esc(e.id) + '">Je viens</button>' : '') + '</div></article>';
+    (hasEveningJoin() && e.joinable !== false ? '<button type="button" class="btn btn-ghost hsr-btn" data-hsr-evening="' + esc(e.id) + '">' + t('Je viens') + '</button>' : '') + '</div></article>';
 }
 
-const proposeCard = () => '<article class="hsr-card hsr-card-add"><h3 class="hsr-t">Rien de prévu ?</h3>' +
-  '<p class="hsr-sub">Choisis un titre, invite tes amis : tout le monde lit au même moment, avec sa propre source.</p>' +
-  '<button type="button" class="btn btn-ghost hsr-btn" data-evening-new>Proposer une soirée</button></article>';
+const proposeCard = () => '<article class="hsr-card hsr-card-add"><h3 class="hsr-t">' + t('Rien de prévu ?') + '</h3>' +
+  '<p class="hsr-sub">' + t('Choisis un titre, invite tes amis : tout le monde lit au même moment, avec sa propre source.') + '</p>' +
+  '<button type="button" class="btn btn-ghost hsr-btn" data-evening-new>' + t('Proposer une soirée') + '</button></article>';
 
 export function tonightHTML(rooms, evenings, friends) {
   if (!rooms.length && !evenings.length) return '';
   return '<section class="row-section hsr-sec" id="ensemble-ce-soir" aria-labelledby="h-ensemble-ce-soir"><div class="hsr-head">' +
-    '<h2 class="row-title" id="h-ensemble-ce-soir">Ensemble, ce soir</h2><a class="row-link" href="#/ensemble" data-go>Tout voir dans Ensemble</a></div>' +
+    '<h2 class="row-title" id="h-ensemble-ce-soir">' + t('Ensemble, ce soir') + '</h2><a class="row-link" href="#/ensemble" data-go>' + t('Tout voir dans Ensemble') + '</a></div>' +
     '<div class="hsr-tonight">' + rooms.map(roomCard).join('') + evenings.map((e) => eveningCard(e, friends)).join('') + proposeCard() + '</div></section>';
 }
 
@@ -97,10 +98,10 @@ function watchCard(it) {
   if (!m || !m.title || !href || !it.friend) return '';
   const ep = epCode(m);
   const pct = it.duration > 0 ? Math.min(100, Math.round((it.pos / it.duration) * 100)) : 0;
-  const state = it.live ? '<span class="hsr-live"><i aria-hidden="true"></i>En cours</span>' : it.finished ? 'Terminé' : pct ? pct + ' %' : '';
+  const state = it.live ? '<span class="hsr-live"><i aria-hidden="true">' + t('</i>En cours') + '</span>' : it.finished ? t('Terminé') : pct ? pct + ' %' : '';
   const meta = [ep, state].filter(Boolean).map((x) => (x.startsWith('<') ? x : esc(x))).join(' · ');
   const name = friendName(it.friend);
-  return '<a class="hsr-po" href="' + href + '" data-go aria-label="' + esc(name + ' : ' + m.title + (ep ? ', ' + ep : '') + (it.live ? ', en cours' : '')) + '">' +
+  return '<a class="hsr-po" href="' + href + '" data-go aria-label="' + esc(name + ' : ' + m.title + (ep ? ', ' + ep : '') + (it.live ? t(', en cours') : '')) + '">' +
     posterHTML(m.poster, m.title) + '<span class="hsr-who-tag">' + avatar(it.friend) + esc(name) + '</span>' +
     '<span class="hsr-pt">' + esc(m.title) + '</span><span class="hsr-pm">' + meta + '</span></a>';
 }
@@ -109,7 +110,7 @@ export function watchingHTML(items) {
   const cards = (items || []).map(watchCard).filter(Boolean).slice(0, WATCH_MAX);
   if (!cards.length) return '';
   return '<section class="row-section hsr-sec" id="amis-regardent" aria-labelledby="h-amis-regardent"><div class="hsr-head">' +
-    '<h2 class="row-title" id="h-amis-regardent">Ce que regardent tes amis</h2></div><div class="row">' + cards.join('') + '</div></section>';
+    '<h2 class="row-title" id="h-amis-regardent">' + t('Ce que regardent tes amis') + '</h2></div><div class="row">' + cards.join('') + '</div></section>';
 }
 
 // ---------- Coups de cœur ----------
@@ -119,8 +120,8 @@ function recoCard(it) {
   const word = String((it && it.word) || '').trim();
   if (!m || !m.title || !href || !word || !it.friend) return '';
   const name = friendName(it.friend);
-  return '<div class="hsr-reco"><a class="hsr-po" href="' + href + '" data-go aria-label="' + esc(m.title + ', coup de cœur de ' + name) + '">' + posterHTML(m.poster, m.title) +
-    '<span class="hsr-pt">' + esc(m.title) + '</span><span class="hsr-pm">' + (m.type === 'series' ? 'Série' : 'Film') + '</span></a>' +
+  return '<div class="hsr-reco"><a class="hsr-po" href="' + href + '" data-go aria-label="' + esc(t('{title}, coup de cœur de {name}', { title: m.title, name })) + '">' + posterHTML(m.poster, m.title) +
+    '<span class="hsr-pt">' + esc(m.title) + '</span><span class="hsr-pm">' + (m.type === 'series' ? t('Série') : t('Film')) + '</span></a>' +
     '<p class="hsr-quote"><b>' + esc(name) + '</b> — « ' + esc(word) + ' »</p></div>';
 }
 
@@ -128,7 +129,7 @@ export function recommendationsHTML(items) {
   const cards = (items || []).map(recoCard).filter(Boolean).slice(0, RECO_MAX);
   if (!cards.length) return '';
   return '<section class="row-section hsr-sec" id="coups-de-coeur" aria-labelledby="h-coups-de-coeur"><div class="hsr-head">' +
-    '<h2 class="row-title" id="h-coups-de-coeur">Coups de cœur de tes amis</h2></div><div class="row">' + cards.join('') + '</div></section>';
+    '<h2 class="row-title" id="h-coups-de-coeur">' + t('Coups de cœur de tes amis') + '</h2></div><div class="row">' + cards.join('') + '</div></section>';
 }
 
 // ---------- Montage ----------
@@ -158,9 +159,9 @@ export function renderSlot(s = getState(), now = Date.now()) {
   lastTop = top;
   lastHtml = html;
   lastMobile = mobile;
-  // eslint-disable-next-line no-restricted-syntax -- données serveur échappées par esc (tonightHTML, watchingHTML, recommendationsHTML)
+  // eslint-disable-next-line laststream/no-html-sink -- données serveur échappées par esc (tonightHTML, watchingHTML, recommendationsHTML)
   if (el) el.innerHTML = html;
-  // eslint-disable-next-line no-restricted-syntax -- données serveur échappées par esc (mobileLiveHTML)
+  // eslint-disable-next-line laststream/no-html-sink -- données serveur échappées par esc (mobileLiveHTML)
   if (top) top.innerHTML = mobile;
 }
 
@@ -194,5 +195,5 @@ document.addEventListener('click', (e) => {
   const b = e.target instanceof Element ? e.target.closest('[data-hsr-evening]') : null;
   if (!b) return;
   e.preventDefault();
-  void joinEvening(b.dataset.hsrEvening).then((ok) => { if (!ok) toast('Cette soirée n’est plus disponible.'); });
+  void joinEvening(b.dataset.hsrEvening).then((ok) => { if (!ok) toast(t('Cette soirée n’est plus disponible.')); });
 });
