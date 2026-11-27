@@ -1,6 +1,7 @@
 /* Forum communautaire (LAST-1651) : accueil (#/forum), catégorie (#/forum/c/<id>), sujet (#/forum/t/<id>), nouveau sujet
  * (#/forum/new[/<catégorie>]) et modération (#/forum/mod). Service en ligne seulement ; profil enfant exclu. Lecture libre :
- * un visiteur (sans compte, ou compte sans abonnement, voir isForumVisitor) lit sans écrire et est invité à se connecter.
+ * un visiteur sans compte lit sans écrire et est invité à se connecter ; un compte sans abonnement y écrit au nom de son
+ * profil (voir isForumVisitor), le reste de l'app lui propose l'abonnement.
  * Les sections réservées aux abonnés (watch parties) arrivent sans titre (`restricted`) : cartes floutées. Tout texte de
  * membre passe par textContent ou par le rendu Markdown en nœuds DOM (forumMarkdown.js). */
 import '../styles/convwin.css';
@@ -73,9 +74,13 @@ function blurIf(el, t) {
   return el;
 }
 
-/** Connexion (ou abonnement) demandée depuis le forum en visiteur : écran d'accès, puis l'app complète sur la même page. */
+/**
+ * Depuis le forum : connexion pour un visiteur (puis choix du profil, et rechargement sur la même page), ou écran
+ * d'abonnement pour un compte sans abonnement.
+ */
 async function openAccess() {
   const m = await import('./auth-ui.js');
+  if (auth.status === 'needs-subscription') { m.openSubscribe(); return; }
   await m.runAuthFlow();
   location.reload();
 }
@@ -85,17 +90,13 @@ function accessButton(label = accessLabel(), cls = 'btn btn-primary') {
   b.addEventListener('click', () => { void openAccess(); });
   return b;
 }
-/** Encart d'invitation : `text` dit ce que la connexion (ou l'abonnement) débloque ; bouton d'accès pour un visiteur. */
-function accessPanel(text, button = true) {
+/** Encart d'invitation : `text` dit ce que la connexion (ou l'abonnement) débloque. */
+function accessPanel(text) {
   const box = h('div', 'fo-access', null, { role: 'note' });
-  box.append(h('p', null, text));
-  if (button) box.append(accessButton());
+  box.append(h('p', null, text), accessButton());
   return box;
 }
-const writeInvite = () =>
-  auth.status === 'needs-subscription'
-    ? 'Ton accès de soutien est arrivé à échéance : renouvelle-le pour écrire sur le forum.'
-    : 'Connecte-toi pour poser une question, répondre ou réagir. La lecture reste libre.';
+const writeInvite = () => 'Connecte-toi pour poser une question, répondre ou réagir. La lecture reste libre, sans abonnement.';
 const paidInvite = 'Les watch parties sont réservées aux membres qui soutiennent Laststream (24 € par an) : séances, inscriptions et salons de visionnage.';
 const nameOf = (a) => (a && a.handle ? a.handle.name : 'Compte supprimé');
 const fullOf = (a) => (a && a.handle ? a.handle.full : '');
@@ -294,7 +295,7 @@ function eventCard(t, now) {
   const acts = h('div', 'fo-ev-acts');
   const draw = () => {
     acts.replaceChildren();
-    if (t.restricted) acts.append(visitor() ? accessButton('🔒 Débloquer', 'btn btn-ghost') : h('span', 'fo-dim', '🔒 Abonnés'));
+    if (t.restricted) acts.append(accessButton('🔒 Débloquer', 'btn btn-ghost'));
     else if (ev.roomId) acts.append(link('#/party/' + encodeURIComponent(ev.roomId), 'btn btn-primary', 'Rejoindre le salon'));
     else acts.append(rsvpButton(t, (next) => { Object.assign(ev, next); main.lastChild.textContent = plural(ev.going, 'inscrit', 'inscrits') + ' · proposée par ' + nameOf(t.author); draw(); }));
   };
@@ -306,7 +307,7 @@ function eventCard(t, now) {
 /** Salons publics ouverts en ce moment (tout Laststream) ; la section reste cachée sans salon ou si le serveur n'en a pas. */
 async function liveRoomsInto(section, seq) {
   const pid = auth.profile && auth.profile.id;
-  if (!pid) return;
+  if (!pid || !paid()) return;
   let rooms;
   try {
     rooms = (await listParties(pid, { limit: 8 })).rooms || [];
@@ -459,7 +460,7 @@ function pulseInto(box, data) {
   const events = h('section', 'fo-sec', null, { 'aria-label': 'Prochaines watch parties' });
   const propose = canWrite() && paid() ? link('#/forum/new/' + EVENT_CAT, 'btn btn-ghost', 'Proposer une séance') : null;
   events.append(sectionHead('Prochaines watch parties', 'Une date, un film, et tout le monde lance la lecture en même temps.', propose));
-  if (!paid()) events.append(accessPanel(paidInvite, visitor()));
+  if (!paid()) events.append(accessPanel(paidInvite));
   if (pulse.events.length) {
     const row = h('div', 'fo-evs');
     pulse.events.forEach((t) => row.append(eventCard(t, now)));
@@ -522,7 +523,7 @@ async function showHome(seq) {
   const ht = h('div', 'fo-hero-t');
   ht.append(h('p', 'fo-eyebrow', 'Forum des membres'), h('h1', 'fo-h1', 'Communauté'), h('p', 'fo-lede', 'Entraide, bugs, idées, guides, cinéma et watch parties : l’espace des membres qui font vivre Laststream.'));
   const acts = h('div', 'fo-hero-acts');
-  if (visitor()) acts.append(accessButton(auth.status === 'needs-subscription' ? 'Soutenir Laststream' : 'Se connecter pour participer'));
+  if (visitor()) acts.append(accessButton('Se connecter pour participer'));
   else if (!banned()) {
     acts.append(link('#/forum/new', 'btn btn-primary', 'Nouveau sujet'));
     if (paid()) acts.append(link('#/forum/new/' + EVENT_CAT, 'btn btn-ghost', 'Proposer une watch party'));
@@ -615,7 +616,7 @@ async function showCategory(seq, id) {
   head.append(ht);
   if (canWrite() && (!cat.staffOnly || staff()) && (!cat.paidOnly || paid())) head.append(link('#/forum/new/' + encodeURIComponent(cat.id), 'btn btn-primary', 'Nouveau sujet'));
   body.append(head);
-  if (cat.paidOnly && !paid()) body.append(accessPanel(paidInvite, visitor()));
+  if (cat.paidOnly && !paid()) body.append(accessPanel(paidInvite));
   else if (visitor()) body.append(accessPanel(writeInvite()));
   const notice = banNotice();
   if (notice) body.append(notice);
@@ -983,7 +984,7 @@ async function showTopic(seq, id) {
     if (seq !== renderSeq) return;
     if (e && e.code === 'paid_only') {
       body.replaceChildren(crumbs([['Forum', '#/forum'], ['Watch parties', '#/forum/c/' + EVENT_CAT], ['Séance réservée']]), h('h1', 'fo-h1', '🔒 Séance réservée'));
-      body.append(accessPanel(paidInvite, visitor()));
+      body.append(accessPanel(paidInvite));
       return;
     }
     stateMsg(body, errText(e), () => route());

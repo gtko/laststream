@@ -383,7 +383,8 @@ describe('forum : accès abonné', () => {
     const firstPost = (await read(cast.alice, watch.id)).posts[0];
     await paidOnly('PUT', `/user/forum/posts/${firstPost?.id}/reactions`, { emoji: '👍', on: true });
 
-    // Le reste de l'app reste fermé sans abonnement.
+    // Ses profils restent lisibles (choix du profil qui écrit) ; le reste de l'app reste fermé sans abonnement.
+    expect((await as(app, cast.carol, 'GET', '/user/profiles')).status).toBe(200);
     expect((await as<ErrorBody>(app, cast.carol, 'GET', '/user/social/me')).status).toBe(402);
   });
 

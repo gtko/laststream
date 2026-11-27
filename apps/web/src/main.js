@@ -39,7 +39,7 @@ import './styles/scrollbars.css';
 import './styles/credits.css';
 import './styles/downloads.css';
 import './styles/downloads-tv.css';
-import { auth, initAuth, isKidProfile, kidSection, offlineWithoutSession, setForumVisitor } from './data/auth';
+import { auth, initAuth, isKidProfile, kidSection, offlineWithoutSession, onForumHash, setForumVisitor } from './data/auth';
 import { userStore } from './data/userStore';
 import { settleExternalWatch } from './player/externalWatch';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';
@@ -127,13 +127,15 @@ if (!demoMode) await initAuth({ anonymous: joinPage });
 settleExternalWatch(); // lecture dans VLC (ou autre) pendant que l'app était fermée : position estimée ou « vu »
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });
 // L'écran de connexion / de choix du profil (auth-ui, avatars, éditeur) n'est chargé que s'il faut l'afficher.
-// Forum (#/forum…) sans compte ou sans abonnement : lecture libre, sans écran de connexion ; toute autre page y ramène.
-const forumVisit = !joinPage && !demoMode && /^#\/forum(\/|$)/.test(location.hash || '') && (auth.status === 'needs-login' || auth.status === 'needs-subscription');
+// Forum (#/forum…) : lecture libre sans compte (pas d'écran de connexion) ; un compte sans abonnement choisit son profil
+// et y écrit. Toute autre page ramène à la connexion ou à l'abonnement (rechargement).
+let forumVisit = !joinPage && !demoMode && onForumHash() && auth.status === 'needs-login';
+if (!joinPage && !forumVisit && !demoMode && (auth.status === 'needs-login' || auth.status === 'needs-profile' || auth.status === 'needs-subscription' || offlineWithoutSession())) await (await import('./ui/auth-ui.js')).runAuthFlow();
+if (!forumVisit && !joinPage && !demoMode && onForumHash() && auth.status === 'needs-subscription' && auth.profile) forumVisit = true;
 if (forumVisit) {
   setForumVisitor(true);
-  window.addEventListener('hashchange', () => { if (!/^#\/forum(\/|$)/.test(location.hash || '')) location.reload(); });
+  window.addEventListener('hashchange', () => { if (!onForumHash()) location.reload(); });
 }
-if (!joinPage && !forumVisit && !demoMode && (auth.status === 'needs-login' || auth.status === 'needs-profile' || auth.status === 'needs-subscription' || offlineWithoutSession())) await (await import('./ui/auth-ui.js')).runAuthFlow();
 if (isKidProfile()) {
   document.body.classList.add('kid-mode');
   if (kidSection('tv')) document.body.classList.add('kid-tv');

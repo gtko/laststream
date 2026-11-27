@@ -11,10 +11,12 @@ Sur le service en ligne :
 
 - **Lire est libre**, même sans compte. Sans jeton ou sans `X-Profile-Id`, les routes de lecture (`GET /forum`,
   catégories, recherche, sujet) répondent pour un visiteur (`me.guest`). Dans l'app, `#/forum` s'ouvre sans écran de
-  connexion pour un visiteur ou un compte sans abonnement (`isForumVisitor`, voir `main.js`). Toute autre page ramène à
-  la connexion. L'écran d'abonnement propose « Lire le forum de la communauté ».
+  connexion pour un visiteur (`isForumVisitor`, voir `main.js`). Toute autre page ramène à la connexion.
 - **Écrire demande une connexion** : session et profil non enfant, avec ou sans abonnement (le forum est exempté du 402,
-  voir `billing/access.ts`). Sans session : 401. On écrit au nom d'un profil (son `Nom#TAG`).
+  voir `billing/access.ts`, avec la liste, la création et le déverrouillage des profils). Sans session : 401. On écrit
+  au nom d'un profil (son `Nom#TAG`). Dans l'app, un compte sans abonnement voit les forfaits à la connexion ; sur
+  `#/forum` (lien « Lire le forum de la communauté » des forfaits), il choisit son profil et lit et écrit sur le forum,
+  et toute autre page le ramène aux forfaits.
 - **Sections réservées** : une catégorie `paid_only` (migration 39 : Watch parties seulement) est réservée aux abonnés de
   soutien (accès payé, offert ou période gratuite) et à l'équipe. Pour les autres, ses sujets apparaissent dans les
   listes sans titre ni extrait ni salon (`restricted: true`), et l'app floute ces cartes. Ouvrir un tel sujet ou y écrire
