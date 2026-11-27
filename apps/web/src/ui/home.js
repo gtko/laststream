@@ -40,7 +40,6 @@ import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
 import { renderTvRows } from './shows.js';
 import { renderLive } from './tv.js';
 import { cut, esc } from './util.js';
-import { renderCloudPromo } from './cloud-promo.js';
 
 /**
  * Complète une liste visible (`first`) avec les pages suivantes de `path` jusqu'à `want` titres retenus par `ok`.
@@ -387,7 +386,7 @@ export function renderHome() {
   renderUpcoming();
   if (!state.data.kids) renderFeatured();
   renderLive();
-  if (!state.data.kids) { renderFollowRow(); renderTvRows(); renderCloudPromo(); }
+  if (!state.data.kids) { renderFollowRow(); renderTvRows(); void import('./cloud-promo.js').then((m) => m.renderCloudPromo(), () => {}); }
   observeTiles(app);
   setupPreviews();
   if (!state.data.kids) { mountRail(); mountHomeSocial(); syncContinueSocial(true); watchHeroSocial(() => (state.data && state.data.heroes) || []); } // social : rail d'amis et ligne du héros
