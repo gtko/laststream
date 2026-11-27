@@ -35,7 +35,8 @@ const base = server.resolvedUrls.local[0].replace(/\/$/, '');
 let browser;
 try {
   browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+  // Navigateur en français : l'interface suit la langue du navigateur (LAST-1658), le test vérifie le texte source.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block', locale: 'fr-FR' });
   const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));

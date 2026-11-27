@@ -26,7 +26,7 @@ type PluralForms = Partial<Record<Intl.LDMLPluralRule, string>>;
 type Catalog = Record<string, string | PluralForms>;
 
 /** Choix de langue de l'appareil : code BCP 47, ou absent = automatique (langue du navigateur). */
-export const UI_LANG_KEY = 'laststream.uilang';
+const UI_LANG_KEY = 'laststream.uilang';
 export const CTX_SEP = '\u0004';
 export const PLURAL_SEP = '\u0005';
 
@@ -145,7 +145,7 @@ export function tc(ctx: string, src: string, params?: Params | null): string {
 }
 
 /** Nombre formaté dans la langue de l'interface. */
-export function fmtNum(n: number, opts?: Intl.NumberFormatOptions): string {
+function fmtNum(n: number, opts?: Intl.NumberFormatOptions): string {
   try { return n.toLocaleString(current, opts); } catch { return String(n); }
 }
 
@@ -162,9 +162,4 @@ export function tn(n: number, one: string, other: string, params?: Params | null
     if (form) return fill(form, all);
   }
   return fill(Math.abs(n) < 2 ? one : other, all);
-}
-
-/** Nom d'une langue, d'une région… dans la langue de l'interface (Intl.DisplayNames), sinon le code. */
-export function displayName(type: Intl.DisplayNamesType, code: string): string {
-  try { return new Intl.DisplayNames([current], { type }).of(code) || code; } catch { return code; }
 }

@@ -161,12 +161,16 @@ function check(args) {
       if (isPlural !== (typeof v === 'object')) { errors.push('forme ' + (isPlural ? 'plurielle attendue' : 'simple attendue') + ' : ' + JSON.stringify(k)); continue; }
       const forms = typeof v === 'object' ? Object.values(v) : [v];
       if (typeof v === 'object' && !v.other) errors.push('pluriel sans « other » : ' + JSON.stringify(k));
-      const want = params(src);
+      // Une traduction n'invente aucun paramètre ; elle peut en omettre un qui ne sert qu'à l'accord français ({v} = « s »,
+      // « e ») ou {n} à la forme « one » d'un pluriel. Un paramètre important oublié se voit à la relecture.
+      const want = new Set(params(src).split(',').filter(Boolean));
       for (const f of forms) {
-        const got = params(f);
-        // Un pluriel peut omettre {n} à la forme « one » (« un titre »).
-        if (got !== want && !(isPlural && want.split(',').filter((x) => x !== 'n').join(',') === got.split(',').filter((x) => x !== 'n').join(',')))
-          errors.push('paramètres {' + want + '} ≠ {' + got + '} : ' + JSON.stringify(k));
+        const extra = params(f).split(',').filter((x) => x && !want.has(x));
+        if (extra.length) errors.push('paramètre inconnu {' + extra.join(', ') + '} : ' + JSON.stringify(k));
+        const lost = [...want].filter((x) => !/^(v\d*|n)$/.test(x) && !params(f).split(',').includes(x));
+        if (lost.length) errors.push('paramètre oublié {' + lost.join(', ') + '} : ' + JSON.stringify(k));
+        if (/["<>&]/.test(f.replace(/<\/?[a-z][^>]*>/gi, '').replace(/&(amp|lt|gt|quot|nbsp);/g, '')) && !/["<>&]/.test(src.replace(/<\/?[a-z][^>]*>/gi, '')))
+          errors.push('caractère HTML ajouté (" < > &) : ' + JSON.stringify(k));
         if (tags(f) > tags(src)) errors.push('balise HTML ajoutée : ' + JSON.stringify(k));
       }
     }

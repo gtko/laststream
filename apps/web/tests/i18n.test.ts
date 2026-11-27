@@ -33,9 +33,12 @@ describe('langues', () => {
     expect(matchLocale('xx', all)).toBeNull();
   });
 
-  it('sans catalogue, seul le français (et ses variantes) est proposé : repli sur le français', () => {
-    expect(resolveLocale('', ['de-DE', 'en-US'])).toBe('fr');
+  it('langue du navigateur si elle a un catalogue, sinon l’anglais ; le choix de l’appareil passe avant', () => {
+    expect(resolveLocale('', ['en-US'])).toBe('en');
+    expect(resolveLocale('', ['en-GB'])).toBe('en-GB');
     expect(resolveLocale('', ['fr-CA'])).toBe('fr-CA');
+    expect(resolveLocale('', ['xx-YY'])).toBe('en');
+    expect(resolveLocale('fr', ['en-US'])).toBe('fr');
   });
 });
 

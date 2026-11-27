@@ -210,7 +210,7 @@ const headHTML = (title, lead) => '<div class="auth-head"><h1 class="auth-title"
 /** Vue « Connexion » (par défaut) : le formulaire, « ou », puis « Pas encore de compte ? » pour ouvrir l’invitation. */
 function loginViewHTML(msg) {
   return headHTML(tr('Connexion'), tr('Retrouve tes profils, ta bibliothèque et ta progression.')) + credentialsFormHTML(false, msg) +
-    '<div class="auth-sep" aria-hidden="true">ou</div>' +
+    '<div class="auth-sep" aria-hidden="true">' + tr('ou') + '</div>' +
     '<section class="auth-new" aria-labelledby="auth-new-title"><p class="auth-note" id="auth-new-title">' + tr('Pas encore de compte ? Les comptes se créent sur invitation : demande un lien à un ami déjà inscrit.') + '</p>' +
     '<button type="button" class="btn auth-btn auth-btn-alt" data-auth-mode="invite">' + tr('J’ai un lien d’invitation') + '</button></section>';
 }

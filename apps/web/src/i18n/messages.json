@@ -7609,9 +7609,6 @@
  "L’équipe a reçu ton message avec les détails techniques.": [
   "src/ui/feedback.js"
  ],
- "M0 0H{v}V{v2}H0Z": [
-  "src/player/mini.ts"
- ],
  "MP3 · audio compressé": [
   "src/sources/badges.ts"
  ],
@@ -8324,9 +8321,6 @@
   "src/data/homeFilters.ts",
   "src/ui/constants.js",
   "src/ui/discover.js"
- ],
- "M{x} {y}H{right}V{bottom}H{x}Z": [
-  "src/player/mini.ts"
  ],
  "Mémoire": [
   "src/ui/admin/platform.js"
@@ -14391,6 +14385,9 @@
  ],
  "n’a pas répondu": [
   "src/ui/eveningCard.js"
+ ],
+ "ou": [
+  "src/ui/auth-ui.js"
  ],
  "par {interval}": [
   "src/ui/subscribe-ui.js"
