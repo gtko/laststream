@@ -319,7 +319,21 @@ function applyShared(html, group, langs, current, all) {
   html = html.replace(/(<link rel="alternate" hreflang="[^"]+" href="[^"]*">\n?)+/, alternates(group, langs) + '\n');
   html = html.replace(/<!-- langues:début[\s\S]*?<!-- langues:fin -->/g, '');
   html = html.replace(/(<nav class="lang"[^>]*>[\s\S]*?)(\s*<\/nav>)/, (m, a, b) => a + langMenu(group, langs, current, all) + b);
-  return html;
+  return orderLangNav(html, current);
+}
+
+/** La langue de la page (donc celle du navigateur, après la redirection) passe en tête du sélecteur. */
+function orderLangNav(html, current) {
+  return html.replace(/(<nav class="lang"[^>]*>)([\s\S]*?)(\s*<\/nav>)/, (m, open, body, close) => {
+    const ws = '\n' + (body.match(/^\s*?([ \t]*)\S/) || ['', ''])[1];
+    const pick = (re) => { const x = body.match(re); if (x) body = body.replace(x[0], ''); return x ? x[0] : ''; };
+    const fr = pick(/<a [^>]*hreflang="fr"[^>]*>[\s\S]*?<\/a>/);
+    const en = pick(/<a [^>]*hreflang="en"[^>]*>[\s\S]*?<\/a>/);
+    const more = pick(/<!-- langues:début[\s\S]*?<!-- langues:fin -->/);
+    if (body.trim()) return m; // structure inattendue : on ne touche à rien
+    const parts = current === 'fr' || !current ? [fr, en, more] : current === 'en' ? [en, fr, more] : [more, fr, en];
+    return open + ws + parts.filter(Boolean).join(ws) + close.replace(/^\s*\n/, '\n');
+  });
 }
 
 function build() {
