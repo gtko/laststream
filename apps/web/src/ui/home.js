@@ -294,6 +294,7 @@ export function viewA(d) {
     '<div id="follow-slot"></div>' +
     '<div id="ai-slot"></div>' +
     section('top10', t('Top 10 aujourd’hui'), r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
+    '<div id="promo-slot"></div>' +
     '<div id="feat-slot"></div>' +
     '<div id="up-slot"></div>' +
     '<div id="live-slot"></div>' +
@@ -385,7 +386,7 @@ export function renderHome() {
   renderUpcoming();
   if (!state.data.kids) renderFeatured();
   renderLive();
-  if (!state.data.kids) { renderFollowRow(); renderTvRows(); }
+  if (!state.data.kids) { renderFollowRow(); renderTvRows(); void import('./cloud-promo.js').then((m) => m.renderCloudPromo(), () => {}); }
   observeTiles(app);
   setupPreviews();
   if (!state.data.kids) { mountRail(); mountHomeSocial(); syncContinueSocial(true); watchHeroSocial(() => (state.data && state.data.heroes) || []); } // social : rail d'amis et ligne du héros

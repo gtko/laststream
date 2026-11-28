@@ -223,6 +223,9 @@
   "src/ui/admin/platform.js",
   "src/ui/household.js"
  ],
+ "24 € par an, soit 2 € par mois": [
+  "src/ui/cloud-promo.js"
+ ],
  "3 jours": [
   "src/ui/household.js"
  ],
@@ -2585,6 +2588,9 @@
  "Chacun lit avec son propre compte, au même moment.": [
   "src/ui/watchWith.js"
  ],
+ "Chacun son profil, sa liste et sa progression, sur la télé, le téléphone ou la tablette. Un seul abonnement couvre tout le foyer.": [
+  "src/ui/cloud-promo.js"
+ ],
  "Changement de source…": [
   "src/player/sessionActions.js",
   "src/player/sessionFailover.js"
@@ -4281,6 +4287,9 @@
  "Découvrir l’accueil": [
   "src/ui/referral-join.js"
  ],
+ "Découvrir l’offre": [
+  "src/ui/cloud-promo.js"
+ ],
  "Découvrir · Laststream": [
   "src/ui/discover.js"
  ],
@@ -5080,6 +5089,9 @@
  ],
  "Fermer la recherche": [
   "src/player/panels.js"
+ ],
+ "Fermer la suggestion": [
+  "src/ui/cloud-promo.js"
  ],
  "Fermer le chat": [
   "src/ui/guestchat.js"
@@ -6584,6 +6596,9 @@
  ],
  "Laststream : retour à l’accueil": [
   "src/ui/admin/shell.js"
+ ],
+ "Laststream en ligne": [
+  "src/ui/cloud-promo.js"
  ],
  "Laststream en ligne est financé par celles et ceux qui l’utilisent. L’abonnement de soutien garde les serveurs allumés.": [
   "src/ui/subscribe-ui.js"
@@ -8360,6 +8375,9 @@
   "src/ui/socialFmt.js",
   "src/ui/socialProfileModel.js"
  ],
+ "Ne plus afficher": [
+  "src/ui/cloud-promo.js"
+ ],
  "Ne plus proposer": [
   "src/ui/ctxmenu.js"
  ],
@@ -9289,6 +9307,12 @@
  ],
  "Plus aucun prélèvement. Tu peux changer d’avis jusqu’au {paidUntil}.": [
   "src/ui/subscribe-ui.js"
+ ],
+ "Plus besoin de laisser un ordinateur allumé jour et nuit pour regarder depuis le canapé. Laststream en ligne tourne pour toi.": [
+  "src/ui/cloud-promo.js"
+ ],
+ "Plus de mises à jour à surveiller, de sauvegardes à faire ou de ports à ouvrir. On s’occupe des serveurs, tu profites de tes séries.": [
+  "src/ui/cloud-promo.js"
  ],
  "Plus de sujets": [
   "src/ui/forum.js"
@@ -10950,6 +10974,9 @@
  "Réservé à l’équipe de modération.": [
   "src/ui/forum.js"
  ],
+ "Résiliable quand tu veux": [
+  "src/ui/cloud-promo.js"
+ ],
  "Résiliation": [
   "src/ui/subscribe-ui.js"
  ],
@@ -12596,6 +12623,9 @@
  "Toi, {text}": [
   "src/ui/socialConvModel.js"
  ],
+ "Ton PC peut enfin dormir.": [
+  "src/ui/cloud-promo.js"
+ ],
  "Ton abonnement de soutien est arrivé à échéance. Renouvelle-le pour retrouver tes profils et ta bibliothèque.": [
   "src/ui/subscribe-ui.js"
  ],
@@ -12697,6 +12727,9 @@
  "Ton propre mot de passe": [
   "src/ui/foyer-join.js"
  ],
+ "Ton serveur continue de fonctionner comme aujourd’hui.": [
+  "src/ui/cloud-promo.js"
+ ],
  "Ton {v}": [
   "src/ui/migration.js"
  ],
@@ -12784,6 +12817,9 @@
  "Tout garder privé": [
   "src/ui/libshare.js"
  ],
+ "Tout le foyer": [
+  "src/ui/cloud-promo.js"
+ ],
  "Tout le monde": [
   "src/party/lobbyModel.ts"
  ],
@@ -12828,6 +12864,9 @@
  ],
  "Tout voir dans Ensemble": [
   "src/ui/homeSocialRows.js"
+ ],
+ "Toute la famille, sans rien installer.": [
+  "src/ui/cloud-promo.js"
  ],
  "Toute la série": [
   "src/ui/eveningActions.js",
@@ -13836,6 +13875,9 @@
  "Zone sensible": [
   "src/ui/admin/account-drawer.js"
  ],
+ "Zéro tracas : ni serveur, ni NAS.": [
+  "src/ui/cloud-promo.js"
+ ],
  "a ajouté à une liste": [
   "src/ui/socialActivity.js"
  ],
@@ -14558,6 +14600,9 @@
  "sources trouvées": [
   "src/party/lobbyModel.ts",
   "src/ui/downloadBtn.js"
+ ],
+ "suggestion": [
+  "src/ui/cloud-promo.js"
  ],
  "sur cet appareil, masqués à l’accueil tant que tu ne les affiches pas.": [
   "src/data/migration/addons.ts"
