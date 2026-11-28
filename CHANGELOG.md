@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.87 – 2026-11-28
+
+- LAST-1658 Traduction des textes du forum et de l'offre en ligne dans toutes les langues (#68) — @gtko
+
 ## v1.0.86 – 2026-11-28
 
 - LAST-1657 Encart discret pour Laststream en ligne sur les serveurs auto-hébergés (#64) — @gtko
