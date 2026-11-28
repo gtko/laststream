@@ -23,7 +23,7 @@ import { state } from './state.js';
 import { showShow, showShowsPage, renderTvRows } from './shows.js';
 import { renderLive, showTvLive } from './tv.js';
 import { t as tr } from '../i18n';
-import { enterView, navProgress, returnView } from './motion.js';
+import { motionHooks } from './motionHooks.js';
 
 // Vues chargées à la première ouverture (import dynamique) : hors du premier chargement de l'application (LAST-129).
 const loaded = {}; // modules déjà chargés : leurs fonctions de démontage ne s'appellent que s'ils le sont
@@ -64,7 +64,7 @@ function showLoadError() {
 function open(load, run) {
   cancelPendingView();
   const token = navToken;
-  const done = navProgress(); // barre fine en haut si le module tarde (réseau lent)
+  const done = motionHooks.navProgress(); // barre fine en haut si le module tarde (réseau lent)
   load().then((m) => { done(); if (token === navToken && m) run(m); }, () => { done(); if (token === navToken) showLoadError(); });
 }
 /** Barre des amis par-dessus la page en cours : le Social est chargé au besoin. */
@@ -254,7 +254,7 @@ export function route() {
     closeModal(true);
     window.scrollTo(0, 0);
     showView(r);
-    enterView(detailEl);
+    motionHooks.enterView(detailEl);
   } else {
     cancelPendingView(); // retour à l'accueil : une vue encore en chargement ne doit pas s'afficher dessus
     closeModal(true);
@@ -274,7 +274,7 @@ export function route() {
     notifyHomeChange(); // un titre vu dans le lecteur ou la fiche sort des rangées de l'accueil
     renderLive();
     renderTvRows();
-    returnView(app);
+    motionHooks.returnView(app);
     const t = state.lastFocus;
     state.lastFocus = null;
     if (t && t.isConnected && t.focus) t.focus({ preventScroll: true });

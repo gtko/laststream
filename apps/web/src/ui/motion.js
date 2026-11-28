@@ -13,6 +13,9 @@
  * Coupé sous prefers-reduced-motion et sur TV (data-device="tv" : webOS et Android TV, processeurs modestes), où seuls
  * restent les zooms de focus en CSS. */
 
+import '../styles/motion.css'; // après les feuilles du démarrage : elle les complète
+import { motionHooks } from './motionHooks.js';
+
 const root = document.documentElement;
 const reduceMq = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 const hasIndividualTransforms = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('scale', '1');
@@ -342,3 +345,7 @@ export function navProgress() {
     };
   };
 }
+
+motionHooks.enterView = enterView;
+motionHooks.returnView = returnView;
+motionHooks.navProgress = navProgress;
