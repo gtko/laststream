@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.86 – 2026-11-28
+
+- LAST-1657 Encart discret pour Laststream en ligne sur les serveurs auto-hébergés (#64) — @gtko
+
 ## v1.0.85 – 2026-11-28
 
 - LAST-1658 App dans 45 nouvelles langues, site dans la langue du navigateur (#67) — @gtko
