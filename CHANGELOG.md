@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.85 – 2026-11-28
+
+- LAST-1658 App dans 45 nouvelles langues, site dans la langue du navigateur (#67) — @gtko
+
 ## v1.0.84 – 2026-11-27
 
 - LAST-1658 Interface et site dans les langues de Stremio, Plex et Jellyfin (#66) — @gtko
