@@ -39,6 +39,7 @@ import './styles/scrollbars.css';
 import './styles/credits.css';
 import './styles/downloads.css';
 import './styles/downloads-tv.css';
+import './styles/motion.css'; // en dernier : courbes et animations communes (ui/motion.js)
 import { auth, initAuth, isKidProfile, kidSection, offlineWithoutSession, onForumHash, setForumVisitor } from './data/auth';
 import { userStore } from './data/userStore';
 import { settleExternalWatch } from './player/externalWatch';
@@ -62,6 +63,7 @@ import { parseFoyerToken } from './data/foyerLink';
 import './ui/events.js';
 import './ui/scrollbars.js';
 import './ui/focusRing.js';
+import './ui/motion.js';
 import './ui/rows.js';
 import './ui/ctxmenu.js';
 import './ui/hover.js';
