@@ -3,6 +3,7 @@ import type { PartyBackend, PartyRoomStub } from '../src/party/backend.js';
 import type { RoomInfo, RoomMeta } from '../src/party/protocol.js';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { as, type Cast, castOf, HOOK_TIMEOUT_MS, type Persona } from './social-v2-harness.js';
+import { request } from './user-harness.js';
 
 /** Forum communautaire (LAST-1651) : lecture, écriture, réactions, signalements, modération, accès abonné. */
 
@@ -22,6 +23,7 @@ interface Topic {
   hidden: boolean;
   lastPoster: Author;
   event?: { startsAt: number; roomId: string | null; going: number; mine?: boolean };
+  restricted?: true;
 }
 interface Post {
   id: string;
@@ -39,8 +41,8 @@ interface TopicDetail extends Topic {
   more: boolean;
 }
 interface Home {
-  me: { pid: string; role: string; bannedUntil?: number | null };
-  categories: { id: string; topicCount: number; postCount: number; staffOnly: boolean }[];
+  me: { pid: string; role: string; paid: boolean; guest?: true; bannedUntil?: number | null };
+  categories: { id: string; topicCount: number; postCount: number; staffOnly: boolean; paidOnly: boolean }[];
   openReports?: number;
   pulse: {
     stats: { topics: number; posts: number; members: number; postsToday: number };
@@ -319,12 +321,83 @@ describe('forum : accès abonné', () => {
     expect((await as<ErrorBody>(app, cast.bob, 'POST', '/user/forum/topics', { body: { categoryId: 'aide', title: 'Question', body: 'texte' } })).status).toBe(404);
   });
 
-  it('Stripe configuré : 402 pour un compte sans abonnement, le propriétaire passe', async () => {
+  const WATCH = { categoryId: 'watch-parties', title: 'Soirée Dune', body: 'On lance Dune ensemble.' };
+
+  /** Séance créée par alice (propriétaire) et un sujet libre de bob, avant la fin de l'accès offert. */
+  async function seed(): Promise<{ watch: Topic; free: Topic }> {
+    const created = await as<{ topic: Topic }>(app, cast.alice, 'POST', '/user/forum/topics', {
+      body: { ...WATCH, startsAt: Date.parse(NOW) + 2 * 60 * 60 * 1000 },
+    });
+    expect(created.status).toBe(201);
+    const free = await newTopic(cast.bob, 'aide', 'Profil enfant', 'Comment créer un profil enfant ?');
     vi.stubEnv('LASTADDON_BILLING_FREE_UNTIL', '');
-    const blocked = await as<ErrorBody>(app, cast.bob, 'GET', '/user/forum');
-    expect(blocked.status).toBe(402);
-    expect(blocked.body.error).toBe('subscription_required');
-    expect((await as(app, cast.alice, 'GET', '/user/forum')).status).toBe(200);
+    return { watch: created.body.topic, free };
+  }
+
+  it('visiteur sans compte : lit le forum, sections réservées floutées, écriture refusée', async () => {
+    const { watch, free } = await seed();
+    const home = await request<Home>(app, 'GET', '/user/forum');
+    expect(home.status).toBe(200);
+    expect(home.body.me).toEqual({ pid: '', role: 'member', paid: false, guest: true });
+    expect(home.body.categories.find((c) => c.id === 'watch-parties')?.paidOnly).toBe(true);
+    expect(home.body.categories.find((c) => c.id === 'aide')?.paidOnly).toBe(false);
+    const event = home.body.pulse.events.find((t) => t.id === watch.id);
+    expect(event).toMatchObject({ title: '', restricted: true, event: { roomId: null, going: 1 } });
+    const recent = home.body.pulse.recent.find((t) => t.id === watch.id);
+    expect(recent).toMatchObject({ title: '', excerpt: '', restricted: true });
+    expect(home.body.pulse.recent.find((t) => t.id === free.id)).toMatchObject({ title: 'Profil enfant', excerpt: 'Comment créer un profil enfant ?' });
+    expect(home.body.pulse.recent.find((t) => t.id === free.id)?.restricted).toBeUndefined();
+
+    expect((await request<{ topic: TopicDetail }>(app, 'GET', `/user/forum/topics/${free.id}`)).body.topic.posts).toHaveLength(1);
+    const locked = await request<ErrorBody>(app, 'GET', `/user/forum/topics/${watch.id}`);
+    expect(locked.status).toBe(403);
+    expect(locked.body.error).toBe('paid_only');
+    const list = await request<{ topics: Topic[] }>(app, 'GET', '/user/forum/categories/watch-parties/topics');
+    expect(list.body.topics.map((t) => [t.title, t.restricted])).toEqual([['', true]]);
+    expect((await request<{ topics: Topic[] }>(app, 'GET', '/user/forum/search?q=Dune')).body.topics).toEqual([]);
+
+    const write = await request<ErrorBody>(app, 'POST', `/user/forum/topics/${free.id}/posts`, { body: { body: 'Moi aussi' } });
+    expect(write.status).toBe(401);
+  });
+
+  it('compte sans abonnement : écrit dans les sections libres, pas dans les sections réservées', async () => {
+    const { watch, free } = await seed();
+    const home = await as<Home>(app, cast.carol, 'GET', '/user/forum');
+    expect(home.status).toBe(200);
+    expect(home.body.me).toMatchObject({ role: 'member', paid: false });
+    expect(home.body.me.guest).toBeUndefined();
+    expect(home.body.pulse.events.find((t) => t.id === watch.id)?.restricted).toBe(true);
+
+    expect((await as(app, cast.carol, 'POST', `/user/forum/topics/${free.id}/posts`, { body: { body: 'Dans Profils, puis Ajouter.' } })).status).toBe(201);
+    expect((await as(app, cast.carol, 'POST', '/user/forum/topics', { body: { categoryId: 'guides', title: 'Mon astuce', body: 'Texte' } })).status).toBe(201);
+
+    const paidOnly = async (method: string, path: string, body?: unknown): Promise<void> => {
+      const res = await as<ErrorBody>(app, cast.carol, method, path, body === undefined ? {} : { body });
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect(res.body.error).toBe('paid_only');
+    };
+    await paidOnly('GET', `/user/forum/topics/${watch.id}`);
+    await paidOnly('POST', '/user/forum/topics', { ...WATCH, startsAt: Date.parse(NOW) + 3 * 60 * 60 * 1000 });
+    await paidOnly('POST', `/user/forum/topics/${watch.id}/posts`, { body: 'Je viens' });
+    await paidOnly('PUT', `/user/forum/topics/${watch.id}/rsvp`, { on: true });
+    const firstPost = (await read(cast.alice, watch.id)).posts[0];
+    await paidOnly('PUT', `/user/forum/posts/${firstPost?.id}/reactions`, { emoji: '👍', on: true });
+
+    // Ses profils restent lisibles (choix du profil qui écrit) ; le reste de l'app reste fermé sans abonnement.
+    expect((await as(app, cast.carol, 'GET', '/user/profiles')).status).toBe(200);
+    expect((await as<ErrorBody>(app, cast.carol, 'GET', '/user/social/me')).status).toBe(402);
+  });
+
+  it('abonné (accès offert) et équipe : sections réservées en clair', async () => {
+    const { watch } = await seed();
+    const alice = await as<Home>(app, cast.alice, 'GET', '/user/forum');
+    expect(alice.body.me).toMatchObject({ role: 'owner', paid: true });
+    expect(alice.body.pulse.events.find((t) => t.id === watch.id)).toMatchObject({ title: 'Soirée Dune' });
+    vi.stubEnv('LASTADDON_BILLING_FREE_UNTIL', '2030-01-01T00:00:00.000Z');
+    const bob = await as<Home>(app, cast.bob, 'GET', '/user/forum');
+    expect(bob.body.me.paid).toBe(true);
+    expect(bob.body.pulse.events.find((t) => t.id === watch.id)?.restricted).toBeUndefined();
+    expect((await read(cast.bob, watch.id)).title).toBe('Soirée Dune');
   });
 });
 

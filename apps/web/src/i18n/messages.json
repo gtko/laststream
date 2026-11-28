@@ -3363,6 +3363,9 @@
  "Connecte-toi avec un profil adulte pour planifier une soirée.": [
   "src/ui/eveningForm.js"
  ],
+ "Connecte-toi pour poser une question, répondre ou réagir. La lecture reste libre, sans abonnement.": [
+  "src/ui/forum.js"
+ ],
  "Connecte-toi à ton compte Laststream pour lancer une watch party.": [
   "src/ui/partylobby.js"
  ],
@@ -7222,6 +7225,9 @@
  "Les watch parties ne sont pas disponibles sur ce serveur.": [
   "src/data/socialText.ts"
  ],
+ "Les watch parties sont réservées aux membres qui soutiennent Laststream (24 € par an) : séances, inscriptions et salons de visionnage.": [
+  "src/ui/forum.js"
+ ],
  "Les {lang} sont trop lourdes pour ta connexion{v} : meilleure VO": [
   "src/sources/rank.ts"
  ],
@@ -7433,6 +7439,9 @@
  ],
  "Lire le fichier": [
   "src/ui/migration.js"
+ ],
+ "Lire le forum de la communauté": [
+  "src/ui/subscribe-ui.js"
  ],
  "Lire l’historique": [
   "src/ui/migration.js"
@@ -10932,6 +10941,12 @@
  "Réservé au propriétaire du serveur.": [
   "src/ui/admin/common.js"
  ],
+ "Réservé aux abonnés": [
+  "src/ui/forum.js"
+ ],
+ "Réservé aux membres qui soutiennent Laststream.": [
+  "src/ui/forum.js"
+ ],
  "Réservé à l’équipe de modération.": [
   "src/ui/forum.js"
  ],
@@ -11272,11 +11287,15 @@
  ],
  "Se connecter": [
   "src/ui/auth-ui.js",
+  "src/ui/forum.js",
   "src/ui/parties.js",
   "src/ui/reset-ui.js"
  ],
  "Se connecter ou créer un compte": [
   "src/ui/settings.js"
+ ],
+ "Se connecter pour participer": [
+  "src/ui/forum.js"
  ],
  "Se déconnecter": [
   "src/ui/auth-ui.js",
@@ -11708,6 +11727,9 @@
  "Soutenir": [
   "src/ui/subscribe-ui.js"
  ],
+ "Soutenir Laststream": [
+  "src/ui/forum.js"
+ ],
  "Soutenir, J’adore": [
   "src/ui/subscribe-ui.js"
  ],
@@ -11875,6 +11897,9 @@
   "src/ui/follows.js"
  ],
  "Sujet déplacé.": [
+  "src/ui/forum.js"
+ ],
+ "Sujet réservé aux abonnés de soutien": [
   "src/ui/forum.js"
  ],
  "Sujet supprimé.": [
@@ -12067,6 +12092,12 @@
   "src/ui/forum.js"
  ],
  "Séance du {startsAt}": [
+  "src/ui/forum.js"
+ ],
+ "Séance réservée": [
+  "src/ui/forum.js"
+ ],
+ "Séance réservée aux membres qui soutiennent": [
   "src/ui/forum.js"
  ],
  "Sélection": [
@@ -13718,7 +13749,8 @@
  ],
  "Watch parties": [
   "src/data/adminModel.ts",
-  "src/ui/admin/community.js"
+  "src/ui/admin/community.js",
+  "src/ui/forum.js"
  ],
  "Watch parties en direct": [
   "src/ui/forum.js"
@@ -15688,6 +15720,12 @@
   "src/ui/forum.js"
  ],
  "🔒 Ce sujet est verrouillé : on ne peut plus y répondre.": [
+  "src/ui/forum.js"
+ ],
+ "🔒 Débloquer": [
+  "src/ui/forum.js"
+ ],
+ "🔒 Séance réservée": [
   "src/ui/forum.js"
  ]
 }

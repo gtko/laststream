@@ -62,6 +62,17 @@ export const isOwner = (): boolean => auth.isOwner;
 /** Forum communautaire disponible : service en ligne seulement (désactivé sur un serveur auto-hébergé). */
 export const hasCommunity = (): boolean => auth.community && isServerMode() && !isKidProfile();
 /**
+ * Forum ouvert sans session prête (visiteur sans compte, ou compte sans abonnement) : lecture seule de `#/forum`, le reste
+ * de l'app passe par l'écran de connexion. Le serveur le traite en visiteur (aucun profil envoyé).
+ */
+let forumVisitor = false;
+/** Compte sans abonnement de soutien en cours (`subscription.required` de /user/me) sur le service en ligne. */
+let subscriptionRequired = false;
+/** Adresse du forum : un compte sans abonnement y choisit un profil pour écrire ; ailleurs, l'écran d'abonnement. */
+export const onForumHash = (): boolean => /^#\/forum(\/|$)/.test(globalThis.location?.hash || '');
+export const isForumVisitor = (): boolean => forumVisitor;
+export const setForumVisitor = (on: boolean): void => { forumVisitor = on; };
+/**
  * Profil principal du compte : seul à voir Sources, Serveur lastAddon et les clés. Hors mode serveur (repli local) : toujours ;
  * serveur ancien qui n'annonce rien : traité comme principal. Les profils secondaires et enfants n'ont que leurs préférences.
  */
@@ -135,6 +146,7 @@ export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<Auth
     const account = me.account;
     lockedId = me.lockedProfileId ?? null;
     auth.community = me.subscription?.enabled === true;
+    subscriptionRequired = me.subscription?.required === true;
     auth.username = account.username;
     auth.accountId = account.id;
     // Session verrouillée : jamais les droits de propriétaire du compte.
@@ -153,10 +165,15 @@ export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<Auth
   return loadProfiles(lockedId);
 }
 
-/** Profil verrouillé de la session courante (`lockedProfileId` de /user/me), ou null. Une erreur réseau compte comme non verrouillée. */
+/**
+ * Profil verrouillé de la session courante (`lockedProfileId` de /user/me), ou null ; relève aussi l'abonnement requis.
+ * Une erreur réseau compte comme non verrouillée.
+ */
 async function readLockedProfile(): Promise<string | null> {
   try {
-    return (await api.me(4000)).lockedProfileId ?? null;
+    const me = await api.me(4000);
+    subscriptionRequired = me.subscription?.required === true;
+    return me.lockedProfileId ?? null;
   } catch {
     return null;
   }
@@ -175,6 +192,8 @@ export async function loadProfiles(known?: string | null): Promise<AuthStatus> {
     return useLocal('offline');
   }
   const lockedId = known !== undefined ? known : await readLockedProfile();
+  // Sans abonnement : l'écran d'abonnement tout de suite, sauf sur le forum, où l'on choisit d'abord le profil qui écrit.
+  if (subscriptionRequired && !onForumHash()) return useLocal('needs-subscription');
   auth.locked = lockedId !== null;
   if (lockedId !== null) {
     const locked = auth.profiles.find((p) => p.id === lockedId);
@@ -199,6 +218,15 @@ export async function loadProfiles(known?: string | null): Promise<AuthStatus> {
 }
 
 async function activate(profile: Profile): Promise<void> {
+  if (subscriptionRequired) {
+    // Compte sans abonnement : seul le forum s'ouvre, au nom de ce profil (le reste de l'app propose l'abonnement).
+    const profiles = auth.profiles;
+    useLocal('needs-subscription');
+    auth.profiles = profiles;
+    auth.profile = profile;
+    emit();
+    return;
+  }
   const next = new ServerUserStore(auth.profiles, profile);
   try {
     await next.hydrate();
@@ -342,6 +370,7 @@ export async function adoptSession(s: { token: string; expiresAt: string; profil
     accountId = me.account.id;
     lockedId = me.lockedProfileId ?? s.profileId;
     auth.community = me.subscription?.enabled === true;
+    subscriptionRequired = me.subscription?.required === true;
   } catch {
     // Compte illisible : pseudo vide, et la config locale n'est pas reprise (claimLocalConfig ci-dessous).
   }
@@ -398,6 +427,7 @@ export async function signOut(silent = false): Promise<void> {
   // le marqueur fait effacer au prochain démarrage (service.ts).
   if (!silent) void import('../downloads/service').then((m) => m.purgeAll()).catch(() => undefined);
   managerId = null;
+  subscriptionRequired = false;
   auth.isOwner = false;
   auth.locked = false;
   auth.username = '';

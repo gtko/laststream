@@ -39,7 +39,7 @@ import './styles/scrollbars.css';
 import './styles/credits.css';
 import './styles/downloads.css';
 import './styles/downloads-tv.css';
-import { auth, initAuth, isKidProfile, kidSection, offlineWithoutSession } from './data/auth';
+import { auth, initAuth, isKidProfile, kidSection, offlineWithoutSession, onForumHash, setForumVisitor } from './data/auth';
 import { userStore } from './data/userStore';
 import { settleExternalWatch } from './player/externalWatch';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';
@@ -127,7 +127,15 @@ if (!demoMode) await initAuth({ anonymous: joinPage });
 settleExternalWatch(); // lecture dans VLC (ou autre) pendant que l'app était fermée : position estimée ou « vu »
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });
 // L'écran de connexion / de choix du profil (auth-ui, avatars, éditeur) n'est chargé que s'il faut l'afficher.
-if (!joinPage && !demoMode && (auth.status === 'needs-login' || auth.status === 'needs-profile' || auth.status === 'needs-subscription' || offlineWithoutSession())) await (await import('./ui/auth-ui.js')).runAuthFlow();
+// Forum (#/forum…) : lecture libre sans compte (pas d'écran de connexion) ; un compte sans abonnement choisit son profil
+// et y écrit. Toute autre page ramène à la connexion ou à l'abonnement (rechargement).
+let forumVisit = !joinPage && !demoMode && onForumHash() && auth.status === 'needs-login';
+if (!joinPage && !forumVisit && !demoMode && (auth.status === 'needs-login' || auth.status === 'needs-profile' || auth.status === 'needs-subscription' || offlineWithoutSession())) await (await import('./ui/auth-ui.js')).runAuthFlow();
+if (!forumVisit && !joinPage && !demoMode && onForumHash() && auth.status === 'needs-subscription' && auth.profile) forumVisit = true;
+if (forumVisit) {
+  setForumVisitor(true);
+  window.addEventListener('hashchange', () => { if (!onForumHash()) location.reload(); });
+}
 if (isKidProfile()) {
   document.body.classList.add('kid-mode');
   if (kidSection('tv')) document.body.classList.add('kid-tv');
@@ -158,8 +166,9 @@ if (foyerTok !== null) {
   mountFoyerJoin(detailEl, foyerTok);
 }
 // La coque Windows garde son écran de démarrage jusqu'à `app-ready` : dès que l'accueil est affiché (ou après 8 s au plus).
-Promise.resolve(joinPage ? undefined : load()).catch(() => undefined).finally(() => {
+Promise.resolve(joinPage || forumVisit ? undefined : load()).catch(() => undefined).finally(() => {
   announceShellReady();
+  if (forumVisit) return;
   // Social : après l'affichage de l'accueil, au repos du navigateur (repli sur une minuterie).
   const bootSocial = () => { void ensureSocial().catch(() => undefined); };
   if (typeof requestIdleCallback === 'function') requestIdleCallback(bootSocial, { timeout: 3000 }); else setTimeout(bootSocial, 1500);

@@ -246,3 +246,10 @@
 .fo-fbpanel-t { margin: 0; font-weight: 600; color: var(--soft); }
 .fo-fbpanel-refs { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
 .fo-fbpanel-refs code { font-family: ui-monospace, Menlo, Consolas, monospace; user-select: all; }
+
+/* Lecture libre : invitation à se connecter ou à soutenir, sujets réservés floutés (le vrai titre n'est pas envoyé). */
+.fo-access { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; justify-content: space-between; margin: 0; padding: 14px 16px; border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.fo-access p { margin: 0; flex: 1 1 280px; color: var(--soft); font-size: 14px; line-height: 1.5; }
+.fo-blur { filter: blur(6px); user-select: none; -webkit-user-select: none; }
+.fo-blur:focus-visible { filter: blur(4px); }

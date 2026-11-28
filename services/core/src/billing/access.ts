@@ -61,6 +61,12 @@ const EXEMPT: readonly { method: string; path: RegExp }[] = [
   { method: 'POST', path: /^\/user\/(refresh|logout|logout-all|password)\/?$/ },
   { method: 'DELETE', path: /^\/user\/account\/?$/ },
   { method: '*', path: /^\/user\/billing(\/.*)?$/ },
+  // Forum (LAST-1651) : lecture gratuite, écriture pour tout compte connecté ; les sections payantes sont filtrées par les routes du forum.
+  { method: '*', path: /^\/user\/forum(\/.*)?$/ },
+  // Profils (liste, premier profil, déverrouillage par PIN) : un compte sans abonnement écrit sur le forum au nom d'un profil.
+  { method: 'GET', path: /^\/user\/profiles\/?$/ },
+  { method: 'POST', path: /^\/user\/profiles\/?$/ },
+  { method: 'POST', path: /^\/user\/profiles\/[^/]+\/(unlock|lock)\/?$/ },
   { method: '*', path: /^\/admin(\/.*)?$/ },
 ];
 

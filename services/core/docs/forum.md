@@ -7,9 +7,23 @@ Le forum est intégré à l'app (`#/forum`, menu « Explorer » › Forum) et se
 Le forum n'existe que sur le service en ligne : sans abonnement de soutien configuré (`STRIPE_SECRET_KEY` et
 `STRIPE_PRICE_ID`, voir [abonnement.md](abonnement.md)), c'est-à-dire sur un serveur auto-hébergé, toutes les routes
 répondent `404 forum_unavailable` et l'app masque l'entrée Forum (elle lit `subscription.enabled` de `/user/me`).
-Chaque route ouvre une session (`sessionOf`) : un compte sans abonnement de soutien reçoit `402
-subscription_required`, comme pour le reste de l'app. Les invités du foyer d'un abonné y ont accès. Les profils
-enfants n'y ont pas accès. On écrit au nom d'un profil (son `Nom#TAG`).
+Sur le service en ligne :
+
+- **Lire est libre**, même sans compte. Sans jeton ou sans `X-Profile-Id`, les routes de lecture (`GET /forum`,
+  catégories, recherche, sujet) répondent pour un visiteur (`me.guest`). Dans l'app, `#/forum` s'ouvre sans écran de
+  connexion pour un visiteur (`isForumVisitor`, voir `main.js`). Toute autre page ramène à la connexion.
+- **Écrire demande une connexion** : session et profil non enfant, avec ou sans abonnement (le forum est exempté du 402,
+  voir `billing/access.ts`, avec la liste, la création et le déverrouillage des profils). Sans session : 401. On écrit
+  au nom d'un profil (son `Nom#TAG`). Dans l'app, un compte sans abonnement voit les forfaits à la connexion ; sur
+  `#/forum` (lien « Lire le forum de la communauté » des forfaits), il choisit son profil et lit et écrit sur le forum,
+  et toute autre page le ramène aux forfaits.
+- **Sections réservées** : une catégorie `paid_only` (migration 39 : Watch parties seulement) est réservée aux abonnés de
+  soutien (accès payé, offert ou période gratuite) et à l'équipe. Pour les autres, ses sujets apparaissent dans les
+  listes sans titre ni extrait ni salon (`restricted: true`), et l'app floute ces cartes. Ouvrir un tel sujet ou y écrire
+  (sujet, réponse, réaction, signalement, inscription, salon) répond `403 paid_only`. La recherche ignore ces sections.
+  Pour réserver une autre catégorie : `UPDATE forum_categories SET paid_only = 1 WHERE id = '…'`.
+
+Les invités du foyer d'un abonné en profitent aussi. Les profils enfants n'y ont pas accès (403).
 
 ## Catégories
 

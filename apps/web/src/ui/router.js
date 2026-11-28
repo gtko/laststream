@@ -3,7 +3,7 @@ import { showCalendar } from './calendar.js';
 import { ensureSocial } from './socialHooks.js';
 import { listIdFrom, shareCodeFrom } from './shareModel.js';
 import { joinRouteOf } from '../party/join';
-import { canAdmin, hasCommunity, isKidProfile, kidSection } from '../data/auth';
+import { canAdmin, hasCommunity, isForumVisitor, isKidProfile, kidSection } from '../data/auth';
 import { browseAllowed, showBrowse } from './registry.js';
 import { app, detailEl, toastError } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
@@ -145,7 +145,8 @@ export function parseRoute() {
   // Profil enfant : ni réglages ni TV en direct, ni amis ni salons publics (un salon privé s'ouvre par son lien).
   if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'ensemble' || r.kind === 'forum' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover' || r.kind === 'downloads' || r.kind === 'hub')) return null;
   // Forum : service en ligne seulement (serveur auto-hébergé : désactivé).
-  if (r && r.kind === 'forum' && !hasCommunity()) return null;
+  // Visiteur du forum (sans compte ou sans abonnement) : lecture seule, avant la connexion.
+  if (r && r.kind === 'forum' && !hasCommunity() && !isForumVisitor()) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   // Pages d'addon (catalogue, fiche) : refusées sur le profil enfant, comme le navigateur.
   if (r && (r.kind === 'addonCatalog' || r.kind === 'addonFiche') && isKidProfile()) return null;

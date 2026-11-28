@@ -141,7 +141,10 @@ describe('règles d accès (unitaires)', () => {
     expect(isAccessExempt('GET', '/user/billing')).toBe(true);
     expect(isAccessExempt('POST', '/user/billing/checkout')).toBe(true);
     expect(isAccessExempt('DELETE', '/user/account')).toBe(true);
-    expect(isAccessExempt('GET', '/user/profiles')).toBe(false);
+    expect(isAccessExempt('GET', '/user/profiles')).toBe(true);
+    expect(isAccessExempt('GET', '/user/forum/topics/x')).toBe(true);
+    expect(isAccessExempt('GET', '/user/profiles/p1/library')).toBe(false);
+    expect(isAccessExempt('GET', '/user/invites')).toBe(false);
     expect(isAccessExempt('GET', '/user/account/config')).toBe(false);
   });
 
@@ -158,7 +161,7 @@ describe('règles d accès (unitaires)', () => {
 
 describe('contrôle d accès', () => {
   it('sans configuration Stripe, rien ne change (auto-hébergement)', async () => {
-    expect((await request(app, 'GET', '/user/profiles', { token: bob.token })).status).toBe(200);
+    expect((await request(app, 'GET', '/user/invites', { token: bob.token })).status).toBe(200);
     const billing = await request<{ enabled: boolean; access: boolean }>(app, 'GET', '/user/billing', { token: bob.token });
     expect(billing.body).toMatchObject({ enabled: false, access: true });
     const me = await request<{ subscription: unknown }>(app, 'GET', '/user/me', { token: bob.token });
@@ -167,7 +170,7 @@ describe('contrôle d accès', () => {
 
   it('abonnement activé : 402 sans accès, mais compte, /me et abonnement restent ouverts ; le propriétaire passe', async () => {
     enableBilling();
-    const blocked = await request<{ error: string }>(app, 'GET', '/user/profiles', { token: bob.token });
+    const blocked = await request<{ error: string }>(app, 'GET', '/user/invites', { token: bob.token });
     expect(blocked.status).toBe(402);
     expect(blocked.body.error).toBe('subscription_required');
     const me = await request<{ subscription: unknown }>(app, 'GET', '/user/me', { token: bob.token });
@@ -175,12 +178,12 @@ describe('contrôle d accès', () => {
     expect(me.body.subscription).toEqual({ enabled: true, required: true });
     const billing = await request<{ access: boolean; price: unknown }>(app, 'GET', '/user/billing', { token: bob.token });
     expect(billing.body).toMatchObject({ enabled: true, access: false, price: { amount: 2400, currency: 'eur', interval: 'year' } });
-    expect((await request(app, 'GET', '/user/profiles', { token: owner.token })).status).toBe(200);
+    expect((await request(app, 'GET', '/user/invites', { token: owner.token })).status).toBe(200);
   });
 
   it('période de transition (LASTADDON_BILLING_FREE_UNTIL) : accès pour tous jusqu à la date', async () => {
     enableBilling({ LASTADDON_BILLING_FREE_UNTIL: new Date(Date.now() + 30 * 86400_000).toISOString() });
-    expect((await request(app, 'GET', '/user/profiles', { token: bob.token })).status).toBe(200);
+    expect((await request(app, 'GET', '/user/invites', { token: bob.token })).status).toBe(200);
   });
 });
 
@@ -239,7 +242,7 @@ describe('paiement', () => {
     const bad = await sendEvent({ id: 'evt_x', type: 'invoice.paid', data: { object: {} } }, 'whsec_faux');
     expect(bad.status).toBe(400);
     await subscribe(bob, 1);
-    expect((await request(app, 'GET', '/user/profiles', { token: bob.token })).status).toBe(200);
+    expect((await request(app, 'GET', '/user/invites', { token: bob.token })).status).toBe(200);
     const billing = await request<{ subscribed: boolean; reason: string }>(app, 'GET', '/user/billing', { token: bob.token });
     expect(billing.body).toMatchObject({ subscribed: true, reason: 'paid' });
     const again = await sendEvent({ id: 'evt_co_1', type: 'checkout.session.completed', data: { object: {} } });
@@ -255,7 +258,7 @@ describe('paiement', () => {
     const sub = stripe.subs.get('sub_1');
     if (sub !== undefined) sub.status = 'canceled';
     await sendEvent({ id: 'evt_del', type: 'customer.subscription.deleted', data: { object: { id: 'sub_1' } } });
-    expect((await request(app, 'GET', '/user/profiles', { token: bob.token })).status).toBe(402);
+    expect((await request(app, 'GET', '/user/invites', { token: bob.token })).status).toBe(402);
   });
 });
 
@@ -281,7 +284,7 @@ describe('parrainage', () => {
   it('parrain non abonné : 6 mois d accès offert ; la remise ne vaut que pour le filleul', async () => {
     enableBilling();
     await subscribe(carol, 2, 1200);
-    expect((await request(app, 'GET', '/user/profiles', { token: bob.token })).status).toBe(200);
+    expect((await request(app, 'GET', '/user/invites', { token: bob.token })).status).toBe(200);
     const billing = await request<{ reason: string; compUntil: string; referral: { discount: boolean } }>(app, 'GET', '/user/billing', { token: bob.token });
     expect(billing.body.reason).toBe('comp');
     expect(Date.parse(billing.body.compUntil) - Date.now()).toBeGreaterThan(180 * 86400_000);
@@ -292,7 +295,7 @@ describe('parrainage', () => {
   it('facture à 0 € (essai) : pas de récompense', async () => {
     enableBilling();
     await subscribe(carol, 2, 0);
-    expect((await request(app, 'GET', '/user/profiles', { token: bob.token })).status).toBe(402);
+    expect((await request(app, 'GET', '/user/invites', { token: bob.token })).status).toBe(402);
   });
 });
 
@@ -306,7 +309,7 @@ describe('résiliation depuis l app', () => {
     expect(stripe.calls.some((c) => c.method === 'POST' && c.path === '/v1/subscriptions/sub_1' && c.form.get('cancel_at_period_end') === 'true')).toBe(true);
     const after = await request<{ cancelAtPeriodEnd: boolean; access: boolean }>(app, 'GET', '/user/billing', { token: bob.token });
     expect(after.body).toMatchObject({ cancelAtPeriodEnd: true, access: true });
-    expect((await request(app, 'GET', '/user/profiles', { token: bob.token })).status).toBe(200);
+    expect((await request(app, 'GET', '/user/invites', { token: bob.token })).status).toBe(200);
     const resume = await request<{ cancelAtPeriodEnd: boolean }>(app, 'POST', '/user/billing/resume', { token: bob.token, body: {} });
     expect(resume.body.cancelAtPeriodEnd).toBe(false);
     expect((await request<{ cancelAtPeriodEnd: boolean }>(app, 'GET', '/user/billing', { token: bob.token })).body.cancelAtPeriodEnd).toBe(false);

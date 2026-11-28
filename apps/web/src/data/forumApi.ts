@@ -2,7 +2,8 @@ import { auth } from './auth';
 import { call } from './userApi';
 
 /* Client du forum communautaire (`/user/forum/*`, LAST-1651) : chaque appel agit au nom du profil actif (X-Profile-Id,
- * X-Profile-Token si PIN), comme le social. Aucun texte n'est affiché ici. */
+ * X-Profile-Token si PIN), comme le social ; sans profil actif (visiteur), le serveur répond en lecture seule. Aucun texte
+ * n'est affiché ici. */
 
 type ForumRole = 'owner' | 'mod' | 'member';
 type PostHidden = '' | 'author' | 'mod' | 'auto';
@@ -17,8 +18,13 @@ export interface ForumAuthor {
   role: ForumRole;
 }
 interface ForumMe {
+  /** Vide pour un visiteur (`guest`). */
   pid: string;
   role: ForumRole;
+  /** Abonné de soutien (ou équipe) : sections réservées visibles. */
+  paid: boolean;
+  /** Visiteur sans compte ni profil : lecture seule. */
+  guest?: true;
   bannedUntil?: number | null;
 }
 interface ForumCategory {
@@ -27,6 +33,8 @@ interface ForumCategory {
   description: string;
   icon: string;
   staffOnly: boolean;
+  /** Réservée aux abonnés de soutien (watch parties). */
+  paidOnly: boolean;
   topicCount: number;
   postCount: number;
   lastPostAt: number | null;
@@ -44,6 +52,8 @@ export interface ForumTopic {
   locked: boolean;
   hidden: boolean;
   event?: ForumEvent;
+  /** Section réservée vue par un non-abonné : titre vide (carte floutée). */
+  restricted?: true;
 }
 /** Séance d'une watch party (catégorie watch-parties). */
 export interface ForumEvent {

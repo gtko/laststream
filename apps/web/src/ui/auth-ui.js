@@ -1,6 +1,6 @@
 /* Comptes : écran de connexion, choix du profil (façon Netflix), clavier PIN, gestion des profils, mode enfant. */
 import {
-  auth, canManageProfiles, chooseProfile, grantManager, hasValidToken, isProfileLocked, offlineWithoutSession, parentalProfile,
+  auth, canManageProfiles, chooseProfile, grantManager, hasValidToken, isProfileLocked, offlineWithoutSession, onForumHash, parentalProfile,
   signIn, signOut, signUp, unlock,
 } from '../data/auth';
 import { checkInviteTicket, normalizeInviteCode, parseInviteCode, withoutInvite } from '../data/invite';
@@ -472,7 +472,8 @@ function route() {
   if (auth.status === 'needs-login') { showLogin(); return; }
   if (offlineWithoutSession()) { showLogin(OFFLINE_MSG); return; }
   if (auth.status === 'needs-profile') { openPicker(); return; }
-  if (auth.status === 'needs-subscription') { show(subscribeLoadingHTML()); void mountSubscribe(el()); return; }
+  // Sans abonnement, un profil choisi sur le forum y lit et écrit ; ailleurs, l'écran d'abonnement.
+  if (auth.status === 'needs-subscription' && !(auth.profile && onForumHash())) { openSubscribe(); return; }
   hide();
   if (resolveFlow) { const r = resolveFlow; resolveFlow = null; r(); }
   else location.reload();
@@ -485,6 +486,12 @@ export function runAuthFlow() {
     resolveFlow = resolve;
     route();
   });
+}
+
+/** Écran d'abonnement (forfaits) ; depuis le forum, il propose aussi d'y revenir. */
+export function openSubscribe() {
+  show(subscribeLoadingHTML());
+  void mountSubscribe(el());
 }
 
 /** Réglages → « Se connecter » : ouvre l'écran de connexion, puis recharge. */

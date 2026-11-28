@@ -8,9 +8,11 @@ import type { SqlDb, SqlRow } from '../user/sql.js';
  * les autres stores (SQLite Node ou Durable Object), requêtes paramétrées. Les auteurs sont des profils (pid) : leur handle
  * et leur avatar sont lus à l'affichage (un profil supprimé apparaît comme « compte supprimé »).
  *
- * L'accès au forum suit l'abonnement de soutien : les routes ouvrent une session (`sessionOf`), qui refuse un compte sans
- * accès quand Stripe est configuré. Ce store ne connaît que les rôles : `owner` (propriétaire du serveur, toujours
- * modérateur), `mod` (nommé par le propriétaire) et `member`. Un profil exclu (forum_bans) lit mais n'écrit plus.
+ * Lecture libre (même sans compte), écriture pour tout profil connecté. Les catégories `paid_only` (watch parties) sont
+ * réservées aux abonnés de soutien (`ForumMe.paid`) et à l'équipe : ailleurs, leurs sujets apparaissent sans titre ni extrait
+ * (`restricted`, l'app les floute), leur contenu et leurs écritures sont refusés (`paid_only`). Rôles : `owner`
+ * (propriétaire du serveur, toujours modérateur), `mod` (nommé par le propriétaire) et `member`. Un profil exclu
+ * (forum_bans) lit mais n'écrit plus.
  */
 
 export type ForumRole = 'owner' | 'mod' | 'member';
@@ -65,6 +67,8 @@ export interface ForumCategoryView {
   description: string;
   icon: string;
   staffOnly: boolean;
+  /** Réservée aux abonnés de soutien (watch parties). */
+  paidOnly: boolean;
   topicCount: number;
   postCount: number;
   lastPostAt: number | null;
@@ -84,6 +88,8 @@ export interface ForumTopicSummary {
   hidden: boolean;
   /** Séance de watch party (sujets de la catégorie watch-parties). */
   event?: ForumEvent;
+  /** Sujet d'une section réservée aux abonnés, vu par un non-abonné : titre vide, salon caché (l'app floute la carte). */
+  restricted?: true;
 }
 
 export interface ForumEvent {
@@ -156,8 +162,13 @@ const FEEDBACK_CATEGORY = { bug: 'bugs', idea: 'idees' } as const;
 const FEEDBACK_REFS_SHOWN = 20;
 
 export interface ForumMe {
+  /** Vide pour un visiteur sans compte (`guest`). */
   pid: string;
   role: ForumRole;
+  /** Abonné de soutien (ou accès offert) : voit et écrit dans les sections réservées. */
+  paid: boolean;
+  /** Visiteur sans compte ni profil : lecture seule. */
+  guest?: true;
   /** Exclusion en cours : fin (ms) ou null si définitive ; absent si le profil n'est pas exclu. */
   bannedUntil?: number | null;
 }
@@ -184,7 +195,7 @@ export interface ForumBanView {
 }
 
 type Refusal =
-  | { result: 'not_found' | 'forbidden' | 'locked' | 'banned' | 'staff_only' | 'invalid_event' | 'event_not_open' }
+  | { result: 'not_found' | 'forbidden' | 'locked' | 'banned' | 'staff_only' | 'paid_only' | 'invalid_event' | 'event_not_open' }
   | { result: 'rate_limited'; retryAfterSec: number };
 
 export type ForumWrite<T extends object = object> = ({ result: 'ok' } & T) | Refusal;
@@ -303,6 +314,12 @@ const POST_SELECT = `
 
 export const isStaff = (role: ForumRole): boolean => role !== 'member';
 
+/** Lecteur qui voit les sections réservées : abonné ou équipe. */
+const seesPaid = (me: ForumMe): boolean => me.paid || isStaff(me.role);
+
+/** Visiteur sans compte : lit le forum, sans rôle ni abonnement. */
+export const FORUM_GUEST: ForumMe = { pid: '', role: 'member', paid: false, guest: true };
+
 /** Échappe `%`, `_` et `\` pour un LIKE … ESCAPE '\'. */
 const likeEscape = (text: string): string => text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 
@@ -310,14 +327,14 @@ export class ForumStore {
   constructor(private readonly db: SqlDb) {}
 
   /**
-   * Rôle et exclusion d'un profil. `owner` : profil d'un compte propriétaire, hors session verrouillée sur un invité du foyer
+   * Rôle, abonnement (`paid`, calculé par la route) et exclusion d'un profil. `owner` : profil d'un compte propriétaire, hors session verrouillée sur un invité du foyer
    * (`locked`). Une exclusion expirée est oubliée.
    */
-  me(accountId: string, pid: string, locked: boolean, now: number): ForumMe {
+  me(accountId: string, pid: string, locked: boolean, paid: boolean, now: number): ForumMe {
     const owner = this.db.prepare('SELECT is_owner FROM accounts WHERE id = ?').get(accountId);
     const mod = this.db.prepare('SELECT 1 FROM forum_moderators WHERE pid = ?').get(pid);
     const role: ForumRole = !locked && Number(owner?.is_owner ?? 0) === 1 ? 'owner' : mod !== undefined ? 'mod' : 'member';
-    const me: ForumMe = { pid, role };
+    const me: ForumMe = { pid, role, paid };
     const ban = this.db.prepare('SELECT until FROM forum_bans WHERE pid = ?').get(pid);
     if (ban !== undefined) {
       const until = ban.until === null ? null : Number(ban.until);
@@ -344,29 +361,57 @@ export class ForumStore {
       description: String(row.description),
       icon: String(row.icon),
       staffOnly: Number(row.staff_only) === 1,
+      paidOnly: Number(row.paid_only) === 1,
       topicCount: Number(row.topic_count),
       postCount: Number(row.post_count),
       lastPostAt: row.last_post_at === null ? null : Number(row.last_post_at),
     }));
   }
 
-  private categoryExists(id: string): { staffOnly: boolean } | undefined {
-    const row = this.db.prepare('SELECT staff_only FROM forum_categories WHERE id = ?').get(id);
-    return row === undefined ? undefined : { staffOnly: Number(row.staff_only) === 1 };
+  private categoryExists(id: string): { staffOnly: boolean; paidOnly: boolean } | undefined {
+    const row = this.db.prepare('SELECT staff_only, paid_only FROM forum_categories WHERE id = ?').get(id);
+    return row === undefined ? undefined : { staffOnly: Number(row.staff_only) === 1, paidOnly: Number(row.paid_only) === 1 };
+  }
+
+  /** Catégories réservées aux abonnés. */
+  private paidCategories(): Set<string> {
+    return new Set(
+      this.db
+        .prepare('SELECT id FROM forum_categories WHERE paid_only = 1')
+        .all()
+        .map((row) => String(row.id)),
+    );
+  }
+
+  /**
+   * Sujets tels que ce lecteur peut les voir : ceux d'une section réservée, pour un non-abonné, perdent leur titre et leur
+   * salon (`restricted`, `blank` efface le reste) ; la date et le nombre d'inscrits d'une séance restent visibles.
+   */
+  private shown<T extends ForumTopicSummary>(me: ForumMe, topics: T[], blank?: (topic: T) => T): T[] {
+    if (seesPaid(me)) return topics;
+    const paid = this.paidCategories();
+    if (paid.size === 0) return topics;
+    return topics.map((topic) => {
+      if (!paid.has(topic.categoryId)) return topic;
+      const redacted: T = { ...(blank ? blank(topic) : topic), title: '', restricted: true };
+      if (redacted.event !== undefined) redacted.event = { ...redacted.event, roomId: null };
+      return redacted;
+    });
+  }
+
+  /** Refus d'agir dans une section réservée (`paid_only`), ou undefined. */
+  private paidGate(me: ForumMe, categoryId: string): Refusal | undefined {
+    if (seesPaid(me)) return undefined;
+    return this.categoryExists(categoryId)?.paidOnly === true ? { result: 'paid_only' } : undefined;
   }
 
   /**
    * Sujets d'une catégorie, du plus récemment actif au plus ancien ; les sujets épinglés viennent en tête de la première page.
    * `before` : lastPostAt exclu (page suivante). Les sujets masqués ne sont listés que pour un modérateur.
    */
-  topics(
-    categoryId: string,
-    role: ForumRole,
-    before: number | undefined,
-    limit: number = TOPICS_PAGE,
-  ): { topics: ForumTopicSummary[]; more: boolean } | undefined {
+  topics(categoryId: string, me: ForumMe, before: number | undefined, limit: number = TOPICS_PAGE): { topics: ForumTopicSummary[]; more: boolean } | undefined {
     if (this.categoryExists(categoryId) === undefined) return undefined;
-    const hiddenClause = isStaff(role) ? '' : 'AND t.hidden = 0';
+    const hiddenClause = isStaff(me.role) ? '' : 'AND t.hidden = 0';
     const pinned =
       before === undefined
         ? this.db.prepare(`${TOPIC_SELECT} WHERE t.category_id = ? AND t.pinned = 1 ${hiddenClause} ORDER BY t.last_post_at DESC`).all(categoryId).map(topicOf)
@@ -376,15 +421,20 @@ export class ForumStore {
       .all(categoryId, before ?? Number.MAX_SAFE_INTEGER, limit + 1)
       .map(topicOf);
     return {
-      topics: [...pinned, ...rows.slice(0, limit)],
+      topics: this.shown(me, [...pinned, ...rows.slice(0, limit)]),
       more: rows.length > limit,
     };
   }
 
-  /** Recherche dans les titres et les messages visibles (30 sujets au plus, du plus récent au plus ancien). */
-  search(query: string, role: ForumRole, limit: number = TOPICS_PAGE): ForumTopicSummary[] {
+  /**
+   * Recherche dans les titres et les messages visibles (30 sujets au plus, du plus récent au plus ancien). Les sections
+   * réservées ne sont cherchées que pour un abonné.
+   */
+  search(query: string, me: ForumMe, limit: number = TOPICS_PAGE): ForumTopicSummary[] {
     const like = `%${likeEscape(query)}%`;
-    const hiddenClause = isStaff(role) ? '' : 'AND t.hidden = 0';
+    const hiddenClause = `${isStaff(me.role) ? '' : 'AND t.hidden = 0'} ${
+      seesPaid(me) ? '' : 'AND t.category_id NOT IN (SELECT id FROM forum_categories WHERE paid_only = 1)'
+    }`;
     return this.db
       .prepare(
         `${TOPIC_SELECT}
@@ -401,12 +451,16 @@ export class ForumStore {
     return this.db.prepare(`${TOPIC_SELECT} WHERE t.id = ?`).get(id);
   }
 
-  /** Sujet et une page de ses messages (`after` : createdAt exclu). Un sujet masqué n'existe que pour un modérateur. */
-  topic(id: string, me: ForumMe, after: number | undefined, limit: number = POSTS_PAGE): ForumTopicDetail | undefined {
+  /**
+   * Sujet et une page de ses messages (`after` : createdAt exclu). Un sujet masqué n'existe que pour un modérateur ; un sujet
+   * d'une section réservée rend `paid_only` à un non-abonné.
+   */
+  topic(id: string, me: ForumMe, after: number | undefined, limit: number = POSTS_PAGE): ForumTopicDetail | 'paid_only' | undefined {
     const row = this.topicRow(id);
     if (row === undefined) return undefined;
     const topic = topicOf(row);
     if (topic.hidden && !isStaff(me.role)) return undefined;
+    if (this.paidGate(me, topic.categoryId) !== undefined) return 'paid_only';
     const rows = this.db
       .prepare(`${POST_SELECT} WHERE fp.topic_id = ? AND fp.created_at > ? ORDER BY fp.created_at, fp.id LIMIT ?`)
       .all(me.pid, id, after ?? -1, limit + 1);
@@ -507,6 +561,7 @@ export class ForumStore {
       )
       .all(PULSE_RECENT)
       .map((row) => ({ ...topicOf(row), excerpt: excerptOf(String(row.last_body ?? '')) }));
+    const shownRecent = this.shown(me, recent, (topic) => ({ ...topic, excerpt: '' }));
     const trending = this.db
       .prepare(
         `${topicSelect(', h.heat AS heat')}
@@ -537,10 +592,10 @@ export class ForumStore {
         members: Number(counts?.members ?? 0),
         postsToday: Number(counts?.posts_today ?? 0),
       },
-      recent,
-      trending,
+      recent: shownRecent,
+      trending: this.shown(me, trending),
       activeMembers,
-      events,
+      events: this.shown(me, events),
     };
   }
 
@@ -619,6 +674,7 @@ export class ForumStore {
     const category = this.categoryExists(categoryId);
     if (category === undefined) return { result: 'not_found' };
     if (category.staffOnly && !isStaff(me.role)) return { result: 'staff_only' };
+    if (category.paidOnly && !seesPaid(me)) return { result: 'paid_only' };
     const isEvent = categoryId === EVENT_CATEGORY;
     if (isEvent !== (startsAt !== undefined)) return { result: 'invalid_event' };
     if (startsAt !== undefined && (startsAt < now + EVENT_MIN_LEAD_MS || startsAt > now + EVENT_MAX_AHEAD_MS)) return { result: 'invalid_event' };
@@ -651,6 +707,8 @@ export class ForumStore {
     if (row === undefined) return { result: 'not_found' };
     const topic = topicOf(row);
     if (topic.hidden && !isStaff(me.role)) return { result: 'not_found' };
+    const paid = this.paidGate(me, topic.categoryId);
+    if (paid !== undefined) return paid;
     if (topic.locked && !isStaff(me.role)) return { result: 'locked' };
     return this.db.transaction(() => {
       if (!isStaff(me.role)) {
@@ -685,11 +743,12 @@ export class ForumStore {
         first: boolean;
         locked: boolean;
         topicHidden: boolean;
+        categoryId: string;
       }
     | undefined {
     const row = this.db
       .prepare(
-        `SELECT fp.topic_id, fp.author_pid, fp.hidden, t.locked, t.hidden AS topic_hidden,
+        `SELECT fp.topic_id, fp.author_pid, fp.hidden, t.locked, t.hidden AS topic_hidden, t.category_id,
            (SELECT f.id FROM forum_posts f WHERE f.topic_id = fp.topic_id ORDER BY f.created_at, f.id LIMIT 1) = fp.id AS first
          FROM forum_posts fp JOIN forum_topics t ON t.id = fp.topic_id WHERE fp.id = ?`,
       )
@@ -702,6 +761,7 @@ export class ForumStore {
       first: Number(row.first) === 1,
       locked: Number(row.locked) === 1,
       topicHidden: Number(row.topic_hidden) === 1,
+      categoryId: String(row.category_id),
     };
   }
 
@@ -711,7 +771,7 @@ export class ForumStore {
     if (meta === undefined || (meta.topicHidden && !isStaff(me.role))) return { result: 'not_found' };
     if (!isStaff(me.role)) {
       if (meta.authorPid !== me.pid || meta.hidden !== '') return { result: 'forbidden' };
-      const gate = this.writeGate(me);
+      const gate = this.writeGate(me) ?? this.paidGate(me, meta.categoryId);
       if (gate !== undefined) return gate;
       if (meta.locked) return { result: 'locked' };
     }
@@ -752,6 +812,8 @@ export class ForumStore {
     if (gate !== undefined) return gate;
     const meta = this.postMeta(postId);
     if (meta === undefined || meta.hidden !== '' || (meta.topicHidden && !isStaff(me.role))) return { result: 'not_found' };
+    const paid = this.paidGate(me, meta.categoryId);
+    if (paid !== undefined) return paid;
     if (on) this.db.prepare('INSERT OR IGNORE INTO forum_reactions (post_id, pid, emoji, created_at) VALUES (?, ?, ?, ?)').run(postId, me.pid, emoji, now);
     else this.db.prepare('DELETE FROM forum_reactions WHERE post_id = ? AND pid = ? AND emoji = ?').run(postId, me.pid, emoji);
     return {
@@ -770,6 +832,8 @@ export class ForumStore {
     const meta = this.postMeta(postId);
     if (meta === undefined || meta.hidden === 'author' || (meta.topicHidden && !isStaff(me.role))) return { result: 'not_found' };
     if (meta.authorPid === me.pid) return { result: 'forbidden' };
+    const paid = this.paidGate(me, meta.categoryId);
+    if (paid !== undefined) return paid;
     return this.db.transaction(() => {
       const limited = this.rate('forumReport', me.pid, REPORTS_PER_HOUR, HOUR_MS, now);
       if (limited !== undefined) return limited;
@@ -812,6 +876,8 @@ export class ForumStore {
     if (gate !== undefined) return gate;
     const found = this.eventOf(topicId, me);
     if (found === undefined) return { result: 'not_found' };
+    const paid = this.paidGate(me, found.topic.categoryId);
+    if (paid !== undefined) return paid;
     if (now > found.event.startsAt + EVENT_OPEN_GRACE_MS) return { result: 'event_not_open' };
     if (on) this.db.prepare('INSERT OR IGNORE INTO forum_event_rsvps (topic_id, pid, created_at) VALUES (?, ?, ?)').run(topicId, me.pid, now);
     else this.db.prepare('DELETE FROM forum_event_rsvps WHERE topic_id = ? AND pid = ?').run(topicId, me.pid);
@@ -829,6 +895,8 @@ export class ForumStore {
     if (gate !== undefined) return gate;
     const found = this.eventOf(topicId, me);
     if (found === undefined) return { result: 'not_found' };
+    const paid = this.paidGate(me, found.topic.categoryId);
+    if (paid !== undefined) return paid;
     if (found.topic.author.pid !== me.pid && !isStaff(me.role)) return { result: 'forbidden' };
     if (found.event.roomId !== null) return { result: 'ok', title: found.topic.title, roomId: found.event.roomId };
     if (now < found.event.startsAt - EVENT_OPEN_LEAD_MS || now > found.event.startsAt + EVENT_OPEN_GRACE_MS) return { result: 'event_not_open' };

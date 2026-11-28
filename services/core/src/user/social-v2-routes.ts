@@ -6,7 +6,7 @@ import { createRateLimiter } from '../rate-limit.js';
 import { createSharedLimiter } from '../rate-limit-shared.js';
 import { parseHandle } from './social-handles.js';
 import type { SocialV2Repo, UserBackend, UserRepo } from './repo.js';
-import { assertProfileAccess, assertUnlocked, sessionOf } from './session.js';
+import { assertProfileAccess, assertUnlocked, type Session, sessionOf } from './session.js';
 import { friendLibraryQuery } from './social-validation.js';
 import { detachEvenings } from './social-evenings-live.js';
 import { emitSocialEvent } from './social-v2-events.js';
@@ -52,8 +52,8 @@ export interface Actor {
  * 403 `kid_profile` (profil enfant), 403 `pin_required` (PIN non déverrouillé), 403 `profile_locked` (session verrouillée
  * sur un autre profil que celui de l'en-tête).
  */
-export async function actorOf(c: Ctx, users: UserRepo, social: SocialV2Repo, secret: string): Promise<Actor> {
-  const session = await sessionOf(users, c);
+export async function actorOf(c: Ctx, users: UserRepo, social: SocialV2Repo, secret: string, known?: Session): Promise<Actor> {
+  const session = known ?? (await sessionOf(users, c));
   const profileId = c.req.header('x-profile-id');
   if (profileId === undefined || profileId === '') throw new UserApiError(400, 'profile_required');
   assertProfileAccess(session, profileId);
