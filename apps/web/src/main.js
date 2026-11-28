@@ -62,6 +62,8 @@ import { parseFoyerToken } from './data/foyerLink';
 import './ui/events.js';
 import './ui/scrollbars.js';
 import './ui/focusRing.js';
+// Mouvement (onde au clic, apparitions, transitions) : chargé à part, sans attendre, hors du budget du démarrage.
+void import('./ui/motion.js').catch(() => undefined);
 import './ui/rows.js';
 import './ui/ctxmenu.js';
 import './ui/hover.js';

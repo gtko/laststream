@@ -1,0 +1,137 @@
+/* Mouvement de l'interface (ui/motion.js). Chargée en dernier : elle complète les feuilles existantes sans les réécrire.
+ * Règles : transform / opacity seulement (composées par le GPU), propriétés individuelles `scale` / `translate` pour ne pas
+ * écraser les `transform` déjà posés, courbes Material 3, durées courtes (90 à 400 ms). Tout est coupé sous
+ * prefers-reduced-motion (règle globale de styles.css) et allégé sur TV (data-device="tv"). */
+:root {
+  --m-ease-out: cubic-bezier(0.05, 0.7, 0.1, 1); /* emphasized decelerate : ce qui arrive */
+  --m-ease: cubic-bezier(0.2, 0, 0, 1);          /* standard */
+  --m-fast: 160ms;
+  --m-med: 280ms;
+  --m-slow: 420ms;
+}
+
+/* ---------- Onde au clic / au toucher ---------- */
+.m-ripples {
+  position: absolute; inset: 0; z-index: 0; overflow: hidden; border-radius: inherit; pointer-events: none;
+  contain: strict;
+}
+.m-ripple {
+  position: absolute; border-radius: 50%; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle, currentColor 0%, currentColor 55%, transparent 72%);
+  will-change: transform, opacity;
+}
+/* Intensité selon le fond : plus marquée sur les fonds pleins (bouton principal), discrète ailleurs. L'onde passe
+ * par-dessus le texte, comme le calque d'état de Material : à cette opacité il reste lisible. */
+.m-ripples { opacity: 0.2; }
+.btn-primary > .m-ripples, .hc-play > .m-ripples { opacity: 0.28; }
+.card-media > .m-ripples { opacity: 0.26; color: #fff; z-index: 3; }
+
+/* Toucher : pas de flash gris natif, l'onde le remplace. */
+button, a, [role="button"], .card { -webkit-tap-highlight-color: transparent; }
+
+/* ---------- Affiches : survol et focus ---------- */
+/* Le zoom des affiches existait sans transition sur l'accueil (saut sec) : courbe douce, aussi au focus télécommande. */
+.card { transition: transform var(--m-med) var(--m-ease); }
+.card .card-media > img { transition: transform 600ms var(--m-ease), opacity var(--m-med) var(--m-ease); }
+@media (hover: hover) and (pointer: fine) {
+  :root:not([data-device="tv"]) .card:not(.is-upcoming):hover .card-media > img { transform: scale(1.04); }
+}
+.card .card-title { transition: color var(--m-fast) var(--m-ease); }
+.card:hover .card-title, .card:focus-visible .card-title { color: var(--text); }
+.top-item .card-media, .f-posters .card, .up-card, .soon-card, .cast, .vid, .ep-main, .pp-photo { transition-timing-function: var(--m-ease); transition-duration: var(--m-med); }
+
+/* ---------- Images : fondu au chargement ---------- */
+img.m-img { opacity: 0; transition: opacity var(--m-slow) var(--m-ease); }
+img.m-img.m-loaded { opacity: 1; }
+/* Fond de fiche : léger recul en plus du fondu (effet « mise au point »). */
+.f-bg > img.m-img { scale: 1.04; transition: opacity 600ms var(--m-ease), scale 1400ms var(--m-ease-out); }
+.f-bg > img.m-img.m-loaded { scale: 1; }
+
+/* ---------- Apparition des blocs ---------- */
+.m-pre:not(.m-in) { opacity: 0; }
+.m-in { animation: m-rise var(--m-slow) var(--m-ease-out) var(--m-delay, 0ms) backwards; }
+@keyframes m-rise { from { opacity: 0; translate: 0 18px; } to { opacity: 1; translate: 0 0; } }
+/* Affiches d'une rangée qui entre : arrivée en décalé, de gauche à droite (huit premières, le reste est hors champ). */
+.row-section.m-in .row > *:nth-child(-n+8) { animation: m-slide var(--m-slow) var(--m-ease-out) backwards; }
+.row-section.m-in .row > *:nth-child(1) { animation-delay: calc(var(--m-delay, 0ms) + 40ms); }
+.row-section.m-in .row > *:nth-child(2) { animation-delay: calc(var(--m-delay, 0ms) + 75ms); }
+.row-section.m-in .row > *:nth-child(3) { animation-delay: calc(var(--m-delay, 0ms) + 110ms); }
+.row-section.m-in .row > *:nth-child(4) { animation-delay: calc(var(--m-delay, 0ms) + 145ms); }
+.row-section.m-in .row > *:nth-child(5) { animation-delay: calc(var(--m-delay, 0ms) + 180ms); }
+.row-section.m-in .row > *:nth-child(6) { animation-delay: calc(var(--m-delay, 0ms) + 215ms); }
+.row-section.m-in .row > *:nth-child(7) { animation-delay: calc(var(--m-delay, 0ms) + 250ms); }
+.row-section.m-in .row > *:nth-child(8) { animation-delay: calc(var(--m-delay, 0ms) + 285ms); }
+@keyframes m-slide { from { opacity: 0; translate: 24px 0; } to { opacity: 1; translate: 0 0; } }
+[dir="rtl"] .row-section.m-in .row > * { animation-name: m-slide-rtl; }
+@keyframes m-slide-rtl { from { opacity: 0; translate: -24px 0; } to { opacity: 1; translate: 0 0; } }
+
+/* Fiche : le titre, les infos et les boutons arrivent en cascade à l'ouverture. */
+:root:not([data-device="tv"]) .fiche .f-info > * { animation: m-rise 520ms var(--m-ease-out) backwards; }
+:root:not([data-device="tv"]) .fiche .f-info > :nth-child(1) { animation-delay: 60ms; }
+:root:not([data-device="tv"]) .fiche .f-info > :nth-child(2) { animation-delay: 110ms; }
+:root:not([data-device="tv"]) .fiche .f-info > :nth-child(3) { animation-delay: 150ms; }
+:root:not([data-device="tv"]) .fiche .f-info > :nth-child(4) { animation-delay: 190ms; }
+:root:not([data-device="tv"]) .fiche .f-info > :nth-child(5) { animation-delay: 230ms; }
+:root:not([data-device="tv"]) .fiche .f-info > :nth-child(n+6) { animation-delay: 270ms; }
+/* Pages (films, séries, collections...) : le titre de page glisse en place. */
+:root:not([data-device="tv"]) .hub-title, :root:not([data-device="tv"]) .svc-title { animation: m-rise var(--m-slow) var(--m-ease-out) backwards; }
+
+/* ---------- Menus, modales, feuilles ---------- */
+:root:not([data-device="tv"]) .nav-pop:not([hidden]) { animation: m-pop 200ms var(--m-ease-out); transform-origin: top center; }
+:root:not([data-device="tv"]) .nav-pop-profile:not([hidden]) { transform-origin: top right; }
+@keyframes m-pop { from { opacity: 0; scale: 0.96; translate: 0 -6px; } to { opacity: 1; scale: 1; translate: 0 0; } }
+
+.modal-backdrop:not([hidden]) { animation: m-fade 200ms var(--m-ease); }
+:root:not([data-device="tv"]) .modal-backdrop:not([hidden]) > .modal { animation: m-zoom var(--m-med) var(--m-ease-out); }
+@keyframes m-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes m-zoom { from { opacity: 0; scale: 0.94; translate: 0 12px; } to { opacity: 1; scale: 1; translate: 0 0; } }
+@media (max-width: 640px) {
+  :root:not([data-device="tv"]) .modal-backdrop:not([hidden]) > .modal.is-drawer { animation: m-sheet var(--m-med) var(--m-ease-out); }
+}
+
+.ctx-scrim { animation: m-fade 180ms var(--m-ease); }
+:root:not([data-device="tv"]) .ctxmenu:not(.is-sheet) { animation: m-pop 180ms var(--m-ease-out); transform-origin: top left; }
+:root:not([data-device="tv"]) .ctxmenu.is-sheet { animation: m-sheet var(--m-med) var(--m-ease-out); }
+.sh-veil { animation: m-fade 200ms var(--m-ease); }
+:root:not([data-device="tv"]) .sh { animation: m-sheet var(--m-med) var(--m-ease-out); }
+@keyframes m-sheet { from { translate: 0 100%; } to { translate: 0 0; } }
+
+/* Aperçu au survol : courbe Material au lieu du linéaire. */
+.hc { transition: opacity 200ms var(--m-ease), transform var(--m-med) var(--m-ease-out); }
+
+/* Notification : arrive par le bas avec la courbe d'entrée. */
+.toast { transition-timing-function: var(--m-ease-out); transition-duration: var(--m-med); }
+
+/* Barre d'onglets du téléphone : pastille derrière l'icône de l'onglet courant (Material 3). */
+.tab { position: relative; transition: color var(--m-fast) var(--m-ease); }
+.tab.is-current::before {
+  content: ''; position: absolute; top: 3px; left: 50%; width: 56px; height: 30px; margin-left: -28px; border-radius: 15px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent); z-index: 0;
+  animation: m-pill var(--m-med) var(--m-ease-out);
+}
+.tab > svg, .tab > .tab-label, .tab > .avatar-tab { position: relative; z-index: 1; }
+@keyframes m-pill { from { opacity: 0; scale: 0.5 1; } to { opacity: 1; scale: 1 1; } }
+
+/* Barre de progression de navigation (page chargée à la demande). */
+.m-progress {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 2000; height: 3px; pointer-events: none; display: none;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 60%, transparent), var(--accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+  transform-origin: left center; transform: scaleX(0);
+}
+.m-progress.is-on { display: block; }
+[dir="rtl"] .m-progress { transform-origin: right center; }
+
+/* Boutons : survol plus doux (la transition existante est linéaire). */
+.btn, .btn-round, .icon-btn, .f-round, .pill, .hero-dot, .row-arrow, .hero-arrow { transition-timing-function: var(--m-ease); }
+
+/* ---------- TV : focus télécommande fluide, sans effets coûteux ---------- */
+[data-device="tv"] .card { transition: transform 200ms var(--m-ease); }
+[data-device="tv"] .modal-backdrop { backdrop-filter: none; -webkit-backdrop-filter: none; }
+[data-device="tv"] .m-progress { box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .m-pre:not(.m-in) { opacity: 1; }
+  img.m-img { opacity: 1; }
+  .f-bg > img.m-img { scale: 1; }
+}
